@@ -1,0 +1,60 @@
+syntax = "proto3";
+
+package buildbarn.playground.storage.tag;
+
+import "google/protobuf/any.proto";
+import "google/protobuf/empty.proto";
+import "pkg/proto/storage/object/object.proto";
+
+option go_package = "github.com/buildbarn/bb-playground/pkg/proto/storage/tag";
+
+service Resolver {
+  // Resolve the reference of an object that's associated with a given
+  // tag.
+  rpc ResolveTag(ResolveTagRequest) returns (ResolveTagResponse);
+}
+
+service Updater {
+  rpc UpdateTag(UpdateTagRequest) returns (google.protobuf.Empty);
+}
+
+message ResolveTagRequest {
+  // The namespace in which the tag resides.
+  buildbarn.playground.storage.object.Namespace namespace = 1;
+
+  // The tag that should be resolved.
+  google.protobuf.Any tag = 2;
+}
+
+message ResolveTagResponse {
+  // The reference that was associated with the tag.
+  bytes reference = 1;
+
+  // If set, indicates that the lease against the object corresponding
+  // to the reference is valid. This implies that any transitively
+  // referenced object is known to be present.
+  bool complete = 2;
+}
+
+message UpdateTagRequest {
+  // The namespace in which to create the tag.
+  buildbarn.playground.storage.object.Namespace namespace = 1;
+
+  // The tag that should be updated.
+  google.protobuf.Any tag = 2;
+
+  // The reference to the object to associate with the tag.
+  bytes reference = 3;
+
+  // The lease of the object to associate with the tag.
+  bytes lease = 4;
+
+  // If set, if an existing tag exists that is associated with a
+  // different reference, allow the reference to be overwritten. If not
+  // set, the update request will be ignored.
+  //
+  // If a tag is merely updated to renew its lease, this flag should not
+  // be set. This ensures that attempts to actually replace tags in
+  // parallel are not silently reverted.
+  bool overwrite = 5;
+}

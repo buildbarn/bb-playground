@@ -1,0 +1,50 @@
+load("@rules_go//extras:gomock.bzl", "gomock")
+load("@rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "encoding",
+    srcs = [
+        "binary_encoder.go",
+        "chained_binary_encoder.go",
+        "configuration.go",
+        "deterministic_encrypting_binary_encoder.go",
+        "lzw_compressing_binary_encoder.go",
+    ],
+    importpath = "github.com/buildbarn/bb-playground/pkg/encoding",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//pkg/compress/simplelzw",
+        "//pkg/proto/configuration/encoding",
+        "@com_github_buildbarn_bb_storage//pkg/util",
+        "@org_golang_google_grpc//codes",
+        "@org_golang_google_grpc//status",
+    ],
+)
+
+go_test(
+    name = "encoding_test",
+    srcs = [
+        "chained_binary_encoder_test.go",
+        "deterministic_encrypting_binary_encoder_test.go",
+        "lzw_compressing_binary_encoder_test.go",
+        "mocks_encoding_test.go",
+    ],
+    embed = [":encoding"],
+    deps = [
+        "@com_github_buildbarn_bb_storage//pkg/testutil",
+        "@com_github_stretchr_testify//require",
+        "@org_golang_google_grpc//codes",
+        "@org_golang_google_grpc//status",
+        "@org_uber_go_mock//gomock",
+    ],
+)
+
+gomock(
+    name = "mocks_encoding",
+    out = "mocks_encoding_test.go",
+    interfaces = ["BinaryEncoder"],
+    library = "//pkg/encoding",
+    mockgen_model_library = "@org_uber_go_mock//mockgen/model",
+    mockgen_tool = "@org_uber_go_mock//mockgen",
+    package = "encoding_test",
+)

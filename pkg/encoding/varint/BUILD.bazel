@@ -1,0 +1,31 @@
+load("@rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "varint",
+    srcs = [
+        "backward.go",
+        "forward.go",
+    ],
+    importpath = "github.com/buildbarn/bb-playground/pkg/encoding/varint",
+    visibility = ["//visibility:public"],
+    deps = [
+        "@org_golang_google_grpc//codes",
+        "@org_golang_google_grpc//status",
+        "@org_golang_x_exp//constraints",
+    ],
+)
+
+go_test(
+    name = "varint_test",
+    srcs = [
+        "backward_test.go",
+        "forward_test.go",
+    ],
+    deps = [
+        ":varint",
+        "@com_github_buildbarn_bb_storage//pkg/testutil",
+        "@com_github_stretchr_testify//require",
+        "@org_golang_google_grpc//codes",
+        "@org_golang_google_grpc//status",
+    ],
+)

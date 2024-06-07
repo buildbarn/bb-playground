@@ -1,0 +1,14 @@
+load("@rules_go//go:def.bzl", "go_library")
+
+go_library(
+    name = "leaserenewing",
+    srcs = ["lease_renewing_resolver.go"],
+    importpath = "github.com/buildbarn/bb-playground/pkg/storage/tag/leaserenewing",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//pkg/storage/object",
+        "//pkg/storage/tag",
+        "@com_github_buildbarn_bb_storage//pkg/util",
+        "@org_golang_google_protobuf//types/known/anypb",
+    ],
+)

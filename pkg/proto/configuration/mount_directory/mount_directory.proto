@@ -1,0 +1,40 @@
+syntax = "proto3";
+
+package buildbarn.playground.configuration.mount_directory;
+
+import "pkg/proto/configuration/eviction/eviction.proto";
+import "pkg/proto/configuration/filesystem/virtual/virtual.proto";
+import "pkg/proto/configuration/global/global.proto";
+import "pkg/proto/configuration/grpc/grpc.proto";
+import "pkg/proto/configuration/encoding/encoding.proto";
+import "pkg/proto/storage/object/object.proto";
+
+option go_package = "github.com/buildbarn/bb-playground/pkg/proto/configuration/mount_directory";
+
+message ApplicationConfiguration {
+  buildbarn.configuration.global.Configuration global = 1;
+
+  buildbarn.configuration.filesystem.virtual.MountConfiguration mount = 2;
+
+  buildbarn.configuration.eviction.CacheReplacementPolicy
+      parsed_object_cache_replacement_policy = 3;
+
+  int64 parsed_object_cache_count = 4;
+
+  int64 parsed_object_cache_total_size_bytes = 5;
+
+  buildbarn.configuration.grpc.ClientConfiguration grpc_client = 6;
+
+  buildbarn.playground.storage.object.Namespace namespace = 7;
+
+  bytes root_directory_reference = 8;
+
+  repeated buildbarn.playground.configuration.encoding.BinaryEncoderConfiguration
+      directory_encoders = 9;
+
+  repeated buildbarn.playground.configuration.encoding.BinaryEncoderConfiguration
+      small_file_encoders = 10;
+
+  repeated buildbarn.playground.configuration.encoding.BinaryEncoderConfiguration
+      concatenated_file_encoders = 11;
+}

@@ -1,0 +1,35 @@
+load("@rules_go//go:def.bzl", "go_library", "go_test")
+
+genrule(
+    name = "generate_flags",
+    outs = ["flags.go"],
+    cmd = "$(location //pkg/bazelclient/arguments/generator) > $@",
+    tools = ["//pkg/bazelclient/arguments/generator"],
+)
+
+go_library(
+    name = "arguments",
+    srcs = [
+        "bazel_rc_reader.go",
+        "errors.go",
+        "flags.go",
+        "get_bazel_rc_paths.go",
+        "parse.go",
+    ],
+    importpath = "github.com/buildbarn/bb-playground/pkg/bazelclient/arguments",
+    visibility = ["//visibility:public"],
+)
+
+go_test(
+    name = "arguments_test",
+    srcs = [
+        "bazel_rc_reader_test.go",
+        "get_bazel_rc_paths_test.go",
+        "parse_startup_flags_test.go",
+        "parse_test.go",
+    ],
+    deps = [
+        ":arguments",
+        "@com_github_stretchr_testify//require",
+    ],
+)

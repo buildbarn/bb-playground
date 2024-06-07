@@ -1,0 +1,81 @@
+module(name = "com_github_buildbarn_bb_playground")
+
+bazel_dep(name = "com_github_buildbarn_bb_remote_execution")
+bazel_dep(name = "com_github_buildbarn_bb_storage")
+bazel_dep(name = "com_github_buildbarn_go_xdr")
+bazel_dep(name = "gazelle", version = "0.37.0")
+bazel_dep(name = "googleapis", version = "0.0.0-20240326-1c8d509c5")
+bazel_dep(name = "protobuf", version = "27.1")
+bazel_dep(name = "rules_go", version = "0.48.1")
+bazel_dep(name = "toolchains_llvm", version = "1.0.0")
+
+git_override(
+    module_name = "com_github_buildbarn_bb_remote_execution",
+    commit = "58ffbe3c491b1c9b4bff1f43cb149898c35ada6c",
+    remote = "https://github.com/buildbarn/bb-remote-execution.git",
+)
+
+git_override(
+    module_name = "com_github_buildbarn_bb_storage",
+    commit = "3f5e30c53d7b52036eb758a63bc98e706f5d4d5c",
+    remote = "https://github.com/buildbarn/bb-storage.git",
+)
+
+git_override(
+    module_name = "com_github_buildbarn_go_xdr",
+    commit = "236788cf9e8948a1e8875c7dd243e2be180cdfd7",
+    remote = "https://github.com/buildbarn/go-xdr.git",
+)
+
+git_override(
+    module_name = "gazelle",
+    commit = "4d0129d7adae33e8e648d3624aff8fa8f93f375b",
+    patches = ["//:patches/gazelle/googleapis.diff"],
+    remote = "https://github.com/bazelbuild/bazel-gazelle.git",
+)
+
+git_override(
+    module_name = "rules_antlr",
+    commit = "89a29cca479363a5aee53e203719510bdc6be6ff",
+    patches = [
+        "//:patches/rules_antlr/antlr-4.10.diff",
+        "//:patches/rules_antlr/bzlmod.diff",
+    ],
+    remote = "https://github.com/marcohu/rules_antlr.git",
+)
+
+go_sdk = use_extension("@rules_go//go:extensions.bzl", "go_sdk")
+go_sdk.download(version = "1.23.0")
+
+go_deps = use_extension("@gazelle//:extensions.bzl", "go_deps")
+go_deps.from_file(go_mod = "//:go.mod")
+use_repo(go_deps, "cc_mvdan_gofumpt", "com_github_buildbarn_go_cdc", "com_github_stretchr_testify", "org_golang_google_genproto_googleapis_rpc", "org_golang_google_grpc", "org_golang_google_protobuf", "org_golang_x_exp", "org_golang_x_sync", "org_uber_go_mock")
+
+go_deps_dev = use_extension("@gazelle//:extensions.bzl", "go_deps", dev_dependency = True)
+go_deps_dev.gazelle_override(
+    build_file_generation = "on",
+    directives = [
+        "gazelle:go_grpc_compilers @io_bazel_rules_go//proto:go_proto,@io_bazel_rules_go//proto:go_grpc_v2",
+        "gazelle:resolve proto go build/bazel/semver/semver.proto //build/bazel/semver",
+        "gazelle:resolve proto go google/api/annotations.proto @org_golang_google_genproto_googleapis_api//annotations",
+        "gazelle:resolve proto go google/longrunning/operations.proto @com_google_cloud_go_longrunning//autogen/longrunningpb",
+        "gazelle:resolve proto go google/rpc/status.proto @org_golang_google_genproto_googleapis_rpc//status",
+        "gazelle:resolve proto google/api/annotations.proto @googleapis//google/api:annotations_proto",
+        "gazelle:resolve proto google/longrunning/operations.proto @googleapis//google/longrunning:operations_proto",
+        "gazelle:resolve proto google/rpc/status.proto @googleapis//google/rpc:status_proto",
+    ],
+    path = "github.com/bazelbuild/remote-apis",
+)
+go_deps_dev.module_override(
+    patches = [
+        "@com_github_buildbarn_bb_remote_execution//:patches/org_uber_go_mock/generics.diff",
+        "@com_github_buildbarn_bb_storage//:patches/org_uber_go_mock/mocks-for-funcs.diff",
+    ],
+    path = "go.uber.org/mock",
+)
+
+llvm = use_extension("@toolchains_llvm//toolchain/extensions:llvm.bzl", "llvm", dev_dependency = True)
+llvm.toolchain(
+    llvm_version = "17.0.6",
+)
+use_repo(llvm, "llvm_toolchain_llvm")

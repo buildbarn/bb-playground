@@ -1,0 +1,18 @@
+load("@gazelle//:def.bzl", "gazelle")
+
+# gazelle:go_grpc_compilers @rules_go//proto:go_proto,@rules_go//proto:go_grpc_v2
+# gazelle:go_naming_convention_external import
+# gazelle:prefix github.com/buildbarn/bb-playground
+# gazelle:resolve proto go google/rpc/status.proto @org_golang_google_genproto_googleapis_rpc//status
+# gazelle:resolve proto go pkg/proto/configuration/eviction/eviction.proto @com_github_buildbarn_bb_storage//pkg/proto/configuration/eviction
+# gazelle:resolve proto go pkg/proto/configuration/filesystem/virtual/virtual.proto @com_github_buildbarn_bb_remote_execution//pkg/proto/configuration/filesystem/virtual
+# gazelle:resolve proto go pkg/proto/configuration/global/global.proto @com_github_buildbarn_bb_storage//pkg/proto/configuration/global
+# gazelle:resolve proto go pkg/proto/configuration/grpc/grpc.proto @com_github_buildbarn_bb_storage//pkg/proto/configuration/grpc
+# gazelle:resolve proto google/rpc/status.proto @googleapis//google/rpc:status_proto
+# gazelle:resolve proto pkg/proto/configuration/eviction/eviction.proto @com_github_buildbarn_bb_storage//pkg/proto/configuration/eviction:eviction_proto
+# gazelle:resolve proto pkg/proto/configuration/filesystem/virtual/virtual.proto @com_github_buildbarn_bb_remote_execution//pkg/proto/configuration/filesystem/virtual:virtual_proto
+# gazelle:resolve proto pkg/proto/configuration/global/global.proto @com_github_buildbarn_bb_storage//pkg/proto/configuration/global:global_proto
+# gazelle:resolve proto pkg/proto/configuration/grpc/grpc.proto @com_github_buildbarn_bb_storage//pkg/proto/configuration/grpc:grpc_proto
+gazelle(
+    name = "gazelle",
+)

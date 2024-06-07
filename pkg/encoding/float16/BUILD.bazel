@@ -1,0 +1,17 @@
+load("@rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "float16",
+    srcs = ["float16.go"],
+    importpath = "github.com/buildbarn/bb-playground/pkg/encoding/float16",
+    visibility = ["//visibility:public"],
+)
+
+go_test(
+    name = "float16_test",
+    srcs = ["float16_test.go"],
+    deps = [
+        ":float16",
+        "@com_github_stretchr_testify//require",
+    ],
+)

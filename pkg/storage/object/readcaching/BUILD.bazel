@@ -1,0 +1,46 @@
+load("@rules_go//extras:gomock.bzl", "gomock")
+load("@rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "readcaching",
+    srcs = ["read_caching_downloader.go"],
+    importpath = "github.com/buildbarn/bb-playground/pkg/storage/object/readcaching",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//pkg/storage/object",
+        "@com_github_buildbarn_bb_storage//pkg/util",
+        "@org_golang_google_grpc//codes",
+        "@org_golang_google_grpc//status",
+    ],
+)
+
+go_test(
+    name = "readcaching_test",
+    srcs = [
+        "mocks_object_test.go",
+        "read_caching_downloader_test.go",
+    ],
+    embed = [":readcaching"],
+    deps = [
+        "//pkg/proto/storage/object",
+        "//pkg/storage/object",
+        "@com_github_buildbarn_bb_storage//pkg/testutil",
+        "@com_github_stretchr_testify//require",
+        "@org_golang_google_grpc//codes",
+        "@org_golang_google_grpc//status",
+        "@org_uber_go_mock//gomock",
+    ],
+)
+
+gomock(
+    name = "mocks_object",
+    out = "mocks_object_test.go",
+    interfaces = [
+        "DownloaderForTesting",
+        "StoreForTesting",
+    ],
+    library = "//pkg/storage/object",
+    mockgen_model_library = "@org_uber_go_mock//mockgen/model",
+    mockgen_tool = "@org_uber_go_mock//mockgen",
+    package = "readcaching_test",
+)

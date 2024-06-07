@@ -1,0 +1,39 @@
+load("@rules_go//go:def.bzl", "go_library")
+load("@rules_go//proto:def.bzl", "go_proto_library")
+load("@rules_proto//proto:defs.bzl", "proto_library")
+
+proto_library(
+    name = "mount_directory_proto",
+    srcs = ["mount_directory.proto"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//pkg/proto/configuration/encoding:encoding_proto",
+        "//pkg/proto/storage/object:object_proto",
+        "@com_github_buildbarn_bb_remote_execution//pkg/proto/configuration/filesystem/virtual:virtual_proto",
+        "@com_github_buildbarn_bb_storage//pkg/proto/configuration/eviction:eviction_proto",
+        "@com_github_buildbarn_bb_storage//pkg/proto/configuration/global:global_proto",
+        "@com_github_buildbarn_bb_storage//pkg/proto/configuration/grpc:grpc_proto",
+    ],
+)
+
+go_proto_library(
+    name = "mount_directory_go_proto",
+    importpath = "github.com/buildbarn/bb-playground/pkg/proto/configuration/mount_directory",
+    proto = ":mount_directory_proto",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//pkg/proto/configuration/encoding",
+        "//pkg/proto/storage/object",
+        "@com_github_buildbarn_bb_remote_execution//pkg/proto/configuration/filesystem/virtual",
+        "@com_github_buildbarn_bb_storage//pkg/proto/configuration/eviction",
+        "@com_github_buildbarn_bb_storage//pkg/proto/configuration/global",
+        "@com_github_buildbarn_bb_storage//pkg/proto/configuration/grpc",
+    ],
+)
+
+go_library(
+    name = "mount_directory",
+    embed = [":mount_directory_go_proto"],
+    importpath = "github.com/buildbarn/bb-playground/pkg/proto/configuration/mount_directory",
+    visibility = ["//visibility:public"],
+)

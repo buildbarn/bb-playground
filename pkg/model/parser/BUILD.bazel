@@ -1,0 +1,24 @@
+load("@rules_go//go:def.bzl", "go_library")
+
+go_library(
+    name = "parser",
+    srcs = [
+        "caching_parsed_object_reader.go",
+        "message_object_parser.go",
+        "object_parser.go",
+        "parsed_object_reader.go",
+        "raw_object_parser.go",
+        "storage_backed_parsed_object_reader.go",
+    ],
+    importpath = "github.com/buildbarn/bb-playground/pkg/model/parser",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//pkg/encoding",
+        "//pkg/storage/object",
+        "@com_github_buildbarn_bb_storage//pkg/eviction",
+        "@com_github_buildbarn_bb_storage//pkg/util",
+        "@org_golang_google_grpc//codes",
+        "@org_golang_google_grpc//status",
+        "@org_golang_google_protobuf//proto",
+    ],
+)

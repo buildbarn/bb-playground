@@ -1,0 +1,32 @@
+load("@rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "core",
+    srcs = [
+        "get_index_from_reference_message.go",
+        "message_with_references.go",
+        "reference_message_patcher.go",
+    ],
+    importpath = "github.com/buildbarn/bb-playground/pkg/model/core",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//pkg/ds",
+        "//pkg/proto/model/core",
+        "//pkg/storage/object",
+        "@org_golang_google_grpc//codes",
+        "@org_golang_google_grpc//status",
+        "@org_golang_google_protobuf//proto",
+    ],
+)
+
+go_test(
+    name = "core_test",
+    srcs = ["reference_message_patcher_test.go"],
+    deps = [
+        ":core",
+        "//pkg/proto/model/core",
+        "//pkg/storage/object",
+        "@com_github_buildbarn_bb_storage//pkg/testutil",
+        "@com_github_stretchr_testify//require",
+    ],
+)

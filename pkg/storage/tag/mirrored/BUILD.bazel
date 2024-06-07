@@ -1,0 +1,57 @@
+load("@rules_go//extras:gomock.bzl", "gomock")
+load("@rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "mirrored",
+    srcs = [
+        "mirrored_resolver.go",
+        "mirrored_updater.go",
+    ],
+    importpath = "github.com/buildbarn/bb-playground/pkg/storage/tag/mirrored",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//pkg/storage/object",
+        "//pkg/storage/object/mirrored",
+        "//pkg/storage/tag",
+        "@com_github_buildbarn_bb_storage//pkg/util",
+        "@org_golang_google_grpc//codes",
+        "@org_golang_google_grpc//status",
+        "@org_golang_google_protobuf//types/known/anypb",
+        "@org_golang_x_sync//errgroup",
+    ],
+)
+
+go_test(
+    name = "mirrored_test",
+    srcs = [
+        "mirrored_resolver_test.go",
+        "mirrored_updater_test.go",
+        "mocks_tag_test.go",
+    ],
+    embed = [":mirrored"],
+    deps = [
+        "//pkg/proto/storage/object",
+        "//pkg/storage/object",
+        "//pkg/storage/object/mirrored",
+        "@com_github_buildbarn_bb_storage//pkg/testutil",
+        "@com_github_stretchr_testify//require",
+        "@org_golang_google_grpc//codes",
+        "@org_golang_google_grpc//status",
+        "@org_golang_google_protobuf//types/known/anypb",
+        "@org_golang_google_protobuf//types/known/emptypb",
+        "@org_uber_go_mock//gomock",
+    ],
+)
+
+gomock(
+    name = "mocks_tag",
+    out = "mocks_tag_test.go",
+    interfaces = [
+        "UpdaterForTesting",
+        "ResolverForTesting",
+    ],
+    library = "//pkg/storage/tag",
+    mockgen_model_library = "@org_uber_go_mock//mockgen/model",
+    mockgen_tool = "@org_uber_go_mock//mockgen",
+    package = "mirrored_test",
+)

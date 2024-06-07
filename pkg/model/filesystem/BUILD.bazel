@@ -1,0 +1,56 @@
+load("@rules_go//extras:gomock.bzl", "gomock")
+load("@rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "filesystem",
+    srcs = [
+        "directory_cluster_object_parser.go",
+        "file_contents_iterator.go",
+        "file_contents_list_object_parser.go",
+    ],
+    importpath = "github.com/buildbarn/bb-playground/pkg/model/filesystem",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//pkg/model/core",
+        "//pkg/model/parser",
+        "//pkg/proto/model/filesystem",
+        "//pkg/storage/object",
+        "@com_github_buildbarn_bb_storage//pkg/filesystem/path",
+        "@com_github_buildbarn_bb_storage//pkg/util",
+        "@org_golang_google_grpc//codes",
+        "@org_golang_google_grpc//status",
+        "@org_golang_google_protobuf//proto",
+    ],
+)
+
+go_test(
+    name = "filesystem_test",
+    srcs = [
+        "directory_cluster_object_parser_test.go",
+        "file_contents_iterator_test.go",
+        "file_contents_list_object_parser_test.go",
+        "mocks_filesystem_test.go",
+    ],
+    embed = [":filesystem"],
+    deps = [
+        "//pkg/proto/model/core",
+        "//pkg/proto/model/filesystem",
+        "//pkg/storage/object",
+        "@com_github_buildbarn_bb_storage//pkg/testutil",
+        "@com_github_stretchr_testify//require",
+        "@org_golang_google_grpc//codes",
+        "@org_golang_google_grpc//status",
+        "@org_golang_google_protobuf//proto",
+        "@org_uber_go_mock//gomock",
+    ],
+)
+
+gomock(
+    name = "mocks_filesystem",
+    out = "mocks_filesystem_test.go",
+    interfaces = ["LeavesParsedObjectReaderForTesting"],
+    library = "//pkg/model/filesystem",
+    mockgen_model_library = "@org_uber_go_mock//mockgen/model",
+    mockgen_tool = "@org_uber_go_mock//mockgen",
+    package = "filesystem_test",
+)

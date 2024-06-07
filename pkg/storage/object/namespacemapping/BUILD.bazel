@@ -1,0 +1,13 @@
+load("@rules_go//go:def.bzl", "go_library")
+
+go_library(
+    name = "namespacemapping",
+    srcs = [
+        "namespace_adding_downloader.go",
+        "namespace_removing_downloader.go",
+        "namespace_removing_uploader.go",
+    ],
+    importpath = "github.com/buildbarn/bb-playground/pkg/storage/object/namespacemapping",
+    visibility = ["//visibility:public"],
+    deps = ["//pkg/storage/object"],
+)

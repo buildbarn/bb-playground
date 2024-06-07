@@ -1,0 +1,56 @@
+load("@rules_go//extras:gomock.bzl", "gomock")
+load("@rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "grpc",
+    srcs = [
+        "grpc_resolver.go",
+        "grpc_updater.go",
+    ],
+    importpath = "github.com/buildbarn/bb-playground/pkg/storage/tag/grpc",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//pkg/proto/storage/tag",
+        "//pkg/storage/object",
+        "//pkg/storage/tag",
+        "@com_github_buildbarn_bb_storage//pkg/util",
+        "@org_golang_google_grpc//codes",
+        "@org_golang_google_protobuf//types/known/anypb",
+    ],
+)
+
+go_test(
+    name = "grpc_test",
+    srcs = [
+        "grpc_resolver_test.go",
+        "grpc_updater_test.go",
+        "mocks_tag_test.go",
+    ],
+    embed = [":grpc"],
+    deps = [
+        "//pkg/proto/storage/object",
+        "//pkg/proto/storage/tag",
+        "//pkg/storage/object",
+        "@com_github_buildbarn_bb_storage//pkg/testutil",
+        "@com_github_stretchr_testify//require",
+        "@org_golang_google_grpc//:grpc",  # keep
+        "@org_golang_google_grpc//codes",
+        "@org_golang_google_grpc//status",
+        "@org_golang_google_protobuf//types/known/anypb",
+        "@org_golang_google_protobuf//types/known/emptypb",
+        "@org_uber_go_mock//gomock",
+    ],
+)
+
+gomock(
+    name = "mocks_tag",
+    out = "mocks_tag_test.go",
+    interfaces = [
+        "ResolverClient",
+        "UpdaterClient",
+    ],
+    library = "//pkg/proto/storage/tag",
+    mockgen_model_library = "@org_uber_go_mock//mockgen/model",
+    mockgen_tool = "@org_uber_go_mock//mockgen",
+    package = "grpc_test",
+)

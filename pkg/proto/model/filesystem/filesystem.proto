@@ -1,0 +1,102 @@
+syntax = "proto3";
+
+package buildbarn.playground.model.filesystem;
+
+import "pkg/proto/model/core/core.proto";
+
+option go_package = "github.com/buildbarn/bb-playground/pkg/proto/model/filesystem";
+
+message Leaves {
+  // The files in the directory. Files MUST be stored in alphabetical
+  // order.
+  repeated FileNode files = 1;
+
+  // The symbolic links in the directory. Symbolic links MUST be
+  // stored in alphabetical order.
+  repeated SymlinkNode symlinks = 2;
+}
+
+message FileNode {
+  // The name of the file.
+  string name = 1;
+
+  // The contents of the file. If the file is empty (i.e., zero bytes in
+  // size), this field is left unset.
+  FileContents contents = 2;
+
+  // If true, the file is executable. This corresponds to the +x
+  // permission bit present on UNIX file systems.
+  bool is_executable = 3;
+}
+
+message SymlinkNode {
+  // The name of the symbolic link.
+  string name = 1;
+
+  // The target of the symbolic link. The path separator used is a
+  // forward slash. The target path can be relative to the parent
+  // directory of the symbolic link, or it can be an absolute path
+  // starting with a forward slash.
+  string target = 2;
+}
+
+message Directory {
+  oneof leaves {
+    // The leaves are large enough, that it could not be inlined into
+    // the current directory.
+    buildbarn.playground.model.core.Reference leaves_external = 1;
+
+    // The leaves are small enough, that its contents have been inlined.
+    Leaves leaves_inline = 2;
+  }
+
+  // The subdirectories in the directory.
+  repeated DirectoryNode directories = 3;
+}
+
+message DirectoryNode {
+  // The name of the subdirectory.
+  string name = 1;
+
+  oneof contents {
+    // The subdirectory is large enough, that it could not be inlined
+    // into the current directory.
+    DirectoryReference contents_external = 2;
+
+    // The subdirectory is small enough, that its contents have been
+    // inlined.
+    Directory contents_inline = 3;
+  }
+}
+
+message DirectoryReference {
+  // Reference to an object containing a Directory message.
+  buildbarn.playground.model.core.Reference reference = 1;
+
+  // The number of subdirectories present in the directory. This value
+  // needs to be provided to make the link count of directories accurate
+  // when exposed through a virtual file system.
+  uint32 directories_count = 2;
+}
+
+message FileContents {
+  // Reference to the data contained in the file.
+  //
+  // If the reference points to an object of height zero, the payload
+  // contains the literal contents of the file.
+  //
+  // If the reference points to an object with a height greater than
+  // zero, the payload contains a message of type FileContentsList. The
+  // file's contents can be reobtained by concatenating the parts
+  // referenced by this message.
+  buildbarn.playground.model.core.Reference reference = 1;
+
+  // The total size of all chunks of data in this part of the file.
+  uint64 total_size_bytes = 2;
+}
+
+message FileContentsList {
+  // Parts of data that need to be concatenated to form the file's
+  // contents.
+  repeated FileContents parts = 1;
+}

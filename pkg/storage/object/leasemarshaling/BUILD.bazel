@@ -1,0 +1,12 @@
+load("@rules_go//go:def.bzl", "go_library")
+
+go_library(
+    name = "leasemarshaling",
+    srcs = ["lease_marshaling_uploader.go"],
+    importpath = "github.com/buildbarn/bb-playground/pkg/storage/object/leasemarshaling",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//pkg/storage/object",
+        "@com_github_buildbarn_bb_storage//pkg/util",
+    ],
+)

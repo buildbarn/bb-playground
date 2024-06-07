@@ -1,0 +1,28 @@
+syntax = "proto3";
+
+package buildbarn.playground.configuration.upload_directory;
+
+import "pkg/proto/configuration/grpc/grpc.proto";
+import "pkg/proto/storage/object/object.proto";
+
+option go_package = "github.com/buildbarn/bb-playground/pkg/proto/configuration/upload_directory";
+
+message ApplicationConfiguration {
+  // The path of the directory to upload.
+  string path = 1;
+
+  // The gRPC client that is used to connect to the storage server where
+  // the directory contents need to be stored.
+  buildbarn.configuration.grpc.ClientConfiguration grpc_client = 2;
+
+  // The namespace on the storage server where the directory contents
+  // need to be stored.
+  buildbarn.playground.storage.object.Namespace namespace = 3;
+
+  // The limits to announce to the storage server to constrain the
+  // parallelism that is used to traverse the directory.
+  buildbarn.playground.storage.object.Limit maximum_unfinalized_parents_limit = 4;
+
+  // AES key that is used to encrypt file and directory contents.
+  bytes encryption_key = 5;
+}

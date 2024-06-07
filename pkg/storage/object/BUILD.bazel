@@ -1,0 +1,63 @@
+load("@rules_go//extras:gomock.bzl", "gomock")
+load("@rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "object",
+    srcs = [
+        "contents.go",
+        "downloader.go",
+        "downloader_server.go",
+        "global_reference.go",
+        "instance_name.go",
+        "limit.go",
+        "local_reference.go",
+        "namespace.go",
+        "outgoing_references.go",
+        "reference_format.go",
+        "store.go",
+        "uploader.go",
+        "uploader_server.go",
+    ],
+    importpath = "github.com/buildbarn/bb-playground/pkg/storage/object",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//pkg/encoding/float16",
+        "//pkg/proto/storage/object",
+        "@com_github_buildbarn_bb_storage//pkg/util",
+        "@org_golang_google_grpc//codes",
+        "@org_golang_google_grpc//status",
+    ],
+)
+
+go_test(
+    name = "object_test",
+    srcs = [
+        "downloader_server_test.go",
+        "local_reference_test.go",
+        "mocks_object_test.go",
+        "reference_format_test.go",
+        "uploader_server_test.go",
+    ],
+    embed = [":object"],
+    deps = [
+        "//pkg/proto/storage/object",
+        "@com_github_buildbarn_bb_storage//pkg/testutil",
+        "@com_github_stretchr_testify//require",
+        "@org_golang_google_grpc//codes",
+        "@org_golang_google_grpc//status",
+        "@org_uber_go_mock//gomock",
+    ],
+)
+
+gomock(
+    name = "mocks_object",
+    out = "mocks_object_test.go",
+    interfaces = [
+        "DownloaderForTesting",
+        "UploaderForTestingBytes",
+    ],
+    library = "//pkg/storage/object",
+    mockgen_model_library = "@org_uber_go_mock//mockgen/model",
+    mockgen_tool = "@org_uber_go_mock//mockgen",
+    package = "object_test",
+)

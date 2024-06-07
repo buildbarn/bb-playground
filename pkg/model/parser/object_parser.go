@@ -1,0 +1,11 @@
+package parser
+
+import (
+	"context"
+
+	"github.com/buildbarn/bb-playground/pkg/storage/object"
+)
+
+type ObjectParser[TReference, TParsedObject any] interface {
+	ParseObject(ctx context.Context, reference TReference, outgoingReferences object.OutgoingReferences, data []byte) (TParsedObject, int, error)
+}

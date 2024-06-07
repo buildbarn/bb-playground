@@ -1,0 +1,22 @@
+load("@rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "sharded",
+    srcs = [
+        "picker.go",
+        "sharded_downloader.go",
+        "sharded_uploader.go",
+    ],
+    importpath = "github.com/buildbarn/bb-playground/pkg/storage/object/sharded",
+    visibility = ["//visibility:public"],
+    deps = ["//pkg/storage/object"],
+)
+
+go_test(
+    name = "sharded_test",
+    srcs = ["picker_test.go"],
+    deps = [
+        ":sharded",
+        "@com_github_stretchr_testify//assert",
+    ],
+)

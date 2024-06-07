@@ -1,0 +1,11 @@
+sh_binary(
+    name = "demo",
+    srcs = ["demo.sh"],
+    data = [
+        ":playground_storage_frontend.jsonnet",
+        ":playground_storage_shard.jsonnet",
+        "//cmd/playground_storage_frontend",
+        "//cmd/playground_storage_shard",
+    ],
+    deps = ["@bazel_tools//tools/bash/runfiles"],
+)

@@ -1,0 +1,18 @@
+load("@rules_go//go:def.bzl", "go_library")
+
+go_library(
+    name = "local",
+    srcs = [
+        "local_lease.go",
+        "local_store.go",
+    ],
+    importpath = "github.com/buildbarn/bb-playground/pkg/storage/object/local",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//pkg/encoding/varint",
+        "//pkg/storage/object",
+        "//pkg/storage/object/leasemarshaling",
+        "@org_golang_google_grpc//codes",
+        "@org_golang_google_grpc//status",
+    ],
+)

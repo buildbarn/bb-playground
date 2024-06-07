@@ -1,0 +1,55 @@
+load("@rules_go//extras:gomock.bzl", "gomock")
+load("@rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "leasemarshaling",
+    srcs = ["lease_marshaling_updater.go"],
+    importpath = "github.com/buildbarn/bb-playground/pkg/storage/tag/leasemarshaling",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//pkg/storage/object/leasemarshaling",
+        "//pkg/storage/tag",
+        "@com_github_buildbarn_bb_storage//pkg/util",
+        "@org_golang_google_protobuf//types/known/anypb",
+    ],
+)
+
+go_test(
+    name = "leasemarshaling_test",
+    srcs = [
+        "lease_marshaling_updater_test.go",
+        "mocks_leasemarshaling_test.go",
+        "mocks_tag_test.go",
+    ],
+    embed = [":leasemarshaling"],
+    deps = [
+        "//pkg/storage/object",
+        "@com_github_buildbarn_bb_storage//pkg/testutil",
+        "@com_github_stretchr_testify//require",
+        "@org_golang_google_grpc//codes",
+        "@org_golang_google_grpc//status",
+        "@org_golang_google_protobuf//types/known/anypb",
+        "@org_golang_google_protobuf//types/known/emptypb",
+        "@org_uber_go_mock//gomock",
+    ],
+)
+
+gomock(
+    name = "mocks_tag",
+    out = "mocks_tag_test.go",
+    interfaces = ["UpdaterForTesting"],
+    library = "//pkg/storage/tag",
+    mockgen_model_library = "@org_uber_go_mock//mockgen/model",
+    mockgen_tool = "@org_uber_go_mock//mockgen",
+    package = "leasemarshaling_test",
+)
+
+gomock(
+    name = "mocks_leasemarshaling",
+    out = "mocks_leasemarshaling_test.go",
+    interfaces = ["LeaseMarshalerForTesting"],
+    library = "//pkg/storage/object/leasemarshaling",
+    mockgen_model_library = "@org_uber_go_mock//mockgen/model",
+    mockgen_tool = "@org_uber_go_mock//mockgen",
+    package = "leasemarshaling_test",
+)

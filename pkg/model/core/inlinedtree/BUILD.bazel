@@ -1,0 +1,60 @@
+load("@rules_go//extras:gomock.bzl", "gomock")
+load("@rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "inlinedtree",
+    srcs = ["build.go"],
+    importpath = "github.com/buildbarn/bb-playground/pkg/model/core/inlinedtree",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//pkg/ds",
+        "//pkg/encoding",
+        "//pkg/model/core",
+        "//pkg/proto/model/filesystem",
+        "//pkg/storage/object",
+        "@com_github_buildbarn_bb_storage//pkg/util",
+        "@org_golang_google_grpc//codes",
+        "@org_golang_google_protobuf//proto",
+    ],
+)
+
+go_test(
+    name = "inlinedtree_test",
+    srcs = [
+        "build_test.go",
+        "mocks_encoding_test.go",
+        "mocks_inlinedtree_test.go",
+    ],
+    embed = [":inlinedtree"],
+    deps = [
+        "//pkg/model/core",
+        "//pkg/proto/model/core",
+        "//pkg/proto/model/filesystem",
+        "//pkg/proto/storage/object",
+        "//pkg/storage/object",
+        "@com_github_buildbarn_bb_storage//pkg/testutil",
+        "@com_github_stretchr_testify//require",
+        "@org_golang_google_protobuf//proto",
+        "@org_uber_go_mock//gomock",
+    ],
+)
+
+gomock(
+    name = "mocks_encoding",
+    out = "mocks_encoding_test.go",
+    interfaces = ["BinaryEncoder"],
+    library = "//pkg/encoding",
+    mockgen_model_library = "@org_uber_go_mock//mockgen/model",
+    mockgen_tool = "@org_uber_go_mock//mockgen",
+    package = "inlinedtree_test",
+)
+
+gomock(
+    name = "mocks_inlinedtree",
+    out = "mocks_inlinedtree_test.go",
+    interfaces = ["ParentAppenderForTesting"],
+    library = "//pkg/model/core/inlinedtree",
+    mockgen_model_library = "@org_uber_go_mock//mockgen/model",
+    mockgen_tool = "@org_uber_go_mock//mockgen",
+    package = "inlinedtree_test",
+)

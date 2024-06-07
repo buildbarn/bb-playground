@@ -1,0 +1,199 @@
+syntax = "proto3";
+
+package buildbarn.playground.storage.object;
+
+option go_package = "github.com/buildbarn/bb-playground/pkg/proto/storage/object";
+
+// Object Store is a content addressed data store that is capable of
+// storing binary objects that are between 1 byte and 2 MiB in size. The
+// 2 MiB limit is chosen specifically because gRPC has a default maximum
+// message size limit of 4 MiB. This means that any object can be
+// transmitted via gRPC using a single message.
+//
+// To store data sets that are larger than 2 MiB in size (e.g., large
+// files or directory hierarchies), objects may contain outgoing
+// references to other objects. Due to references containing
+// cryptographic hashes, they cannot be cyclic. Objects therefore
+// collectively form a forest of Directed Acyclic Graphs (DAGs). In
+// order to make Object Store aware of these references while remaining
+// oblivious of an object's actual data format, outgoing references are
+// stored at the beginning of the object, as shown in the diagram below:
+//
+// <---------------------------- object -------------------------------->
+// +-------------+-------------+-----+---------------+------------------+
+// | reference 0 | reference 1 | ... | reference n-1 | freeform payload |
+// +-------------+-------------+-----+---------------+------------------+
+//
+// Outgoing references are stored consecutively without any framing or
+// padding, and MUST use the same format as the reference of the object
+// itself. For a given object, outgoing references MUST be unique and
+// sorted by their binary representation. This is done to ensure that
+// the graph structure of objects reveals less information about the
+// data being stored, which is important if payloads are encrypted.
+
+service Downloader {
+  // Download the contents of a single object from storage by providing
+  // a reference.
+  rpc DownloadObject(DownloadObjectRequest) returns (DownloadObjectResponse);
+}
+
+service Uploader {
+  // Upload the contents of a single object from storage and/or attach
+  // leases of outgoing references to it.
+  rpc UploadObject(UploadObjectRequest) returns (UploadObjectResponse);
+}
+
+message ReferenceFormat {
+  enum Value {
+    // Invalid value.
+    UNKNOWN = 0;
+
+    // References that are 40 bytes (320 bits) in size, containing fields
+    // stored in the order listed below:
+    //
+    // - hash: SHA-256 hash of the object, stored as 32 bytes of binary
+    //   data.
+    //
+    // - size_bytes: Size of the object in bytes, stored as a 24-bit
+    //   little endian integer.
+    //
+    // - height: Height of the object, stored as an 8-bit integer. The
+    //   height is zero iff the degree is zero as well.
+    //
+    // - degree: Degree of the object (i.e., the number of outgoing
+    //   references), stored as a 16-bit little endian integer.
+    //
+    // - maximum_total_parents_size_bytes: Maximum total size of all
+    //   parent objects in any path in the tree rooted at the object,
+    //   excluding the root object itself. The total size is stored as a
+    //   16-bit little endian floating point value, having the following
+    //   two fields:
+    //
+    //   - An exponent that is stored in the top 5 bits.
+    //   - A significand that is stored in the bottom 11 bits.
+    //
+    //   When the exponent is zero, the value is a subnormal number.
+    //   When the exponent is non-zero, the value is a normal number.
+    //   Unlike IEEE 754 floating point numbers, no exponent is reserved
+    //   to indicate infinity, nor is there a sign bit present.
+    //
+    //   The exponent bias is chosen such that the smallest subnormal
+    //   number is equal to integer value 1. The smallest normal number
+    //   is thus equal to integer value 2048, while the largest normal
+    //   number is equal to 0xfff << 30 == 4396972769280.
+    //
+    //   This value MUST be computed by adding the size_bytes and
+    //   maximum_total_parents_size_bytes fields of each outgoing
+    //   reference to a parent object without any loss of precision,
+    //   selecting the largest value, and converting the result back to
+    //   a floating point value rounding upwards.
+    SHA256_V1 = 1;
+  }
+}
+
+message Namespace {
+  // The instance of the execution system to operate against. A server
+  // may support multiple instances of the execution system (with their
+  // own workers, storage, caches, etc.). The server MAY require use of
+  // this field to select between them in an implementation- defined
+  // fashion, otherwise it can be omitted.
+  string instance_name = 1;
+
+  // The format that is used to encode references.
+  ReferenceFormat.Value reference_format = 2;
+}
+
+message Contents {
+  // The data contained within the object.
+  bytes data = 1;
+}
+
+message DownloadObjectRequest {
+  // The namespace from which to download the object.
+  buildbarn.playground.storage.object.Namespace namespace = 1;
+
+  // Reference of the object to download.
+  bytes reference = 2;
+}
+
+message DownloadObjectResponse {
+  // The contents of the object that was requested.
+  buildbarn.playground.storage.object.Contents contents = 1;
+}
+
+message UploadObjectRequest {
+  // The namespace to which to upload the object.
+  buildbarn.playground.storage.object.Namespace namespace = 1;
+
+  // Reference of the object to upload.
+  bytes reference = 2;
+
+  // The contents of the object. A client may leave this field unset if
+  // it only wants to update the leases of the outgoing references of
+  // the object. In that case the server may return NOT_FOUND errors if
+  // the provided object does not already exist.
+  Contents contents = 3;
+
+  // Leases of objects associated with each of the outgoing references.
+  // The size of the list MUST be equal to the degree of the object.
+  // However, if the caller is only interested in obtaining the lease of
+  // the object itself, it MAY leave this field unset.
+  //
+  // If elements in this list are empty, the client indicates that it
+  // does not want to update the lease associated with the outgoing
+  // reference. If the size of the request exceeds the maximum supported
+  // by the gRPC server, the client may be forced to call UploadObject()
+  // repeatedly, providing leases of outgoing references in batches.
+  repeated bytes outgoing_references_leases = 4;
+
+  // If set, it indicates that the client is not in the possession of
+  // the contents of the object. If the server returns an 'incomplete'
+  // response, it MUST also return the contents. That way the client can
+  // attempt to obtain leases for the outgoing references.
+  //
+  // Clients MUST NOT set this field if the provided reference has a
+  // degree of zero, or if UploadObjectRequest.contents is set.
+  bool want_contents_if_incomplete = 5;
+}
+
+message UploadObjectResponse {
+  message Complete {
+    // The lease of the object that was uploaded.
+    bytes lease = 1;
+  }
+
+  message Incomplete {
+    // The contents of the object. This field is only set if
+    // UploadObjectRequest.want_contents_if_incomplete is set.
+    Contents contents = 1;
+
+    // A non-empty list of indices of outgoing references of the object
+    // for which leases are either not present or expired. The caller is
+    // expected to call UploadObject() again, providing leases for these
+    // outgoing references.
+    //
+    // The indices MUST be unique and returned in sorted order.
+    repeated uint32 want_outgoing_references_leases = 2;
+  }
+
+  oneof type {
+    // The contents of the object are present, and leases of all
+    // outgoing references are valid.
+    Complete complete = 1;
+
+    // The contents of the object are present, but the leases of one or
+    // more outgoing references are either not present or expired.
+    //
+    // This field can only be set if the provided reference has a degree
+    // greater than zero.
+    Incomplete incomplete = 2;
+  }
+}
+
+message Limit {
+  // The number of objects.
+  uint32 count = 1;
+
+  // The combined size of all objects.
+  uint64 size_bytes = 2;
+}

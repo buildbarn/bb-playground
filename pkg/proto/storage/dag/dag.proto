@@ -1,0 +1,208 @@
+syntax = "proto3";
+
+package buildbarn.playground.storage.dag;
+
+import "google/protobuf/any.proto";
+import "google/rpc/status.proto";
+import "pkg/proto/storage/object/object.proto";
+
+option go_package = "github.com/buildbarn/bb-playground/pkg/proto/storage/dag";
+
+// Uploader service that wraps buildbarn.playground.storage.object.Uploader and
+// buildbarn.playground.storage.tag.Updater into a more streamlined API. It's
+// recommended that most clients are built on top of this API, as it completely
+// abstracts away concepts such as lease expiration. It also reduces the
+// latency induced by network roundtrips, assuming the server is run close to
+// the Object & Tag Store servers.
+//
+// For reading objects and tags, buildbarn.playground.storage.object.Downloader
+// and buildbarn.playground.storage.tag.Resolver continue to be the recommended
+// APIs.
+service Uploader {
+  // Upload DAGs of objects to the server, only transferring objects
+  // that are not present remotely.
+  //
+  // It is common for clients to upload multiple DAGs to the server that
+  // have large amounts of overlap. For example, a build client could
+  // upload many input roots of compilation actions that use the same
+  // toolchain. Because of that, it is recommended that all uploads
+  // performed by a single client are part of the same gRPC call. This
+  // permits the server to collapse uploads of identical parts of DAGs.
+  //
+  // The UploadDagsRequest and UploadDagsResponse messages contain
+  // nested request/response messages. The sequence in which clients and
+  // servers issue these is as follows:
+  //
+  // - The client sends an UploadDagsRequest.Handshake to the client.
+  // - In response, the server sends an UploadDagsResponse.Handshake
+  //   back to the client.
+  //
+  // From that point on, the client may in parallel initiate multiple
+  // instances of the following flows:
+  //
+  // - The client sends an UploadDagsRequest.InitiateDag to inform the
+  //   server that it wants to upload a DAG with a given root object.
+  // - The server sends an UploadDagsResponse.RequestObject to indicate
+  //   whether or not it wants to receive the DAG's root object.
+  //   - If so, the client sends the contents of the object via
+  //     UploadDagsRequest.ProvideObjectContents.
+  //   - For each of the outgoing references of the root object, the
+  //     server sends UploadDagsResponse.RequestObject to indicate
+  //     whether or not it wants to receive the child objects.
+  //   - ...
+  // - Once the objects within a DAG for which the server can issue
+  //   UploadDagsResponse.RequestObject have exhausted, the server sends
+  //   UploadDagsResponse.FinalizeDag to report whether the DAG has been
+  //   persisted successfully.
+  //
+  // In order to correlated messages UploadDagsRequest.ProvideObjectContents,
+  // UploadDagsResponse.RequestObject, and UploadDagsResponse.FinalizeDag
+  // against previously transmitted messages, UploadDags() uses the
+  // concept of reference indices. These indices are sequentially
+  // assigned to references in the order in which they occur in
+  // UploadDagsRequest.InitiateDag and UploadDagsRequest.ProvideObjectContents
+  // messages. The reference that is part of the very first
+  // UploadDagsRequest.InitiateDag message will always have reference
+  // index zero.
+  rpc UploadDags(stream UploadDagsRequest) returns (stream UploadDagsResponse);
+}
+
+message UploadDagsRequest {
+  message Handshake {
+    // The namespace where to store DAGs.
+    buildbarn.playground.storage.object.Namespace namespace = 1;
+
+    // The maximum permitted number of parent objects and their combined
+    // size for which the server has one or more child objects for which
+    // it still needs to issue RequestObject.
+    //
+    // This option can be used by clients to limit the breadth at which
+    // DAGs to be uploaded are traversed by the server. Increasing
+    // breadth increases parallelism, but does lead to higher resource
+    // utilization. If all parent objects of the DAGs already reside in
+    // the client's memory, the client can leave this field unset,
+    // thereby permitting the server to traverse the DAGs at an
+    // arbitrary breadth. If the DAGs to be uploaded need to be loaded
+    // from external storage, the client SHOULD set this to a value that
+    // prevents the server from exhausting memory on the client.
+    //
+    // The server MUST ensure that this limit is not exceeded by letting
+    // the traversal order respect the references' 'height',
+    // 'size_bytes' and 'maximum_total_parents_size_bytes' fields.
+    // Conversely, the client SHOULD validate that the traversal order
+    // used by the server respects this invariant.
+    buildbarn.playground.storage.object.Limit maximum_unfinalized_parents_limit = 2;
+  }
+
+  message InitiateDag {
+    // Reference of the root of the DAG to upload. This reference is
+    // assigned to the next available reference index. If this is the
+    // first InitiateDag message observed as part of this call to
+    // UploadDags(), reference index zero is used.
+    bytes root_reference = 1;
+
+    // If set, assign a tag to the root of the DAG, so that it can
+    // subsequently be resolved using
+    // buildbarn.playground.storage.object.tag.Resolver.ResolveTag().
+    // This can for example be used to cache the results of a build
+    // action, allowing other clients to look them up by action.
+    google.protobuf.Any root_tag = 2;
+  }
+
+  message ProvideObjectContents {
+    // The index of the reference for which the object's contents are
+    // provided.
+    uint64 lowest_reference_index = 1;
+
+    // The contents of the object that was requested.
+    //
+    // When the provides contents contain one or more outgoing
+    // references, they are assigned to consecutively numbered reference
+    // indices [n, n+m), where n corresponds to the next available
+    // reference index and m to the number of outgoing references of the
+    // object.
+    //
+    // The client MAY leave this field empty if it wants to cancel
+    // uploading DAGs containing the object. In that case no new
+    // reference indices are assigned to any of the children of the
+    // object. The server SHOULD respond with FinalizeDag messages for
+    // each of the DAGs containing the object with
+    // UploadDagsResponse.FinalizeDag.status.code set to CANCELLED.
+    buildbarn.playground.storage.object.Contents object_contents = 2;
+  }
+
+  oneof type {
+    // The first message to be sent by the client.
+    Handshake handshake = 1;
+
+    // Start the transmission of a new DAG.
+    InitiateDag initiate_dag = 2;
+
+    // Provide the contents of an object to the server. This message is
+    // sent in response to the server sending a RequestObject message
+    // where UploadDagsResponse.RequestObject.request_contents is true.
+    ProvideObjectContents provide_object_contents = 3;
+  }
+}
+
+message UploadDagsResponse {
+  message Handshake {
+    // The maximum number of times the client is permitted to send
+    // UploadDagsRequest.InitiateDag requests without receiving
+    // corresponding UploadDagsResponse.FinalizeDag responses from the
+    // server to indicate that uploading of a DAG has completed.
+    uint32 maximum_unfinalized_dags_count = 1;
+  }
+
+  message RequestObject {
+    // The reference index of the object to request.
+    //
+    // Because of overlap between parts of DAGs, multiple reference
+    // indices may refer to the same object. In that case, this field
+    // MUST be set to the lowest index that is known to the server which
+    // has not yet been requested.
+    uint64 lowest_reference_index = 1;
+
+    // The number of additional reference indices that the server knows
+    // refer to the same object. This can be used by the server to
+    // collapse uploads of identical parts of DAGs. For these parts the
+    // server no longer needs to send additional
+    // UploadDagsResponse.RequestObject messages.
+    uint32 additional_reference_indices = 2;
+
+    // Whether the server wants the client to upload the object's
+    // contents. This can be set to false if the server is already in
+    // possession of the object and all of transitive children. When set
+    // to true, the client MUST respond by sending a
+    // UploadDagsRequest.ProvideObjectContents message with
+    // UploadDagsRequest.ProvideObjectContents.lowest_reference_index
+    // set to the same value as
+    // UploadDagsResponse.RequestObject.lowest_reference_index.
+    bool request_contents = 3;
+  }
+
+  message FinalizeDag {
+    // Index of the reference of the root of the DAG to finalize.
+    uint64 root_reference_index = 1;
+
+    // Status that indicates whether writing all objects contained in
+    // the DAG and creating the provided tag succeeded.
+    google.rpc.Status status = 2;
+  }
+
+  oneof type {
+    // The first message to be sent by the server in response to the
+    // handshake message sent by the client.
+    Handshake handshake = 1;
+
+    // Instruct the client to either upload an object, or to discard it
+    // due to it already being present on the server.
+    RequestObject request_object = 2;
+
+    // Inform the client that it will no longer send any
+    // UploadDagsResponse.RequestObject messages pertaining to a given
+    // DAG, and report whether writing the provided DAG and tag
+    // succeeded.
+    FinalizeDag finalize_dag = 3;
+  }
+}

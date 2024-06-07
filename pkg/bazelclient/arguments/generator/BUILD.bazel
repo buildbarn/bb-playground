@@ -1,0 +1,18 @@
+load("@rules_go//go:def.bzl", "go_binary", "go_library")
+
+go_library(
+    name = "generator_lib",
+    srcs = [
+        "definitions.go",
+        "flag_type.go",
+        "main.go",
+    ],
+    importpath = "github.com/buildbarn/bb-playground/pkg/bazelclient/arguments/generator",
+    visibility = ["//visibility:private"],
+)
+
+go_binary(
+    name = "generator",
+    embed = [":generator_lib"],
+    visibility = ["//visibility:public"],
+)

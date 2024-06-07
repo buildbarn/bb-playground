@@ -1,0 +1,33 @@
+load("@rules_go//go:def.bzl", "go_binary", "go_library")
+
+go_library(
+    name = "playground_storage_shard_lib",
+    srcs = ["main.go"],
+    importpath = "github.com/buildbarn/bb-playground/cmd/playground_storage_shard",
+    visibility = ["//visibility:private"],
+    deps = [
+        "//pkg/proto/configuration/playground_storage_shard",
+        "//pkg/proto/storage/object",
+        "//pkg/proto/storage/tag",
+        "//pkg/storage/object",
+        "//pkg/storage/object/leasemarshaling",
+        "//pkg/storage/object/local",
+        "//pkg/storage/object/namespacemapping",
+        "//pkg/storage/tag",
+        "//pkg/storage/tag/leasemarshaling",
+        "//pkg/storage/tag/local",
+        "@com_github_buildbarn_bb_storage//pkg/global",
+        "@com_github_buildbarn_bb_storage//pkg/grpc",
+        "@com_github_buildbarn_bb_storage//pkg/program",
+        "@com_github_buildbarn_bb_storage//pkg/util",
+        "@org_golang_google_grpc//:grpc",
+        "@org_golang_google_grpc//codes",
+        "@org_golang_google_grpc//status",
+    ],
+)
+
+go_binary(
+    name = "playground_storage_shard",
+    embed = [":playground_storage_shard_lib"],
+    visibility = ["//visibility:public"],
+)

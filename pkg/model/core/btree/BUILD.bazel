@@ -1,0 +1,66 @@
+load("@rules_go//extras:gomock.bzl", "gomock")
+load("@rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "btree",
+    srcs = [
+        "builder.go",
+        "parent_node_computer.go",
+        "prolly_level_builder_factory.go",
+    ],
+    importpath = "github.com/buildbarn/bb-playground/pkg/model/core/btree",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//pkg/encoding",
+        "//pkg/model/core",
+        "//pkg/proto/model/filesystem",
+        "//pkg/storage/object",
+        "@com_github_buildbarn_bb_storage//pkg/util",
+        "@org_golang_google_grpc//codes",
+        "@org_golang_google_protobuf//encoding/protowire",
+        "@org_golang_google_protobuf//proto",
+    ],
+)
+
+go_test(
+    name = "btree_test",
+    srcs = [
+        "builder_test.go",
+        "mocks_btree_test.go",
+        "mocks_encoding_test.go",
+        "prolly_level_builder_factory_test.go",
+    ],
+    embed = [":btree"],
+    deps = [
+        "//pkg/model/core",
+        "//pkg/proto/model/filesystem",
+        "//pkg/proto/storage/object",
+        "//pkg/storage/object",
+        "@com_github_stretchr_testify//require",
+        "@org_uber_go_mock//gomock",
+    ],
+)
+
+gomock(
+    name = "mocks_btree",
+    out = "mocks_btree_test.go",
+    interfaces = [
+        "LevelBuilderFactoryForTesting",
+        "LevelBuilderForTesting",
+        "ParentNodeComputerForTesting",
+    ],
+    library = "//pkg/model/core/btree",
+    mockgen_model_library = "@org_uber_go_mock//mockgen/model",
+    mockgen_tool = "@org_uber_go_mock//mockgen",
+    package = "btree_test",
+)
+
+gomock(
+    name = "mocks_encoding",
+    out = "mocks_encoding_test.go",
+    interfaces = ["BinaryEncoder"],
+    library = "//pkg/encoding",
+    mockgen_model_library = "@org_uber_go_mock//mockgen/model",
+    mockgen_tool = "@org_uber_go_mock//mockgen",
+    package = "btree_test",
+)
