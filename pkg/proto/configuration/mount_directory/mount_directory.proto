@@ -29,12 +29,15 @@ message ApplicationConfiguration {
 
   bytes root_directory_reference = 8;
 
-  repeated buildbarn.playground.configuration.encoding.BinaryEncoderConfiguration
-      directory_encoders = 9;
+  repeated
+      buildbarn.playground.configuration.encoding.BinaryEncoderConfiguration
+          directory_encoders = 9;
 
-  repeated buildbarn.playground.configuration.encoding.BinaryEncoderConfiguration
-      small_file_encoders = 10;
+  repeated
+      buildbarn.playground.configuration.encoding.BinaryEncoderConfiguration
+          small_file_encoders = 10;
 
-  repeated buildbarn.playground.configuration.encoding.BinaryEncoderConfiguration
-      concatenated_file_encoders = 11;
+  repeated
+      buildbarn.playground.configuration.encoding.BinaryEncoderConfiguration
+          concatenated_file_encoders = 11;
 }

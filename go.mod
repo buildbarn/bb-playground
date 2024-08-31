@@ -3,8 +3,8 @@ module github.com/buildbarn/bb-playground
 go 1.23.0
 
 require (
-	github.com/buildbarn/bb-remote-execution v0.0.0-20240821082441-58ffbe3c491b
-	github.com/buildbarn/bb-storage v0.0.0-20240822135014-31720dbbff03
+	github.com/buildbarn/bb-remote-execution v0.0.0-20240831203123-2da039301ce0
+	github.com/buildbarn/bb-storage v0.0.0-20240831193755-af9ad48525bb
 	github.com/buildbarn/go-cdc v0.0.0-20240326143813-ab4a540e41c6
 	github.com/stretchr/testify v1.9.0
 	go.uber.org/mock v0.4.0

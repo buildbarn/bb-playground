@@ -26,7 +26,8 @@ message ApplicationConfiguration {
   // The maximum number of parent objects and combined total size this
   // process is willing to keep in memory as part of a single call to
   // UploadDags().
-  buildbarn.playground.storage.object.Limit maximum_unfinalized_parents_limit = 5;
+  buildbarn.playground.storage.object.Limit maximum_unfinalized_parents_limit =
+      5;
 
   // gRPC clients for connecting to the shards belonging to replica A.
   //

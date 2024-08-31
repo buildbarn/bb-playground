@@ -91,7 +91,8 @@ message UploadDagsRequest {
     // 'size_bytes' and 'maximum_total_parents_size_bytes' fields.
     // Conversely, the client SHOULD validate that the traversal order
     // used by the server respects this invariant.
-    buildbarn.playground.storage.object.Limit maximum_unfinalized_parents_limit = 2;
+    buildbarn.playground.storage.object.Limit
+        maximum_unfinalized_parents_limit = 2;
   }
 
   message InitiateDag {

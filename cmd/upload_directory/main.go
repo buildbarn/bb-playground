@@ -42,7 +42,7 @@ func main() {
 			return util.StatusWrapf(err, "Failed to read configuration from %s", os.Args[1])
 		}
 
-		directory, err := filesystem.NewLocalDirectory(path.NewLocalParser(configuration.Path))
+		directory, err := filesystem.NewLocalDirectory(path.LocalFormat.NewParser(configuration.Path))
 		if err != nil {
 			return util.StatusWrap(err, "Failed to open directory to upload")
 		}

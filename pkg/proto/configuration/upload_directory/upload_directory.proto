@@ -21,7 +21,8 @@ message ApplicationConfiguration {
 
   // The limits to announce to the storage server to constrain the
   // parallelism that is used to traverse the directory.
-  buildbarn.playground.storage.object.Limit maximum_unfinalized_parents_limit = 4;
+  buildbarn.playground.storage.object.Limit maximum_unfinalized_parents_limit =
+      4;
 
   // AES key that is used to encrypt file and directory contents.
   bytes encryption_key = 5;
