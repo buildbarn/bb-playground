@@ -1,0 +1,27 @@
+load("@rules_go//go:def.bzl", "go_library")
+
+go_library(
+    name = "unpack",
+    srcs = [
+        "apparent_repo.go",
+        "bind.go",
+        "bool.go",
+        "if_non_empty_string.go",
+        "int.go",
+        "label.go",
+        "list.go",
+        "module.go",
+        "path_parser.go",
+        "pointer.go",
+        "string.go",
+        "url.go",
+    ],
+    importpath = "github.com/buildbarn/bb-playground/pkg/starlark/unpack",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//pkg/label",
+        "@com_github_buildbarn_bb_storage//pkg/filesystem/path",
+        "@net_starlark_go//starlark",
+        "@org_golang_x_exp//constraints",
+    ],
+)

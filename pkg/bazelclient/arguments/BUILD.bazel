@@ -1,3 +1,4 @@
+load("@rules_go//extras:gomock.bzl", "gomock")
 load("@rules_go//go:def.bzl", "go_library", "go_test")
 
 genrule(
@@ -15,9 +16,18 @@ go_library(
         "flags.go",
         "get_bazel_rc_paths.go",
         "parse.go",
+        "parse_bazel_rc_files.go",
+        "parse_command_and_arguments.go",
     ],
     importpath = "github.com/buildbarn/bb-playground/pkg/bazelclient/arguments",
     visibility = ["//visibility:public"],
+    deps = [
+        "@com_github_buildbarn_bb_storage//pkg/filesystem",
+        "@com_github_buildbarn_bb_storage//pkg/filesystem/path",
+        "@com_github_buildbarn_bb_storage//pkg/util",
+        "@org_golang_google_grpc//codes",
+        "@org_golang_google_grpc//status",
+    ],
 )
 
 go_test(
@@ -25,11 +35,33 @@ go_test(
     srcs = [
         "bazel_rc_reader_test.go",
         "get_bazel_rc_paths_test.go",
+        "mocks_filesystem_test.go",
+        "parse_bazel_rc_files_test.go",
+        "parse_command_and_arguments_test.go",
         "parse_startup_flags_test.go",
         "parse_test.go",
     ],
+    embed = [":arguments"],
     deps = [
-        ":arguments",
+        "@com_github_buildbarn_bb_storage//pkg/filesystem/path",
+        "@com_github_buildbarn_bb_storage//pkg/testutil",
         "@com_github_stretchr_testify//require",
+        "@org_golang_google_grpc//codes",
+        "@org_golang_google_grpc//status",
+        "@org_uber_go_mock//gomock",
     ],
+)
+
+gomock(
+    name = "mocks_filesystem",
+    out = "mocks_filesystem_test.go",
+    interfaces = [
+        "Directory",
+        "DirectoryCloser",
+        "FileReader",
+    ],
+    library = "@com_github_buildbarn_bb_storage//pkg/filesystem",
+    mockgen_model_library = "@org_uber_go_mock//mockgen/model",
+    mockgen_tool = "@org_uber_go_mock//mockgen",
+    package = "arguments_test",
 )

@@ -5,7 +5,16 @@ go_library(
     srcs = ["main.go"],
     importpath = "github.com/buildbarn/bb-playground/cmd/playground_bazel",
     visibility = ["//visibility:private"],
-    deps = ["//pkg/bazelclient/arguments"],
+    deps = [
+        "//pkg/bazelclient/arguments",
+        "//pkg/bazelclient/commands/build",
+        "//pkg/bazelclient/commands/info",
+        "//pkg/bazelclient/commands/license",
+        "//pkg/bazelclient/commands/version",
+        "//pkg/bazelclient/logging",
+        "@com_github_buildbarn_bb_storage//pkg/filesystem",
+        "@com_github_buildbarn_bb_storage//pkg/filesystem/path",
+    ],
 )
 
 go_binary(

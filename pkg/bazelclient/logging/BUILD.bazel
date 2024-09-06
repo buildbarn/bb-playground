@@ -1,0 +1,16 @@
+load("@rules_go//go:def.bzl", "go_library")
+
+go_library(
+    name = "logging",
+    srcs = [
+        "console_logger.go",
+        "escape_sequences.go",
+        "logger.go",
+    ],
+    importpath = "github.com/buildbarn/bb-playground/pkg/bazelclient/logging",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//pkg/bazelclient/arguments",
+        "@org_golang_x_term//:term",
+    ],
+)

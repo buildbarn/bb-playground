@@ -1,0 +1,16 @@
+load("@bazel_skylib//rules:copy_file.bzl", "copy_file")
+load("@rules_go//go:def.bzl", "go_library")
+
+go_library(
+    name = "license",
+    srcs = ["do_license.go"],
+    embedsrcs = ["LICENSE"],
+    importpath = "github.com/buildbarn/bb-playground/pkg/bazelclient/commands/license",
+    visibility = ["//visibility:public"],
+)
+
+copy_file(
+    name = "copy_license",
+    src = "//:LICENSE",
+    out = "LICENSE",
+)

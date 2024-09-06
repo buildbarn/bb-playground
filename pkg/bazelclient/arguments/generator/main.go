@@ -8,10 +8,6 @@ import (
 	"strings"
 )
 
-type flagSet struct {
-	flags []flag
-}
-
 type flag struct {
 	longName    string
 	shortName   string
@@ -20,7 +16,8 @@ type flag struct {
 }
 
 type command struct {
-	flagSets       []string
+	ancestor       string
+	flags          []flag
 	takesArguments bool
 }
 
@@ -39,13 +36,6 @@ func toSymbolName(s string, public bool) string {
 }
 
 func main() {
-	commandFlagSets := map[string]struct{}{}
-	for _, command := range commands {
-		for _, flagSetName := range command.flagSets {
-			commandFlagSets[flagSetName] = struct{}{}
-		}
-	}
-
 	fmt.Println("package arguments")
 	fmt.Println("import (")
 	fmt.Println("\"strings\"")
@@ -73,42 +63,73 @@ func main() {
 		fmt.Printf("      ExpectedValues: expectedValues_%s,\n", enumTypeName)
 		fmt.Printf("    }\n")
 		fmt.Printf("  }\n")
-		fmt.Printf("  *v = newV\n")
+		fmt.Printf("  if v != nil {\n")
+		fmt.Printf("    *v = newV\n")
+		fmt.Printf("  }\n")
 		fmt.Printf("  return nil\n")
 		fmt.Printf("}\n")
 	}
 
-	for _, flagSetName := range slices.Sorted(maps.Keys(flagSets)) {
-		flagSet := flagSets[flagSetName]
-		flagSetSymbolName := toSymbolName(flagSetName, true)
-		fmt.Printf("type %sFlags struct{\n", flagSetSymbolName)
-		for _, flag := range flagSet.flags {
+	allFlags := map[string][]flag{
+		"startup": startupFlags,
+		"common":  commonFlags,
+	}
+	commandFlags := map[string][]flag{
+		"common": commonFlags,
+	}
+	for commandName, command := range commands {
+		allFlags[commandName] = command.flags
+		commandFlags[commandName] = command.flags
+	}
+
+	for _, flagsName := range slices.Sorted(maps.Keys(allFlags)) {
+		flagsSymbolName := toSymbolName(flagsName, true)
+		fmt.Printf("type %sFlags struct{\n", flagsSymbolName)
+		for _, flag := range allFlags[flagsName] {
 			flag.flagType.emitStructField(flag.longName)
 		}
 		fmt.Printf("}\n")
 
-		fmt.Printf("func (f *%sFlags) Reset() {\n", flagSetSymbolName)
-		for _, flag := range flagSet.flags {
+		fmt.Printf("func (f *%sFlags) Reset() {\n", flagsSymbolName)
+		for _, flag := range allFlags[flagsName] {
 			flag.flagType.emitDefaultInitializer(flag.longName)
 		}
 		fmt.Printf("}\n")
 	}
 
+	for _, commandName := range slices.Sorted(maps.Keys(commands)) {
+		fmt.Printf("var %sAncestors = []commandAncestor{\n", toSymbolName(commandName, false))
+		for ancestorName := commandName; ancestorName != "common"; ancestorName = commands[ancestorName].ancestor {
+			fmt.Printf("{name: %#v, mustApply: true},\n", ancestorName)
+		}
+		fmt.Printf("{name: \"common\", mustApply: false},\n")
+		fmt.Printf("{name: \"always\", mustApply: true},\n")
+		fmt.Printf("}\n")
+	}
+
 	fmt.Printf("type assignableCommand interface {\n")
 	fmt.Printf("  Command\n")
-	for _, flagSetName := range slices.Sorted(maps.Keys(commandFlagSets)) {
-		flagSetSymbolName := toSymbolName(flagSetName, true)
+	for _, flagsName := range slices.Sorted(maps.Keys(commandFlags)) {
+		flagSetSymbolName := toSymbolName(flagsName, true)
 		fmt.Printf("  get%sFlags() *%sFlags\n", flagSetSymbolName, flagSetSymbolName)
 	}
 	fmt.Printf("  appendArgument(argument string) error\n")
 	fmt.Printf("}\n")
 
 	for _, commandName := range slices.Sorted(maps.Keys(commands)) {
+		allAncestors := map[string]struct{}{}
+		for ancestorName := commandName; ; ancestorName = commands[ancestorName].ancestor {
+			allAncestors[ancestorName] = struct{}{}
+			if ancestorName == "common" {
+				break
+			}
+		}
+
 		command := commands[commandName]
 		commandSymbolName := toSymbolName(commandName, true)
 		fmt.Printf("type %sCommand struct {\n", commandSymbolName)
-		for _, flagSetName := range slices.Sorted(slices.Values(command.flagSets)) {
-			flagSetSymbolName := toSymbolName(flagSetName, true)
+		for _, ancestorName := range slices.Sorted(maps.Keys(allAncestors)) {
+			flagSetSymbolName := toSymbolName(ancestorName, true)
 			fmt.Printf("%sFlags %sFlags\n", flagSetSymbolName, flagSetSymbolName)
 		}
 		if command.takesArguments {
@@ -117,20 +138,16 @@ func main() {
 		fmt.Printf("}\n")
 
 		fmt.Printf("func (c *%sCommand) Reset() {\n", commandSymbolName)
-		for _, flagSetName := range slices.Sorted(slices.Values(command.flagSets)) {
-			fmt.Printf("c.%sFlags.Reset()\n", toSymbolName(flagSetName, true))
+		for _, ancestorName := range slices.Sorted(maps.Keys(allAncestors)) {
+			fmt.Printf("c.%sFlags.Reset()\n", toSymbolName(ancestorName, true))
 		}
 		fmt.Printf("}\n")
 
-		applicableFlagSets := map[string]struct{}{}
-		for _, flagSetName := range command.flagSets {
-			applicableFlagSets[flagSetName] = struct{}{}
-		}
-		for _, flagSetName := range slices.Sorted(maps.Keys(commandFlagSets)) {
-			flagSetSymbolName := toSymbolName(flagSetName, true)
-			fmt.Printf("func (c *%sCommand) get%sFlags() *%sFlags {\n", commandSymbolName, flagSetSymbolName, flagSetSymbolName)
-			if _, ok := applicableFlagSets[flagSetName]; ok {
-				fmt.Printf("  return &c.%sFlags", flagSetSymbolName)
+		for _, flagsName := range slices.Sorted(maps.Keys(commandFlags)) {
+			flagsSymbolName := toSymbolName(flagsName, true)
+			fmt.Printf("func (c *%sCommand) get%sFlags() *%sFlags {\n", commandSymbolName, flagsSymbolName, flagsSymbolName)
+			if _, ok := allAncestors[flagsName]; ok {
+				fmt.Printf("  return &c.%sFlags", flagsSymbolName)
 			} else {
 				fmt.Printf("  return nil")
 			}
@@ -147,25 +164,40 @@ func main() {
 		fmt.Printf("}\n")
 	}
 
-	fmt.Printf("func newCommandByName(name string) (assignableCommand, bool) {\n")
+	fmt.Printf("func newCommandByName(name string) (assignableCommand, []commandAncestor, bool) {\n")
 	fmt.Printf("switch name {")
 	for _, commandName := range slices.Sorted(maps.Keys(commands)) {
 		fmt.Printf("case %#v:\n", commandName)
-		fmt.Printf("return &%sCommand{}, true\n", toSymbolName(commandName, true))
+		fmt.Printf("return &%sCommand{}, %sAncestors, true\n", toSymbolName(commandName, true), toSymbolName(commandName, false))
 	}
 	fmt.Printf("default:\n")
-	fmt.Printf("return nil, false\n")
+	fmt.Printf("return nil, nil, false\n")
 	fmt.Printf("}\n")
 	fmt.Printf("}\n")
 
-	fmt.Printf("func parseCommandArguments(cmd assignableCommand, args []string) error {\n")
-	fmt.Printf("  stack := [][]string{args}\n")
+	fmt.Printf("func parseArguments(cmd assignableCommand, ancestors []commandAncestor, configurationDirectives ConfigurationDirectives, args []string) error {\n")
+	fmt.Printf("  stack := []stackEntry{{\n")
+	fmt.Printf("    remainingArgs: args,\n")
+	fmt.Printf("    mustApply: true,\n")
+	fmt.Printf("  }}\n")
+	fmt.Printf("  for _, ancestor := range ancestors {\n")
+	fmt.Printf("    directives := configurationDirectives[ancestor.name]\n")
+	fmt.Printf("    for i := len(directives)-1; i >= 0; i-- {\n")
+	fmt.Printf("      stack = append(stack, stackEntry{\n")
+	fmt.Printf("        remainingArgs: directives[i],\n")
+	fmt.Printf("        mustApply: ancestor.mustApply,\n")
+	fmt.Printf("      })\n")
+	fmt.Printf("    }\n")
+	fmt.Printf("  }\n")
 	fmt.Printf("  allowFlags := true\n")
 	fmt.Printf("  for len(stack) > 0 {\n")
-	fmt.Printf("    currentArgs := &stack[len(stack)-1]\n")
+	fmt.Printf("    currentStackEntry := &stack[len(stack)-1]\n")
+	fmt.Printf("    currentArgs := &currentStackEntry.remainingArgs\n")
 	fmt.Printf("    if len(*currentArgs) == 0 {\n")
 	fmt.Printf("      stack = stack[:len(stack)-1]\n")
+	fmt.Printf("      allowFlags = true\n")
 	fmt.Printf("    } else {\n")
+	fmt.Printf("      mustApply := currentStackEntry.mustApply\n")
 	fmt.Printf("      firstArg := (*currentArgs)[0]\n")
 	fmt.Printf("      (*currentArgs) = (*currentArgs)[1:]\n")
 	fmt.Printf("      if allowFlags && len(firstArg) > 1 && firstArg[0] == '-' && firstArg[1] == '-' {\n")
@@ -177,12 +209,42 @@ func main() {
 	fmt.Printf("          longOptionName = longOptionName[:assignmentIndex]\n")
 	fmt.Printf("        }\n")
 	fmt.Printf("        switch longOptionName {\n")
-	for _, flagSetName := range slices.Sorted(maps.Keys(commandFlagSets)) {
-		flagSet := flagSets[flagSetName]
-		for _, flag := range flagSet.flags {
-			flag.flagType.emitLongNameParser(flagSetName, flag.longName)
+	for _, flagsName := range slices.Sorted(maps.Keys(commandFlags)) {
+		for _, flag := range commandFlags[flagsName] {
+			flag.flagType.emitLongNameParser(flagsName, flag.longName)
 		}
 	}
+	fmt.Printf("        case \"--config\":\n")
+	fmt.Printf("          if assignmentIndex < 0 {\n")
+	fmt.Printf("            if len(*currentArgs) == 0 {\n")
+	fmt.Printf("              return FlagMissingValueError{Flag: longOptionName}\n")
+	fmt.Printf("            }\n")
+	fmt.Printf("            optionValue = (*currentArgs)[0]\n")
+	fmt.Printf("            (*currentArgs) = (*currentArgs)[1:]\n")
+	fmt.Printf("          }\n")
+	fmt.Printf("          foundDirectives := false\n")
+	fmt.Printf("          for _, ancestor := range ancestors {\n")
+	fmt.Printf("            directiveName := ancestor.name + \":\" + optionValue\n")
+	fmt.Printf("            for _, entry := range stack {\n")
+	fmt.Printf("              if entry.directiveName == directiveName {\n")
+	fmt.Printf("                return ConfigExpansionContainsCycleError{Directive: directiveName}\n")
+	fmt.Printf("              }\n")
+	fmt.Printf("            }\n")
+	fmt.Printf("            directives, ok := configurationDirectives[directiveName]\n")
+	fmt.Printf("            if ok {\n")
+	fmt.Printf("              foundDirectives = true\n")
+	fmt.Printf("              for i := len(directives)-1; i >= 0; i-- {\n")
+	fmt.Printf("                stack = append(stack, stackEntry{\n")
+	fmt.Printf("                  remainingArgs: directives[i],\n")
+	fmt.Printf("                  mustApply: ancestor.mustApply,\n")
+	fmt.Printf("                  directiveName: directiveName,\n")
+	fmt.Printf("                })\n")
+	fmt.Printf("              }\n")
+	fmt.Printf("            }\n")
+	fmt.Printf("          }\n")
+	fmt.Printf("          if !foundDirectives {\n")
+	fmt.Printf("            return ConfigValueNotRecognizedError{Config: optionValue}\n")
+	fmt.Printf("          }\n")
 	fmt.Printf("        case \"--\":\n")
 	fmt.Printf("          allowFlags = false\n")
 	fmt.Printf("        default:\n")
@@ -191,11 +253,10 @@ func main() {
 	fmt.Printf("      } else if allowFlags && len(firstArg) > 0 && firstArg[0] == '-' {\n")
 	fmt.Printf("        shortOptionName := firstArg\n")
 	fmt.Printf("        switch shortOptionName {\n")
-	for _, flagSetName := range slices.Sorted(maps.Keys(commandFlagSets)) {
-		flagSet := flagSets[flagSetName]
-		for _, flag := range flagSet.flags {
+	for _, flagsName := range slices.Sorted(maps.Keys(commandFlags)) {
+		for _, flag := range commandFlags[flagsName] {
 			if flag.shortName != "" {
-				flag.flagType.emitShortNameParser(flagSetName, flag.longName, flag.shortName)
+				flag.flagType.emitShortNameParser(flagsName, flag.longName, flag.shortName)
 			}
 		}
 	}
@@ -230,7 +291,7 @@ func main() {
 	fmt.Printf("      longOptionName = longOptionName[:assignmentIndex]\n")
 	fmt.Printf("    }\n")
 	fmt.Printf("    switch longOptionName {\n")
-	for _, flag := range flagSets["startup"].flags {
+	for _, flag := range startupFlags {
 		flag.flagType.emitStartupParser(flag.longName)
 	}
 	fmt.Printf("    default:\n")

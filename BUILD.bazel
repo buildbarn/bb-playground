@@ -1,5 +1,7 @@
 load("@gazelle//:def.bzl", "gazelle")
 
+exports_files(["LICENSE"])
+
 # gazelle:go_grpc_compilers @rules_go//proto:go_proto,@rules_go//proto:go_grpc_v2
 # gazelle:go_naming_convention_external import
 # gazelle:prefix github.com/buildbarn/bb-playground

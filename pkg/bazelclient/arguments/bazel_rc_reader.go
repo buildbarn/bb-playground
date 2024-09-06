@@ -29,13 +29,16 @@ func (r *BazelRCReader) Read() ([]string, error) {
 		var field strings.Builder
 		hasField := false
 		reachedEndOfLine := false
+		reachedEndOfFile := false
 
 	ParseField:
 		for {
 			c, _, err := r.r.ReadRune()
 			if err != nil {
-				if err == io.EOF && len(fields) > 0 {
-					return fields, nil
+				if err == io.EOF {
+					reachedEndOfLine = true
+					reachedEndOfFile = true
+					break ParseField
 				}
 				return nil, err
 			}
@@ -47,8 +50,10 @@ func (r *BazelRCReader) Read() ([]string, error) {
 				for {
 					c, _, err = r.r.ReadRune()
 					if err != nil {
-						if err == io.EOF && len(fields) > 0 {
-							return fields, nil
+						if err == io.EOF {
+							reachedEndOfLine = true
+							reachedEndOfFile = true
+							break ParseField
 						}
 						return nil, err
 					}
@@ -119,6 +124,9 @@ func (r *BazelRCReader) Read() ([]string, error) {
 		}
 		if reachedEndOfLine && len(fields) > 0 {
 			return fields, nil
+		}
+		if reachedEndOfFile {
+			return nil, io.EOF
 		}
 	}
 }

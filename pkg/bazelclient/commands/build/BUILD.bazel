@@ -1,0 +1,28 @@
+load("@rules_go//go:def.bzl", "go_library")
+
+go_library(
+    name = "build",
+    srcs = [
+        "do_build.go",
+        "local_path_extracting_module_dot_bazel_handler.go",
+    ],
+    importpath = "github.com/buildbarn/bb-playground/pkg/bazelclient/commands/build",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//pkg/bazelclient/arguments",
+        "//pkg/bazelclient/commands",
+        "//pkg/bazelclient/logging",
+        "//pkg/label",
+        "//pkg/proto/storage/dag",
+        "//pkg/starlark",
+        "//pkg/storage/dag",
+        "//pkg/storage/object",
+        "@com_github_buildbarn_bb_storage//pkg/filesystem",
+        "@com_github_buildbarn_bb_storage//pkg/filesystem/path",
+        "@net_starlark_go//starlark",
+        "@org_golang_google_grpc//:grpc",
+        "@org_golang_google_grpc//credentials",
+        "@org_golang_google_grpc//credentials/insecure",
+        "@org_golang_x_sync//semaphore",
+    ],
+)

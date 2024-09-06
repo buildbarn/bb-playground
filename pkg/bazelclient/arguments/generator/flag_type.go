@@ -29,23 +29,29 @@ func (ft boolFlagType) emitLongNameParser(flagSetName, longName string) {
 	longSymbolName := toSymbolName(longName, true)
 
 	fmt.Printf("case %#v:\n", "--"+longName)
-	fmt.Printf("  flags := cmd.get%sFlags()\n", flagSetSymbolName)
-	fmt.Printf("  if flags == nil {\n")
+	fmt.Printf("  var out *bool\n")
+	fmt.Printf("  if flags := cmd.get%sFlags(); flags != nil {\n", flagSetSymbolName)
+	fmt.Printf("    out = &flags.%s\n", longSymbolName)
+	fmt.Printf("  } else if mustApply {")
 	fmt.Printf("    return FlagNotApplicableError{Flag: longOptionName}\n")
 	fmt.Printf("  }\n")
-	fmt.Printf("  if err := parseBool(assignmentIndex >= 0, optionValue, &flags.%s, longOptionName); err != nil {\n", longSymbolName)
+	fmt.Printf("  if err := parseBool(assignmentIndex >= 0, optionValue, out, longOptionName); err != nil {\n")
 	fmt.Printf("    return err\n")
 	fmt.Printf("  }\n")
 
 	fmt.Printf("case %#v:\n", "--no"+longName)
-	fmt.Printf("  flags := cmd.get%sFlags()\n", flagSetSymbolName)
-	fmt.Printf("  if flags == nil {\n")
+	fmt.Printf("  var out *bool\n")
+	fmt.Printf("  if flags := cmd.get%sFlags(); flags != nil {\n", flagSetSymbolName)
+	fmt.Printf("    out = &flags.%s\n", longSymbolName)
+	fmt.Printf("  } else if mustApply {")
 	fmt.Printf("    return FlagNotApplicableError{Flag: longOptionName}\n")
 	fmt.Printf("  }\n")
 	fmt.Printf("  if assignmentIndex >= 0 {\n")
 	fmt.Printf("    return FlagUnexpectedValueError{Flag: longOptionName}\n")
 	fmt.Printf("  }\n")
-	fmt.Printf("  flags.%s = false\n", longSymbolName)
+	fmt.Printf("  if out != nil {\n")
+	fmt.Printf("    *out = false\n")
+	fmt.Printf("  }\n")
 }
 
 func (ft boolFlagType) emitShortNameParser(flagSetName, longName, shortName string) {
@@ -53,18 +59,18 @@ func (ft boolFlagType) emitShortNameParser(flagSetName, longName, shortName stri
 	longSymbolName := toSymbolName(longName, true)
 
 	fmt.Printf("case %#v:\n", "-"+shortName)
-	fmt.Printf("  flags := cmd.get%sFlags()\n", flagSetSymbolName)
-	fmt.Printf("  if flags == nil {\n")
+	fmt.Printf("  if flags := cmd.get%sFlags(); flags != nil {\n", flagSetSymbolName)
+	fmt.Printf("    flags.%s = true\n", longSymbolName)
+	fmt.Printf("  } else if mustApply {")
 	fmt.Printf("    return FlagNotApplicableError{Flag: shortOptionName}\n")
 	fmt.Printf("  }\n")
-	fmt.Printf("  flags.%s = true\n", longSymbolName)
 
 	fmt.Printf("case %#v:\n", "-"+shortName+"-")
-	fmt.Printf("  flags := cmd.get%sFlags()\n", flagSetSymbolName)
-	fmt.Printf("  if flags == nil {\n")
+	fmt.Printf("  if flags := cmd.get%sFlags(); flags != nil {\n", flagSetSymbolName)
+	fmt.Printf("    flags.%s = false\n", longSymbolName)
+	fmt.Printf("  } else if mustApply {")
 	fmt.Printf("    return FlagNotApplicableError{Flag: shortOptionName}\n")
 	fmt.Printf("  }\n")
-	fmt.Printf("  flags.%s = false\n", longSymbolName)
 }
 
 func (ft boolFlagType) emitStartupParser(longName string) {
@@ -97,8 +103,10 @@ func (ft enumFlagType) emitDefaultInitializer(longName string) {
 
 func (ft enumFlagType) emitLongNameParser(flagSetName, longName string) {
 	fmt.Printf("case %#v:\n", "--"+longName)
-	fmt.Printf("  flags := cmd.get%sFlags()\n", toSymbolName(flagSetName, true))
-	fmt.Printf("  if flags == nil {\n")
+	fmt.Printf("  var out *%s\n", ft.enumType)
+	fmt.Printf("  if flags := cmd.get%sFlags(); flags != nil {\n", toSymbolName(flagSetName, true))
+	fmt.Printf("    out = &flags.%s\n", toSymbolName(longName, true))
+	fmt.Printf("  } else if mustApply {\n")
 	fmt.Printf("    return FlagNotApplicableError{Flag: longOptionName}\n")
 	fmt.Printf("  }\n")
 	fmt.Printf("  if assignmentIndex < 0 {\n")
@@ -108,7 +116,7 @@ func (ft enumFlagType) emitLongNameParser(flagSetName, longName string) {
 	fmt.Printf("    optionValue = (*currentArgs)[0]\n")
 	fmt.Printf("    (*currentArgs) = (*currentArgs)[1:]\n")
 	fmt.Printf("  }\n")
-	fmt.Printf("  if err := flags.%s.set(longOptionName, optionValue); err != nil {\n", toSymbolName(longName, true))
+	fmt.Printf("  if err := out.set(longOptionName, optionValue); err != nil {\n")
 	fmt.Printf("    return err\n")
 	fmt.Printf("  }\n")
 }
@@ -131,21 +139,74 @@ func (ft expansionFlagType) emitDefaultInitializer(longName string) {}
 
 func (ft expansionFlagType) emitLongNameParser(flagSetName, longName string) {
 	fmt.Printf("case %#v:\n", "--"+longName)
-	fmt.Printf("  if cmd.get%sFlags() == nil {\n", toSymbolName(flagSetName, true))
+	fmt.Printf("  if mustApply && cmd.get%sFlags() == nil {\n", toSymbolName(flagSetName, true))
 	fmt.Printf("    return FlagNotApplicableError{Flag: longOptionName}\n")
 	fmt.Printf("  }\n")
 	fmt.Printf("  if assignmentIndex >= 0 {\n")
 	fmt.Printf("    return FlagUnexpectedValueError{Flag: longOptionName}\n")
 	fmt.Printf("  }\n")
-	fmt.Printf("  stack = append(stack, %#v)\n", ft.expandsTo)
+	fmt.Printf("  if mustApply {\n")
+	fmt.Printf("    stack = append(stack, stackEntry{\n")
+	fmt.Printf("      remainingArgs: %#v,\n", ft.expandsTo)
+	fmt.Printf("      mustApply: true,\n")
+	fmt.Printf("    })\n")
+	fmt.Printf("  }\n")
 }
 
 func (ft expansionFlagType) emitShortNameParser(flagSetName, longName, shortName string) {
 	fmt.Printf("case %#v:\n", "-"+shortName)
-	fmt.Printf("  stack = append(stack, %#v)\n", ft.expandsTo)
+	fmt.Printf("  if mustApply && cmd.get%sFlags() == nil {\n", toSymbolName(flagSetName, true))
+	fmt.Printf("    return FlagNotApplicableError{Flag: shortOptionName}\n")
+	fmt.Printf("  }\n")
+	fmt.Printf("  if mustApply {\n")
+	fmt.Printf("    stack = append(stack, stackEntry{\n")
+	fmt.Printf("      remainingArgs: %#v,\n", ft.expandsTo)
+	fmt.Printf("      mustApply: true,\n")
+	fmt.Printf("    })\n")
+	fmt.Printf("  }\n")
 }
 
 func (ft expansionFlagType) emitStartupParser(longName string) {
+	panic("TODO")
+}
+
+type stringFlagType struct {
+	defaultValue string
+}
+
+func (ft stringFlagType) emitStructField(longName string) {
+	fmt.Printf("%s string\n", toSymbolName(longName, true))
+}
+
+func (ft stringFlagType) emitDefaultInitializer(longName string) {
+	fmt.Printf("f.%s = %#v\n", toSymbolName(longName, true), ft.defaultValue)
+}
+
+func (ft stringFlagType) emitLongNameParser(flagSetName, longName string) {
+	fmt.Printf("case %#v:\n", "--"+longName)
+	fmt.Printf("  var out *string\n")
+	fmt.Printf("  if flags := cmd.get%sFlags(); flags != nil {\n", toSymbolName(flagSetName, true))
+	fmt.Printf("    out = &flags.%s\n", toSymbolName(longName, true))
+	fmt.Printf("  } else if mustApply {\n")
+	fmt.Printf("    return FlagNotApplicableError{Flag: longOptionName}\n")
+	fmt.Printf("  }\n")
+	fmt.Printf("  if assignmentIndex < 0 {\n")
+	fmt.Printf("    if len(*currentArgs) == 0 {\n")
+	fmt.Printf("      return FlagMissingValueError{Flag: longOptionName}\n")
+	fmt.Printf("    }\n")
+	fmt.Printf("    optionValue = (*currentArgs)[0]\n")
+	fmt.Printf("    (*currentArgs) = (*currentArgs)[1:]\n")
+	fmt.Printf("  }\n")
+	fmt.Printf("  if out != nil {\n")
+	fmt.Printf("    *out = optionValue\n")
+	fmt.Printf("  }\n")
+}
+
+func (ft stringFlagType) emitShortNameParser(flagSetName, longName, shortName string) {
+	panic("TODO")
+}
+
+func (ft stringFlagType) emitStartupParser(longName string) {
 	panic("TODO")
 }
 
@@ -160,7 +221,23 @@ func (ft stringListFlagType) emitDefaultInitializer(longName string) {
 }
 
 func (ft stringListFlagType) emitLongNameParser(flagSetName, longName string) {
-	panic("TODO")
+	fmt.Printf("case %#v:\n", "--"+longName)
+	fmt.Printf("  var out *[]string\n")
+	fmt.Printf("  if flags := cmd.get%sFlags(); flags != nil {\n", toSymbolName(flagSetName, true))
+	fmt.Printf("    out = &flags.%s\n", toSymbolName(longName, true))
+	fmt.Printf("  } else if mustApply {\n")
+	fmt.Printf("    return FlagNotApplicableError{Flag: longOptionName}\n")
+	fmt.Printf("  }\n")
+	fmt.Printf("  if assignmentIndex < 0 {\n")
+	fmt.Printf("    if len(*currentArgs) == 0 {\n")
+	fmt.Printf("      return FlagMissingValueError{Flag: longOptionName}\n")
+	fmt.Printf("    }\n")
+	fmt.Printf("    optionValue = (*currentArgs)[0]\n")
+	fmt.Printf("    (*currentArgs) = (*currentArgs)[1:]\n")
+	fmt.Printf("  }\n")
+	fmt.Printf("  if out != nil {\n")
+	fmt.Printf("    *out = append(*out, optionValue)\n")
+	fmt.Printf("  }\n")
 }
 
 func (ft stringListFlagType) emitShortNameParser(flagSetName, longName, shortName string) {

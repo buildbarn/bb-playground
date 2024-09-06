@@ -1,0 +1,45 @@
+load("@rules_go//extras:gomock.bzl", "gomock")
+load("@rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "starlark",
+    srcs = ["parse_module_dot_bazel.go"],
+    importpath = "github.com/buildbarn/bb-playground/pkg/starlark",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//pkg/label",
+        "//pkg/starlark/unpack",
+        "@com_github_buildbarn_bb_storage//pkg/filesystem/path",
+        "@net_starlark_go//starlark",
+    ],
+)
+
+go_test(
+    name = "starlark_test",
+    srcs = [
+        "mocks_starlark_test.go",
+        "parse_module_dot_bazel_test.go",
+    ],
+    embed = [":starlark"],
+    deps = [
+        "//pkg/label",
+        "@com_github_buildbarn_bb_storage//pkg/filesystem/path",
+        "@com_github_stretchr_testify//require",
+        "@net_starlark_go//starlark",
+        "@org_uber_go_mock//gomock",
+    ],
+)
+
+gomock(
+    name = "mocks_starlark",
+    out = "mocks_starlark_test.go",
+    interfaces = [
+        "ModuleDotBazelHandler",
+        "ModuleExtensionProxy",
+        "RepoRuleProxy",
+    ],
+    library = "//pkg/starlark",
+    mockgen_model_library = "@org_uber_go_mock//mockgen/model",
+    mockgen_tool = "@org_uber_go_mock//mockgen",
+    package = "starlark_test",
+)

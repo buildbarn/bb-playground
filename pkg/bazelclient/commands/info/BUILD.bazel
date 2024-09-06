@@ -1,0 +1,14 @@
+load("@rules_go//go:def.bzl", "go_library")
+
+go_library(
+    name = "info",
+    srcs = ["do_info.go"],
+    importpath = "github.com/buildbarn/bb-playground/pkg/bazelclient/commands/info",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//pkg/bazelclient/arguments",
+        "//pkg/bazelclient/commands",
+        "//pkg/bazelclient/logging",
+        "@com_github_buildbarn_bb_storage//pkg/filesystem/path",
+    ],
+)

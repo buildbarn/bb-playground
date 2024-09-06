@@ -78,3 +78,19 @@ func (e FlagInvalidEnumValueError) Error() string {
 	fmt.Fprintf(&sb, "%#v", e.Value)
 	return sb.String()
 }
+
+type ConfigValueNotRecognizedError struct {
+	Config string
+}
+
+func (e ConfigValueNotRecognizedError) Error() string {
+	return fmt.Sprintf("config value %#v is not defined in any configuration file", e.Config)
+}
+
+type ConfigExpansionContainsCycleError struct {
+	Directive string
+}
+
+func (e ConfigExpansionContainsCycleError) Error() string {
+	return fmt.Sprintf("config expansion for configuration directive %#v contains a cycle", e.Directive)
+}
