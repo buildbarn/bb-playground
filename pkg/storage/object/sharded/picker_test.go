@@ -1,7 +1,6 @@
 package sharded_test
 
 import (
-	"log"
 	"testing"
 
 	"github.com/buildbarn/bb-playground/pkg/storage/object/sharded"
@@ -17,11 +16,6 @@ func TestPicker(t *testing.T) {
 			pickedCounts := make([]int, shardCount)
 			for value := 0; value < 256; value++ {
 				pickedCounts[picker.PickShard([]byte{byte(value)})]++
-			}
-
-			log.Printf("--- %d", shardCount)
-			for _, pickedCount := range pickedCounts {
-				log.Print(pickedCount)
 			}
 
 			for _, pickedCount := range pickedCounts {
@@ -40,11 +34,6 @@ func TestPicker(t *testing.T) {
 				pickedCounts := make([]int, shardCount)
 				for value := 0; value < 256; value++ {
 					pickedCounts[picker.PickShard([]byte{byte(value &^ mask)})]++
-				}
-
-				log.Printf("--- %d", shardCount)
-				for _, pickedCount := range pickedCounts {
-					log.Print(pickedCount)
 				}
 
 				for _, pickedCount := range pickedCounts {
