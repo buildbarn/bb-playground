@@ -4,7 +4,7 @@ import (
 	"context"
 	"os"
 
-	"github.com/buildbarn/bb-playground/pkg/encoding"
+	"github.com/buildbarn/bb-playground/pkg/model/encoding"
 	model_filesystem "github.com/buildbarn/bb-playground/pkg/model/filesystem"
 	model_filesystem_virtual "github.com/buildbarn/bb-playground/pkg/model/filesystem/virtual"
 	model_parser "github.com/buildbarn/bb-playground/pkg/model/parser"
@@ -64,15 +64,15 @@ func main() {
 		)
 
 		maximumObjectSizeBytes := uint32(namespace.GetMaximumObjectSizeBytes())
-		directoryEncoder, err := encoding.NewBinaryEncoderFromConfiguration(configuration.DirectoryEncoders, maximumObjectSizeBytes)
+		directoryEncoder, err := encoding.NewBinaryEncoderFromProto(configuration.DirectoryEncoders, maximumObjectSizeBytes)
 		if err != nil {
 			return util.StatusWrap(err, "Failed to create directory encoder")
 		}
-		smallFileEncoder, err := encoding.NewBinaryEncoderFromConfiguration(configuration.SmallFileEncoders, maximumObjectSizeBytes)
+		smallFileEncoder, err := encoding.NewBinaryEncoderFromProto(configuration.SmallFileEncoders, maximumObjectSizeBytes)
 		if err != nil {
 			return util.StatusWrap(err, "Failed to create small file encoder")
 		}
-		concatenatedFileEncoder, err := encoding.NewBinaryEncoderFromConfiguration(configuration.ConcatenatedFileEncoders, maximumObjectSizeBytes)
+		concatenatedFileEncoder, err := encoding.NewBinaryEncoderFromProto(configuration.ConcatenatedFileEncoders, maximumObjectSizeBytes)
 		if err != nil {
 			return util.StatusWrap(err, "Failed to create concatenated file encoder")
 		}

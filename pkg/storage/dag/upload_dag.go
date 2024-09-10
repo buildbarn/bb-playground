@@ -21,7 +21,7 @@ import (
 // server responds that the object already exists, or if multiple
 // walkers for the same object exist.
 type ObjectContentsWalker interface {
-	GetContents() (*object.Contents, []ObjectContentsWalker, error)
+	GetContents(ctx context.Context) (*object.Contents, []ObjectContentsWalker, error)
 	Discard()
 }
 
@@ -215,7 +215,7 @@ func UploadDAG(ctx context.Context, client dag_pb.UploaderClient, rootReference 
 					if walker == nil {
 						return status.Errorf(codes.Internal, "Server requested contents of object with reference %s, even though it was already requested previously", o.reference)
 					}
-					contents, childrenWalkers, err := walker.GetContents()
+					contents, childrenWalkers, err := walker.GetContents(ctx)
 					if err != nil {
 						return util.StatusWrapf(err, "Failed to get contents of object with reference %s", o.reference)
 					}

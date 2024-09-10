@@ -4,7 +4,7 @@ import (
 	"crypto/rand"
 	"testing"
 
-	"github.com/buildbarn/bb-playground/pkg/encoding"
+	"github.com/buildbarn/bb-playground/pkg/model/encoding"
 	"github.com/stretchr/testify/require"
 )
 

@@ -6,10 +6,8 @@ go_library(
     importpath = "github.com/buildbarn/bb-playground/cmd/upload_directory",
     visibility = ["//visibility:private"],
     deps = [
-        "//pkg/encoding",
         "//pkg/model/core",
-        "//pkg/model/core/btree",
-        "//pkg/model/core/inlinedtree",
+        "//pkg/model/filesystem",
         "//pkg/proto/configuration/upload_directory",
         "//pkg/proto/model/filesystem",
         "//pkg/proto/storage/dag",
@@ -20,10 +18,9 @@ go_library(
         "@com_github_buildbarn_bb_storage//pkg/grpc",
         "@com_github_buildbarn_bb_storage//pkg/program",
         "@com_github_buildbarn_bb_storage//pkg/util",
-        "@com_github_buildbarn_go_cdc//:go-cdc",
         "@org_golang_google_grpc//codes",
         "@org_golang_google_grpc//status",
-        "@org_golang_google_protobuf//proto",
+        "@org_golang_x_sync//errgroup",
         "@org_golang_x_sync//semaphore",
     ],
 )

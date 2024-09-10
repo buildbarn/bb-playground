@@ -6,7 +6,7 @@ go_library(
     importpath = "github.com/buildbarn/bb-playground/cmd/mount_directory",
     visibility = ["//visibility:private"],
     deps = [
-        "//pkg/encoding",
+        "//pkg/model/encoding",
         "//pkg/model/filesystem",
         "//pkg/model/filesystem/virtual",
         "//pkg/model/parser",

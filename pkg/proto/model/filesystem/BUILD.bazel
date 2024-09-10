@@ -6,7 +6,10 @@ proto_library(
     name = "filesystem_proto",
     srcs = ["filesystem.proto"],
     visibility = ["//visibility:public"],
-    deps = ["//pkg/proto/model/core:core_proto"],
+    deps = [
+        "//pkg/proto/model/core:core_proto",
+        "//pkg/proto/model/encoding:encoding_proto",
+    ],
 )
 
 go_proto_library(
@@ -14,7 +17,10 @@ go_proto_library(
     importpath = "github.com/buildbarn/bb-playground/pkg/proto/model/filesystem",
     proto = ":filesystem_proto",
     visibility = ["//visibility:public"],
-    deps = ["//pkg/proto/model/core"],
+    deps = [
+        "//pkg/proto/model/core",
+        "//pkg/proto/model/encoding",
+    ],
 )
 
 go_library(

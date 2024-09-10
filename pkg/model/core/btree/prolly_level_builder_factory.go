@@ -3,8 +3,8 @@ package btree
 import (
 	"hash/fnv"
 
-	"github.com/buildbarn/bb-playground/pkg/encoding"
 	model_core "github.com/buildbarn/bb-playground/pkg/model/core"
+	"github.com/buildbarn/bb-playground/pkg/model/encoding"
 	"github.com/buildbarn/bb-playground/pkg/storage/object"
 	"github.com/buildbarn/bb-storage/pkg/util"
 

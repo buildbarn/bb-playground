@@ -11,7 +11,7 @@ proto_library(
 
 go_proto_library(
     name = "encoding_go_proto",
-    importpath = "github.com/buildbarn/bb-playground/pkg/proto/configuration/encoding",
+    importpath = "github.com/buildbarn/bb-playground/pkg/proto/model/encoding",
     proto = ":encoding_proto",
     visibility = ["//visibility:public"],
 )
@@ -19,6 +19,6 @@ go_proto_library(
 go_library(
     name = "encoding",
     embed = [":encoding_go_proto"],
-    importpath = "github.com/buildbarn/bb-playground/pkg/proto/configuration/encoding",
+    importpath = "github.com/buildbarn/bb-playground/pkg/proto/model/encoding",
     visibility = ["//visibility:public"],
 )

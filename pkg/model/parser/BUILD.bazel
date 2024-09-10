@@ -13,7 +13,7 @@ go_library(
     importpath = "github.com/buildbarn/bb-playground/pkg/model/parser",
     visibility = ["//visibility:public"],
     deps = [
-        "//pkg/encoding",
+        "//pkg/model/encoding",
         "//pkg/storage/object",
         "@com_github_buildbarn_bb_storage//pkg/eviction",
         "@com_github_buildbarn_bb_storage//pkg/util",

@@ -6,7 +6,7 @@ import "pkg/proto/configuration/eviction/eviction.proto";
 import "pkg/proto/configuration/filesystem/virtual/virtual.proto";
 import "pkg/proto/configuration/global/global.proto";
 import "pkg/proto/configuration/grpc/grpc.proto";
-import "pkg/proto/configuration/encoding/encoding.proto";
+import "pkg/proto/model/encoding/encoding.proto";
 import "pkg/proto/storage/object/object.proto";
 
 option go_package = "github.com/buildbarn/bb-playground/pkg/proto/configuration/mount_directory";
@@ -29,15 +29,12 @@ message ApplicationConfiguration {
 
   bytes root_directory_reference = 8;
 
-  repeated
-      buildbarn.playground.configuration.encoding.BinaryEncoderConfiguration
-          directory_encoders = 9;
+  repeated buildbarn.playground.model.encoding.BinaryEncoder
+      directory_encoders = 9;
 
-  repeated
-      buildbarn.playground.configuration.encoding.BinaryEncoderConfiguration
-          small_file_encoders = 10;
+  repeated buildbarn.playground.model.encoding.BinaryEncoder
+      small_file_encoders = 10;
 
-  repeated
-      buildbarn.playground.configuration.encoding.BinaryEncoderConfiguration
-          concatenated_file_encoders = 11;
+  repeated buildbarn.playground.model.encoding.BinaryEncoder
+      concatenated_file_encoders = 11;
 }

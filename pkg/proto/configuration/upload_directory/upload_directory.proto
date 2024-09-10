@@ -3,6 +3,7 @@ syntax = "proto3";
 package buildbarn.playground.configuration.upload_directory;
 
 import "pkg/proto/configuration/grpc/grpc.proto";
+import "pkg/proto/model/filesystem/filesystem.proto";
 import "pkg/proto/storage/object/object.proto";
 
 option go_package = "github.com/buildbarn/bb-playground/pkg/proto/configuration/upload_directory";
@@ -24,6 +25,13 @@ message ApplicationConfiguration {
   buildbarn.playground.storage.object.Limit maximum_unfinalized_parents_limit =
       4;
 
-  // AES key that is used to encrypt file and directory contents.
-  bytes encryption_key = 5;
+  // Parameters for creating Merkle trees of directories, consisting of
+  // Directory and Leaves messages.
+  buildbarn.playground.model.filesystem.DirectoryCreationParameters
+      directory_creation_parameters = 5;
+
+  // Parameters for creating Merkle trees of files, consisting of
+  // FileContentsList messages and chunks of data.
+  buildbarn.playground.model.filesystem.FileCreationParameters
+      file_creation_parameters = 6;
 }

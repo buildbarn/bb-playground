@@ -12,16 +12,16 @@ import (
 	"go.starlark.net/starlark"
 )
 
+// LocalPathExtractingModuleDotBazelHandler is capable of capturing the
+// paths contained in local_path_override() directives of a MODULE.bazel
+// file. These paths are needed by the client to determine which
+// directories to upload to the server to perform the build.
 type LocalPathExtractingModuleDotBazelHandler struct {
 	modulePaths    map[label.Module]path.Parser
 	rootModulePath path.Parser
 	rootModuleName *label.Module
 }
 
-// NewLocalPathExtractingModuleDotBazelHandler is capable of capturing
-// the paths contained in local_path_override() directives of a
-// MODULE.bazel file. These paths are needed by the client to
-// determine
 func NewLocalPathExtractingModuleDotBazelHandler(modulePaths map[label.Module]path.Parser, rootModulePath path.Parser) *LocalPathExtractingModuleDotBazelHandler {
 	return &LocalPathExtractingModuleDotBazelHandler{
 		modulePaths:    modulePaths,

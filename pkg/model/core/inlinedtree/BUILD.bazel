@@ -8,8 +8,8 @@ go_library(
     visibility = ["//visibility:public"],
     deps = [
         "//pkg/ds",
-        "//pkg/encoding",
         "//pkg/model/core",
+        "//pkg/model/encoding",
         "//pkg/proto/model/filesystem",
         "//pkg/storage/object",
         "@com_github_buildbarn_bb_storage//pkg/util",
@@ -43,7 +43,7 @@ gomock(
     name = "mocks_encoding",
     out = "mocks_encoding_test.go",
     interfaces = ["BinaryEncoder"],
-    library = "//pkg/encoding",
+    library = "//pkg/model/encoding",
     mockgen_model_library = "@org_uber_go_mock//mockgen/model",
     mockgen_tool = "@org_uber_go_mock//mockgen",
     package = "inlinedtree_test",

@@ -11,7 +11,7 @@ import (
 )
 
 type referenceMessage[TMetadata any] struct {
-	message  core.Reference
+	message  *core.Reference
 	metadata TMetadata
 }
 
@@ -26,7 +26,7 @@ type referenceMessage[TMetadata any] struct {
 // indices in the Reference messages to refer to the correct outgoing
 // reference.
 type ReferenceMessagePatcher[TMetadata any] struct {
-	messagesByReference map[object.LocalReference][]*referenceMessage[TMetadata]
+	messagesByReference map[object.LocalReference][]referenceMessage[TMetadata]
 	height              int
 }
 
@@ -34,7 +34,7 @@ type ReferenceMessagePatcher[TMetadata any] struct {
 // does not contain any Reference messages.
 func NewReferenceMessagePatcher[TMetadata any]() *ReferenceMessagePatcher[TMetadata] {
 	return &ReferenceMessagePatcher[TMetadata]{
-		messagesByReference: map[object.LocalReference][]*referenceMessage[TMetadata]{},
+		messagesByReference: map[object.LocalReference][]referenceMessage[TMetadata]{},
 	}
 }
 
@@ -47,15 +47,18 @@ func (p *ReferenceMessagePatcher[TMetadata]) maybeIncreaseHeight(height int) {
 // AddReference allocates a new Reference message that is associated
 // with a given object.LocalReference and caller provided metadata.
 func (p *ReferenceMessagePatcher[TMetadata]) AddReference(reference object.LocalReference, metadata TMetadata) *core.Reference {
-	referenceMessage := &referenceMessage[TMetadata]{
-		message: core.Reference{
-			Index: math.MaxUint32,
-		},
-		metadata: metadata,
+	message := &core.Reference{
+		Index: math.MaxUint32,
 	}
-	p.messagesByReference[reference] = append(p.messagesByReference[reference], referenceMessage)
+	p.messagesByReference[reference] = append(
+		p.messagesByReference[reference],
+		referenceMessage[TMetadata]{
+			message:  message,
+			metadata: metadata,
+		},
+	)
 	p.maybeIncreaseHeight(reference.GetHeight() + 1)
-	return &referenceMessage.message
+	return message
 }
 
 // Merge multiple instances of ReferenceMessagePatcher together. This
@@ -75,9 +78,12 @@ func (p *ReferenceMessagePatcher[TMetadata]) Merge(other *ReferenceMessagePatche
 		}
 	}
 	p.maybeIncreaseHeight(other.height)
+	other.empty()
+}
 
-	clear(other.messagesByReference)
-	other.height = 0
+func (p *ReferenceMessagePatcher[TMetadata]) empty() {
+	clear(p.messagesByReference)
+	p.height = 0
 }
 
 // GetHeight returns the height that the object of the Protobuf message
@@ -135,4 +141,29 @@ func (l referencesList) Less(i, j int) bool {
 		l.Slice[i].GetRawReference(),
 		l.Slice[j].GetRawReference(),
 	) < 0
+}
+
+// MapReferenceMessagePatcherMetadata replaces a ReferenceMessagePatcher
+// with a new instance that contains the same references, but has
+// metadata mapped to other values, potentially of another type.
+func MapReferenceMessagePatcherMetadata[TOld, TNew any](pOld *ReferenceMessagePatcher[TOld], mapMetadata func(TOld) TNew) *ReferenceMessagePatcher[TNew] {
+	pNew := &ReferenceMessagePatcher[TNew]{
+		messagesByReference: make(map[object.LocalReference][]referenceMessage[TNew], len(pOld.messagesByReference)),
+		height:              pOld.height,
+	}
+	for reference, oldMessages := range pOld.messagesByReference {
+		newMessages := make([]referenceMessage[TNew], 0, len(oldMessages))
+		for _, oldMessage := range oldMessages {
+			newMessages = append(
+				newMessages,
+				referenceMessage[TNew]{
+					message:  oldMessage.message,
+					metadata: mapMetadata(oldMessage.metadata),
+				},
+			)
+		}
+		pNew.messagesByReference[reference] = newMessages
+	}
+	pOld.empty()
+	return pNew
 }

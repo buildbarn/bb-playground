@@ -1,0 +1,30 @@
+syntax = "proto3";
+
+package buildbarn.playground.model.encoding;
+
+import "google/protobuf/empty.proto";
+
+option go_package = "github.com/buildbarn/bb-playground/pkg/proto/model/encoding";
+
+message DeterministicEncryptingBinaryEncoder {
+  // 128, 192, or 256-bit key that is used to encrypt the initialization
+  // vector and the data.
+  bytes encryption_key = 1;
+}
+
+message BinaryEncoder {
+  oneof encoder {
+    // Compress data using the "simple LZW" algorithm. This algorithm is
+    // identical to regular LZW, except that there is no limit on the
+    // maximum number of codes. There is also no mechanism for resetting
+    // the dictionary.
+    google.protobuf.Empty lzw_compressing = 1;
+
+    // Encrypt data using AES, using the Counter (CTR) block cipher mode
+    // of operation. The first 128 bits of the SHA-256 hash of the
+    // plaintext are used as the initialization vector, which is
+    // prepended to the output in encrypted form. To reduce information
+    // leakage, input is padded using the PADMÉ algorithm.
+    DeterministicEncryptingBinaryEncoder deterministic_encrypting = 2;
+  }
+}

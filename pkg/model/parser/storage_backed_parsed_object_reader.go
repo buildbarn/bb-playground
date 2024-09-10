@@ -3,7 +3,7 @@ package parser
 import (
 	"context"
 
-	"github.com/buildbarn/bb-playground/pkg/encoding"
+	"github.com/buildbarn/bb-playground/pkg/model/encoding"
 	"github.com/buildbarn/bb-playground/pkg/storage/object"
 	"github.com/buildbarn/bb-storage/pkg/util"
 )

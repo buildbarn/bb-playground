@@ -7,7 +7,7 @@ proto_library(
     srcs = ["mount_directory.proto"],
     visibility = ["//visibility:public"],
     deps = [
-        "//pkg/proto/configuration/encoding:encoding_proto",
+        "//pkg/proto/model/encoding:encoding_proto",
         "//pkg/proto/storage/object:object_proto",
         "@com_github_buildbarn_bb_remote_execution//pkg/proto/configuration/filesystem/virtual:virtual_proto",
         "@com_github_buildbarn_bb_storage//pkg/proto/configuration/eviction:eviction_proto",
@@ -22,7 +22,7 @@ go_proto_library(
     proto = ":mount_directory_proto",
     visibility = ["//visibility:public"],
     deps = [
-        "//pkg/proto/configuration/encoding",
+        "//pkg/proto/model/encoding",
         "//pkg/proto/storage/object",
         "@com_github_buildbarn_bb_remote_execution//pkg/proto/configuration/filesystem/virtual",
         "@com_github_buildbarn_bb_storage//pkg/proto/configuration/eviction",

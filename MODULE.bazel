@@ -49,7 +49,7 @@ go_sdk.download(version = "1.23.0")
 
 go_deps = use_extension("@gazelle//:extensions.bzl", "go_deps")
 go_deps.from_file(go_mod = "//:go.mod")
-use_repo(go_deps, "cc_mvdan_gofumpt", "com_github_buildbarn_go_cdc", "com_github_stretchr_testify", "net_starlark_go", "org_golang_google_genproto_googleapis_rpc", "org_golang_google_grpc", "org_golang_google_protobuf", "org_golang_x_exp", "org_golang_x_sync", "org_golang_x_term", "org_uber_go_mock")
+use_repo(go_deps, "cc_mvdan_gofumpt", "com_github_buildbarn_go_cdc", "com_github_seehuhn_mt19937", "com_github_stretchr_testify", "net_starlark_go", "org_golang_google_genproto_googleapis_rpc", "org_golang_google_grpc", "org_golang_google_protobuf", "org_golang_x_exp", "org_golang_x_sync", "org_golang_x_term", "org_uber_go_mock")
 
 go_deps_dev = use_extension("@gazelle//:extensions.bzl", "go_deps", dev_dependency = True)
 go_deps_dev.gazelle_override(
