@@ -1,5 +1,6 @@
 module(name = "com_github_buildbarn_bb_playground")
 
+bazel_dep(name = "bazel_remote_apis", version = "0.0.0")
 bazel_dep(name = "com_github_buildbarn_bb_remote_execution")
 bazel_dep(name = "com_github_buildbarn_bb_storage")
 bazel_dep(name = "com_github_buildbarn_go_xdr")
@@ -10,14 +11,21 @@ bazel_dep(name = "rules_go", version = "0.48.1")
 bazel_dep(name = "toolchains_llvm", version = "1.0.0")
 
 git_override(
+    module_name = "bazel_remote_apis",
+    commit = "9a250a0f817fe63a426ede43b133c3dc4549d75f",
+    patches = ["//:patches/bazel_remote_apis/grpc-v2.diff"],
+    remote = "https://github.com/bazelbuild/remote-apis.git",
+)
+
+git_override(
     module_name = "com_github_buildbarn_bb_remote_execution",
-    commit = "2da039301ce0fe79024fe20ac657a603952d4d16",
+    commit = "fa5964b758bcedd4afb22935c8c6062212fb92ae",
     remote = "https://github.com/buildbarn/bb-remote-execution.git",
 )
 
 git_override(
     module_name = "com_github_buildbarn_bb_storage",
-    commit = "af9ad48525bbf476d0a0999760b648e1e96237e5",
+    commit = "a889bc06a4070e34f5b7d85073dabaa37bfc3027",
     remote = "https://github.com/buildbarn/bb-storage.git",
 )
 

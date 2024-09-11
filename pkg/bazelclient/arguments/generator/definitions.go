@@ -89,6 +89,11 @@ var commonFlags = []flag{
 		},
 	},
 	{
+		longName:    "remote_encryption_key",
+		description: "A 128, 192 or 256 bit AES key that is used to encrypt files and directories prior to uploading them to storage.",
+		flagType:    stringFlagType{},
+	},
+	{
 		longName:    "remote_instance_name",
 		description: "Value to pass as instance_name in the remote execution API.",
 		flagType:    stringFlagType{},

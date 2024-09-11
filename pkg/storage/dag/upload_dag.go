@@ -25,6 +25,33 @@ type ObjectContentsWalker interface {
 	Discard()
 }
 
+type simpleObjectContentsWalker struct {
+	contents *object.Contents
+	walkers  []ObjectContentsWalker
+}
+
+// NewSimpleObjectContentsWalker creates an ObjectContentsWalker that is
+// backed by a literal message and a list of ObjectContentsWalkers for
+// its children. This implementation is sufficient when uploading DAGs
+// that reside fully in memory.
+func NewSimpleObjectContentsWalker(contents *object.Contents, walkers []ObjectContentsWalker) ObjectContentsWalker {
+	return &simpleObjectContentsWalker{
+		contents: contents,
+		walkers:  walkers,
+	}
+}
+
+func (w *simpleObjectContentsWalker) GetContents(ctx context.Context) (*object.Contents, []ObjectContentsWalker, error) {
+	return w.contents, w.walkers, nil
+}
+
+func (w *simpleObjectContentsWalker) Discard() {
+	for _, wChild := range w.walkers {
+		wChild.Discard()
+	}
+	*w = simpleObjectContentsWalker{}
+}
+
 type requestableObjectState struct {
 	reference                  object.LocalReference
 	walker                     ObjectContentsWalker

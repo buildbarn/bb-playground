@@ -56,7 +56,7 @@ func main() {
 		}
 
 		group, groupCtx := errgroup.WithContext(ctx)
-		var rootDirectory model_core.MessageWithReferences[*model_filesystem_pb.Directory, model_filesystem.CapturedObject]
+		var rootDirectoryMessage model_core.MessageWithReferences[*model_filesystem_pb.Directory, model_filesystem.CapturedObject]
 		group.Go(func() error {
 			return model_filesystem.CreateDirectoryMerkleTree(
 				groupCtx,
@@ -66,15 +66,15 @@ func main() {
 				fileParameters,
 				directory,
 				model_filesystem.FileDiscardingDirectoryMerkleTreeCapturer,
-				&rootDirectory,
+				&rootDirectoryMessage,
 			)
 		})
 		if err := group.Wait(); err != nil {
 			return util.StatusWrap(err, "Failed to construct directory Merkle tree")
 		}
 
-		rootReferences, rootChildren := rootDirectory.Patcher.SortAndSetReferences()
-		rootDirectoryObjectContents, err := directoryParameters.EncodeDirectory(rootReferences, rootDirectory.Message)
+		rootReferences, rootChildren := rootDirectoryMessage.Patcher.SortAndSetReferences()
+		rootDirectoryObjectContents, err := directoryParameters.EncodeDirectory(rootReferences, rootDirectoryMessage.Message)
 		if err != nil {
 			return util.StatusWrap(err, "Failed to get computed directory object for root directory")
 		}
