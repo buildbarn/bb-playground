@@ -1,32 +1,37 @@
 load("@rules_go//go:def.bzl", "go_binary", "go_library")
 
 go_library(
-    name = "upload_directory_lib",
+    name = "playground_builder_lib",
     srcs = ["main.go"],
-    importpath = "github.com/buildbarn/bb-playground/cmd/upload_directory",
+    importpath = "github.com/buildbarn/bb-playground/cmd/playground_builder",
     visibility = ["//visibility:private"],
     deps = [
+        "//pkg/label",
         "//pkg/model/core",
+        "//pkg/model/encoding",
         "//pkg/model/filesystem",
-        "//pkg/proto/configuration/upload_directory",
+        "//pkg/model/parser",
+        "//pkg/proto/build",
+        "//pkg/proto/configuration/playground_builder",
+        "//pkg/proto/model/build",
         "//pkg/proto/model/filesystem",
-        "//pkg/proto/storage/dag",
-        "//pkg/storage/dag",
+        "//pkg/proto/storage/object",
         "//pkg/storage/object",
-        "@com_github_buildbarn_bb_storage//pkg/filesystem",
+        "//pkg/storage/object/grpc",
+        "//pkg/storage/object/namespacemapping",
         "@com_github_buildbarn_bb_storage//pkg/filesystem/path",
+        "@com_github_buildbarn_bb_storage//pkg/global",
         "@com_github_buildbarn_bb_storage//pkg/grpc",
         "@com_github_buildbarn_bb_storage//pkg/program",
         "@com_github_buildbarn_bb_storage//pkg/util",
+        "@org_golang_google_grpc//:grpc",
         "@org_golang_google_grpc//codes",
         "@org_golang_google_grpc//status",
-        "@org_golang_x_sync//errgroup",
-        "@org_golang_x_sync//semaphore",
     ],
 )
 
 go_binary(
-    name = "upload_directory",
-    embed = [":upload_directory_lib"],
+    name = "playground_builder",
+    embed = [":playground_builder_lib"],
     visibility = ["//visibility:public"],
 )

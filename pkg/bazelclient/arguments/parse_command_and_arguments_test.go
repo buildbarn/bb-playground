@@ -16,15 +16,9 @@ func TestParseCommandAndArguments(t *testing.T) {
 			[]string{},
 		)
 		require.NoError(t, err)
-		require.Equal(t, &arguments.HelpCommand{
-			CommonFlags: arguments.CommonFlags{
-				Color:                  arguments.Color_Auto,
-				RemoteCacheCompression: true,
-			},
-			HelpFlags: arguments.HelpFlags{
-				HelpVerbosity: arguments.HelpVerbosity_Medium,
-			},
-		}, command)
+		require.Equal(t, arguments.HelpFlags{
+			HelpVerbosity: arguments.HelpVerbosity_Medium,
+		}, command.(*arguments.HelpCommand).HelpFlags)
 	})
 
 	t.Run("CommandNotRecognized", func(t *testing.T) {
@@ -49,16 +43,7 @@ func TestParseCommandAndArguments(t *testing.T) {
 				},
 			)
 			require.NoError(t, err)
-			require.Equal(t, &arguments.BuildCommand{
-				CommonFlags: arguments.CommonFlags{
-					Color:                  arguments.Color_Auto,
-					RemoteCacheCompression: true,
-				},
-				BuildFlags: arguments.BuildFlags{
-					KeepGoing: true,
-				},
-				Arguments: []string{"//..."},
-			}, command)
+			require.True(t, command.(*arguments.BuildCommand).BuildFlags.KeepGoing)
 		})
 
 		t.Run("KeepGoingLong0", func(t *testing.T) {
@@ -71,13 +56,7 @@ func TestParseCommandAndArguments(t *testing.T) {
 				},
 			)
 			require.NoError(t, err)
-			require.Equal(t, &arguments.BuildCommand{
-				CommonFlags: arguments.CommonFlags{
-					Color:                  arguments.Color_Auto,
-					RemoteCacheCompression: true,
-				},
-				Arguments: []string{"//..."},
-			}, command)
+			require.False(t, command.(*arguments.BuildCommand).BuildFlags.KeepGoing)
 		})
 
 		t.Run("KeepGoingLong1", func(t *testing.T) {
@@ -90,16 +69,7 @@ func TestParseCommandAndArguments(t *testing.T) {
 				},
 			)
 			require.NoError(t, err)
-			require.Equal(t, &arguments.BuildCommand{
-				CommonFlags: arguments.CommonFlags{
-					Color:                  arguments.Color_Auto,
-					RemoteCacheCompression: true,
-				},
-				BuildFlags: arguments.BuildFlags{
-					KeepGoing: true,
-				},
-				Arguments: []string{"//..."},
-			}, command)
+			require.True(t, command.(*arguments.BuildCommand).BuildFlags.KeepGoing)
 		})
 
 		t.Run("KeepGoingLongFalse", func(t *testing.T) {
@@ -112,13 +82,7 @@ func TestParseCommandAndArguments(t *testing.T) {
 				},
 			)
 			require.NoError(t, err)
-			require.Equal(t, &arguments.BuildCommand{
-				CommonFlags: arguments.CommonFlags{
-					Color:                  arguments.Color_Auto,
-					RemoteCacheCompression: true,
-				},
-				Arguments: []string{"//..."},
-			}, command)
+			require.False(t, command.(*arguments.BuildCommand).BuildFlags.KeepGoing)
 		})
 
 		t.Run("KeepGoingLongTrue", func(t *testing.T) {
@@ -131,16 +95,7 @@ func TestParseCommandAndArguments(t *testing.T) {
 				},
 			)
 			require.NoError(t, err)
-			require.Equal(t, &arguments.BuildCommand{
-				CommonFlags: arguments.CommonFlags{
-					Color:                  arguments.Color_Auto,
-					RemoteCacheCompression: true,
-				},
-				BuildFlags: arguments.BuildFlags{
-					KeepGoing: true,
-				},
-				Arguments: []string{"//..."},
-			}, command)
+			require.True(t, command.(*arguments.BuildCommand).BuildFlags.KeepGoing)
 		})
 
 		t.Run("KeepGoingLongNo", func(t *testing.T) {
@@ -153,13 +108,7 @@ func TestParseCommandAndArguments(t *testing.T) {
 				},
 			)
 			require.NoError(t, err)
-			require.Equal(t, &arguments.BuildCommand{
-				CommonFlags: arguments.CommonFlags{
-					Color:                  arguments.Color_Auto,
-					RemoteCacheCompression: true,
-				},
-				Arguments: []string{"//..."},
-			}, command)
+			require.False(t, command.(*arguments.BuildCommand).BuildFlags.KeepGoing)
 		})
 
 		t.Run("KeepGoingLongYes", func(t *testing.T) {
@@ -172,16 +121,7 @@ func TestParseCommandAndArguments(t *testing.T) {
 				},
 			)
 			require.NoError(t, err)
-			require.Equal(t, &arguments.BuildCommand{
-				CommonFlags: arguments.CommonFlags{
-					Color:                  arguments.Color_Auto,
-					RemoteCacheCompression: true,
-				},
-				BuildFlags: arguments.BuildFlags{
-					KeepGoing: true,
-				},
-				Arguments: []string{"//..."},
-			}, command)
+			require.True(t, command.(*arguments.BuildCommand).BuildFlags.KeepGoing)
 		})
 
 		t.Run("KeepGoingLongOther", func(t *testing.T) {
@@ -206,16 +146,7 @@ func TestParseCommandAndArguments(t *testing.T) {
 				},
 			)
 			require.NoError(t, err)
-			require.Equal(t, &arguments.BuildCommand{
-				CommonFlags: arguments.CommonFlags{
-					Color:                  arguments.Color_Auto,
-					RemoteCacheCompression: true,
-				},
-				BuildFlags: arguments.BuildFlags{
-					KeepGoing: true,
-				},
-				Arguments: []string{"//..."},
-			}, command)
+			require.True(t, command.(*arguments.BuildCommand).BuildFlags.KeepGoing)
 		})
 
 		t.Run("NoKeepGoingLong", func(t *testing.T) {
@@ -229,13 +160,7 @@ func TestParseCommandAndArguments(t *testing.T) {
 				},
 			)
 			require.NoError(t, err)
-			require.Equal(t, &arguments.BuildCommand{
-				CommonFlags: arguments.CommonFlags{
-					Color:                  arguments.Color_Auto,
-					RemoteCacheCompression: true,
-				},
-				Arguments: []string{"//..."},
-			}, command)
+			require.False(t, command.(*arguments.BuildCommand).BuildFlags.KeepGoing)
 		})
 
 		t.Run("NoKeepGoingShort", func(t *testing.T) {
@@ -249,13 +174,7 @@ func TestParseCommandAndArguments(t *testing.T) {
 				},
 			)
 			require.NoError(t, err)
-			require.Equal(t, &arguments.BuildCommand{
-				CommonFlags: arguments.CommonFlags{
-					Color:                  arguments.Color_Auto,
-					RemoteCacheCompression: true,
-				},
-				Arguments: []string{"//..."},
-			}, command)
+			require.False(t, command.(*arguments.BuildCommand).BuildFlags.KeepGoing)
 		})
 
 		t.Run("NoKeepGoingUnexpectedValue", func(t *testing.T) {
@@ -282,16 +201,10 @@ func TestParseCommandAndArguments(t *testing.T) {
 				},
 			)
 			require.NoError(t, err)
-			require.Equal(t, &arguments.BuildCommand{
-				CommonFlags: arguments.CommonFlags{
-					Color:                  arguments.Color_Auto,
-					RemoteCacheCompression: true,
-				},
-				Arguments: []string{
-					"//...",
-					"-//foo/...",
-				},
-			}, command)
+			require.Equal(t, []string{
+				"//...",
+				"-//foo/...",
+			}, command.(*arguments.BuildCommand).Arguments)
 		})
 
 		t.Run("ArgumentsInConfiguration", func(t *testing.T) {
@@ -318,20 +231,15 @@ func TestParseCommandAndArguments(t *testing.T) {
 				},
 			)
 			require.NoError(t, err)
-			require.Equal(t, &arguments.BuildCommand{
-				CommonFlags: arguments.CommonFlags{
-					Color:                  arguments.Color_Auto,
-					RemoteCacheCompression: true,
-				},
-				BuildFlags: arguments.BuildFlags{
-					KeepGoing: true,
-					Platforms: "@rules_go//go/toolchain:linux_amd64",
-				},
-				Arguments: []string{
-					"//...",
-					"-//doc/...",
-				},
-			}, command)
+			require.Equal(
+				t,
+				"@rules_go//go/toolchain:linux_amd64",
+				command.(*arguments.BuildCommand).BuildFlags.Platforms,
+			)
+			require.Equal(t, []string{
+				"//...",
+				"-//doc/...",
+			}, command.(*arguments.BuildCommand).Arguments)
 		})
 	})
 
@@ -367,7 +275,7 @@ func TestParseCommandAndArguments(t *testing.T) {
 			// In "common", it is permitted to place flags
 			// that aren't necessarily applicable to the
 			// current command.
-			command, err := arguments.ParseCommandAndArguments(
+			_, err := arguments.ParseCommandAndArguments(
 				arguments.ConfigurationDirectives{
 					"common": [][]string{{
 						"--help_verbosity",
@@ -379,12 +287,6 @@ func TestParseCommandAndArguments(t *testing.T) {
 				},
 			)
 			require.NoError(t, err)
-			require.Equal(t, &arguments.CleanCommand{
-				CommonFlags: arguments.CommonFlags{
-					Color:                  arguments.Color_Auto,
-					RemoteCacheCompression: true,
-				},
-			}, command)
 		})
 
 		t.Run("HelpVerbosityNotApplicableViaConfigAlways", func(t *testing.T) {
@@ -425,15 +327,9 @@ func TestParseCommandAndArguments(t *testing.T) {
 				},
 			)
 			require.NoError(t, err)
-			require.Equal(t, &arguments.HelpCommand{
-				CommonFlags: arguments.CommonFlags{
-					Color:                  arguments.Color_Auto,
-					RemoteCacheCompression: true,
-				},
-				HelpFlags: arguments.HelpFlags{
-					HelpVerbosity: arguments.HelpVerbosity_Medium,
-				},
-			}, command)
+			require.Equal(t, arguments.HelpFlags{
+				HelpVerbosity: arguments.HelpVerbosity_Medium,
+			}, command.(*arguments.HelpCommand).HelpFlags)
 		})
 
 		t.Run("Short", func(t *testing.T) {
@@ -445,15 +341,9 @@ func TestParseCommandAndArguments(t *testing.T) {
 				},
 			)
 			require.NoError(t, err)
-			require.Equal(t, &arguments.HelpCommand{
-				CommonFlags: arguments.CommonFlags{
-					Color:                  arguments.Color_Auto,
-					RemoteCacheCompression: true,
-				},
-				HelpFlags: arguments.HelpFlags{
-					HelpVerbosity: arguments.HelpVerbosity_Short,
-				},
-			}, command)
+			require.Equal(t, arguments.HelpFlags{
+				HelpVerbosity: arguments.HelpVerbosity_Short,
+			}, command.(*arguments.HelpCommand).HelpFlags)
 		})
 
 		t.Run("ShortUnexpectedValue", func(t *testing.T) {
@@ -476,15 +366,9 @@ func TestParseCommandAndArguments(t *testing.T) {
 				},
 			)
 			require.NoError(t, err)
-			require.Equal(t, &arguments.HelpCommand{
-				CommonFlags: arguments.CommonFlags{
-					Color:                  arguments.Color_Auto,
-					RemoteCacheCompression: true,
-				},
-				HelpFlags: arguments.HelpFlags{
-					HelpVerbosity: arguments.HelpVerbosity_Long,
-				},
-			}, command)
+			require.Equal(t, arguments.HelpFlags{
+				HelpVerbosity: arguments.HelpVerbosity_Long,
+			}, command.(*arguments.HelpCommand).HelpFlags)
 		})
 
 		t.Run("HelpVerbosity", func(t *testing.T) {
@@ -497,15 +381,9 @@ func TestParseCommandAndArguments(t *testing.T) {
 					},
 				)
 				require.NoError(t, err)
-				require.Equal(t, &arguments.HelpCommand{
-					CommonFlags: arguments.CommonFlags{
-						Color:                  arguments.Color_Auto,
-						RemoteCacheCompression: true,
-					},
-					HelpFlags: arguments.HelpFlags{
-						HelpVerbosity: arguments.HelpVerbosity_Short,
-					},
-				}, command)
+				require.Equal(t, arguments.HelpFlags{
+					HelpVerbosity: arguments.HelpVerbosity_Short,
+				}, command.(*arguments.HelpCommand).HelpFlags)
 			})
 
 			t.Run("Space", func(t *testing.T) {
@@ -518,15 +396,9 @@ func TestParseCommandAndArguments(t *testing.T) {
 					},
 				)
 				require.NoError(t, err)
-				require.Equal(t, &arguments.HelpCommand{
-					CommonFlags: arguments.CommonFlags{
-						Color:                  arguments.Color_Auto,
-						RemoteCacheCompression: true,
-					},
-					HelpFlags: arguments.HelpFlags{
-						HelpVerbosity: arguments.HelpVerbosity_Long,
-					},
-				}, command)
+				require.Equal(t, arguments.HelpFlags{
+					HelpVerbosity: arguments.HelpVerbosity_Long,
+				}, command.(*arguments.HelpCommand).HelpFlags)
 			})
 
 			t.Run("MissingValue", func(t *testing.T) {
@@ -562,16 +434,11 @@ func TestParseCommandAndArguments(t *testing.T) {
 				},
 			)
 			require.NoError(t, err)
-			require.Equal(t, &arguments.HelpCommand{
-				CommonFlags: arguments.CommonFlags{
-					Color:                  arguments.Color_Auto,
-					RemoteCacheCompression: true,
-				},
-				HelpFlags: arguments.HelpFlags{
-					HelpVerbosity: arguments.HelpVerbosity_Medium,
-				},
-				Arguments: []string{"build"},
-			}, command)
+			require.Equal(
+				t,
+				[]string{"build"},
+				command.(*arguments.HelpCommand).Arguments,
+			)
 		})
 	})
 
@@ -599,19 +466,11 @@ func TestParseCommandAndArguments(t *testing.T) {
 				},
 			)
 			require.NoError(t, err)
-			require.Equal(t, &arguments.RunCommand{
-				CommonFlags: arguments.CommonFlags{
-					Color:                  arguments.Color_Auto,
-					RemoteCacheCompression: true,
-				},
-				BuildFlags: arguments.BuildFlags{
-					Platforms: "@bazel_tools//tools:host_platform",
-				},
-				Arguments: []string{
-					"//cmd/my_tool",
-					"--help",
-				},
-			}, command)
+			require.Equal(
+				t,
+				"@bazel_tools//tools:host_platform",
+				command.(*arguments.RunCommand).BuildFlags.Platforms,
+			)
 		})
 
 		t.Run("RunUnderMultipleSameSpecificity", func(t *testing.T) {
@@ -631,18 +490,11 @@ func TestParseCommandAndArguments(t *testing.T) {
 				},
 			)
 			require.NoError(t, err)
-			require.Equal(t, &arguments.RunCommand{
-				CommonFlags: arguments.CommonFlags{
-					Color:                  arguments.Color_Auto,
-					RemoteCacheCompression: true,
-				},
-				RunFlags: arguments.RunFlags{
-					RunUnder: "time",
-				},
-				Arguments: []string{
-					"//cmd/my_tool",
-				},
-			}, command)
+			require.Equal(
+				t,
+				"time",
+				command.(*arguments.RunCommand).RunFlags.RunUnder,
+			)
 		})
 	})
 
@@ -655,15 +507,9 @@ func TestParseCommandAndArguments(t *testing.T) {
 				},
 			)
 			require.NoError(t, err)
-			require.Equal(t, &arguments.VersionCommand{
-				CommonFlags: arguments.CommonFlags{
-					Color:                  arguments.Color_Auto,
-					RemoteCacheCompression: true,
-				},
-				VersionFlags: arguments.VersionFlags{
-					GnuFormat: false,
-				},
-			}, command)
+			require.Equal(t, arguments.VersionFlags{
+				GnuFormat: false,
+			}, command.(*arguments.VersionCommand).VersionFlags)
 		})
 
 		t.Run("GNUFormatInConfigurationFile", func(t *testing.T) {
@@ -684,15 +530,9 @@ func TestParseCommandAndArguments(t *testing.T) {
 				},
 			)
 			require.NoError(t, err)
-			require.Equal(t, &arguments.VersionCommand{
-				CommonFlags: arguments.CommonFlags{
-					Color:                  arguments.Color_Auto,
-					RemoteCacheCompression: true,
-				},
-				VersionFlags: arguments.VersionFlags{
-					GnuFormat: true,
-				},
-			}, command)
+			require.Equal(t, arguments.VersionFlags{
+				GnuFormat: true,
+			}, command.(*arguments.VersionCommand).VersionFlags)
 		})
 
 		t.Run("GNUFormatBehindConfigFlag", func(t *testing.T) {
@@ -708,15 +548,9 @@ func TestParseCommandAndArguments(t *testing.T) {
 				},
 			)
 			require.NoError(t, err)
-			require.Equal(t, &arguments.VersionCommand{
-				CommonFlags: arguments.CommonFlags{
-					Color:                  arguments.Color_Auto,
-					RemoteCacheCompression: true,
-				},
-				VersionFlags: arguments.VersionFlags{
-					GnuFormat: true,
-				},
-			}, command)
+			require.Equal(t, arguments.VersionFlags{
+				GnuFormat: true,
+			}, command.(*arguments.VersionCommand).VersionFlags)
 		})
 
 		t.Run("InvalidConfig", func(t *testing.T) {

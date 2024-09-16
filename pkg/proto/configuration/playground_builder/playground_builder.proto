@@ -1,0 +1,18 @@
+syntax = "proto3";
+
+package buildbarn.playground.configuration.playground_builder;
+
+import "pkg/proto/configuration/global/global.proto";
+import "pkg/proto/configuration/grpc/grpc.proto";
+
+option go_package = "github.com/buildbarn/bb-playground/pkg/proto/configuration/playground_builder";
+
+message ApplicationConfiguration {
+  // Common configuration options that apply to all Buildbarn binaries.
+  buildbarn.configuration.global.Configuration global = 1;
+
+  // gRPC servers to spawn to listen for requests from clients.
+  repeated buildbarn.configuration.grpc.ServerConfiguration grpc_servers = 2;
+
+  buildbarn.configuration.grpc.ClientConfiguration storage_grpc_client = 3;
+}

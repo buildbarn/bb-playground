@@ -24,6 +24,12 @@ var enumTypes = map[string][]string{
 		"medium",
 		"short",
 	},
+	"LockfileMode": {
+		"off",
+		"update",
+		"refresh",
+		"error",
+	},
 }
 
 var startupFlags = []flag{
@@ -64,6 +70,11 @@ var startupFlags = []flag{
 
 var commonFlags = []flag{
 	{
+		longName:    "build_request_id",
+		description: "Unique identifier, in UUID format, for the build being run.",
+		flagType:    stringFlagType{},
+	},
+	{
 		longName:    "color",
 		description: "Use terminal controls to colorize output.",
 		flagType: enumFlagType{
@@ -72,8 +83,26 @@ var commonFlags = []flag{
 		},
 	},
 	{
+		longName:    "invocation_id",
+		description: "Unique identifier, in UUID format, for the command being run.",
+		flagType:    stringFlagType{},
+	},
+	{
+		longName:    "lockfile_mode",
+		description: "Specifies how and whether or not to use the lockfile. Valid values are `update` to use the lockfile and update it if there are changes, `refresh` to additionally refresh mutable information (yanked versions and previously missing modules) from remote registries from time to time, `error` to use the lockfile but throw an error if it's not up-to-date, or `off` to neither read from or write to the lockfile.",
+		flagType: enumFlagType{
+			enumType:     "LockfileMode",
+			defaultValue: "update",
+		},
+	},
+	{
 		longName:    "override_module",
 		description: "Override a module with a local path in the form of <module name>=<path>. If the given path is an absolute path, it will be used as it is. If the given path is a relative path, it is relative to the current working directory. If the given path starts with '%workspace%, it is relative to the workspace root, which is the output of `bazel info workspace`. If the given path is empty, then remove any previous overrides.",
+		flagType:    stringListFlagType{},
+	},
+	{
+		longName:    "registry",
+		description: "Specifies the registries to use to locate Bazel module dependencies. The order is important: modules will be looked up in earlier registries first, and only fall back to later registries when they're missing from the earlier ones.",
 		flagType:    stringListFlagType{},
 	},
 	{
@@ -91,6 +120,11 @@ var commonFlags = []flag{
 	{
 		longName:    "remote_encryption_key",
 		description: "A 128, 192 or 256 bit AES key that is used to encrypt files and directories prior to uploading them to storage.",
+		flagType:    stringFlagType{},
+	},
+	{
+		longName:    "remote_executor",
+		description: "A URI of a playground_blabla endpoint endpoint. The supported schemas are grpc, grpcs (grpc with TLS enabled) and unix (local UNIX sockets). Specify grpc:// or unix: schema to disable TLS.",
 		flagType:    stringFlagType{},
 	},
 	{

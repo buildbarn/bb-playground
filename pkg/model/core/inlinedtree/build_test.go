@@ -56,12 +56,12 @@ func TestBuild(t *testing.T) {
 		}
 		parentAppender := NewMockParentAppenderForTesting(ctrl)
 		parentAppender.EXPECT().Call(gomock.Any(), gomock.Nil(), gomock.Len(0)).
-			Do(func(output model_core.MessageWithReferences[*model_filesystem_pb.Directory, string], externalContents *object.Contents, externalMetadata []string) {
+			Do(func(output model_core.PatchedMessage[*model_filesystem_pb.Directory, string], externalContents *object.Contents, externalMetadata []string) {
 				output.Message.Leaves = leavesInline
 			}).
 			Times(2)
 		parentAppender.EXPECT().Call(gomock.Any(), gomock.Not(gomock.Nil()), gomock.Len(0)).
-			Do(func(output model_core.MessageWithReferences[*model_filesystem_pb.Directory, string], externalContents *object.Contents, externalMetadata []string) {
+			Do(func(output model_core.PatchedMessage[*model_filesystem_pb.Directory, string], externalContents *object.Contents, externalMetadata []string) {
 				output.Message.Leaves = &model_filesystem_pb.Directory_LeavesExternal{
 					LeavesExternal: output.Patcher.AddReference(externalContents.GetReference(), "Hello"),
 				}
@@ -72,7 +72,7 @@ func TestBuild(t *testing.T) {
 			object.MustNewReferenceFormat(object_pb.ReferenceFormat_SHA256_V1),
 			encoder,
 			[]inlinedtree.Candidate[*model_filesystem_pb.Directory, string]{{
-				ExternalMessage: model_core.MessageWithReferences[proto.Message, string]{
+				ExternalMessage: model_core.PatchedMessage[proto.Message, string]{
 					Message: leaves,
 					Patcher: model_core.NewReferenceMessagePatcher[string](),
 				},
@@ -107,14 +107,14 @@ func TestBuild(t *testing.T) {
 		}
 		parentAppender := NewMockParentAppenderForTesting(ctrl)
 		parentAppender.EXPECT().Call(gomock.Any(), gomock.Nil(), gomock.Len(0)).
-			Do(func(output model_core.MessageWithReferences[*model_filesystem_pb.Directory, string], externalContents *object.Contents, externalMetadata []string) {
+			Do(func(output model_core.PatchedMessage[*model_filesystem_pb.Directory, string], externalContents *object.Contents, externalMetadata []string) {
 				output.Message.Leaves = &model_filesystem_pb.Directory_LeavesInline{
 					LeavesInline: leaves,
 				}
 			}).
 			Times(1)
 		parentAppender.EXPECT().Call(gomock.Any(), gomock.Not(gomock.Nil()), gomock.Len(0)).
-			Do(func(output model_core.MessageWithReferences[*model_filesystem_pb.Directory, string], externalContents *object.Contents, externalMetadata []string) {
+			Do(func(output model_core.PatchedMessage[*model_filesystem_pb.Directory, string], externalContents *object.Contents, externalMetadata []string) {
 				output.Message.Leaves = &model_filesystem_pb.Directory_LeavesExternal{
 					LeavesExternal: output.Patcher.AddReference(externalContents.GetReference(), "Hello"),
 				}
@@ -125,7 +125,7 @@ func TestBuild(t *testing.T) {
 			object.MustNewReferenceFormat(object_pb.ReferenceFormat_SHA256_V1),
 			encoder,
 			[]inlinedtree.Candidate[*model_filesystem_pb.Directory, string]{{
-				ExternalMessage: model_core.MessageWithReferences[proto.Message, string]{
+				ExternalMessage: model_core.PatchedMessage[proto.Message, string]{
 					Message: leaves,
 					Patcher: model_core.NewReferenceMessagePatcher[string](),
 				},
@@ -167,12 +167,12 @@ func TestBuild(t *testing.T) {
 		}
 		parentAppender := NewMockParentAppenderForTesting(ctrl)
 		parentAppender.EXPECT().Call(gomock.Any(), gomock.Nil(), gomock.Len(0)).
-			Do(func(output model_core.MessageWithReferences[*model_filesystem_pb.Directory, string], externalContents *object.Contents, externalMetadata []string) {
+			Do(func(output model_core.PatchedMessage[*model_filesystem_pb.Directory, string], externalContents *object.Contents, externalMetadata []string) {
 				output.Message.Leaves = leavesInline
 			}).
 			Times(2)
 		parentAppender.EXPECT().Call(gomock.Any(), gomock.Not(gomock.Nil()), gomock.Len(0)).
-			Do(func(output model_core.MessageWithReferences[*model_filesystem_pb.Directory, string], externalContents *object.Contents, externalMetadata []string) {
+			Do(func(output model_core.PatchedMessage[*model_filesystem_pb.Directory, string], externalContents *object.Contents, externalMetadata []string) {
 				output.Message.Leaves = &model_filesystem_pb.Directory_LeavesExternal{
 					LeavesExternal: output.Patcher.AddReference(externalContents.GetReference(), "Hello"),
 				}
@@ -183,7 +183,7 @@ func TestBuild(t *testing.T) {
 			object.MustNewReferenceFormat(object_pb.ReferenceFormat_SHA256_V1),
 			encoder,
 			[]inlinedtree.Candidate[*model_filesystem_pb.Directory, string]{{
-				ExternalMessage: model_core.MessageWithReferences[proto.Message, string]{
+				ExternalMessage: model_core.PatchedMessage[proto.Message, string]{
 					Message: leaves,
 					Patcher: model_core.NewReferenceMessagePatcher[string](),
 				},

@@ -16,15 +16,15 @@ type LevelBuilderFactory[TNode proto.Message, TMetadata any] interface {
 // LevelBuilder is responsible for storing state for objects that are in
 // the process of being constructed at a given level of the B-tree.
 type LevelBuilder[TNode proto.Message, TMetadata any] interface {
-	PushChild(node model_core.MessageWithReferences[TNode, TMetadata]) error
-	PopParent(finalize bool) (*model_core.MessageWithReferences[TNode, TMetadata], error)
+	PushChild(node model_core.PatchedMessage[TNode, TMetadata]) error
+	PopParent(finalize bool) (*model_core.PatchedMessage[TNode, TMetadata], error)
 }
 
 // Builder of B-trees.
 type Builder[TNode proto.Message, TMetadata any] struct {
 	levelBuilderFactory LevelBuilderFactory[TNode, TMetadata]
 
-	rootNode *model_core.MessageWithReferences[TNode, TMetadata]
+	rootNode *model_core.PatchedMessage[TNode, TMetadata]
 	levels   []LevelBuilder[TNode, TMetadata]
 }
 
@@ -36,7 +36,7 @@ func NewBuilder[TNode proto.Message, TMetadata any](levelBuilderFactory LevelBui
 	}
 }
 
-func (b *Builder[TNode, TMetadata]) pushChildAtLevel(level int, node model_core.MessageWithReferences[TNode, TMetadata]) error {
+func (b *Builder[TNode, TMetadata]) pushChildAtLevel(level int, node model_core.PatchedMessage[TNode, TMetadata]) error {
 	if level == len(b.levels) {
 		if b.rootNode == nil {
 			// First node to be pushed at a given level.
@@ -58,7 +58,7 @@ func (b *Builder[TNode, TMetadata]) pushChildAtLevel(level int, node model_core.
 }
 
 // PushChild inserts a new node at the very end of the B-tree.
-func (b *Builder[TNode, TMetadata]) PushChild(node model_core.MessageWithReferences[TNode, TMetadata]) error {
+func (b *Builder[TNode, TMetadata]) PushChild(node model_core.PatchedMessage[TNode, TMetadata]) error {
 	if err := b.pushChildAtLevel(0, node); err != nil {
 		return err
 	}
@@ -87,7 +87,7 @@ func (b *Builder[TNode, TMetadata]) PushChild(node model_core.MessageWithReferen
 }
 
 // Finalize the B-tree by returning its root node.
-func (b *Builder[TNode, TMetadata]) Finalize() (node *model_core.MessageWithReferences[TNode, TMetadata], err error) {
+func (b *Builder[TNode, TMetadata]) Finalize() (node *model_core.PatchedMessage[TNode, TMetadata], err error) {
 	// Drain parent nodes at each level until a single node root remains.
 	for childLevel := 0; childLevel < len(b.levels); childLevel++ {
 		parentLevel := childLevel + 1

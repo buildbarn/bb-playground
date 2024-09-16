@@ -6,6 +6,7 @@ require (
 	github.com/buildbarn/bb-remote-execution v0.0.0-20240910191511-fa5964b758bc
 	github.com/buildbarn/bb-storage v0.0.0-20240910154348-a889bc06a407
 	github.com/buildbarn/go-cdc v0.0.0-20240326143813-ab4a540e41c6
+	github.com/google/uuid v1.6.0
 	github.com/seehuhn/mt19937 v1.0.0
 	github.com/stretchr/testify v1.9.0
 	go.starlark.net v0.0.0-20240725214946-42030a7cedce
@@ -14,18 +15,18 @@ require (
 	golang.org/x/sync v0.8.0
 	golang.org/x/term v0.24.0
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20240903143218-8af14fe29dc1
-	google.golang.org/grpc v1.66.1
+	google.golang.org/grpc v1.66.2
 	google.golang.org/protobuf v1.34.2
 	mvdan.cc/gofumpt v0.7.0
 )
 
 require (
 	cloud.google.com/go v0.115.1 // indirect
-	cloud.google.com/go/auth v0.9.3 // indirect
+	cloud.google.com/go/auth v0.9.4 // indirect
 	cloud.google.com/go/auth/oauth2adapt v0.2.4 // indirect
-	cloud.google.com/go/compute/metadata v0.5.0 // indirect
-	cloud.google.com/go/iam v1.2.0 // indirect
-	cloud.google.com/go/longrunning v0.6.0 // indirect
+	cloud.google.com/go/compute/metadata v0.5.1 // indirect
+	cloud.google.com/go/iam v1.2.1 // indirect
+	cloud.google.com/go/longrunning v0.6.1 // indirect
 	cloud.google.com/go/storage v1.43.0 // indirect
 	github.com/aohorodnyk/mimeheader v0.0.6 // indirect
 	github.com/aws/aws-sdk-go-v2 v1.30.5 // indirect
@@ -60,7 +61,6 @@ require (
 	github.com/google/go-cmp v0.6.0 // indirect
 	github.com/google/go-jsonnet v0.20.0 // indirect
 	github.com/google/s2a-go v0.1.8 // indirect
-	github.com/google/uuid v1.6.0 // indirect
 	github.com/googleapis/enterprise-certificate-proxy v0.3.4 // indirect
 	github.com/googleapis/gax-go/v2 v2.13.0 // indirect
 	github.com/gorilla/mux v1.8.1 // indirect
@@ -78,9 +78,9 @@ require (
 	github.com/prometheus/procfs v0.15.1 // indirect
 	github.com/sercand/kuberesolver/v5 v5.1.1 // indirect
 	go.opencensus.io v0.24.0 // indirect
-	go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc v0.54.0 // indirect
-	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.54.0 // indirect
-	go.opentelemetry.io/contrib/propagators/b3 v1.29.0 // indirect
+	go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc v0.55.0 // indirect
+	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.55.0 // indirect
+	go.opentelemetry.io/contrib/propagators/b3 v1.30.0 // indirect
 	go.opentelemetry.io/otel v1.30.0 // indirect
 	go.opentelemetry.io/otel/exporters/jaeger v1.17.0 // indirect
 	go.opentelemetry.io/otel/exporters/otlp/otlptrace v1.30.0 // indirect

@@ -131,8 +131,10 @@ func main() {
 
 		fileFactory := model_filesystem_virtual.NewObjectBackedFileFactory(
 			rootHandleAllocator.New(),
-			fileContentsListReader,
-			fileChunkReader,
+			model_filesystem.NewFileReader(
+				fileContentsListReader,
+				fileChunkReader,
+			),
 			util.DefaultErrorLogger,
 		)
 		directoryFactory := model_filesystem_virtual.NewObjectBackedDirectoryFactory(

@@ -60,7 +60,7 @@ func TestProllyLevelBuilderFactory(t *testing.T) {
 
 		for i := 1000; i < 1010; i++ {
 			patcher := model_core.NewReferenceMessagePatcher[string]()
-			require.NoError(t, levelBuilder.PushChild(model_core.MessageWithReferences[*model_filesystem_pb.FileContents, string]{
+			require.NoError(t, levelBuilder.PushChild(model_core.PatchedMessage[*model_filesystem_pb.FileContents, string]{
 				Message: &model_filesystem_pb.FileContents{
 					TotalSizeBytes: uint64(i),
 					Reference: patcher.AddReference(
@@ -75,7 +75,7 @@ func TestProllyLevelBuilderFactory(t *testing.T) {
 		// The first call to PopParent() should construct an
 		// object for the first three nodes.
 		parentPatcher1 := model_core.NewReferenceMessagePatcher[string]()
-		parentNode1 := model_core.MessageWithReferences[*model_filesystem_pb.FileContents, string]{
+		parentNode1 := model_core.PatchedMessage[*model_filesystem_pb.FileContents, string]{
 			Message: &model_filesystem_pb.FileContents{
 				TotalSizeBytes: 3003,
 				Reference: parentPatcher1.AddReference(
@@ -105,7 +105,7 @@ func TestProllyLevelBuilderFactory(t *testing.T) {
 		// The second call to PopParent() should construct an
 		// object for the next three nodes.
 		parentPatcher2 := model_core.NewReferenceMessagePatcher[string]()
-		parentNode2 := model_core.MessageWithReferences[*model_filesystem_pb.FileContents, string]{
+		parentNode2 := model_core.PatchedMessage[*model_filesystem_pb.FileContents, string]{
 			Message: &model_filesystem_pb.FileContents{
 				TotalSizeBytes: 3012,
 				Reference: parentPatcher2.AddReference(
@@ -144,7 +144,7 @@ func TestProllyLevelBuilderFactory(t *testing.T) {
 		// should be returned as part of a single message, as
 		// there is no way to split them.
 		parentPatcher3 := model_core.NewReferenceMessagePatcher[string]()
-		parentNode3 := model_core.MessageWithReferences[*model_filesystem_pb.FileContents, string]{
+		parentNode3 := model_core.PatchedMessage[*model_filesystem_pb.FileContents, string]{
 			Message: &model_filesystem_pb.FileContents{
 				TotalSizeBytes: 4030,
 				Reference: parentPatcher3.AddReference(

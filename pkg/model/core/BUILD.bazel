@@ -4,7 +4,7 @@ go_library(
     name = "core",
     srcs = [
         "get_index_from_reference_message.go",
-        "message_with_references.go",
+        "patched_message.go",
         "reference_message_patcher.go",
     ],
     importpath = "github.com/buildbarn/bb-playground/pkg/model/core",

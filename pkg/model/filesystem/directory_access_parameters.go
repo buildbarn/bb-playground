@@ -62,3 +62,7 @@ func (p *DirectoryAccessParameters) DecodeLeaves(contents *object.Contents) (*mo
 	}
 	return &leaves, nil
 }
+
+func (p *DirectoryAccessParameters) GetEncoder() encoding.BinaryEncoder {
+	return p.encoder
+}

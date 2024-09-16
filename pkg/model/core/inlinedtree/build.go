@@ -23,7 +23,7 @@ import (
 // of the parent object is affected by either inlining the data or
 // storing it externally.
 type ParentAppender[TParentMessage proto.Message, TMetadata any] func(
-	parent model_core.MessageWithReferences[TParentMessage, TMetadata],
+	parent model_core.PatchedMessage[TParentMessage, TMetadata],
 	externalContents *object.Contents,
 	externalMetadata []TMetadata,
 )
@@ -33,7 +33,7 @@ type ParentAppender[TParentMessage proto.Message, TMetadata any] func(
 type Candidate[TParentMessage proto.Message, TMetadata any] struct {
 	// Message to store in a child object if no space is present to
 	// inline it into the parent object.
-	ExternalMessage model_core.MessageWithReferences[proto.Message, TMetadata]
+	ExternalMessage model_core.PatchedMessage[proto.Message, TMetadata]
 	// Function to invoke to either inline the message into the
 	// output, or create a reference to the child object.
 	ParentAppender ParentAppender[TParentMessage, TMetadata]
@@ -81,9 +81,9 @@ func Build[
 	encoder encoding.BinaryEncoder,
 	candidates []Candidate[TParentMessagePtr, TMetadata],
 	maximumSizeBytes int,
-) (model_core.MessageWithReferences[TParentMessagePtr, TMetadata], error) {
+) (model_core.PatchedMessage[TParentMessagePtr, TMetadata], error) {
 	// Start off with an empty output message.
-	output := model_core.MessageWithReferences[TParentMessagePtr, TMetadata]{
+	output := model_core.PatchedMessage[TParentMessagePtr, TMetadata]{
 		Message: TParentMessagePtr(new(TParentMessage)),
 		Patcher: model_core.NewReferenceMessagePatcher[TMetadata](),
 	}
@@ -100,13 +100,13 @@ func Build[
 		Slice: make(ds.Slice[queuedCandidate], 0, len(candidates)),
 	}
 	for i, candidate := range candidates {
-		parentInlined := model_core.MessageWithReferences[TParentMessagePtr, TMetadata]{
+		parentInlined := model_core.PatchedMessage[TParentMessagePtr, TMetadata]{
 			Message: TParentMessagePtr(new(TParentMessage)),
 		}
 		candidate.ParentAppender(parentInlined, nil, nil)
 		inlinedSizeBytes := candidate.ExternalMessage.Patcher.GetReferencesSizeBytes() + marshalOptions.Size(parentInlined.Message)
 
-		parentExternal := model_core.MessageWithReferences[TParentMessagePtr, TMetadata]{
+		parentExternal := model_core.PatchedMessage[TParentMessagePtr, TMetadata]{
 			Message: TParentMessagePtr(new(TParentMessage)),
 			Patcher: model_core.NewReferenceMessagePatcher[TMetadata](),
 		}
@@ -208,15 +208,15 @@ func Build[
 			references, metadata := candidate.ExternalMessage.Patcher.SortAndSetReferences()
 			data, err := marshalOptions.Marshal(candidate.ExternalMessage.Message)
 			if err != nil {
-				return model_core.MessageWithReferences[TParentMessagePtr, TMetadata]{}, util.StatusWrapfWithCode(err, codes.InvalidArgument, "Failed to marshal candidate at index %d", i)
+				return model_core.PatchedMessage[TParentMessagePtr, TMetadata]{}, util.StatusWrapfWithCode(err, codes.InvalidArgument, "Failed to marshal candidate at index %d", i)
 			}
 			encodedData, err := encoder.EncodeBinary(data)
 			if err != nil {
-				return model_core.MessageWithReferences[TParentMessagePtr, TMetadata]{}, util.StatusWrapf(err, "Failed to encode candidate at index %d", i)
+				return model_core.PatchedMessage[TParentMessagePtr, TMetadata]{}, util.StatusWrapf(err, "Failed to encode candidate at index %d", i)
 			}
 			contents, err := referenceFormat.NewContents(references, encodedData)
 			if err != nil {
-				return model_core.MessageWithReferences[TParentMessagePtr, TMetadata]{}, util.StatusWrapf(err, "Failed to create object contents for candidate at index %d", i)
+				return model_core.PatchedMessage[TParentMessagePtr, TMetadata]{}, util.StatusWrapf(err, "Failed to create object contents for candidate at index %d", i)
 			}
 			candidate.ParentAppender(output, contents, metadata)
 		}

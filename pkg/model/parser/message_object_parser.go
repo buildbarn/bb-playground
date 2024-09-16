@@ -12,7 +12,7 @@ import (
 
 type ParsedMessage[T proto.Message] struct {
 	Message            T
-	OutgoingReferences object.OutgoingReferencesList
+	OutgoingReferences object.OutgoingReferences
 }
 
 type MessageObjectParserReference interface {

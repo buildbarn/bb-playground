@@ -21,7 +21,7 @@ import (
 // Chunking of large files is performed using the MaxCDC algorithm. The
 // resulting B-tree is a Prolly tree. This ensures that minor changes to
 // a file also result in minor changes to the resulting Merkle tree.
-func CreateFileMerkleTree[T any](ctx context.Context, parameters *FileCreationParameters, f io.Reader, capturer FileMerkleTreeCapturer[T]) (*model_core.MessageWithReferences[*model_filesystem_pb.FileContents, T], error) {
+func CreateFileMerkleTree[T any](ctx context.Context, parameters *FileCreationParameters, f io.Reader, capturer FileMerkleTreeCapturer[T]) (*model_core.PatchedMessage[*model_filesystem_pb.FileContents, T], error) {
 	chunker := cdc.NewMaxContentDefinedChunker(
 		f,
 		/* bufferSizeBytes = */ max(parameters.referenceFormat.GetMaximumObjectSizeBytes(), parameters.chunkMinimumSizeBytes+parameters.chunkMaximumSizeBytes),
@@ -35,7 +35,7 @@ func CreateFileMerkleTree[T any](ctx context.Context, parameters *FileCreationPa
 			parameters.fileContentsListMaximumSizeBytes,
 			parameters.fileContentsListEncoder,
 			parameters.referenceFormat,
-			/* parentNodeComputer = */ func(contents *object.Contents, childNodes []*model_filesystem_pb.FileContents, outgoingReferences object.OutgoingReferences, metadata []T) (model_core.MessageWithReferences[*model_filesystem_pb.FileContents, T], error) {
+			/* parentNodeComputer = */ func(contents *object.Contents, childNodes []*model_filesystem_pb.FileContents, outgoingReferences object.OutgoingReferences, metadata []T) (model_core.PatchedMessage[*model_filesystem_pb.FileContents, T], error) {
 				// Compute the total file size to store
 				// in the parent FileContents node.
 				var totalSizeBytes uint64
@@ -44,7 +44,7 @@ func CreateFileMerkleTree[T any](ctx context.Context, parameters *FileCreationPa
 				}
 
 				patcher := model_core.NewReferenceMessagePatcher[T]()
-				return model_core.MessageWithReferences[*model_filesystem_pb.FileContents, T]{
+				return model_core.PatchedMessage[*model_filesystem_pb.FileContents, T]{
 					Message: &model_filesystem_pb.FileContents{
 						TotalSizeBytes: totalSizeBytes,
 						Reference:      patcher.AddReference(contents.GetReference(), capturer.CaptureFileContentsList(contents, metadata)),
@@ -80,7 +80,7 @@ func CreateFileMerkleTree[T any](ctx context.Context, parameters *FileCreationPa
 
 		// Insert a FileContents message for it into the B-tree.
 		patcher := model_core.NewReferenceMessagePatcher[T]()
-		if err := treeBuilder.PushChild(model_core.MessageWithReferences[*model_filesystem_pb.FileContents, T]{
+		if err := treeBuilder.PushChild(model_core.PatchedMessage[*model_filesystem_pb.FileContents, T]{
 			Message: &model_filesystem_pb.FileContents{
 				Reference:      patcher.AddReference(chunkContents.GetReference(), capturer.CaptureChunk(chunkContents)),
 				TotalSizeBytes: uint64(len(chunk)),

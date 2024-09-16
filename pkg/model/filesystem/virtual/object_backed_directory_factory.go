@@ -7,9 +7,8 @@ import (
 	"sort"
 
 	"github.com/buildbarn/bb-playground/pkg/encoding/varint"
-	model_core "github.com/buildbarn/bb-playground/pkg/model/core"
 	model_filesystem "github.com/buildbarn/bb-playground/pkg/model/filesystem"
-	"github.com/buildbarn/bb-playground/pkg/model/parser"
+	model_parser "github.com/buildbarn/bb-playground/pkg/model/parser"
 	model_filesystem_pb "github.com/buildbarn/bb-playground/pkg/proto/model/filesystem"
 	object_pb "github.com/buildbarn/bb-playground/pkg/proto/storage/object"
 	"github.com/buildbarn/bb-playground/pkg/storage/object"
@@ -24,12 +23,12 @@ import (
 
 type ObjectBackedDirectoryFactory struct {
 	handleAllocator        virtual.ResolvableHandleAllocator
-	directoryClusterReader parser.ParsedObjectReader[object.LocalReference, model_filesystem.DirectoryCluster]
+	directoryClusterReader model_parser.ParsedObjectReader[object.LocalReference, model_filesystem.DirectoryCluster]
 	fileFactory            FileFactory
 	errorLogger            util.ErrorLogger
 }
 
-func NewObjectBackedDirectoryFactory(handleAllocation virtual.ResolvableHandleAllocation, directoryClusterReader parser.ParsedObjectReader[object.LocalReference, model_filesystem.DirectoryCluster], fileFactory FileFactory, errorLogger util.ErrorLogger) *ObjectBackedDirectoryFactory {
+func NewObjectBackedDirectoryFactory(handleAllocation virtual.ResolvableHandleAllocation, directoryClusterReader model_parser.ParsedObjectReader[object.LocalReference, model_filesystem.DirectoryCluster], fileFactory FileFactory, errorLogger util.ErrorLogger) *ObjectBackedDirectoryFactory {
 	df := &ObjectBackedDirectoryFactory{
 		directoryClusterReader: directoryClusterReader,
 		fileFactory:            fileFactory,
@@ -135,28 +134,19 @@ type objectBackedDirectory struct {
 
 func (d *objectBackedDirectory) lookupFile(fileNode *model_filesystem_pb.FileNode, leavesReferences object.OutgoingReferences) (virtual.Leaf, virtual.Status) {
 	df := d.factory
-	contents := fileNode.Contents
-	if contents == nil {
-		// File is empty, meaning that it is not backed by any
-		// object. Map all of such files to the bogus reference.
-		// We assume that specifying a size of zero is enough to
-		// prevent the underlying file implementation from
-		// loading any objects from storage.
-		return df.fileFactory.LookupFile(
-			d.info.ClusterReference.GetReferenceFormat().GetBogusReference(),
-			/* totalSizeBytes = */ 0,
-			fileNode.IsExecutable,
-		), virtual.StatusOK
-	}
-
-	index, err := model_core.GetIndexFromReferenceMessage(contents.Reference, leavesReferences.GetDegree())
+	fileContents, err := model_filesystem.NewFileContentsEntryFromProto(
+		model_parser.ParsedMessage[*model_filesystem_pb.FileContents]{
+			Message:            fileNode.Contents,
+			OutgoingReferences: leavesReferences,
+		},
+		d.info.ClusterReference.GetReferenceFormat(),
+	)
 	if err != nil {
-		df.errorLogger.Log(util.StatusWrapf(err, "Invalid reference message for file %#v", fileNode.Name))
+		df.errorLogger.Log(util.StatusWrapf(err, "Invalid contents for file %#v", fileNode.Name))
 		return nil, virtual.StatusErrIO
 	}
 	return df.fileFactory.LookupFile(
-		leavesReferences.GetOutgoingReference(index),
-		contents.TotalSizeBytes,
+		fileContents,
 		fileNode.IsExecutable,
 	), virtual.StatusOK
 }

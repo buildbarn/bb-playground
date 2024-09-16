@@ -58,3 +58,11 @@ func (p *FileAccessParameters) DecodeFileContentsList(contents *object.Contents)
 	}
 	return &fileContentsList, nil
 }
+
+func (p *FileAccessParameters) GetChunkEncoder() encoding.BinaryEncoder {
+	return p.chunkEncoder
+}
+
+func (p *FileAccessParameters) GetFileContentsListEncoder() encoding.BinaryEncoder {
+	return p.fileContentsListEncoder
+}

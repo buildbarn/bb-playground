@@ -72,13 +72,13 @@ type prollyCut struct {
 type prollyLevelBuilder[TNode proto.Message, TMetadata any] struct {
 	factory *prollyLevelBuilderFactory[TNode, TMetadata]
 
-	childNodes          []model_core.MessageWithReferences[TNode, TMetadata]
+	childNodes          []model_core.PatchedMessage[TNode, TMetadata]
 	uncutSizesBytes     []int
 	totalUncutSizeBytes int
 	cuts                []prollyCut
 }
 
-func (lb *prollyLevelBuilder[TNode, TMetadata]) PushChild(node model_core.MessageWithReferences[TNode, TMetadata]) error {
+func (lb *prollyLevelBuilder[TNode, TMetadata]) PushChild(node model_core.PatchedMessage[TNode, TMetadata]) error {
 	// Schedule the nodes for insertion into objects. Don't insert
 	// them immediately, as we need to keep some at hand to ensure
 	// the final object on this level respects the minimum number of
@@ -134,7 +134,7 @@ func (lb *prollyLevelBuilder[TNode, TMetadata]) PushChild(node model_core.Messag
 	return nil
 }
 
-func (lb *prollyLevelBuilder[TNode, TMetadata]) PopParent(finalize bool) (*model_core.MessageWithReferences[TNode, TMetadata], error) {
+func (lb *prollyLevelBuilder[TNode, TMetadata]) PopParent(finalize bool) (*model_core.PatchedMessage[TNode, TMetadata], error) {
 	// Determine whether we've collected enough nodes to be able to
 	// create a new object, and how many child nodes should go into it.
 	lbf := lb.factory

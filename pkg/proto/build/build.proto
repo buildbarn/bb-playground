@@ -1,0 +1,34 @@
+syntax = "proto3";
+
+package buildbarn.playground.build;
+
+import "pkg/proto/model/encoding/encoding.proto";
+import "pkg/proto/storage/object/object.proto";
+
+option go_package = "github.com/buildbarn/bb-playground/pkg/proto/build";
+
+service Builder {
+  rpc PerformBuild(PerformBuildRequest) returns (stream PerformBuildResponse);
+}
+
+message PerformBuildRequest {
+  // Unique identifier, in UUID format, for the command being run.
+  string invocation_id = 1;
+
+  // Unique identifier, in UUID format, for the build being run.
+  string build_request_id = 2;
+
+  // The namespace in storage where the build specification DAG is
+  // stored.
+  buildbarn.playground.storage.object.Namespace namespace = 3;
+
+  // Reference of the build specification DAG.
+  bytes build_specification_reference = 4;
+
+  // Encoders that were used to compress and/or encrypt the root of the
+  // build specification DAG.
+  repeated buildbarn.playground.model.encoding.BinaryEncoder
+      build_specification_encoders = 5;
+}
+
+message PerformBuildResponse {}

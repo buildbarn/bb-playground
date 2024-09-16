@@ -22,17 +22,17 @@ import (
 
 type unfinalizedDirectory[TDirectory, TFile any] struct {
 	leavesPatcherLock sync.Mutex
-	leaves            model_core.MessageWithReferences[*model_filesystem_pb.Leaves, TFile]
+	leaves            model_core.PatchedMessage[*model_filesystem_pb.Leaves, TFile]
 	directories       []unfinalizedDirectoryNode[TDirectory]
 
 	unfinalizedCount atomic.Uint32
 	parent           *unfinalizedDirectory[TDirectory, TFile]
-	out              *model_core.MessageWithReferences[*model_filesystem_pb.Directory, TDirectory]
+	out              *model_core.PatchedMessage[*model_filesystem_pb.Directory, TDirectory]
 }
 
 type unfinalizedDirectoryNode[TDirectory any] struct {
 	name            path.Component
-	externalMessage model_core.MessageWithReferences[*model_filesystem_pb.Directory, TDirectory]
+	externalMessage model_core.PatchedMessage[*model_filesystem_pb.Directory, TDirectory]
 }
 
 type directoryMerkleTreeBuilder[TDirectory, TFile any] struct {
@@ -48,7 +48,7 @@ func (b *directoryMerkleTreeBuilder[TDirectory, TFile]) walkDirectory(
 	directory filesystem.Directory,
 	directoryPath *path.Trace,
 	parent *unfinalizedDirectory[TDirectory, TFile],
-	out *model_core.MessageWithReferences[*model_filesystem_pb.Directory, TDirectory],
+	out *model_core.PatchedMessage[*model_filesystem_pb.Directory, TDirectory],
 ) error {
 	if b.context.Err() != nil {
 		return util.StatusFromContext(b.context)
@@ -75,7 +75,7 @@ func (b *directoryMerkleTreeBuilder[TDirectory, TFile]) walkDirectory(
 	}
 
 	ud := unfinalizedDirectory[TDirectory, TFile]{
-		leaves: model_core.MessageWithReferences[*model_filesystem_pb.Leaves, TFile]{
+		leaves: model_core.PatchedMessage[*model_filesystem_pb.Leaves, TFile]{
 			Message: &model_filesystem_pb.Leaves{
 				Files:    make([]*model_filesystem_pb.FileNode, 0, filesCount),
 				Symlinks: make([]*model_filesystem_pb.SymlinkNode, 0, symlinksCount),
@@ -179,7 +179,7 @@ func (b *directoryMerkleTreeBuilder[TDirectory, TFile]) maybeFinalizeDirectory(u
 		inlineCandidates = append(
 			inlineCandidates,
 			inlinedtree.Candidate[*model_filesystem_pb.Directory, TDirectory]{
-				ExternalMessage: model_core.MessageWithReferences[proto.Message, TDirectory]{
+				ExternalMessage: model_core.PatchedMessage[proto.Message, TDirectory]{
 					Message: ud.leaves.Message,
 					Patcher: model_core.MapReferenceMessagePatcherMetadata(
 						ud.leaves.Patcher,
@@ -187,7 +187,7 @@ func (b *directoryMerkleTreeBuilder[TDirectory, TFile]) maybeFinalizeDirectory(u
 					),
 				},
 				ParentAppender: func(
-					directory model_core.MessageWithReferences[*model_filesystem_pb.Directory, TDirectory],
+					directory model_core.PatchedMessage[*model_filesystem_pb.Directory, TDirectory],
 					externalContents *object.Contents,
 					externalChildren []TDirectory,
 				) {
@@ -217,12 +217,12 @@ func (b *directoryMerkleTreeBuilder[TDirectory, TFile]) maybeFinalizeDirectory(u
 			inlineCandidates = append(
 				inlineCandidates,
 				inlinedtree.Candidate[*model_filesystem_pb.Directory, TDirectory]{
-					ExternalMessage: model_core.MessageWithReferences[proto.Message, TDirectory]{
+					ExternalMessage: model_core.PatchedMessage[proto.Message, TDirectory]{
 						Message: directoryNode.externalMessage.Message,
 						Patcher: directoryNode.externalMessage.Patcher,
 					},
 					ParentAppender: func(
-						directory model_core.MessageWithReferences[*model_filesystem_pb.Directory, TDirectory],
+						directory model_core.PatchedMessage[*model_filesystem_pb.Directory, TDirectory],
 						externalContents *object.Contents,
 						externalChildren []TDirectory,
 					) {
@@ -272,7 +272,7 @@ func CreateDirectoryMerkleTree[TDirectory, TFile any](
 	fileParameters *FileCreationParameters,
 	directory filesystem.Directory,
 	capturer DirectoryMerkleTreeCapturer[TDirectory, TFile],
-	out *model_core.MessageWithReferences[*model_filesystem_pb.Directory, TDirectory],
+	out *model_core.PatchedMessage[*model_filesystem_pb.Directory, TDirectory],
 ) error {
 	b := directoryMerkleTreeBuilder[TDirectory, TFile]{
 		context:             ctx,

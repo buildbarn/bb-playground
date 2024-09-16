@@ -35,6 +35,7 @@ func TestParse(t *testing.T) {
 		require.Equal(t, &arguments.BuildCommand{
 			CommonFlags: arguments.CommonFlags{
 				Color:                  arguments.Color_Auto,
+				LockfileMode:           arguments.LockfileMode_Update,
 				RemoteCacheCompression: true,
 			},
 			BuildFlags: arguments.BuildFlags{
@@ -111,14 +112,8 @@ func TestParse(t *testing.T) {
 			/* workingDirectoryPath = */ path.UNIXFormat.NewParser("/home/bob/myproject/src"),
 		)
 		require.NoError(t, err)
-		require.Equal(t, &arguments.VersionCommand{
-			CommonFlags: arguments.CommonFlags{
-				Color:                  arguments.Color_Auto,
-				RemoteCacheCompression: true,
-			},
-			VersionFlags: arguments.VersionFlags{
-				GnuFormat: true,
-			},
-		}, command)
+		require.Equal(t, arguments.VersionFlags{
+			GnuFormat: true,
+		}, command.(*arguments.VersionCommand).VersionFlags)
 	})
 }

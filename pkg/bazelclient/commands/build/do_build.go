@@ -18,7 +18,9 @@ import (
 	"github.com/buildbarn/bb-playground/pkg/bazelclient/logging"
 	"github.com/buildbarn/bb-playground/pkg/label"
 	model_core "github.com/buildbarn/bb-playground/pkg/model/core"
+	model_encoding "github.com/buildbarn/bb-playground/pkg/model/encoding"
 	model_filesystem "github.com/buildbarn/bb-playground/pkg/model/filesystem"
+	build_pb "github.com/buildbarn/bb-playground/pkg/proto/build"
 	model_build_pb "github.com/buildbarn/bb-playground/pkg/proto/model/build"
 	model_encoding_pb "github.com/buildbarn/bb-playground/pkg/proto/model/encoding"
 	model_filesystem_pb "github.com/buildbarn/bb-playground/pkg/proto/model/filesystem"
@@ -30,6 +32,7 @@ import (
 	"github.com/buildbarn/bb-storage/pkg/filesystem"
 	"github.com/buildbarn/bb-storage/pkg/filesystem/path"
 	"github.com/buildbarn/bb-storage/pkg/util"
+	"github.com/google/uuid"
 
 	"golang.org/x/sync/errgroup"
 	"golang.org/x/sync/semaphore"
@@ -37,6 +40,7 @@ import (
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/types/known/durationpb"
 	"google.golang.org/protobuf/types/known/emptypb"
 )
 
@@ -176,7 +180,7 @@ func DoBuild(args *arguments.BuildCommand, workspacePath path.Parser) {
 	logger.Info("Scanning module sources")
 	group, groupCtx := errgroup.WithContext(context.Background())
 	moduleRootDirectories := make([]filesystem.Directory, 0, len(moduleNames))
-	moduleRootDirectoryMessages := make([]model_core.MessageWithReferences[*model_filesystem_pb.Directory, model_filesystem.CapturedObject], len(moduleNames))
+	moduleRootDirectoryMessages := make([]model_core.PatchedMessage[*model_filesystem_pb.Directory, model_filesystem.CapturedObject], len(moduleNames))
 	createMerkleTreesConcurrency := semaphore.NewWeighted(int64(runtime.NumCPU()))
 	group.Go(func() error {
 		for i, moduleName := range moduleNames {
@@ -214,6 +218,26 @@ func DoBuild(args *arguments.BuildCommand, workspacePath path.Parser) {
 		DirectoryCreationParameters: directoryParametersMessage,
 		FileCreationParameters:      fileParametersMessage,
 	}
+	switch args.CommonFlags.LockfileMode {
+	case arguments.LockfileMode_Off:
+	case arguments.LockfileMode_Update:
+		buildSpecification.UseLockfile = &model_build_pb.UseLockfile{}
+	case arguments.LockfileMode_Refresh:
+		buildSpecification.UseLockfile = &model_build_pb.UseLockfile{
+			Error: true,
+		}
+	case arguments.LockfileMode_Error:
+		buildSpecification.UseLockfile = &model_build_pb.UseLockfile{
+			MaximumCacheDuration: &durationpb.Duration{Seconds: 3600},
+		}
+	default:
+		panic("unknown lockfile mode")
+	}
+	if len(args.CommonFlags.Registry) > 0 {
+		buildSpecification.ModuleRegistryUrls = args.CommonFlags.Registry
+	} else {
+		buildSpecification.ModuleRegistryUrls = []string{"https://bcr.bazel.build/"}
+	}
 	buildSpecificationPatcher := model_core.NewReferenceMessagePatcher[dag.ObjectContentsWalker]()
 
 	for i, moduleName := range moduleNames {
@@ -244,24 +268,37 @@ func DoBuild(args *arguments.BuildCommand, workspacePath path.Parser) {
 		)
 	}
 
+	buildSpecificationEncoder, err := model_encoding.NewBinaryEncoderFromProto(
+		defaultEncoders,
+		uint32(referenceFormat.GetMaximumObjectSizeBytes()),
+	)
+	if err != nil {
+		logger.Fatal("Failed to create build specification encoder: ", err)
+	}
+
 	buildSpecificationReferences, buildSpecificationWalkers := buildSpecificationPatcher.SortAndSetReferences()
 	buildSpecificationData, err := proto.Marshal(&buildSpecification)
 	if err != nil {
 		logger.Fatal("Failed to marshal build specification: ", err)
 	}
-	// TODO: Encrypt the build specification message.
-	buildSpecificationObject, err := referenceFormat.NewContents(buildSpecificationReferences, buildSpecificationData)
+	encodedBuildSpecification, err := buildSpecificationEncoder.EncodeBinary(buildSpecificationData)
+	if err != nil {
+		logger.Fatal("Failed to encode build specification: ", err)
+	}
+	buildSpecificationObject, err := referenceFormat.NewContents(buildSpecificationReferences, encodedBuildSpecification)
 	if err != nil {
 		logger.Fatal("Failed to create build specification object: ", err)
 	}
 
 	logger.Info("Uploading module sources")
+	instanceName := object.NewInstanceName(args.CommonFlags.RemoteInstanceName)
+	buildSpecificationReference := buildSpecificationObject.GetReference()
 	if err := dag.UploadDAG(
 		context.Background(),
 		dag_pb.NewUploaderClient(remoteCacheClient),
 		object.GlobalReference{
-			InstanceName:   object.NewInstanceName(args.CommonFlags.RemoteInstanceName),
-			LocalReference: buildSpecificationObject.GetReference(),
+			InstanceName:   instanceName,
+			LocalReference: buildSpecificationReference,
 		},
 		dag.NewSimpleObjectContentsWalker(
 			buildSpecificationObject,
@@ -276,5 +313,50 @@ func DoBuild(args *arguments.BuildCommand, workspacePath path.Parser) {
 		logger.Fatal("Failed to upload workspace directory: ", err)
 	}
 
-	logger.Fatal("TODO")
+	remoteExecutorClient, err := newGRPCClient(args.CommonFlags.RemoteExecutor, &args.CommonFlags)
+	if err != nil {
+		logger.Fatalf("Failed to create gRPC client for --remote_executor=%#v: %s", args.CommonFlags.RemoteExecutor, err)
+	}
+	builderClient := build_pb.NewBuilderClient(remoteExecutorClient)
+
+	var invocationID uuid.UUID
+	if v := args.CommonFlags.InvocationId; v == "" {
+		invocationID = uuid.Must(uuid.NewRandom())
+	} else {
+		invocationID, err = uuid.Parse(v)
+		if err != nil {
+			logger.Fatalf("Invalid --invocation_id=%#v: %s", v, err)
+		}
+	}
+	var buildRequestID uuid.UUID
+	if v := args.CommonFlags.BuildRequestId; v == "" {
+		buildRequestID = uuid.Must(uuid.NewRandom())
+	} else {
+		buildRequestID, err = uuid.Parse(v)
+		if err != nil {
+			logger.Fatalf("Invalid --build_request_id=%#v: %s", v, err)
+		}
+	}
+
+	stream, err := builderClient.PerformBuild(context.Background(), &build_pb.PerformBuildRequest{
+		InvocationId:   invocationID.String(),
+		BuildRequestId: buildRequestID.String(),
+		Namespace: object.Namespace{
+			InstanceName:    instanceName,
+			ReferenceFormat: referenceFormat,
+		}.ToProto(),
+		BuildSpecificationReference: buildSpecificationReference.GetRawReference(),
+		BuildSpecificationEncoders:  defaultEncoders,
+	})
+	if err != nil {
+		logger.Fatal("Failed to start build: ", err)
+	}
+
+	for {
+		response, err := stream.Recv()
+		if err != nil {
+			logger.Fatal("Build failed: ", err)
+		}
+		logger.Info(response)
+	}
 }

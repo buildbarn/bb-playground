@@ -27,5 +27,7 @@ done
 
 "$(rlocation com_github_buildbarn_bb_playground/cmd/playground_storage_frontend/playground_storage_frontend_/playground_storage_frontend)" \
     "$(rlocation com_github_buildbarn_bb_playground/deployments/demo/playground_storage_frontend.jsonnet)" &
+"$(rlocation com_github_buildbarn_bb_playground/cmd/playground_builder/playground_builder_/playground_builder)" \
+    "$(rlocation com_github_buildbarn_bb_playground/deployments/demo/playground_builder.jsonnet)" &
 
 wait

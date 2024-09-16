@@ -7,26 +7,29 @@ proto_library(
     srcs = ["build.proto"],
     visibility = ["//visibility:public"],
     deps = [
-        "//pkg/proto/model/core:core_proto",
-        "//pkg/proto/model/filesystem:filesystem_proto",
-        "@protobuf//:duration_proto",
+        "//pkg/proto/model/encoding:encoding_proto",
+        "//pkg/proto/storage/object:object_proto",
     ],
 )
 
 go_proto_library(
     name = "build_go_proto",
-    importpath = "github.com/buildbarn/bb-playground/pkg/proto/model/build",
+    compilers = [
+        "@rules_go//proto:go_proto",
+        "@rules_go//proto:go_grpc_v2",
+    ],
+    importpath = "github.com/buildbarn/bb-playground/pkg/proto/build",
     proto = ":build_proto",
     visibility = ["//visibility:public"],
     deps = [
-        "//pkg/proto/model/core",
-        "//pkg/proto/model/filesystem",
+        "//pkg/proto/model/encoding",
+        "//pkg/proto/storage/object",
     ],
 )
 
 go_library(
     name = "build",
     embed = [":build_go_proto"],
-    importpath = "github.com/buildbarn/bb-playground/pkg/proto/model/build",
+    importpath = "github.com/buildbarn/bb-playground/pkg/proto/build",
     visibility = ["//visibility:public"],
 )

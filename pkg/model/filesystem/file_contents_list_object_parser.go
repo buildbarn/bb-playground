@@ -21,6 +21,35 @@ type FileContentsEntry struct {
 	Reference object.LocalReference
 }
 
+// NewFileContentsEntryFromProto constructs a FileContentsListEntry
+// based on the contents of a single FileContents Protobuf message,
+// refering to the file as a whole.
+func NewFileContentsEntryFromProto(fileContents parser.ParsedMessage[*model_filesystem_pb.FileContents], referenceFormat object.ReferenceFormat) (FileContentsEntry, error) {
+	if fileContents.Message == nil {
+		// File is empty, meaning that it is not backed by any
+		// object. Map all of such files to the bogus reference.
+		// We assume that specifying a size of zero is enough to
+		// prevent the underlying file implementation from
+		// loading any objects from storage.
+		return FileContentsEntry{
+			EndBytes:  0,
+			Reference: referenceFormat.GetBogusReference(),
+		}, nil
+	}
+
+	index, err := model_core.GetIndexFromReferenceMessage(
+		fileContents.Message.Reference,
+		fileContents.OutgoingReferences.GetDegree(),
+	)
+	if err != nil {
+		return FileContentsEntry{}, err
+	}
+	return FileContentsEntry{
+		EndBytes:  fileContents.Message.TotalSizeBytes,
+		Reference: fileContents.OutgoingReferences.GetOutgoingReference(index),
+	}, nil
+}
+
 // FileContentsList contains the properties of parts of a concatenated
 // file. Parts are stored in the order in which they should be
 // concatenated, with EndBytes increasing.

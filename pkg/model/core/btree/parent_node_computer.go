@@ -16,6 +16,6 @@ type ParentNodeComputer[TNode proto.Message, TMetadata any] func(
 	childNodes []TNode,
 	outgoingReferences object.OutgoingReferences,
 	metadata []TMetadata,
-) (model_core.MessageWithReferences[TNode, TMetadata], error)
+) (model_core.PatchedMessage[TNode, TMetadata], error)
 
 type ParentNodeComputerForTesting ParentNodeComputer[*model_filesystem_pb.FileContents, string]

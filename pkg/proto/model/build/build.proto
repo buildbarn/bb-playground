@@ -2,6 +2,7 @@ syntax = "proto3";
 
 package buildbarn.playground.model.build;
 
+import "google/protobuf/duration.proto";
 import "pkg/proto/model/core/core.proto";
 import "pkg/proto/model/filesystem/filesystem.proto";
 
@@ -16,6 +17,19 @@ message Module {
   // of this module. The root directory MUST contain a file named
   // "MODULE.bazel".
   buildbarn.playground.model.core.Reference root_directory_reference = 2;
+}
+
+message UseLockfile {
+  // If set and any information is missing or out-of-date, the build
+  // will fail with an error. This mode never changes the lockfile or
+  // performs network requests during resolution. Module extensions that
+  // marked themselves as reproducible may still perform network
+  // requests, but are expected to always produce the same result.
+  bool error = 1;
+
+  // If set, mutable information is refreshed if its age exceeds the
+  // provided amount of time.
+  google.protobuf.Duration maximum_cache_duration = 2;
 }
 
 message BuildSpecification {
@@ -46,4 +60,15 @@ message BuildSpecification {
   // these parameters when creating output files.
   buildbarn.playground.model.filesystem.FileCreationParameters
       file_creation_parameters = 5;
+
+  // Whether or not to use the MODULE.bazel.lock file that is part of
+  // the root module. If not set, the lockfile is neither checked nor
+  // updated.
+  UseLockfile use_lockfile = 6;
+
+  // URLs of registries to use to locate Bazel module dependencies. The
+  // order is important: modules will be looked up in earlier registries
+  // first, and only fall back to later registries when they're missing
+  // from the earlier ones.
+  repeated string module_registry_urls = 7;
 }
