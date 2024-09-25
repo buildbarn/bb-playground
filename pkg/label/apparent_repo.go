@@ -9,9 +9,9 @@ type ApparentRepo struct {
 	value string
 }
 
-const validApparentRepoPattern = "[a-zA-Z][-.\\w]*$"
+const validApparentRepoPattern = "[a-zA-Z][-.\\w]*"
 
-var validApparentRepoRegexp = regexp.MustCompile(validApparentRepoPattern)
+var validApparentRepoRegexp = regexp.MustCompile("^" + validApparentRepoPattern + "$")
 
 var invalidApparentRepoPattern = errors.New("apparent repo name must match " + validApparentRepoPattern)
 

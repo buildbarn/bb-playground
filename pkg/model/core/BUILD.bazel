@@ -4,6 +4,7 @@ go_library(
     name = "core",
     srcs = [
         "get_index_from_reference_message.go",
+        "message.go",
         "patched_message.go",
         "reference_message_patcher.go",
     ],
@@ -16,15 +17,20 @@ go_library(
         "@org_golang_google_grpc//codes",
         "@org_golang_google_grpc//status",
         "@org_golang_google_protobuf//proto",
+        "@org_golang_google_protobuf//reflect/protoreflect",
     ],
 )
 
 go_test(
     name = "core_test",
-    srcs = ["reference_message_patcher_test.go"],
+    srcs = [
+        "patched_message_test.go",
+        "reference_message_patcher_test.go",
+    ],
     deps = [
         ":core",
         "//pkg/proto/model/core",
+        "//pkg/proto/model/filesystem",
         "//pkg/storage/object",
         "@com_github_buildbarn_bb_storage//pkg/testutil",
         "@com_github_stretchr_testify//require",

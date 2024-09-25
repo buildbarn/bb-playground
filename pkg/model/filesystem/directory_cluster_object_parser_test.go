@@ -38,11 +38,13 @@ func TestDirectoryClusterObjectParser(t *testing.T) {
 		leaves := &model_filesystem_pb.Leaves{
 			Files: []*model_filesystem_pb.FileNode{{
 				Name: "hello.txt",
-				Contents: &model_filesystem_pb.FileContents{
-					Reference: &model_core_pb.Reference{
-						Index: 1,
+				Properties: &model_filesystem_pb.FileProperties{
+					Contents: &model_filesystem_pb.FileContents{
+						Reference: &model_core_pb.Reference{
+							Index: 1,
+						},
+						TotalSizeBytes: 42,
 					},
-					TotalSizeBytes: 42,
 				},
 			}},
 			Symlinks: []*model_filesystem_pb.SymlinkNode{{

@@ -169,3 +169,7 @@ func (f *objectBackedFile) VirtualSetAttributes(ctx context.Context, in *virtual
 func (f *objectBackedFile) VirtualWrite(buf []byte, offset uint64) (int, virtual.Status) {
 	panic("request to write to read-only file should have been intercepted")
 }
+
+func (objectBackedFile) VirtualApply(data any) bool {
+	return false
+}

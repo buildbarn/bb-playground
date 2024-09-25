@@ -34,7 +34,7 @@ gomock(
     name = "mocks_starlark",
     out = "mocks_starlark_test.go",
     interfaces = [
-        "ModuleDotBazelHandler",
+        "RootModuleDotBazelHandler",
         "ModuleExtensionProxy",
         "RepoRuleProxy",
     ],

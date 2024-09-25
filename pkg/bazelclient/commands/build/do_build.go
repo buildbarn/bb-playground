@@ -213,10 +213,11 @@ func DoBuild(args *arguments.BuildCommand, workspacePath path.Parser) {
 	// modules and contains all of the flags to instruct what needs
 	// to be built.
 	buildSpecification := model_build_pb.BuildSpecification{
-		RootModuleName:              rootModuleName.String(),
-		TargetPatterns:              args.Arguments,
-		DirectoryCreationParameters: directoryParametersMessage,
-		FileCreationParameters:      fileParametersMessage,
+		RootModuleName:                  rootModuleName.String(),
+		TargetPatterns:                  args.Arguments,
+		DirectoryCreationParameters:     directoryParametersMessage,
+		FileCreationParameters:          fileParametersMessage,
+		IgnoreRootModuleDevDependencies: args.CommonFlags.IgnoreDevDependency,
 	}
 	switch args.CommonFlags.LockfileMode {
 	case arguments.LockfileMode_Off:

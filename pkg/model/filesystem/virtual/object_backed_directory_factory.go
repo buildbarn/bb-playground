@@ -7,6 +7,7 @@ import (
 	"sort"
 
 	"github.com/buildbarn/bb-playground/pkg/encoding/varint"
+	model_core "github.com/buildbarn/bb-playground/pkg/model/core"
 	model_filesystem "github.com/buildbarn/bb-playground/pkg/model/filesystem"
 	model_parser "github.com/buildbarn/bb-playground/pkg/model/parser"
 	model_filesystem_pb "github.com/buildbarn/bb-playground/pkg/proto/model/filesystem"
@@ -116,13 +117,13 @@ func (df *ObjectBackedDirectoryFactory) LookupDirectory(info model_filesystem.Di
 		})
 }
 
-func (df *ObjectBackedDirectoryFactory) createSymlink(clusterReference object.LocalReference, directoryIndex, symlinkIndex uint, target string) virtual.NativeLeaf {
+func (df *ObjectBackedDirectoryFactory) createSymlink(clusterReference object.LocalReference, directoryIndex, symlinkIndex uint, target string) virtual.LinkableLeaf {
 	handle := varint.AppendForward(nil, clusterReference.GetReferenceFormat().ToProto())
 	handle = append(handle, clusterReference.GetRawReference()...)
 	handle = varint.AppendForward(handle, directoryIndex)
 	handle = varint.AppendForward(handle, symlinkIndex+1)
 	return df.handleAllocator.New(bytes.NewBuffer(handle)).
-		AsNativeLeaf(virtual.BaseSymlinkFactory.LookupSymlink([]byte(target)))
+		AsLinkableLeaf(virtual.BaseSymlinkFactory.LookupSymlink([]byte(target)))
 }
 
 type objectBackedDirectory struct {
@@ -134,9 +135,14 @@ type objectBackedDirectory struct {
 
 func (d *objectBackedDirectory) lookupFile(fileNode *model_filesystem_pb.FileNode, leavesReferences object.OutgoingReferences) (virtual.Leaf, virtual.Status) {
 	df := d.factory
+	properties := fileNode.Properties
+	if properties == nil {
+		df.errorLogger.Log(status.Errorf(codes.InvalidArgument, "File %#v does not have any properties", fileNode.Name))
+		return nil, virtual.StatusErrIO
+	}
 	fileContents, err := model_filesystem.NewFileContentsEntryFromProto(
-		model_parser.ParsedMessage[*model_filesystem_pb.FileContents]{
-			Message:            fileNode.Contents,
+		model_core.Message[*model_filesystem_pb.FileContents]{
+			Message:            properties.Contents,
 			OutgoingReferences: leavesReferences,
 		},
 		d.info.ClusterReference.GetReferenceFormat(),
@@ -147,7 +153,7 @@ func (d *objectBackedDirectory) lookupFile(fileNode *model_filesystem_pb.FileNod
 	}
 	return df.fileFactory.LookupFile(
 		fileContents,
-		fileNode.IsExecutable,
+		properties.IsExecutable,
 	), virtual.StatusOK
 }
 
@@ -321,4 +327,8 @@ func (d *objectBackedDirectory) VirtualReadDir(ctx context.Context, firstCookie 
 	}
 
 	return virtual.StatusOK
+}
+
+func (objectBackedDirectory) VirtualApply(data any) bool {
+	return false
 }

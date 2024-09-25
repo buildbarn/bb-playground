@@ -83,6 +83,13 @@ var commonFlags = []flag{
 		},
 	},
 	{
+		longName:    "ignore_dev_dependency",
+		description: "If true, Bazel ignores `bazel_dep` and `use_extension` declared as `dev_dependency` in the MODULE.bazel of the root module. Note that, those dev dependencies are always ignored in the MODULE.bazel if it's not the root module regardless of the value of this flag.",
+		flagType: boolFlagType{
+			defaultValue: false,
+		},
+	},
+	{
 		longName:    "invocation_id",
 		description: "Unique identifier, in UUID format, for the command being run.",
 		flagType:    stringFlagType{},

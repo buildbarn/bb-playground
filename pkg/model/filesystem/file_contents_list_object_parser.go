@@ -24,8 +24,8 @@ type FileContentsEntry struct {
 // NewFileContentsEntryFromProto constructs a FileContentsListEntry
 // based on the contents of a single FileContents Protobuf message,
 // refering to the file as a whole.
-func NewFileContentsEntryFromProto(fileContents parser.ParsedMessage[*model_filesystem_pb.FileContents], referenceFormat object.ReferenceFormat) (FileContentsEntry, error) {
-	if fileContents.Message == nil {
+func NewFileContentsEntryFromProto(fileContents model_core.Message[*model_filesystem_pb.FileContents], referenceFormat object.ReferenceFormat) (FileContentsEntry, error) {
+	if !fileContents.IsSet() {
 		// File is empty, meaning that it is not backed by any
 		// object. Map all of such files to the bogus reference.
 		// We assume that specifying a size of zero is enough to

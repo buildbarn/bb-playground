@@ -1,0 +1,38 @@
+{
+   "functions": {
+      "BuildResult": {
+         "dependsOn": [
+            "TargetCompletion"
+         ]
+      },
+      "BuildSpecification": { },
+      "ConfiguredTarget": {
+         "dependsOn": [
+            "Package"
+         ]
+      },
+      "FileProperties": {
+         "dependsOn": [
+            "BuildSpecification",
+            "Repo"
+         ]
+      },
+      "Package": {
+         "dependsOn": [
+            "FileProperties"
+         ]
+      },
+      "Repo": {
+         "dependsOn": [
+            "BuildSpecification"
+         ]
+      },
+      "TargetCompletion": {
+         "dependsOn": [
+            "ConfiguredTarget"
+         ]
+      }
+   },
+   "goPackage": "analysis",
+   "protoPackage": "github.com/buildbarn/bb-playground/pkg/proto/model/analysis"
+}

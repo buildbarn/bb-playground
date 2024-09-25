@@ -11,7 +11,7 @@ type Module struct {
 
 const validModulePattern = "[a-z]([a-z0-9._-]*[a-z0-9])?"
 
-var validModuleRegexp = regexp.MustCompile(validModulePattern)
+var validModuleRegexp = regexp.MustCompile("^" + validModulePattern + "$")
 
 var invalidModulePattern = errors.New("module name must match " + validModulePattern)
 

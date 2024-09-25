@@ -1,6 +1,8 @@
 package core
 
 import (
+	"github.com/buildbarn/bb-playground/pkg/storage/object"
+
 	"google.golang.org/protobuf/proto"
 )
 
@@ -11,4 +13,27 @@ import (
 type PatchedMessage[TMessage proto.Message, TMetadata any] struct {
 	Message TMessage
 	Patcher *ReferenceMessagePatcher[TMetadata]
+}
+
+func NewPatchedMessageFromExisting[TMessage proto.Message, TMetadata any](
+	existing Message[TMessage],
+	createMetadata func(reference object.LocalReference) TMetadata,
+) (PatchedMessage[TMessage, TMetadata], error) {
+	clonedMessage := proto.Clone(existing.Message)
+	patcher := NewReferenceMessagePatcher[TMetadata]()
+	if err := patcher.addReferenceMessagesRecursively(
+		clonedMessage.ProtoReflect(),
+		existing.OutgoingReferences,
+		createMetadata,
+	); err != nil {
+		return PatchedMessage[TMessage, TMetadata]{}, err
+	}
+	return PatchedMessage[TMessage, TMetadata]{
+		Message: clonedMessage.(TMessage),
+		Patcher: patcher,
+	}, nil
+}
+
+func (m *PatchedMessage[T, TMetadata]) IsSet() bool {
+	return m.Patcher != nil
 }

@@ -24,7 +24,7 @@ type DirectoryCluster []Directory
 // Directory contained in a DirectoryCluster.
 type Directory struct {
 	Directories      []DirectoryNode
-	Leaves           parser.ParsedMessage[*model_filesystem_pb.Leaves]
+	Leaves           model_core.Message[*model_filesystem_pb.Leaves]
 	LeavesReferences object.OutgoingReferencesList
 }
 
@@ -51,13 +51,13 @@ type DirectoryClusterObjectParserReference[T any] interface {
 }
 
 type directoryClusterObjectParser[TReference DirectoryClusterObjectParserReference[TReference]] struct {
-	leavesReader parser.ParsedObjectReader[TReference, parser.ParsedMessage[*model_filesystem_pb.Leaves]]
+	leavesReader parser.ParsedObjectReader[TReference, model_core.Message[*model_filesystem_pb.Leaves]]
 }
 
 // NewDirectoryClusterObjectParser creates an ObjectParser that is
 // capable of parsing directory objects. These directory objects may
 // either be empty, contain subdirectories, or leaves.
-func NewDirectoryClusterObjectParser[TReference DirectoryClusterObjectParserReference[TReference]](leavesReader parser.ParsedObjectReader[TReference, parser.ParsedMessage[*model_filesystem_pb.Leaves]]) parser.ObjectParser[TReference, DirectoryCluster] {
+func NewDirectoryClusterObjectParser[TReference DirectoryClusterObjectParserReference[TReference]](leavesReader parser.ParsedObjectReader[TReference, model_core.Message[*model_filesystem_pb.Leaves]]) parser.ObjectParser[TReference, DirectoryCluster] {
 	return &directoryClusterObjectParser[TReference]{
 		leavesReader: leavesReader,
 	}
@@ -106,7 +106,7 @@ func (p *directoryClusterObjectParser[TReference]) addDirectoriesToCluster(ctx c
 		(*c)[directoryIndex].Leaves = leavesObject
 		externalLeavesTotalSizeBytes += externalLeavesSizeBytes
 	case *model_filesystem_pb.Directory_LeavesInline:
-		(*c)[directoryIndex].Leaves = parser.ParsedMessage[*model_filesystem_pb.Leaves]{
+		(*c)[directoryIndex].Leaves = model_core.Message[*model_filesystem_pb.Leaves]{
 			Message:            leaves.LeavesInline,
 			OutgoingReferences: outgoingReferences,
 		}
@@ -172,4 +172,4 @@ func (p *directoryClusterObjectParser[TReference]) addDirectoriesToCluster(ctx c
 	return directoryIndex, externalLeavesTotalSizeBytes, nil
 }
 
-type LeavesParsedObjectReaderForTesting parser.ParsedObjectReader[object.LocalReference, parser.ParsedMessage[*model_filesystem_pb.Leaves]]
+type LeavesParsedObjectReaderForTesting parser.ParsedObjectReader[object.LocalReference, model_core.Message[*model_filesystem_pb.Leaves]]

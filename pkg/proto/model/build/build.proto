@@ -71,4 +71,10 @@ message BuildSpecification {
   // first, and only fall back to later registries when they're missing
   // from the earlier ones.
   repeated string module_registry_urls = 7;
+
+  // Whether to ignore `bazel_dep` and `use_extension` declared as
+  // `dev_dependency` in the MODULE.bazel of the root module. Note that
+  // such dependencies are always ignored in the MODULE.bazel file of
+  // modules other than the root module.
+  bool ignore_root_module_dev_dependencies = 8;
 }

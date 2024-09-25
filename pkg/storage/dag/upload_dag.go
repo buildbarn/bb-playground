@@ -52,6 +52,16 @@ func (w *simpleObjectContentsWalker) Discard() {
 	*w = simpleObjectContentsWalker{}
 }
 
+type existingObjectContentsWalker struct{}
+
+func (existingObjectContentsWalker) GetContents(ctx context.Context) (*object.Contents, []ObjectContentsWalker, error) {
+	return nil, nil, status.Error(codes.Internal, "Contents for this object are not available for upload, as this object was expected to already exist")
+}
+
+func (existingObjectContentsWalker) Discard() {}
+
+var ExistingObjectContentsWalker ObjectContentsWalker = existingObjectContentsWalker{}
+
 type requestableObjectState struct {
 	reference                  object.LocalReference
 	walker                     ObjectContentsWalker

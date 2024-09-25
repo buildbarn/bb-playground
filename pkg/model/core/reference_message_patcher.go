@@ -8,11 +8,13 @@ import (
 	"github.com/buildbarn/bb-playground/pkg/ds"
 	"github.com/buildbarn/bb-playground/pkg/proto/model/core"
 	"github.com/buildbarn/bb-playground/pkg/storage/object"
+
+	"google.golang.org/protobuf/reflect/protoreflect"
 )
 
-type referenceMessage[TMetadata any] struct {
-	message  *core.Reference
+type referenceMessages[TMetadata any] struct {
 	metadata TMetadata
+	indices  []*uint32
 }
 
 // ReferenceMessagePatcher keeps track of all Reference messages that
@@ -26,7 +28,7 @@ type referenceMessage[TMetadata any] struct {
 // indices in the Reference messages to refer to the correct outgoing
 // reference.
 type ReferenceMessagePatcher[TMetadata any] struct {
-	messagesByReference map[object.LocalReference][]referenceMessage[TMetadata]
+	messagesByReference map[object.LocalReference]referenceMessages[TMetadata]
 	height              int
 }
 
@@ -34,7 +36,7 @@ type ReferenceMessagePatcher[TMetadata any] struct {
 // does not contain any Reference messages.
 func NewReferenceMessagePatcher[TMetadata any]() *ReferenceMessagePatcher[TMetadata] {
 	return &ReferenceMessagePatcher[TMetadata]{
-		messagesByReference: map[object.LocalReference][]referenceMessage[TMetadata]{},
+		messagesByReference: map[object.LocalReference]referenceMessages[TMetadata]{},
 	}
 }
 
@@ -50,15 +52,50 @@ func (p *ReferenceMessagePatcher[TMetadata]) AddReference(reference object.Local
 	message := &core.Reference{
 		Index: math.MaxUint32,
 	}
-	p.messagesByReference[reference] = append(
-		p.messagesByReference[reference],
-		referenceMessage[TMetadata]{
-			message:  message,
-			metadata: metadata,
-		},
-	)
-	p.maybeIncreaseHeight(reference.GetHeight() + 1)
+	p.addReferenceMessage(message, reference, metadata)
 	return message
+}
+
+func (p *ReferenceMessagePatcher[TMetadata]) addReferenceMessage(message *core.Reference, reference object.LocalReference, metadata TMetadata) {
+	p.messagesByReference[reference] = referenceMessages[TMetadata]{
+		metadata: metadata,
+		indices:  append(p.messagesByReference[reference].indices, &message.Index),
+	}
+	p.maybeIncreaseHeight(reference.GetHeight() + 1)
+}
+
+func (p *ReferenceMessagePatcher[TMetadata]) addReferenceMessagesRecursively(message protoreflect.Message, outgoingReferences object.OutgoingReferences, createMetadata func(reference object.LocalReference) TMetadata) error {
+	if m, ok := message.Interface().(*core.Reference); ok {
+		index, err := GetIndexFromReferenceMessage(m, outgoingReferences.GetDegree())
+		if err != nil {
+			return err
+		}
+		reference := outgoingReferences.GetOutgoingReference(index)
+		p.addReferenceMessage(m, reference, createMetadata(reference))
+		return nil
+	}
+
+	var err error
+	message.Range(func(fieldDescriptor protoreflect.FieldDescriptor, value protoreflect.Value) bool {
+		if k := fieldDescriptor.Kind(); k == protoreflect.MessageKind || k == protoreflect.GroupKind {
+			if fieldDescriptor.IsList() {
+				l := value.List()
+				n := l.Len()
+				for i := 0; i < n; i++ {
+					err = p.addReferenceMessagesRecursively(l.Get(i).Message(), outgoingReferences, createMetadata)
+					if err != nil {
+						return false
+					}
+				}
+				return true
+			} else {
+				err = p.addReferenceMessagesRecursively(value.Message(), outgoingReferences, createMetadata)
+				return err == nil
+			}
+		}
+		return true
+	})
+	return err
 }
 
 // Merge multiple instances of ReferenceMessagePatcher together. This
@@ -71,10 +108,9 @@ func (p *ReferenceMessagePatcher[TMetadata]) Merge(other *ReferenceMessagePatche
 		p.messagesByReference, other.messagesByReference = other.messagesByReference, p.messagesByReference
 	}
 	for reference, messages := range other.messagesByReference {
-		if _, ok := p.messagesByReference[reference]; ok {
-			p.messagesByReference[reference] = append(p.messagesByReference[reference], messages...)
-		} else {
-			p.messagesByReference[reference] = messages
+		p.messagesByReference[reference] = referenceMessages[TMetadata]{
+			metadata: messages.metadata,
+			indices:  append(p.messagesByReference[reference].indices, messages.indices...),
 		}
 	}
 	p.maybeIncreaseHeight(other.height)
@@ -124,10 +160,10 @@ func (p *ReferenceMessagePatcher[TMetadata]) SortAndSetReferences() (object.Outg
 	sortedMetadata := make([]TMetadata, 0, len(p.messagesByReference))
 	for i, reference := range sortedReferences.Slice {
 		referenceMessages := p.messagesByReference[reference]
-		for _, rm := range referenceMessages {
-			rm.message.Index = uint32(i) + 1
+		for _, index := range referenceMessages.indices {
+			*index = uint32(i) + 1
 		}
-		sortedMetadata = append(sortedMetadata, referenceMessages[0].metadata)
+		sortedMetadata = append(sortedMetadata, referenceMessages.metadata)
 	}
 	return object.OutgoingReferencesList(sortedReferences.Slice), sortedMetadata
 }
@@ -148,21 +184,14 @@ func (l referencesList) Less(i, j int) bool {
 // metadata mapped to other values, potentially of another type.
 func MapReferenceMessagePatcherMetadata[TOld, TNew any](pOld *ReferenceMessagePatcher[TOld], mapMetadata func(TOld) TNew) *ReferenceMessagePatcher[TNew] {
 	pNew := &ReferenceMessagePatcher[TNew]{
-		messagesByReference: make(map[object.LocalReference][]referenceMessage[TNew], len(pOld.messagesByReference)),
+		messagesByReference: make(map[object.LocalReference]referenceMessages[TNew], len(pOld.messagesByReference)),
 		height:              pOld.height,
 	}
 	for reference, oldMessages := range pOld.messagesByReference {
-		newMessages := make([]referenceMessage[TNew], 0, len(oldMessages))
-		for _, oldMessage := range oldMessages {
-			newMessages = append(
-				newMessages,
-				referenceMessage[TNew]{
-					message:  oldMessage.message,
-					metadata: mapMetadata(oldMessage.metadata),
-				},
-			)
+		pNew.messagesByReference[reference] = referenceMessages[TNew]{
+			metadata: mapMetadata(oldMessages.metadata),
+			indices:  oldMessages.indices,
 		}
-		pNew.messagesByReference[reference] = newMessages
 	}
 	pOld.empty()
 	return pNew

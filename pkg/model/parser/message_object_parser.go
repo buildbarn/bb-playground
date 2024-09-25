@@ -3,17 +3,13 @@ package parser
 import (
 	"context"
 
+	model_core "github.com/buildbarn/bb-playground/pkg/model/core"
 	"github.com/buildbarn/bb-playground/pkg/storage/object"
 	"github.com/buildbarn/bb-storage/pkg/util"
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/protobuf/proto"
 )
-
-type ParsedMessage[T proto.Message] struct {
-	Message            T
-	OutgoingReferences object.OutgoingReferences
-}
 
 type MessageObjectParserReference interface {
 	GetSizeBytes() int
@@ -35,16 +31,16 @@ func NewMessageObjectParser[
 		*TMessage
 		proto.Message
 	},
-]() ObjectParser[TReference, ParsedMessage[TMessagePtr]] {
+]() ObjectParser[TReference, model_core.Message[TMessagePtr]] {
 	return &messageObjectParser[TReference, TMessage, TMessagePtr]{}
 }
 
-func (p *messageObjectParser[TReference, TMessage, TMessagePtr]) ParseObject(ctx context.Context, reference TReference, outgoingReferences object.OutgoingReferences, data []byte) (ParsedMessage[TMessagePtr], int, error) {
+func (p *messageObjectParser[TReference, TMessage, TMessagePtr]) ParseObject(ctx context.Context, reference TReference, outgoingReferences object.OutgoingReferences, data []byte) (model_core.Message[TMessagePtr], int, error) {
 	var message TMessage
 	if err := proto.Unmarshal(data, TMessagePtr(&message)); err != nil {
-		return ParsedMessage[TMessagePtr]{}, 0, util.StatusWrapWithCode(err, codes.InvalidArgument, "Failed to unmarshal message")
+		return model_core.Message[TMessagePtr]{}, 0, util.StatusWrapWithCode(err, codes.InvalidArgument, "Failed to unmarshal message")
 	}
-	return ParsedMessage[TMessagePtr]{
+	return model_core.Message[TMessagePtr]{
 		Message:            &message,
 		OutgoingReferences: outgoingReferences.GetOutgoingReferencesList(),
 	}, reference.GetSizeBytes(), nil

@@ -11,6 +11,7 @@ go_library(
         "label.go",
         "list.go",
         "module.go",
+        "module_version.go",
         "path_parser.go",
         "pointer.go",
         "string.go",

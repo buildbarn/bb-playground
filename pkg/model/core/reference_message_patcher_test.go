@@ -65,7 +65,7 @@ func TestReferenceMessagePatcher(t *testing.T) {
 			object.MustNewSHA256V1LocalReference("3bfc6a655365b7ea9a7e8aeb48a6dbdfc5172ee7496a4b9ed2642ea340fc2ebc", 594844, 8, 7, 686866),
 			object.MustNewSHA256V1LocalReference("66d155875c92ef21bf5dbfdd26750ad864cfff703acfcf8fd039e4f2562e55fc", 594844, 5, 7, 686866),
 		}, references)
-		require.Equal(t, []int{7, 3}, metadata)
+		require.Equal(t, []int{7, 21}, metadata)
 		testutil.RequireEqualProto(t, &core_pb.Reference{Index: 2}, m1)
 		testutil.RequireEqualProto(t, &core_pb.Reference{Index: 1}, m2)
 		testutil.RequireEqualProto(t, &core_pb.Reference{Index: 2}, m3)

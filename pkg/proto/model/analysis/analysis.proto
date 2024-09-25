@@ -1,0 +1,105 @@
+syntax = "proto3";
+
+package buildbarn.playground.model.analysis;
+
+import "google/rpc/status.proto";
+import "pkg/proto/model/build/build.proto";
+import "pkg/proto/model/core/core.proto";
+import "pkg/proto/model/filesystem/filesystem.proto";
+
+option go_package = "github.com/buildbarn/bb-playground/pkg/proto/model/analysis";
+
+message BuildSpecification {
+  message Key {}
+
+  message Value {
+    buildbarn.playground.model.build.BuildSpecification build_specification = 1;
+  }
+}
+
+message BuildResult {
+  message Key {}
+
+  message Value {}
+}
+
+message ConfiguredTarget {
+  message Key {
+    // The label of the package. The label MUST include a canonical repo
+    // name, and MUST NOT include a target name if it matches the last
+    // component of the package path.
+    string label = 1;
+  }
+
+  message Value {
+    oneof result {
+      string failure = 1;
+    }
+  }
+}
+
+message FileProperties {
+  message Key {
+    // The canonical name of the repo that contains the file whose
+    // properties are being requested.
+    string canonical_repo = 1;
+
+    // Path of the files whose properties are being requested, relative
+    // to the root of the repo. The path MUST NOT contain "." or ".."
+    // components. It also MUST NOT contain leading, trailing, or
+    // redundant slashes.
+    string path = 2;
+  }
+
+  message Value {
+    // If set, the file exists, and its properties are provided.
+    buildbarn.playground.model.filesystem.FileProperties exists = 1;
+
+    // TODO: How to encode situations like attempting to access files
+    // underneath a directory, that turns out not to be a directory?
+  }
+}
+
+message Package {
+  message Key {
+    // The label of the package. The label MUST include a canonical repo
+    // name, and MUST NOT include a target name.
+    string label = 1;
+  }
+
+  message Value {
+    oneof result {
+      string failure = 1;
+    }
+  }
+}
+
+message Repo {
+  message Key {
+    // The canonical name of the repo that contains the file whose
+    // properties are being requested.
+    string canonical_repo = 1;
+  }
+
+  message Value {
+    oneof result {
+      // The repository was obtained successfully. The root directory,
+      // containing the files in the repository is provided.
+      buildbarn.playground.model.core.Reference root_directory_reference = 1;
+
+      // Failed to obtain files belonging to the repository.
+      string failure = 2;
+    }
+  }
+}
+
+message TargetCompletion {
+  message Key {
+    // The label of the package. The label MUST include a canonical repo
+    // name, and MUST NOT include a target name if it matches the last
+    // component of the package path.
+    string label = 1;
+  }
+
+  message Value {}
+}

@@ -1,0 +1,30 @@
+load("@rules_go//go:def.bzl", "go_library")
+
+genrule(
+    name = "generate_computer",
+    srcs = ["computer.json"],
+    outs = ["computer.go"],
+    cmd = "$(location //pkg/evaluation/generate_computer) $(location computer.json) > $@",
+    tools = ["//pkg/evaluation/generate_computer"],
+)
+
+go_library(
+    name = "analysis",
+    srcs = [
+        "base_computer.go",
+        "computer.go",
+    ],
+    importpath = "github.com/buildbarn/bb-playground/pkg/model/analysis",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//pkg/evaluation",  # keep
+        "//pkg/label",
+        "//pkg/model/core",
+        "//pkg/proto/model/analysis",
+        "//pkg/proto/model/build",
+        "//pkg/storage/dag",
+        "//pkg/storage/object",
+        "@com_github_buildbarn_bb_storage//pkg/util",
+        "@org_golang_google_protobuf//proto",  # keep
+    ],
+)

@@ -1,12 +1,27 @@
-load("@rules_go//go:def.bzl", "go_library")
+load("@rules_go//go:def.bzl", "go_library", "go_test")
 
 go_library(
     name = "label",
     srcs = [
         "apparent_repo.go",
+        "canonical_repo.go",
         "label.go",
         "module.go",
+        "module_version.go",
     ],
     importpath = "github.com/buildbarn/bb-playground/pkg/label",
     visibility = ["//visibility:public"],
+)
+
+go_test(
+    name = "label_test",
+    srcs = [
+        "label_test.go",
+        "module_version_test.go",
+    ],
+    deps = [
+        ":label",
+        "@com_github_stretchr_testify//assert",
+        "@com_github_stretchr_testify//require",
+    ],
 )

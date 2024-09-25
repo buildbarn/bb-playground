@@ -41,7 +41,7 @@ func (LocalPathExtractingModuleDotBazelHandler) ArchiveOverride(moduleName label
 	return nil
 }
 
-func (LocalPathExtractingModuleDotBazelHandler) BazelDep(name label.Module, version string, maxCompatibilityLevel int, repoName label.ApparentRepo, devDependency bool) error {
+func (LocalPathExtractingModuleDotBazelHandler) BazelDep(name label.Module, version *label.ModuleVersion, maxCompatibilityLevel int, repoName label.ApparentRepo, devDependency bool) error {
 	return nil
 }
 
@@ -57,7 +57,7 @@ func (h *LocalPathExtractingModuleDotBazelHandler) LocalPathOverride(moduleName 
 	return nil
 }
 
-func (h *LocalPathExtractingModuleDotBazelHandler) Module(name label.Module, version string, compatibilityLevel int, repoName label.ApparentRepo, bazelCompatibility []string) error {
+func (h *LocalPathExtractingModuleDotBazelHandler) Module(name label.Module, version *label.ModuleVersion, compatibilityLevel int, repoName label.ApparentRepo, bazelCompatibility []string) error {
 	if h.rootModuleName != nil {
 		return errors.New("multiple module() declarations")
 	}
@@ -65,7 +65,7 @@ func (h *LocalPathExtractingModuleDotBazelHandler) Module(name label.Module, ver
 	return h.LocalPathOverride(name, h.rootModulePath)
 }
 
-func (LocalPathExtractingModuleDotBazelHandler) MultipleVersionOverride(moduleName label.Module, versions []string, registry *url.URL) error {
+func (LocalPathExtractingModuleDotBazelHandler) MultipleVersionOverride(moduleName label.Module, versions []label.ModuleVersion, registry *url.URL) error {
 	return nil
 }
 
@@ -77,26 +77,16 @@ func (LocalPathExtractingModuleDotBazelHandler) RegisterToolchains(toolchainLabe
 	return nil
 }
 
-func (LocalPathExtractingModuleDotBazelHandler) SingleVersionOverride(moduleName label.Module, version string, registry *url.URL, patchOptions *pg_starlark.PatchOptions) error {
+func (LocalPathExtractingModuleDotBazelHandler) SingleVersionOverride(moduleName label.Module, version *label.ModuleVersion, registry *url.URL, patchOptions *pg_starlark.PatchOptions) error {
 	return nil
 }
 
 func (LocalPathExtractingModuleDotBazelHandler) UseExtension(extensionBzlFile label.Label, extensionName string, devDependency, isolate bool) (pg_starlark.ModuleExtensionProxy, error) {
-	return nullModuleExtensionProxy{}, nil
+	return pg_starlark.NullModuleExtensionProxy, nil
 }
 
 func (LocalPathExtractingModuleDotBazelHandler) UseRepoRule(repoRuleBzlFile label.Label, repoRuleName string) (pg_starlark.RepoRuleProxy, error) {
 	return func(name label.ApparentRepo, devDependency bool, attrs map[string]starlark.Value) error {
 		return nil
 	}, nil
-}
-
-type nullModuleExtensionProxy struct{}
-
-func (nullModuleExtensionProxy) Tag(className string, attrs map[string]starlark.Value) error {
-	return nil
-}
-
-func (nullModuleExtensionProxy) UseRepo(repos map[label.ApparentRepo]label.ApparentRepo) error {
-	return nil
 }

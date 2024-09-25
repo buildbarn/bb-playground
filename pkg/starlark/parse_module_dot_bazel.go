@@ -20,6 +20,20 @@ type ModuleExtensionProxy interface {
 	UseRepo(repos map[label.ApparentRepo]label.ApparentRepo) error
 }
 
+type nullModuleExtensionProxy struct{}
+
+func (nullModuleExtensionProxy) Tag(className string, attrs map[string]starlark.Value) error {
+	return nil
+}
+
+func (nullModuleExtensionProxy) UseRepo(repos map[label.ApparentRepo]label.ApparentRepo) error {
+	return nil
+}
+
+// NullModuleExtensionProxy is an implementation of ModuleExtensionProxy
+// that merely discards any tag declarations and use_repo() calls.
+var NullModuleExtensionProxy ModuleExtensionProxy = nullModuleExtensionProxy{}
+
 // RepoRuleProxy is called into by ParseModuleDotBazel() whenever a
 // repository rule is invoked.
 type RepoRuleProxy func(name label.ApparentRepo, devDependency bool, attrs map[string]starlark.Value) error
@@ -33,20 +47,62 @@ type PatchOptions struct {
 	PatchStrip int
 }
 
-// ModuleDotBazelHandler is call into by ParseModuleDotBazel() for each
-// top-level declaration.
-type ModuleDotBazelHandler interface {
+// RootModuleDotBazelHandler is called into by ParseModuleDotBazel() for
+// each top-level declaration. It contains all methods that have an
+// effect within the root module.
+type RootModuleDotBazelHandler interface {
+	ChildModuleDotBazelHandler
+
 	ArchiveOverride(moduleName label.Module, urls []*url.URL, integrity string, stripPrefix path.Parser, patchOptions *PatchOptions) error
-	BazelDep(name label.Module, version string, maxCompatibilityLevel int, repoName label.ApparentRepo, devDependency bool) error
 	GitOverride(moduleName label.Module, remote *url.URL, commit string, patchOptions *PatchOptions, initSubmodules bool, stripPrefix path.Parser) error
 	LocalPathOverride(moduleName label.Module, path path.Parser) error
-	Module(name label.Module, version string, compatibilityLevel int, repoName label.ApparentRepo, bazelCompatibility []string) error
-	MultipleVersionOverride(moduleName label.Module, versions []string, registry *url.URL) error
+	MultipleVersionOverride(moduleName label.Module, versions []label.ModuleVersion, registry *url.URL) error
+	SingleVersionOverride(moduleName label.Module, version *label.ModuleVersion, registry *url.URL, patchOptions *PatchOptions) error
+}
+
+// ChildModuleDotBazelHandler contains the methods that may be called in
+// MODULE.bazel, omitting any methods that should be ignored in child
+// modules.
+type ChildModuleDotBazelHandler interface {
+	BazelDep(name label.Module, version *label.ModuleVersion, maxCompatibilityLevel int, repoName label.ApparentRepo, devDependency bool) error
+	Module(name label.Module, version *label.ModuleVersion, compatibilityLevel int, repoName label.ApparentRepo, bazelCompatibility []string) error
 	RegisterExecutionPlatforms(platformLabels []label.Label, devDependency bool) error
 	RegisterToolchains(toolchainLabels []label.Label, devDependency bool) error
-	SingleVersionOverride(moduleName label.Module, version string, registry *url.URL, patchOptions *PatchOptions) error
 	UseExtension(extensionBzlFile label.Label, extensionName string, devDependency, isolate bool) (ModuleExtensionProxy, error)
 	UseRepoRule(repoRuleBzlFile label.Label, repoRuleName string) (RepoRuleProxy, error)
+}
+
+type overrideIgnoringRootModuleDotBazelHandler struct {
+	ChildModuleDotBazelHandler
+}
+
+// NewOverrideIgnoringRootModuleDotBazelHandler wraps a
+// ChildModuleDotBazelHandler, providing stubs for methods that only
+// have an effect in the root module.
+func NewOverrideIgnoringRootModuleDotBazelHandler(base ChildModuleDotBazelHandler) RootModuleDotBazelHandler {
+	return &overrideIgnoringRootModuleDotBazelHandler{
+		ChildModuleDotBazelHandler: base,
+	}
+}
+
+func (overrideIgnoringRootModuleDotBazelHandler) ArchiveOverride(moduleName label.Module, urls []*url.URL, integrity string, stripPrefix path.Parser, patchOptions *PatchOptions) error {
+	return nil
+}
+
+func (overrideIgnoringRootModuleDotBazelHandler) GitOverride(moduleName label.Module, remote *url.URL, commit string, patchOptions *PatchOptions, initSubmodules bool, stripPrefix path.Parser) error {
+	return nil
+}
+
+func (overrideIgnoringRootModuleDotBazelHandler) LocalPathOverride(moduleName label.Module, path path.Parser) error {
+	return nil
+}
+
+func (overrideIgnoringRootModuleDotBazelHandler) MultipleVersionOverride(moduleName label.Module, versions []label.ModuleVersion, registry *url.URL) error {
+	return nil
+}
+
+func (overrideIgnoringRootModuleDotBazelHandler) SingleVersionOverride(moduleName label.Module, version *label.ModuleVersion, registry *url.URL, patchOptions *PatchOptions) error {
+	return nil
 }
 
 type moduleExtensionProxyValue struct {
@@ -96,7 +152,7 @@ func (v *moduleExtensionProxyValue) AttrNames() []string {
 
 // Parse a MODULE.bazel file, and call into ModuleDotBazelHandler for
 // every observed declaration.
-func ParseModuleDotBazel(contents string, localPathFormat path.Format, handler ModuleDotBazelHandler) error {
+func ParseModuleDotBazel(contents string, localPathFormat path.Format, handler RootModuleDotBazelHandler) error {
 	_, err := starlark.ExecFile(
 		&starlark.Thread{
 			Name: "main",
@@ -136,14 +192,14 @@ func ParseModuleDotBazel(contents string, localPathFormat path.Format, handler M
 			}),
 			"bazel_dep": starlark.NewBuiltin("bazel_dep", func(thread *starlark.Thread, b *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
 				var name label.Module
-				version := ""
+				var version *label.ModuleVersion
 				maxCompatibilityLevel := -1
 				var repoName *label.ApparentRepo
 				devDependency := false
 				if err := starlark.UnpackArgs(
 					b.Name(), args, kwargs,
 					"name", unpack.Bind(&name, unpack.Module),
-					"version?", unpack.Bind(&version, unpack.String),
+					"version?", unpack.Bind(&version, unpack.IfNonEmptyString(unpack.Pointer(unpack.ModuleVersion))),
 					"max_compatibility_level?", unpack.Bind(&maxCompatibilityLevel, unpack.Int),
 					"repo_name?", unpack.Bind(&repoName, unpack.IfNonEmptyString(unpack.Pointer(unpack.ApparentRepo))),
 					"dev_dependency?", unpack.Bind(&devDependency, unpack.Bool),
@@ -195,18 +251,22 @@ func ParseModuleDotBazel(contents string, localPathFormat path.Format, handler M
 				return nil, errors.New("include() is not permitted, as it prevents modules from being reused")
 			}),
 			"local_path_override": starlark.NewBuiltin("local_path_override", func(thread *starlark.Thread, b *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
-				// Skip local_path_override() directives
-				// if the local path format isn't known.
-				if localPathFormat == nil {
-					return starlark.None, nil
-				}
-
 				var moduleName label.Module
 				var path path.Parser
+				var pathUnpacker starlark.Unpacker
+				if localPathFormat == nil {
+					// Local path format is unknown. Only
+					// validate that the provided path is
+					// a string, and discard it.
+					var discardedPath string
+					pathUnpacker = unpack.Bind(&discardedPath, unpack.String)
+				} else {
+					pathUnpacker = unpack.Bind(&path, unpack.PathParser(localPathFormat))
+				}
 				if err := starlark.UnpackArgs(
 					b.Name(), args, kwargs,
 					"module_name", unpack.Bind(&moduleName, unpack.Module),
-					"path", unpack.Bind(&path, unpack.PathParser(localPathFormat)),
+					"path", pathUnpacker,
 				); err != nil {
 					return nil, err
 				}
@@ -217,14 +277,14 @@ func ParseModuleDotBazel(contents string, localPathFormat path.Format, handler M
 			}),
 			"module": starlark.NewBuiltin("module", func(thread *starlark.Thread, b *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
 				var name label.Module
-				version := ""
+				var version *label.ModuleVersion
 				compatibilityLevel := 0
 				var repoName *label.ApparentRepo
 				var bazelCompatibility []string
 				if err := starlark.UnpackArgs(
 					b.Name(), args, kwargs,
 					"name", unpack.Bind(&name, unpack.Module),
-					"version?", unpack.Bind(&version, unpack.String),
+					"version?", unpack.Bind(&version, unpack.IfNonEmptyString(unpack.Pointer(unpack.ModuleVersion))),
 					"compatibility_level?", unpack.Bind(&compatibilityLevel, unpack.Int),
 					"repo_name?", unpack.Bind(&repoName, unpack.IfNonEmptyString(unpack.Pointer(unpack.ApparentRepo))),
 					"bazel_compatibility?", unpack.Bind(&bazelCompatibility, unpack.List(unpack.String)),
@@ -245,12 +305,12 @@ func ParseModuleDotBazel(contents string, localPathFormat path.Format, handler M
 			}),
 			"multiple_version_override": starlark.NewBuiltin("multiple_version_override", func(thread *starlark.Thread, b *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
 				var moduleName label.Module
-				var versions []string
+				var versions []label.ModuleVersion
 				var registry *url.URL
 				if err := starlark.UnpackArgs(
 					b.Name(), args, kwargs,
 					"module_name", unpack.Bind(&moduleName, unpack.Module),
-					"versions", unpack.Bind(&versions, unpack.List(unpack.String)),
+					"versions", unpack.Bind(&versions, unpack.List(unpack.ModuleVersion)),
 					"registry?", unpack.Bind(&registry, unpack.IfNonEmptyString(unpack.URL)),
 				); err != nil {
 					return nil, err
@@ -297,13 +357,13 @@ func ParseModuleDotBazel(contents string, localPathFormat path.Format, handler M
 			}),
 			"single_version_override": starlark.NewBuiltin("single_version_override", func(thread *starlark.Thread, b *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
 				var moduleName label.Module
-				var version string
+				var version *label.ModuleVersion
 				var registry *url.URL
 				var patchOptions PatchOptions
 				if err := starlark.UnpackArgs(
 					b.Name(), args, kwargs,
 					"module_name", unpack.Bind(&moduleName, unpack.Module),
-					"version?", unpack.Bind(&version, unpack.String),
+					"version?", unpack.Bind(&version, unpack.IfNonEmptyString(unpack.Pointer(unpack.ModuleVersion))),
 					"registry?", unpack.Bind(&registry, unpack.IfNonEmptyString(unpack.URL)),
 					"patches?", unpack.Bind(&patchOptions.Patches, unpack.List(unpack.Label)),
 					"patch_cmds?", unpack.Bind(&patchOptions.PatchCmds, unpack.List(unpack.String)),

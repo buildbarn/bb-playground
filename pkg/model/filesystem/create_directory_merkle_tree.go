@@ -117,8 +117,10 @@ func (b *directoryMerkleTreeBuilder[TDirectory, TFile]) walkDirectory(
 				return util.StatusWrapf(err, "Failed to open file %#v", directoryPath.Append(name).GetUNIXString())
 			}
 			fileNode := &model_filesystem_pb.FileNode{
-				Name:         name.String(),
-				IsExecutable: entry.IsExecutable(),
+				Name: name.String(),
+				Properties: &model_filesystem_pb.FileProperties{
+					IsExecutable: entry.IsExecutable(),
+				},
 			}
 			ud.leaves.Message.Files = append(ud.leaves.Message.Files, fileNode)
 
@@ -141,7 +143,7 @@ func (b *directoryMerkleTreeBuilder[TDirectory, TFile]) walkDirectory(
 				}
 
 				if fileContents != nil {
-					fileNode.Contents = fileContents.Message
+					fileNode.Properties.Contents = fileContents.Message
 					ud.leavesPatcherLock.Lock()
 					ud.leaves.Patcher.Merge(fileContents.Patcher)
 					ud.leavesPatcherLock.Unlock()

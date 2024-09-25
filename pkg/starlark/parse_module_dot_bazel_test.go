@@ -18,7 +18,7 @@ func TestParseModuleDotBazel(t *testing.T) {
 	ctrl := gomock.NewController(t)
 
 	t.Run("AllDirectives", func(t *testing.T) {
-		handler := NewMockModuleDotBazelHandler(ctrl)
+		handler := NewMockRootModuleDotBazelHandler(ctrl)
 
 		url1, err := url.Parse("https://example.com/url1")
 		require.NoError(t, err)
@@ -82,17 +82,18 @@ func TestParseModuleDotBazel(t *testing.T) {
 			}),
 		)
 
+		version1 := label.MustNewModuleVersion("1.2.3")
 		gomock.InOrder(
 			handler.EXPECT().BazelDep(
 				/* name = */ label.MustNewModule("my_module_name"),
-				/* version = */ "",
+				/* version = */ nil,
 				/* maxCompatibilityLevel = */ -1,
 				/* repoName = */ label.MustNewApparentRepo("my_module_name"),
 				/* devDependency = */ false,
 			).Times(2),
 			handler.EXPECT().BazelDep(
 				/* name = */ label.MustNewModule("my_module_name"),
-				/* version = */ "1.2.3",
+				/* version = */ &version1,
 				/* maxCompatibilityLevel = */ 123,
 				/* repoName = */ label.MustNewApparentRepo("my_repo_name"),
 				/* devDependency = */ true,
@@ -162,17 +163,18 @@ func TestParseModuleDotBazel(t *testing.T) {
 			require.Equal(t, "/some/path", localPathBuilder.GetUNIXString())
 		})
 
+		version2 := label.MustNewModuleVersion("1.0.0")
 		gomock.InOrder(
 			handler.EXPECT().Module(
 				/* name = */ label.MustNewModule("my_module_name"),
-				/* version = */ "",
+				/* version = */ nil,
 				/* compatibilityLevel = */ 0,
 				/* repoName = */ label.MustNewApparentRepo("my_module_name"),
 				/* bazelCompatibility = */ gomock.Len(0),
 			).Times(2),
 			handler.EXPECT().Module(
 				/* name = */ label.MustNewModule("my_module_name"),
-				/* version = */ "1.0.0",
+				/* version = */ &version2,
 				/* compatibilityLevel = */ 123,
 				/* repoName = */ label.MustNewApparentRepo("my_repo_name"),
 				/* bazelCompatibility = */ []string{
@@ -187,17 +189,17 @@ func TestParseModuleDotBazel(t *testing.T) {
 		gomock.InOrder(
 			handler.EXPECT().MultipleVersionOverride(
 				/* moduleName = */ label.MustNewModule("my_module_name"),
-				/* versions = */ []string{
-					"1.0.0",
-					"1.2.0",
+				/* versions = */ []label.ModuleVersion{
+					label.MustNewModuleVersion("1.0.0"),
+					label.MustNewModuleVersion("1.2.0"),
 				},
 				/* registry = */ nil,
 			).Times(2),
 			handler.EXPECT().MultipleVersionOverride(
 				/* moduleName = */ label.MustNewModule("my_module_name"),
-				/* versions = */ []string{
-					"1.0.0",
-					"1.2.0",
+				/* versions = */ []label.ModuleVersion{
+					label.MustNewModuleVersion("1.0.0"),
+					label.MustNewModuleVersion("1.2.0"),
 				},
 				/* registry = */ registry,
 			),
@@ -234,13 +236,13 @@ func TestParseModuleDotBazel(t *testing.T) {
 		gomock.InOrder(
 			handler.EXPECT().SingleVersionOverride(
 				/* moduleName = */ label.MustNewModule("my_module_name"),
-				/* versions = */ "",
+				/* version = */ nil,
 				/* registry = */ nil,
 				/* patchOptions = */ &pg_starlark.PatchOptions{},
 			),
 			handler.EXPECT().SingleVersionOverride(
 				/* moduleName = */ label.MustNewModule("my_module_name"),
-				/* versions = */ "",
+				/* version = */ nil,
 				/* registry = */ nil,
 				/* patchOptions = */ &pg_starlark.PatchOptions{
 					Patches:   []label.Label{},
@@ -249,7 +251,7 @@ func TestParseModuleDotBazel(t *testing.T) {
 			),
 			handler.EXPECT().SingleVersionOverride(
 				/* moduleName = */ label.MustNewModule("my_module_name"),
-				/* versions = */ "1.0.0",
+				/* version = */ &version2,
 				/* registry = */ registry,
 				/* patchOptions = */ &pg_starlark.PatchOptions{
 					Patches: []label.Label{
@@ -541,6 +543,29 @@ http_archive(
 )
 `,
 			path.UNIXFormat,
+			handler,
+		))
+	})
+
+	t.Run("UnknownLocalPathFormat", func(t *testing.T) {
+		// If the local path format is not known, we can't parse
+		// local_path_override()'s path argument. In that case,
+		// LocalPathOverride() should be called with path set to
+		// nil.
+		handler := NewMockRootModuleDotBazelHandler(ctrl)
+		handler.EXPECT().LocalPathOverride(
+			/* moduleName = */ label.MustNewModule("my_module_name"),
+			/* path = */ nil,
+		)
+
+		require.NoError(t, pg_starlark.ParseModuleDotBazel(
+			`
+local_path_override(
+    module_name = "my_module_name",
+    path = "/some/path",
+)
+`,
+			/* localPathFormat = */ nil,
 			handler,
 		))
 	})

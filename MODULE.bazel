@@ -12,20 +12,19 @@ bazel_dep(name = "toolchains_llvm", version = "1.0.0")
 
 git_override(
     module_name = "bazel_remote_apis",
-    commit = "9a250a0f817fe63a426ede43b133c3dc4549d75f",
-    patches = ["//:patches/bazel_remote_apis/grpc-v2.diff"],
+    commit = "de1d77b12feb81f96909f0410991c3c966d9d8e7",
     remote = "https://github.com/bazelbuild/remote-apis.git",
 )
 
 git_override(
     module_name = "com_github_buildbarn_bb_remote_execution",
-    commit = "fa5964b758bcedd4afb22935c8c6062212fb92ae",
+    commit = "bf32d1897971edde42a59636c8103b09a72196ae",
     remote = "https://github.com/buildbarn/bb-remote-execution.git",
 )
 
 git_override(
     module_name = "com_github_buildbarn_bb_storage",
-    commit = "a889bc06a4070e34f5b7d85073dabaa37bfc3027",
+    commit = "256ec6c483a05f1aeefff6fc57a2044f746c5a08",
     remote = "https://github.com/buildbarn/bb-storage.git",
 )
 
@@ -33,13 +32,6 @@ git_override(
     module_name = "com_github_buildbarn_go_xdr",
     commit = "236788cf9e8948a1e8875c7dd243e2be180cdfd7",
     remote = "https://github.com/buildbarn/go-xdr.git",
-)
-
-git_override(
-    module_name = "gazelle",
-    commit = "4d0129d7adae33e8e648d3624aff8fa8f93f375b",
-    patches = ["//:patches/gazelle/googleapis.diff"],
-    remote = "https://github.com/bazelbuild/bazel-gazelle.git",
 )
 
 git_override(
@@ -60,20 +52,6 @@ go_deps.from_file(go_mod = "//:go.mod")
 use_repo(go_deps, "cc_mvdan_gofumpt", "com_github_buildbarn_go_cdc", "com_github_google_uuid", "com_github_seehuhn_mt19937", "com_github_stretchr_testify", "net_starlark_go", "org_golang_google_genproto_googleapis_rpc", "org_golang_google_grpc", "org_golang_google_protobuf", "org_golang_x_exp", "org_golang_x_sync", "org_golang_x_term", "org_uber_go_mock")
 
 go_deps_dev = use_extension("@gazelle//:extensions.bzl", "go_deps", dev_dependency = True)
-go_deps_dev.gazelle_override(
-    build_file_generation = "on",
-    directives = [
-        "gazelle:go_grpc_compilers @io_bazel_rules_go//proto:go_proto,@io_bazel_rules_go//proto:go_grpc_v2",
-        "gazelle:resolve proto go build/bazel/semver/semver.proto //build/bazel/semver",
-        "gazelle:resolve proto go google/api/annotations.proto @org_golang_google_genproto_googleapis_api//annotations",
-        "gazelle:resolve proto go google/longrunning/operations.proto @com_google_cloud_go_longrunning//autogen/longrunningpb",
-        "gazelle:resolve proto go google/rpc/status.proto @org_golang_google_genproto_googleapis_rpc//status",
-        "gazelle:resolve proto google/api/annotations.proto @googleapis//google/api:annotations_proto",
-        "gazelle:resolve proto google/longrunning/operations.proto @googleapis//google/longrunning:operations_proto",
-        "gazelle:resolve proto google/rpc/status.proto @googleapis//google/rpc:status_proto",
-    ],
-    path = "github.com/bazelbuild/remote-apis",
-)
 go_deps_dev.module_override(
     patches = [
         "@com_github_buildbarn_bb_remote_execution//:patches/org_uber_go_mock/generics.diff",

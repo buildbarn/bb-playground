@@ -1,0 +1,48 @@
+load("@rules_go//extras:gomock.bzl", "gomock")
+load("@rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "evaluation",
+    srcs = [
+        "computer.go",
+        "environment.go",
+        "fully_compute_value.go",
+    ],
+    importpath = "github.com/buildbarn/bb-playground/pkg/evaluation",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//pkg/model/core",
+        "//pkg/storage/dag",
+        "@org_golang_google_protobuf//proto",
+        "@org_golang_google_protobuf//types/known/anypb",
+    ],
+)
+
+go_test(
+    name = "evaluation_test",
+    srcs = [
+        "fully_compute_value_test.go",
+        "mocks_evaluation_test.go",
+    ],
+    embed = [":evaluation"],
+    deps = [
+        "//pkg/model/core",
+        "//pkg/storage/dag",
+        "@com_github_buildbarn_bb_storage//pkg/testutil",
+        "@com_github_stretchr_testify//require",
+        "@org_golang_google_protobuf//proto",
+        "@org_golang_google_protobuf//reflect/protoreflect",  # keep
+        "@org_golang_google_protobuf//types/known/wrapperspb",
+        "@org_uber_go_mock//gomock",
+    ],
+)
+
+gomock(
+    name = "mocks_evaluation",
+    out = "mocks_evaluation_test.go",
+    interfaces = ["Computer"],
+    library = "//pkg/evaluation",
+    mockgen_model_library = "@org_uber_go_mock//mockgen/model",
+    mockgen_tool = "@org_uber_go_mock//mockgen",
+    package = "evaluation_test",
+)

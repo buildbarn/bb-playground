@@ -15,18 +15,18 @@ import (
 )
 
 // DirectoryMerkleTreeFileResolver is an implementation of
-// path.ComponentWalker that resolves the FileNode corresponding to a
-// given path. It can be used to look up files contained in a Merkle
-// tree of Directory and Leaves messages.
+// path.ComponentWalker that resolves the FileProperties corresponding
+// to a given path. It can be used to look up files contained in a
+// Merkle tree of Directory and Leaves messages.
 type DirectoryMerkleTreeFileResolver struct {
 	context         context.Context
-	directoryReader model_parser.ParsedObjectReader[object.LocalReference, model_parser.ParsedMessage[*model_filesystem_pb.Directory]]
-	leavesReader    model_parser.ParsedObjectReader[object.LocalReference, model_parser.ParsedMessage[*model_filesystem_pb.Leaves]]
+	directoryReader model_parser.ParsedObjectReader[object.LocalReference, model_core.Message[*model_filesystem_pb.Directory]]
+	leavesReader    model_parser.ParsedObjectReader[object.LocalReference, model_core.Message[*model_filesystem_pb.Leaves]]
 
 	currentDirectoryReference object.LocalReference
-	currentDirectory          model_parser.ParsedMessage[*model_filesystem_pb.Directory]
+	currentDirectory          model_core.Message[*model_filesystem_pb.Directory]
 
-	fileNode model_parser.ParsedMessage[*model_filesystem_pb.FileNode]
+	fileProperties model_core.Message[*model_filesystem_pb.FileProperties]
 }
 
 var _ path.ComponentWalker = &DirectoryMerkleTreeFileResolver{}
@@ -36,8 +36,8 @@ var _ path.ComponentWalker = &DirectoryMerkleTreeFileResolver{}
 // provided root directory.
 func NewDirectoryMerkleTreeFileResolver(
 	ctx context.Context,
-	directoryReader model_parser.ParsedObjectReader[object.LocalReference, model_parser.ParsedMessage[*model_filesystem_pb.Directory]],
-	leavesReader model_parser.ParsedObjectReader[object.LocalReference, model_parser.ParsedMessage[*model_filesystem_pb.Leaves]],
+	directoryReader model_parser.ParsedObjectReader[object.LocalReference, model_core.Message[*model_filesystem_pb.Directory]],
+	leavesReader model_parser.ParsedObjectReader[object.LocalReference, model_core.Message[*model_filesystem_pb.Leaves]],
 	rootDirectoryReference object.LocalReference,
 ) *DirectoryMerkleTreeFileResolver {
 	return &DirectoryMerkleTreeFileResolver{
@@ -48,27 +48,27 @@ func NewDirectoryMerkleTreeFileResolver(
 	}
 }
 
-func (r *DirectoryMerkleTreeFileResolver) GetFileNode() model_parser.ParsedMessage[*model_filesystem_pb.FileNode] {
-	return r.fileNode
+func (r *DirectoryMerkleTreeFileResolver) GetFileProperties() model_core.Message[*model_filesystem_pb.FileProperties] {
+	return r.fileProperties
 }
 
-func (r *DirectoryMerkleTreeFileResolver) getCurrentDirectory() (model_parser.ParsedMessage[*model_filesystem_pb.Directory], error) {
-	if r.currentDirectory.Message == nil {
+func (r *DirectoryMerkleTreeFileResolver) getCurrentDirectory() (model_core.Message[*model_filesystem_pb.Directory], error) {
+	if !r.currentDirectory.IsSet() {
 		d, _, err := r.directoryReader.ReadParsedObject(r.context, r.currentDirectoryReference)
 		if err != nil {
-			return model_parser.ParsedMessage[*model_filesystem_pb.Directory]{}, err
+			return model_core.Message[*model_filesystem_pb.Directory]{}, err
 		}
 		r.currentDirectory = d
 	}
 	return r.currentDirectory, nil
 }
 
-func (r *DirectoryMerkleTreeFileResolver) getCurrentLeaves() (model_parser.ParsedMessage[*model_filesystem_pb.Leaves], error) {
+func (r *DirectoryMerkleTreeFileResolver) getCurrentLeaves() (model_core.Message[*model_filesystem_pb.Leaves], error) {
 	switch leaves := r.currentDirectory.Message.Leaves.(type) {
 	case *model_filesystem_pb.Directory_LeavesExternal:
 		index, err := model_core.GetIndexFromReferenceMessage(leaves.LeavesExternal, r.currentDirectory.OutgoingReferences.GetDegree())
 		if err != nil {
-			return model_parser.ParsedMessage[*model_filesystem_pb.Leaves]{}, err
+			return model_core.Message[*model_filesystem_pb.Leaves]{}, err
 		}
 		l, _, err := r.leavesReader.ReadParsedObject(
 			r.context,
@@ -76,12 +76,12 @@ func (r *DirectoryMerkleTreeFileResolver) getCurrentLeaves() (model_parser.Parse
 		)
 		return l, err
 	case *model_filesystem_pb.Directory_LeavesInline:
-		return model_parser.ParsedMessage[*model_filesystem_pb.Leaves]{
+		return model_core.Message[*model_filesystem_pb.Leaves]{
 			Message:            leaves.LeavesInline,
 			OutgoingReferences: r.currentDirectory.OutgoingReferences,
 		}, nil
 	default:
-		return model_parser.ParsedMessage[*model_filesystem_pb.Leaves]{}, status.Error(codes.InvalidArgument, "Unknown leaves contents type")
+		return model_core.Message[*model_filesystem_pb.Leaves]{}, status.Error(codes.InvalidArgument, "Unknown leaves contents type")
 	}
 }
 
@@ -105,7 +105,7 @@ func (r *DirectoryMerkleTreeFileResolver) OnDirectory(name path.Component) (path
 				return nil, err
 			}
 			r.currentDirectoryReference = r.currentDirectory.OutgoingReferences.GetOutgoingReference(index)
-			r.currentDirectory = model_parser.ParsedMessage[*model_filesystem_pb.Directory]{}
+			r.currentDirectory = model_core.Message[*model_filesystem_pb.Directory]{}
 		case *model_filesystem_pb.DirectoryNode_ContentsInline:
 			r.currentDirectory.Message = contents.ContentsInline
 		default:
@@ -165,8 +165,12 @@ func (r *DirectoryMerkleTreeFileResolver) OnTerminal(name path.Component) (*path
 		len(files),
 		func(i int) bool { return files[i].Name >= n },
 	); i < len(files) && files[i].Name == n {
-		r.fileNode = model_parser.ParsedMessage[*model_filesystem_pb.FileNode]{
-			Message:            files[i],
+		properties := files[i].Properties
+		if properties == nil {
+			return nil, status.Error(codes.InvalidArgument, "Path resolves to file that does not have any properties")
+		}
+		r.fileProperties = model_core.Message[*model_filesystem_pb.FileProperties]{
+			Message:            properties,
 			OutgoingReferences: leaves.OutgoingReferences,
 		}
 		return nil, nil

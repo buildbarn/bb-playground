@@ -17,17 +17,22 @@ message Leaves {
   repeated SymlinkNode symlinks = 2;
 }
 
+message FileProperties {
+  // The contents of the file. If the file is empty (i.e., zero bytes in
+  // size), this field is left unset.
+  FileContents contents = 1;
+
+  // If true, the file is executable. This corresponds to the +x
+  // permission bit present on UNIX file systems.
+  bool is_executable = 2;
+}
+
 message FileNode {
   // The name of the file.
   string name = 1;
 
-  // The contents of the file. If the file is empty (i.e., zero bytes in
-  // size), this field is left unset.
-  FileContents contents = 2;
-
-  // If true, the file is executable. This corresponds to the +x
-  // permission bit present on UNIX file systems.
-  bool is_executable = 3;
+  // All properties of the file, except for its name.
+  FileProperties properties = 2;
 }
 
 message SymlinkNode {
