@@ -25,7 +25,7 @@ func TestFullyComputeValue(t *testing.T) {
 		// the Fibonacci sequence recursively. Due to
 		// memoization, this should run in polynomial time.
 		computer := NewMockComputer(ctrl)
-		computer.EXPECT().ComputeValue(gomock.Any(), gomock.Any(), gomock.Any()).
+		computer.EXPECT().ComputeMessageValue(gomock.Any(), gomock.Any(), gomock.Any()).
 			DoAndReturn(func(ctx context.Context, key proto.Message, e evaluation.Environment) (model_core.PatchedMessage[proto.Message, dag.ObjectContentsWalker], error) {
 				// Base case: fib(0) and fib(1).
 				k := key.(*wrapperspb.UInt32Value)
@@ -39,14 +39,14 @@ func TestFullyComputeValue(t *testing.T) {
 				}
 
 				// Recursion: fib(n) = fib(n-2) + fib(n-1).
-				v0 := e.GetValue(&wrapperspb.UInt32Value{
+				v0 := e.GetMessageValue(&wrapperspb.UInt32Value{
 					Value: k.Value - 2,
 				})
-				v1 := e.GetValue(&wrapperspb.UInt32Value{
+				v1 := e.GetMessageValue(&wrapperspb.UInt32Value{
 					Value: k.Value - 1,
 				})
 				if !v0.IsSet() || !v1.IsSet() {
-					return model_core.PatchedMessage[proto.Message, dag.ObjectContentsWalker]{}, nil
+					return model_core.PatchedMessage[proto.Message, dag.ObjectContentsWalker]{}, evaluation.ErrMissingDependency
 				}
 				return model_core.PatchedMessage[proto.Message, dag.ObjectContentsWalker]{
 					Message: &wrapperspb.UInt64Value{

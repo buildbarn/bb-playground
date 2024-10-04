@@ -46,7 +46,7 @@ func TestCreateFileMerkleTree(t *testing.T) {
 			capturer,
 		)
 		require.NoError(t, err)
-		require.Nil(t, rootFileContents)
+		require.False(t, rootFileContents.IsSet())
 	})
 
 	t.Run("Hello", func(t *testing.T) {

@@ -8,12 +8,13 @@ import (
 	"go.starlark.net/starlark"
 )
 
-func Label(v starlark.Value, dst *label.Label) error {
+func ApparentLabel(thread *starlark.Thread, v starlark.Value, dst *label.ApparentLabel) error {
 	s, ok := starlark.AsString(v)
 	if !ok {
 		return fmt.Errorf("got %s, want string", v.Type())
 	}
-	l, err := label.NewLabel(s)
+	canonicalPackage := label.MustNewCanonicalLabel(thread.CallFrame(1).Pos.Filename()).GetCanonicalPackage()
+	l, err := canonicalPackage.AppendLabel(s)
 	if err != nil {
 		return fmt.Errorf("invalid label: %w", err)
 	}

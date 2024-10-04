@@ -6,20 +6,80 @@
          ]
       },
       "BuildSpecification": { },
+      "CanonicalRepoName": { },
+      "CompiledBzlFile": {
+         "dependsOn": [
+            "CanonicalRepoName",
+            "CompiledBzlFileFunctions",
+            "CompiledBzlFileGlobals",
+            "FileProperties",
+            "FileReader"
+         ]
+      },
+      "CompiledBzlFileFunctions": {
+         "dependsOn": [
+            "CanonicalRepoName",
+            "CompiledBzlFile",
+            "CompiledBzlFileGlobals"
+         ],
+         "nativeValueType": {
+            "imports": [
+               "go.starlark.net/starlark"
+            ],
+            "type": "map[string]starlark.Callable"
+         }
+      },
+      "CompiledBzlFileGlobals": {
+         "dependsOn": [
+            "CompiledBzlFile"
+         ],
+         "nativeValueType": {
+            "imports": [
+               "go.starlark.net/starlark"
+            ],
+            "type": "starlark.StringDict"
+         }
+      },
       "ConfiguredTarget": {
          "dependsOn": [
             "Package"
          ]
       },
+      "DirectoryAccessParameters": {
+         "dependsOn": [
+            "BuildSpecification"
+         ]
+      },
+      "FileAccessParameters": {
+         "dependsOn": [
+            "BuildSpecification"
+         ]
+      },
       "FileProperties": {
          "dependsOn": [
             "BuildSpecification",
+            "DirectoryAccessParameters",
             "Repo"
          ]
       },
+      "FileReader": {
+         "dependsOn": [
+            "FileAccessParameters"
+         ],
+         "nativeValueType": {
+            "imports": [
+               "github.com/buildbarn/bb-playground/pkg/model/filesystem"
+            ],
+            "type": "*filesystem.FileReader"
+         }
+      },
       "Package": {
          "dependsOn": [
-            "FileProperties"
+            "CanonicalRepoName",
+            "CompiledBzlFileFunctions",
+            "CompiledBzlFileGlobals",
+            "FileProperties",
+            "FileReader"
          ]
       },
       "Repo": {

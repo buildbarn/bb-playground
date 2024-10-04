@@ -1,0 +1,25 @@
+load("@rules_go//go:def.bzl", "go_library")
+load("@rules_go//proto:def.bzl", "go_proto_library")
+load("@rules_proto//proto:defs.bzl", "proto_library")
+
+proto_library(
+    name = "starlark_proto",
+    srcs = ["starlark.proto"],
+    visibility = ["//visibility:public"],
+    deps = ["//pkg/proto/model/core:core_proto"],
+)
+
+go_proto_library(
+    name = "starlark_go_proto",
+    importpath = "github.com/buildbarn/bb-playground/pkg/proto/model/starlark",
+    proto = ":starlark_proto",
+    visibility = ["//visibility:public"],
+    deps = ["//pkg/proto/model/core"],
+)
+
+go_library(
+    name = "starlark",
+    embed = [":starlark_go_proto"],
+    importpath = "github.com/buildbarn/bb-playground/pkg/proto/model/starlark",
+    visibility = ["//visibility:public"],
+)

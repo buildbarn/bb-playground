@@ -142,7 +142,7 @@ func (b *directoryMerkleTreeBuilder[TDirectory, TFile]) walkDirectory(
 					return util.StatusWrapf(err, "Failed to create Merkle tree for file %#v", directoryPath.Append(name).GetUNIXString())
 				}
 
-				if fileContents != nil {
+				if fileContents.IsSet() {
 					fileNode.Properties.Contents = fileContents.Message
 					ud.leavesPatcherLock.Lock()
 					ud.leaves.Patcher.Merge(fileContents.Patcher)

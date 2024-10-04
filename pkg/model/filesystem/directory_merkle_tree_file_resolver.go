@@ -111,6 +111,10 @@ func (r *DirectoryMerkleTreeFileResolver) OnDirectory(name path.Component) (path
 		default:
 			return nil, status.Error(codes.InvalidArgument, "Unknown directory node contents type")
 		}
+		return path.GotDirectory{
+			Child:        r,
+			IsReversible: true,
+		}, nil
 	}
 
 	leaves, err := r.getCurrentLeaves()

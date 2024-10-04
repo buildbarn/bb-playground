@@ -23,6 +23,14 @@ func NewCanonicalRepo(value string) (CanonicalRepo, error) {
 	return CanonicalRepo{value: value}, nil
 }
 
+func MustNewCanonicalRepo(value string) CanonicalRepo {
+	r, err := NewCanonicalRepo(value)
+	if err != nil {
+		panic(err)
+	}
+	return r
+}
+
 func (r CanonicalRepo) String() string {
 	return r.value
 }
@@ -30,4 +38,8 @@ func (r CanonicalRepo) String() string {
 // GetModule returns the module to which this repo belongs.
 func (r CanonicalRepo) GetModule() Module {
 	return Module{value: r.value[:strings.IndexByte(r.value, '+')]}
+}
+
+func (r CanonicalRepo) GetRootPackage() CanonicalPackage {
+	return CanonicalPackage{value: "@@" + r.value}
 }

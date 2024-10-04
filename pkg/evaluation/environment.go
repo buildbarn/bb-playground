@@ -7,5 +7,6 @@ import (
 )
 
 type Environment interface {
-	GetValue(key proto.Message) model_core.Message[proto.Message]
+	GetMessageValue(key proto.Message) model_core.Message[proto.Message]
+	GetNativeValue(key proto.Message) (any, error)
 }

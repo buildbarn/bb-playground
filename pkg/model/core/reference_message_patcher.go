@@ -64,38 +64,33 @@ func (p *ReferenceMessagePatcher[TMetadata]) addReferenceMessage(message *core.R
 	p.maybeIncreaseHeight(reference.GetHeight() + 1)
 }
 
-func (p *ReferenceMessagePatcher[TMetadata]) addReferenceMessagesRecursively(message protoreflect.Message, outgoingReferences object.OutgoingReferences, createMetadata func(reference object.LocalReference) TMetadata) error {
+func (p *ReferenceMessagePatcher[TMetadata]) addReferenceMessagesRecursively(message protoreflect.Message, outgoingReferences object.OutgoingReferences, createMetadata func(reference object.LocalReference) TMetadata) {
 	if m, ok := message.Interface().(*core.Reference); ok {
-		index, err := GetIndexFromReferenceMessage(m, outgoingReferences.GetDegree())
-		if err != nil {
-			return err
+		// If the reference message refers to a valid object,
+		// let it be managed by the patcher. If it is invalid,
+		// we at least change the index to MaxUint32, so that
+		// any future attempts to resolve it will fail.
+		if index, err := GetIndexFromReferenceMessage(m, outgoingReferences.GetDegree()); err == nil {
+			reference := outgoingReferences.GetOutgoingReference(index)
+			p.addReferenceMessage(m, reference, createMetadata(reference))
 		}
-		reference := outgoingReferences.GetOutgoingReference(index)
-		p.addReferenceMessage(m, reference, createMetadata(reference))
-		return nil
-	}
-
-	var err error
-	message.Range(func(fieldDescriptor protoreflect.FieldDescriptor, value protoreflect.Value) bool {
-		if k := fieldDescriptor.Kind(); k == protoreflect.MessageKind || k == protoreflect.GroupKind {
-			if fieldDescriptor.IsList() {
-				l := value.List()
-				n := l.Len()
-				for i := 0; i < n; i++ {
-					err = p.addReferenceMessagesRecursively(l.Get(i).Message(), outgoingReferences, createMetadata)
-					if err != nil {
-						return false
+		m.Index = math.MaxUint32
+	} else {
+		message.Range(func(fieldDescriptor protoreflect.FieldDescriptor, value protoreflect.Value) bool {
+			if k := fieldDescriptor.Kind(); k == protoreflect.MessageKind || k == protoreflect.GroupKind {
+				if fieldDescriptor.IsList() {
+					l := value.List()
+					n := l.Len()
+					for i := 0; i < n; i++ {
+						p.addReferenceMessagesRecursively(l.Get(i).Message(), outgoingReferences, createMetadata)
 					}
+				} else {
+					p.addReferenceMessagesRecursively(value.Message(), outgoingReferences, createMetadata)
 				}
-				return true
-			} else {
-				err = p.addReferenceMessagesRecursively(value.Message(), outgoingReferences, createMetadata)
-				return err == nil
 			}
-		}
-		return true
-	})
-	return err
+			return true
+		})
+	}
 }
 
 // Merge multiple instances of ReferenceMessagePatcher together. This

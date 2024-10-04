@@ -6,7 +6,7 @@ import (
 	"go.starlark.net/starlark"
 )
 
-func String(v starlark.Value, dst *string) error {
+func String(thread *starlark.Thread, v starlark.Value, dst *string) error {
 	s, ok := starlark.AsString(v)
 	if !ok {
 		return fmt.Errorf("got %s, want string", v.Type())

@@ -1,0 +1,52 @@
+diff --git starlark/eval.go starlark/eval.go
+index be3eb61..938d13d 100644
+--- starlark/eval.go
++++ starlark/eval.go
+@@ -1413,7 +1413,6 @@ func asIndex(v Value, len int, result *int) error {
+ // setArgs sets the values of the formal parameters of function fn in
+ // based on the actual parameter values in args and kwargs.
+ func setArgs(locals []Value, fn *Function, args Tuple, kwargs []Tuple) error {
+-
+ 	// This is the general schema of a function:
+ 	//
+ 	//   def f(p1, p2=dp2, p3=dp3, *args, k1, k2=dk2, k3, **kwargs)
+diff --git starlark/unpack.go starlark/unpack.go
+index d15dd8e..ba5ae2f 100644
+--- starlark/unpack.go
++++ starlark/unpack.go
+@@ -120,7 +120,7 @@ func UnpackArgs(fnname string, args Tuple, kwargs []Tuple, pairs ...any) error {
+ 			}
+ 		}
+ 		if err := unpackOneArg(arg, pairs[2*i+1]); err != nil {
+-			return fmt.Errorf("%s: for parameter %s: %s", fnname, name, err)
++			return fmt.Errorf("%s: for parameter %s: %w", fnname, name, err)
+ 		}
+ 	}
+ 
+@@ -145,7 +145,7 @@ kwloop:
+ 
+ 				ptr := pairs[2*i+1]
+ 				if err := unpackOneArg(arg, ptr); err != nil {
+-					return fmt.Errorf("%s: for parameter %s: %s", fnname, name, err)
++					return fmt.Errorf("%s: for parameter %s: %w", fnname, name, err)
+ 				}
+ 				continue kwloop
+ 			}
+@@ -157,7 +157,7 @@ kwloop:
+ 			names = append(names, param)
+ 		}
+ 		if n := spell.Nearest(string(name), names); n != "" {
+-			err = fmt.Errorf("%s (did you mean %s?)", err.Error(), n)
++			err = fmt.Errorf("%w (did you mean %s?)", err, n)
+ 		}
+ 		return err
+ 	}
+@@ -210,7 +210,7 @@ func UnpackPositionalArgs(fnname string, args Tuple, kwargs []Tuple, min int, va
+ 	}
+ 	for i, arg := range args {
+ 		if err := unpackOneArg(arg, vars[i]); err != nil {
+-			return fmt.Errorf("%s: for parameter %d: %s", fnname, i+1, err)
++			return fmt.Errorf("%s: for parameter %d: %w", fnname, i+1, err)
+ 		}
+ 	}
+ 	return nil

@@ -1,0 +1,36 @@
+load("@rules_go//go:def.bzl", "go_library")
+
+go_library(
+    name = "starlark",
+    srcs = [
+        "attr.go",
+        "build_setting.go",
+        "bzl_file_builtins.go",
+        "depset.go",
+        "encode_compiled_program.go",
+        "exec_group.go",
+        "indirect_function.go",
+        "label.go",
+        "provider_value.go",
+        "repository_rule_value.go",
+        "rule_value.go",
+        "struct.go",
+        "subrule_value.go",
+        "transition_value.go",
+    ],
+    importpath = "github.com/buildbarn/bb-playground/pkg/model/starlark",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//pkg/label",
+        "//pkg/model/core",
+        "//pkg/model/core/btree",
+        "//pkg/model/encoding",
+        "//pkg/model/parser",
+        "//pkg/proto/model/starlark",
+        "//pkg/starlark/unpack",
+        "//pkg/storage/dag",
+        "//pkg/storage/object",
+        "@net_starlark_go//starlark",
+        "@org_golang_google_protobuf//encoding/protojson",
+    ],
+)

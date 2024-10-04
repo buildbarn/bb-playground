@@ -9,7 +9,7 @@ import (
 )
 
 func PathParser(pathFormat path.Format) UnpackerInto[path.Parser] {
-	return func(v starlark.Value, dst *path.Parser) error {
+	return func(thread *starlark.Thread, v starlark.Value, dst *path.Parser) error {
 		s, ok := starlark.AsString(v)
 		if !ok {
 			return fmt.Errorf("got %s, want string", v.Type())

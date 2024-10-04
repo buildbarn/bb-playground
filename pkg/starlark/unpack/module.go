@@ -8,7 +8,7 @@ import (
 	"go.starlark.net/starlark"
 )
 
-func Module(v starlark.Value, dst *label.Module) error {
+func Module(thread *starlark.Thread, v starlark.Value, dst *label.Module) error {
 	s, ok := starlark.AsString(v)
 	if !ok {
 		return fmt.Errorf("got %s, want string", v.Type())

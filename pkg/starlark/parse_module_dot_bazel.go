@@ -42,7 +42,7 @@ type RepoRuleProxy func(name label.ApparentRepo, devDependency bool, attrs map[s
 // by MODULE.bazel's archive_override(), git_override() and
 // single_version_override().
 type PatchOptions struct {
-	Patches    []label.Label
+	Patches    []label.ApparentLabel
 	PatchCmds  []string
 	PatchStrip int
 }
@@ -66,10 +66,10 @@ type RootModuleDotBazelHandler interface {
 type ChildModuleDotBazelHandler interface {
 	BazelDep(name label.Module, version *label.ModuleVersion, maxCompatibilityLevel int, repoName label.ApparentRepo, devDependency bool) error
 	Module(name label.Module, version *label.ModuleVersion, compatibilityLevel int, repoName label.ApparentRepo, bazelCompatibility []string) error
-	RegisterExecutionPlatforms(platformLabels []label.Label, devDependency bool) error
-	RegisterToolchains(toolchainLabels []label.Label, devDependency bool) error
-	UseExtension(extensionBzlFile label.Label, extensionName string, devDependency, isolate bool) (ModuleExtensionProxy, error)
-	UseRepoRule(repoRuleBzlFile label.Label, repoRuleName string) (RepoRuleProxy, error)
+	RegisterExecutionPlatforms(platformLabels []label.ApparentLabel, devDependency bool) error
+	RegisterToolchains(toolchainLabels []label.ApparentLabel, devDependency bool) error
+	UseExtension(extensionBzlFile label.ApparentLabel, extensionName string, devDependency, isolate bool) (ModuleExtensionProxy, error)
+	UseRepoRule(repoRuleBzlFile label.ApparentLabel, repoRuleName string) (RepoRuleProxy, error)
 }
 
 type overrideIgnoringRootModuleDotBazelHandler struct {
@@ -152,7 +152,7 @@ func (v *moduleExtensionProxyValue) AttrNames() []string {
 
 // Parse a MODULE.bazel file, and call into ModuleDotBazelHandler for
 // every observed declaration.
-func ParseModuleDotBazel(contents string, localPathFormat path.Format, handler RootModuleDotBazelHandler) error {
+func ParseModuleDotBazel(contents string, repo label.CanonicalRepo, localPathFormat path.Format, handler RootModuleDotBazelHandler) error {
 	_, err := starlark.ExecFile(
 		&starlark.Thread{
 			Name: "main",
@@ -161,7 +161,7 @@ func ParseModuleDotBazel(contents string, localPathFormat path.Format, handler R
 				fmt.Println(msg)
 			},
 		},
-		"MODULE.bazel",
+		fmt.Sprintf("@@%s//:MODULE.bazel", repo),
 		contents,
 		starlark.StringDict{
 			"archive_override": starlark.NewBuiltin("archive_override", func(thread *starlark.Thread, b *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
@@ -172,13 +172,13 @@ func ParseModuleDotBazel(contents string, localPathFormat path.Format, handler R
 				var patchOptions PatchOptions
 				if err := starlark.UnpackArgs(
 					b.Name(), args, kwargs,
-					"module_name", unpack.Bind(&moduleName, unpack.Module),
-					"urls", unpack.Bind(&urls, unpack.List(unpack.URL)),
-					"integrity?", unpack.Bind(&integrity, unpack.String),
-					"strip_prefix?", unpack.Bind(&stripPrefix, unpack.PathParser(path.UNIXFormat)),
-					"patches?", unpack.Bind(&patchOptions.Patches, unpack.List(unpack.Label)),
-					"patch_cmds?", unpack.Bind(&patchOptions.PatchCmds, unpack.List(unpack.String)),
-					"patch_strip?", unpack.Bind(&patchOptions.PatchStrip, unpack.Int),
+					"module_name", unpack.Bind(thread, &moduleName, unpack.Module),
+					"urls", unpack.Bind(thread, &urls, unpack.List(unpack.URL)),
+					"integrity?", unpack.Bind(thread, &integrity, unpack.String),
+					"strip_prefix?", unpack.Bind(thread, &stripPrefix, unpack.PathParser(path.UNIXFormat)),
+					"patches?", unpack.Bind(thread, &patchOptions.Patches, unpack.List(unpack.ApparentLabel)),
+					"patch_cmds?", unpack.Bind(thread, &patchOptions.PatchCmds, unpack.List(unpack.String)),
+					"patch_strip?", unpack.Bind(thread, &patchOptions.PatchStrip, unpack.Int),
 				); err != nil {
 					return nil, err
 				}
@@ -198,11 +198,11 @@ func ParseModuleDotBazel(contents string, localPathFormat path.Format, handler R
 				devDependency := false
 				if err := starlark.UnpackArgs(
 					b.Name(), args, kwargs,
-					"name", unpack.Bind(&name, unpack.Module),
-					"version?", unpack.Bind(&version, unpack.IfNonEmptyString(unpack.Pointer(unpack.ModuleVersion))),
-					"max_compatibility_level?", unpack.Bind(&maxCompatibilityLevel, unpack.Int),
-					"repo_name?", unpack.Bind(&repoName, unpack.IfNonEmptyString(unpack.Pointer(unpack.ApparentRepo))),
-					"dev_dependency?", unpack.Bind(&devDependency, unpack.Bool),
+					"name", unpack.Bind(thread, &name, unpack.Module),
+					"version?", unpack.Bind(thread, &version, unpack.IfNonEmptyString(unpack.Pointer(unpack.ModuleVersion))),
+					"max_compatibility_level?", unpack.Bind(thread, &maxCompatibilityLevel, unpack.Int),
+					"repo_name?", unpack.Bind(thread, &repoName, unpack.IfNonEmptyString(unpack.Pointer(unpack.ApparentRepo))),
+					"dev_dependency?", unpack.Bind(thread, &devDependency, unpack.Bool),
 				); err != nil {
 					return nil, err
 				}
@@ -227,14 +227,14 @@ func ParseModuleDotBazel(contents string, localPathFormat path.Format, handler R
 				var stripPrefix path.Parser = &path.EmptyBuilder
 				if err := starlark.UnpackArgs(
 					b.Name(), args, kwargs,
-					"module_name", unpack.Bind(&moduleName, unpack.Module),
-					"remote", unpack.Bind(&remote, unpack.URL),
-					"commit?", unpack.Bind(&commit, unpack.String),
-					"patches?", unpack.Bind(&patchOptions.Patches, unpack.List(unpack.Label)),
-					"patch_cmds?", unpack.Bind(&patchOptions.PatchCmds, unpack.List(unpack.String)),
-					"patch_strip?", unpack.Bind(&patchOptions.PatchStrip, unpack.Int),
-					"init_submodules?", unpack.Bind(&initSubmodules, unpack.Bool),
-					"strip_prefix?", unpack.Bind(&stripPrefix, unpack.PathParser(path.UNIXFormat)),
+					"module_name", unpack.Bind(thread, &moduleName, unpack.Module),
+					"remote", unpack.Bind(thread, &remote, unpack.URL),
+					"commit?", unpack.Bind(thread, &commit, unpack.String),
+					"patches?", unpack.Bind(thread, &patchOptions.Patches, unpack.List(unpack.ApparentLabel)),
+					"patch_cmds?", unpack.Bind(thread, &patchOptions.PatchCmds, unpack.List(unpack.String)),
+					"patch_strip?", unpack.Bind(thread, &patchOptions.PatchStrip, unpack.Int),
+					"init_submodules?", unpack.Bind(thread, &initSubmodules, unpack.Bool),
+					"strip_prefix?", unpack.Bind(thread, &stripPrefix, unpack.PathParser(path.UNIXFormat)),
 				); err != nil {
 					return nil, err
 				}
@@ -259,13 +259,13 @@ func ParseModuleDotBazel(contents string, localPathFormat path.Format, handler R
 					// validate that the provided path is
 					// a string, and discard it.
 					var discardedPath string
-					pathUnpacker = unpack.Bind(&discardedPath, unpack.String)
+					pathUnpacker = unpack.Bind(thread, &discardedPath, unpack.String)
 				} else {
-					pathUnpacker = unpack.Bind(&path, unpack.PathParser(localPathFormat))
+					pathUnpacker = unpack.Bind(thread, &path, unpack.PathParser(localPathFormat))
 				}
 				if err := starlark.UnpackArgs(
 					b.Name(), args, kwargs,
-					"module_name", unpack.Bind(&moduleName, unpack.Module),
+					"module_name", unpack.Bind(thread, &moduleName, unpack.Module),
 					"path", pathUnpacker,
 				); err != nil {
 					return nil, err
@@ -283,11 +283,11 @@ func ParseModuleDotBazel(contents string, localPathFormat path.Format, handler R
 				var bazelCompatibility []string
 				if err := starlark.UnpackArgs(
 					b.Name(), args, kwargs,
-					"name", unpack.Bind(&name, unpack.Module),
-					"version?", unpack.Bind(&version, unpack.IfNonEmptyString(unpack.Pointer(unpack.ModuleVersion))),
-					"compatibility_level?", unpack.Bind(&compatibilityLevel, unpack.Int),
-					"repo_name?", unpack.Bind(&repoName, unpack.IfNonEmptyString(unpack.Pointer(unpack.ApparentRepo))),
-					"bazel_compatibility?", unpack.Bind(&bazelCompatibility, unpack.List(unpack.String)),
+					"name", unpack.Bind(thread, &name, unpack.Module),
+					"version?", unpack.Bind(thread, &version, unpack.IfNonEmptyString(unpack.Pointer(unpack.ModuleVersion))),
+					"compatibility_level?", unpack.Bind(thread, &compatibilityLevel, unpack.Int),
+					"repo_name?", unpack.Bind(thread, &repoName, unpack.IfNonEmptyString(unpack.Pointer(unpack.ApparentRepo))),
+					"bazel_compatibility?", unpack.Bind(thread, &bazelCompatibility, unpack.List(unpack.String)),
 				); err != nil {
 					return nil, err
 				}
@@ -309,9 +309,9 @@ func ParseModuleDotBazel(contents string, localPathFormat path.Format, handler R
 				var registry *url.URL
 				if err := starlark.UnpackArgs(
 					b.Name(), args, kwargs,
-					"module_name", unpack.Bind(&moduleName, unpack.Module),
-					"versions", unpack.Bind(&versions, unpack.List(unpack.ModuleVersion)),
-					"registry?", unpack.Bind(&registry, unpack.IfNonEmptyString(unpack.URL)),
+					"module_name", unpack.Bind(thread, &moduleName, unpack.Module),
+					"versions", unpack.Bind(thread, &versions, unpack.List(unpack.ModuleVersion)),
+					"registry?", unpack.Bind(thread, &registry, unpack.IfNonEmptyString(unpack.URL)),
 				); err != nil {
 					return nil, err
 				}
@@ -322,14 +322,14 @@ func ParseModuleDotBazel(contents string, localPathFormat path.Format, handler R
 				)
 			}),
 			"register_execution_platforms": starlark.NewBuiltin("register_execution_platforms", func(thread *starlark.Thread, b *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
-				var platformLabels []label.Label
-				if err := unpack.List(unpack.Label)(args, &platformLabels); err != nil {
+				var platformLabels []label.ApparentLabel
+				if err := unpack.List(unpack.ApparentLabel)(thread, args, &platformLabels); err != nil {
 					return nil, err
 				}
 				devDependency := false
 				if err := starlark.UnpackArgs(
 					b.Name(), nil, kwargs,
-					"dev_dependency?", unpack.Bind(&devDependency, unpack.Bool),
+					"dev_dependency?", unpack.Bind(thread, &devDependency, unpack.Bool),
 				); err != nil {
 					return nil, err
 				}
@@ -339,14 +339,14 @@ func ParseModuleDotBazel(contents string, localPathFormat path.Format, handler R
 				)
 			}),
 			"register_toolchains": starlark.NewBuiltin("register_toolchains", func(thread *starlark.Thread, b *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
-				var toolchainLabels []label.Label
-				if err := unpack.List(unpack.Label)(args, &toolchainLabels); err != nil {
+				var toolchainLabels []label.ApparentLabel
+				if err := unpack.List(unpack.ApparentLabel)(thread, args, &toolchainLabels); err != nil {
 					return nil, err
 				}
 				devDependency := false
 				if err := starlark.UnpackArgs(
 					b.Name(), nil, kwargs,
-					"dev_dependency?", unpack.Bind(&devDependency, unpack.Bool),
+					"dev_dependency?", unpack.Bind(thread, &devDependency, unpack.Bool),
 				); err != nil {
 					return nil, err
 				}
@@ -362,12 +362,12 @@ func ParseModuleDotBazel(contents string, localPathFormat path.Format, handler R
 				var patchOptions PatchOptions
 				if err := starlark.UnpackArgs(
 					b.Name(), args, kwargs,
-					"module_name", unpack.Bind(&moduleName, unpack.Module),
-					"version?", unpack.Bind(&version, unpack.IfNonEmptyString(unpack.Pointer(unpack.ModuleVersion))),
-					"registry?", unpack.Bind(&registry, unpack.IfNonEmptyString(unpack.URL)),
-					"patches?", unpack.Bind(&patchOptions.Patches, unpack.List(unpack.Label)),
-					"patch_cmds?", unpack.Bind(&patchOptions.PatchCmds, unpack.List(unpack.String)),
-					"patch_strip?", unpack.Bind(&patchOptions.PatchStrip, unpack.Int),
+					"module_name", unpack.Bind(thread, &moduleName, unpack.Module),
+					"version?", unpack.Bind(thread, &version, unpack.IfNonEmptyString(unpack.Pointer(unpack.ModuleVersion))),
+					"registry?", unpack.Bind(thread, &registry, unpack.IfNonEmptyString(unpack.URL)),
+					"patches?", unpack.Bind(thread, &patchOptions.Patches, unpack.List(unpack.ApparentLabel)),
+					"patch_cmds?", unpack.Bind(thread, &patchOptions.PatchCmds, unpack.List(unpack.String)),
+					"patch_strip?", unpack.Bind(thread, &patchOptions.PatchStrip, unpack.Int),
 				); err != nil {
 					return nil, err
 				}
@@ -382,16 +382,16 @@ func ParseModuleDotBazel(contents string, localPathFormat path.Format, handler R
 				if len(args) > 2 {
 					return nil, fmt.Errorf("%s: got %d positional arguments, want at most 2", b.Name(), len(args))
 				}
-				var extensionBzlFile label.Label
+				var extensionBzlFile label.ApparentLabel
 				var extensionName string
 				devDependency := false
 				isolate := false
 				if err := starlark.UnpackArgs(
 					b.Name(), args, kwargs,
-					"extension_bzl_file", unpack.Bind(&extensionBzlFile, unpack.Label),
-					"extension_name", unpack.Bind(&extensionName, unpack.String),
-					"dev_dependency?", unpack.Bind(&devDependency, unpack.Bool),
-					"isolate?", unpack.Bind(&isolate, unpack.Bool),
+					"extension_bzl_file", unpack.Bind(thread, &extensionBzlFile, unpack.ApparentLabel),
+					"extension_name", unpack.Bind(thread, &extensionName, unpack.String),
+					"dev_dependency?", unpack.Bind(thread, &devDependency, unpack.Bool),
+					"isolate?", unpack.Bind(thread, &isolate, unpack.Bool),
 				); err != nil {
 					return nil, err
 				}
@@ -423,7 +423,7 @@ func ParseModuleDotBazel(contents string, localPathFormat path.Format, handler R
 				repos := map[label.ApparentRepo]label.ApparentRepo{}
 				for i := 1; i < len(args); i++ {
 					var repo label.ApparentRepo
-					if err := unpack.ApparentRepo(args[i], &repo); err != nil {
+					if err := unpack.ApparentRepo(thread, args[i], &repo); err != nil {
 						return nil, fmt.Errorf("%s: for parameter %d: %w", b.Name(), i, err)
 					}
 					repos[repo] = repo
@@ -431,10 +431,10 @@ func ParseModuleDotBazel(contents string, localPathFormat path.Format, handler R
 
 				for _, kwarg := range kwargs {
 					var key, value label.ApparentRepo
-					if err := unpack.ApparentRepo(kwarg[0], &key); err != nil {
+					if err := unpack.ApparentRepo(thread, kwarg[0], &key); err != nil {
 						return nil, fmt.Errorf("%s: for parameter %s: %w", b.Name(), kwarg[0].(starlark.String), err)
 					}
-					if err := unpack.ApparentRepo(kwarg[1], &value); err != nil {
+					if err := unpack.ApparentRepo(thread, kwarg[1], &value); err != nil {
 						return nil, fmt.Errorf("%s: for parameter %s: %w", b.Name(), kwarg[0].(starlark.String), err)
 					}
 					if _, ok := repos[key]; ok {
@@ -446,12 +446,12 @@ func ParseModuleDotBazel(contents string, localPathFormat path.Format, handler R
 				return starlark.None, proxyObject.proxy.UseRepo(repos)
 			}),
 			"use_repo_rule": starlark.NewBuiltin("use_repo_rule", func(thread *starlark.Thread, b *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
-				var repoRuleBzlFile label.Label
+				var repoRuleBzlFile label.ApparentLabel
 				var repoRuleName string
 				if err := starlark.UnpackArgs(
 					b.Name(), args, kwargs,
-					"repo_rule_bzl_file", unpack.Bind(&repoRuleBzlFile, unpack.Label),
-					"repo_rule_name", unpack.Bind(&repoRuleName, unpack.String),
+					"repo_rule_bzl_file", unpack.Bind(thread, &repoRuleBzlFile, unpack.ApparentLabel),
+					"repo_rule_name", unpack.Bind(thread, &repoRuleName, unpack.String),
 				); err != nil {
 					return nil, err
 				}
@@ -470,11 +470,11 @@ func ParseModuleDotBazel(contents string, localPathFormat path.Format, handler R
 					for _, kwarg := range kwargs {
 						switch key := string(kwarg[0].(starlark.String)); key {
 						case "name":
-							if err := unpack.Pointer(unpack.ApparentRepo)(kwarg[1], &name); err != nil {
+							if err := unpack.Pointer(unpack.ApparentRepo)(thread, kwarg[1], &name); err != nil {
 								return nil, fmt.Errorf("%s: for parameter %s: %w", b.Name(), key, err)
 							}
 						case "dev_dependency":
-							if err := unpack.Bool(kwarg[1], &devDependency); err != nil {
+							if err := unpack.Bool(thread, kwarg[1], &devDependency); err != nil {
 								return nil, fmt.Errorf("%s: for parameter %s: %w", b.Name(), key, err)
 							}
 						default:

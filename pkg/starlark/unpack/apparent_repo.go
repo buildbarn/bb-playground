@@ -8,7 +8,7 @@ import (
 	"go.starlark.net/starlark"
 )
 
-func ApparentRepo(v starlark.Value, dst *label.ApparentRepo) error {
+func ApparentRepo(thread *starlark.Thread, v starlark.Value, dst *label.ApparentRepo) error {
 	s, ok := starlark.AsString(v)
 	if !ok {
 		return fmt.Errorf("got %s, want string", v.Type())

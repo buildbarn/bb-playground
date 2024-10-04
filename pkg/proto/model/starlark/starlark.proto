@@ -1,0 +1,110 @@
+syntax = "proto3";
+
+package buildbarn.playground.model.starlark;
+
+import "pkg/proto/model/core/core.proto";
+
+option go_package = "github.com/buildbarn/bb-playground/pkg/proto/model/starlark";
+
+message CompiledProgram {
+  repeated Global globals = 1;
+  bytes code = 2;
+}
+
+message Global {
+  string name = 1;
+  Value value = 2;
+}
+
+message Value {
+  oneof kind {
+    Attr attr = 1;
+    bool bool = 2;
+    bytes bytes = 3;
+    Depset depset = 4;
+    Dict dict = 5;
+    Function function = 6;
+    bytes int = 7;
+    string label = 8;
+    List list = 9;
+    IdentifierReference provider = 10;
+    IdentifierReference repository_rule = 11;
+    IdentifierReference rule = 12;
+    string str = 13;
+    Struct struct = 14;
+    IdentifierReference subrule = 15;
+    TransitionValue transition = 16;
+    Tuple tuple = 17;
+  }
+}
+
+message Attr {
+  bool mandatory = 1;
+}
+
+message Depset {}
+
+message Dict {
+  repeated DictEntry entries = 1;
+}
+
+message DictEntry {
+  message Leaf {
+    Value key = 1;
+    Value value = 2;
+  }
+
+  message Parent {
+    buildbarn.playground.model.core.Reference reference = 1;
+  }
+
+  oneof level {
+    Leaf leaf = 1;
+    Parent parent = 2;
+  }
+}
+
+message Function {
+  string filename = 1;
+  string name = 2;
+}
+
+message IdentifierReference {
+  string filename = 1;
+  string name = 2;
+}
+
+message List {
+  repeated ListElement elements = 1;
+}
+
+message ListElement {
+  message Parent {
+    buildbarn.playground.model.core.Reference reference = 1;
+  }
+
+  oneof level {
+    Value leaf = 1;
+    Parent parent = 2;
+  }
+}
+
+message ListReference {
+  buildbarn.playground.model.core.Reference list_reference = 1;
+  uint64 elements_count = 2;
+}
+
+message Struct {
+  repeated StructField fields = 1;
+}
+
+message StructField {
+  string key = 1;
+  Value value = 2;
+}
+
+message TransitionValue {}
+
+message Tuple {
+  repeated Value elements = 1;
+}

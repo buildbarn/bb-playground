@@ -3,12 +3,14 @@ load("@rules_go//go:def.bzl", "go_library")
 go_library(
     name = "unpack",
     srcs = [
+        "apparent_label.go",
         "apparent_repo.go",
         "bind.go",
         "bool.go",
+        "dict.go",
         "if_non_empty_string.go",
+        "if_not_none.go",
         "int.go",
-        "label.go",
         "list.go",
         "module.go",
         "module_version.go",

@@ -2,10 +2,10 @@ syntax = "proto3";
 
 package buildbarn.playground.model.analysis;
 
-import "google/rpc/status.proto";
 import "pkg/proto/model/build/build.proto";
 import "pkg/proto/model/core/core.proto";
 import "pkg/proto/model/filesystem/filesystem.proto";
+import "pkg/proto/model/starlark/starlark.proto";
 
 option go_package = "github.com/buildbarn/bb-playground/pkg/proto/model/analysis";
 
@@ -23,6 +23,66 @@ message BuildResult {
   message Value {}
 }
 
+// CanonicalRepoName resolves the canonical name of a repo, given its
+// apparent name and the name of the repo which attempts to access it.
+message CanonicalRepoName {
+  message Key {
+    // The canonical name of the repo from which the apparent repo is
+    // being accessed.
+    string from_canonical_repo = 1;
+
+    // The apparent name of the repo which is being accessed.
+    string to_apparent_repo = 2;
+  }
+
+  message Value {
+    oneof result {
+      // The resolved canonical name of the repo which is being accessed.
+      string to_canonical_repo = 1;
+
+      // Resolution failed.
+      string failure = 2;
+    }
+  }
+}
+
+message CompiledBzlFile {
+  message Key {
+    // The label of the .bzl file. The label MUST include a canonical
+    // repo name.
+    string label = 1;
+
+    bool builtin = 2;
+  }
+
+  message Value {
+    oneof result {
+      buildbarn.playground.model.starlark.CompiledProgram compiled_program = 1;
+      string failure = 2;
+    }
+  }
+}
+
+message CompiledBzlFileFunctions {
+  message Key {
+    // The label of the .bzl file. The label MUST include a canonical
+    // repo name.
+    string label = 1;
+
+    bool builtin = 2;
+  }
+}
+
+message CompiledBzlFileGlobals {
+  message Key {
+    // The label of the .bzl file. The label MUST include a canonical
+    // repo name.
+    string label = 1;
+
+    bool builtin = 2;
+  }
+}
+
 message ConfiguredTarget {
   message Key {
     // The label of the package. The label MUST include a canonical repo
@@ -35,6 +95,24 @@ message ConfiguredTarget {
     oneof result {
       string failure = 1;
     }
+  }
+}
+
+message DirectoryAccessParameters {
+  message Key {}
+
+  message Value {
+    buildbarn.playground.model.filesystem.DirectoryAccessParameters
+        directory_access_parameters = 1;
+  }
+}
+
+message FileAccessParameters {
+  message Key {}
+
+  message Value {
+    buildbarn.playground.model.filesystem.FileAccessParameters
+        file_access_parameters = 1;
   }
 }
 
@@ -52,12 +130,17 @@ message FileProperties {
   }
 
   message Value {
-    // If set, the file exists, and its properties are provided.
-    buildbarn.playground.model.filesystem.FileProperties exists = 1;
+    oneof result {
+      // If set, the file exists, and its properties are provided.
+      buildbarn.playground.model.filesystem.FileProperties exists = 1;
 
-    // TODO: How to encode situations like attempting to access files
-    // underneath a directory, that turns out not to be a directory?
+      string failure = 2;
+    }
   }
+}
+
+message FileReader {
+  message Key {}
 }
 
 message Package {

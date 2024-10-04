@@ -98,7 +98,7 @@ func DoBuild(args *arguments.BuildCommand, workspacePath path.Parser) {
 	}
 	modulePaths := map[label.Module]path.Parser{}
 	moduleDotBazelHandler := NewLocalPathExtractingModuleDotBazelHandler(modulePaths, workspacePath)
-	if err := pg_starlark.ParseModuleDotBazel(string(moduleDotBazelContents), path.LocalFormat, moduleDotBazelHandler); err != nil {
+	if err := pg_starlark.ParseModuleDotBazel(string(moduleDotBazelContents), label.MustNewCanonicalRepo("main+"), path.LocalFormat, moduleDotBazelHandler); err != nil {
 		logger.Fatal("Failed to parse MODULE.bazel: ", err)
 	}
 	rootModuleName, err := moduleDotBazelHandler.GetRootModuleName()

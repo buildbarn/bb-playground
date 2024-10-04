@@ -59,6 +59,10 @@ go_deps_dev.module_override(
     ],
     path = "go.uber.org/mock",
 )
+go_deps_dev.module_override(
+    patches = ["//:patches/net_starlark_go/unwrap.diff"],
+    path = "go.starlark.net",
+)
 
 llvm = use_extension("@toolchains_llvm//toolchain/extensions:llvm.bzl", "llvm", dev_dependency = True)
 llvm.toolchain(

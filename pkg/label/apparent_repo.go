@@ -29,3 +29,7 @@ func MustNewApparentRepo(value string) ApparentRepo {
 	}
 	return r
 }
+
+func (r ApparentRepo) String() string {
+	return r.value
+}

@@ -7,11 +7,9 @@ import (
 	"github.com/buildbarn/bb-playground/pkg/evaluation"
 	model_analysis "github.com/buildbarn/bb-playground/pkg/model/analysis"
 	"github.com/buildbarn/bb-playground/pkg/model/encoding"
-	model_parser "github.com/buildbarn/bb-playground/pkg/model/parser"
 	build_pb "github.com/buildbarn/bb-playground/pkg/proto/build"
 	"github.com/buildbarn/bb-playground/pkg/proto/configuration/playground_builder"
 	model_analysis_pb "github.com/buildbarn/bb-playground/pkg/proto/model/analysis"
-	model_build_pb "github.com/buildbarn/bb-playground/pkg/proto/model/build"
 	object_pb "github.com/buildbarn/bb-playground/pkg/proto/storage/object"
 	"github.com/buildbarn/bb-playground/pkg/storage/object"
 	object_grpc "github.com/buildbarn/bb-playground/pkg/storage/object/grpc"
@@ -76,29 +74,25 @@ func (s *builderServer) PerformBuild(request *build_pb.PerformBuildRequest, serv
 	if err != nil {
 		return util.StatusWrap(err, "Invalid namespace")
 	}
-	buildSpecificationReference, err := namespace.NewGlobalReference(request.BuildSpecificationReference)
+	objectDownloader := object_namespacemapping.NewNamespaceAddingDownloader(s.objectDownloader, namespace)
+	buildSpecificationReference, err := namespace.NewLocalReference(request.BuildSpecificationReference)
 	if err != nil {
 		return util.StatusWrap(err, "Invalid build specification reference")
 	}
-	buildSpecificationEncoder, err := encoding.NewBinaryEncoderFromProto(request.BuildSpecificationEncoders, uint32(namespace.ReferenceFormat.GetMaximumObjectSizeBytes()))
+	buildSpecificationEncoder, err := encoding.NewBinaryEncoderFromProto(
+		request.BuildSpecificationEncoders,
+		uint32(namespace.ReferenceFormat.GetMaximumObjectSizeBytes()),
+	)
 	if err != nil {
 		return util.StatusWrap(err, "Invalid build specification encoders")
 	}
-
-	objectDownloader := object_namespacemapping.NewNamespaceAddingDownloader(s.objectDownloader, namespace)
-	buildSpecificationReader := model_parser.NewStorageBackedParsedObjectReader(
-		objectDownloader,
-		buildSpecificationEncoder,
-		model_parser.NewMessageObjectParser[object.LocalReference, model_build_pb.BuildSpecification](),
-	)
-	buildSpecification, _, err := buildSpecificationReader.ReadParsedObject(ctx, buildSpecificationReference.LocalReference)
-	if err != nil {
-		return util.StatusWrap(err, "Failed to read build specification")
-	}
-
 	value, err := evaluation.FullyComputeValue(
 		ctx,
-		model_analysis.NewTypedComputer(model_analysis.NewBaseComputer(buildSpecification)),
+		model_analysis.NewTypedComputer(model_analysis.NewBaseComputer(
+			objectDownloader,
+			buildSpecificationReference,
+			buildSpecificationEncoder,
+		)),
 		&model_analysis_pb.BuildResult_Key{},
 	)
 	if err != nil {

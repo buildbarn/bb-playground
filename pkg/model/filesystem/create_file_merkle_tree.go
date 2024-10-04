@@ -21,7 +21,7 @@ import (
 // Chunking of large files is performed using the MaxCDC algorithm. The
 // resulting B-tree is a Prolly tree. This ensures that minor changes to
 // a file also result in minor changes to the resulting Merkle tree.
-func CreateFileMerkleTree[T any](ctx context.Context, parameters *FileCreationParameters, f io.Reader, capturer FileMerkleTreeCapturer[T]) (*model_core.PatchedMessage[*model_filesystem_pb.FileContents, T], error) {
+func CreateFileMerkleTree[T any](ctx context.Context, parameters *FileCreationParameters, f io.Reader, capturer FileMerkleTreeCapturer[T]) (model_core.PatchedMessage[*model_filesystem_pb.FileContents, T], error) {
 	chunker := cdc.NewMaxContentDefinedChunker(
 		f,
 		/* bufferSizeBytes = */ max(parameters.referenceFormat.GetMaximumObjectSizeBytes(), parameters.chunkMinimumSizeBytes+parameters.chunkMaximumSizeBytes),
@@ -29,10 +29,12 @@ func CreateFileMerkleTree[T any](ctx context.Context, parameters *FileCreationPa
 		parameters.chunkMaximumSizeBytes,
 	)
 	treeBuilder := btree.NewBuilder(
-		btree.NewProllyLevelBuilderFactory(
+		btree.NewProllyChunkerFactory[*model_filesystem_pb.FileContents, T](
 			/* minimumCount = */ 2,
 			parameters.fileContentsListMinimumSizeBytes,
 			parameters.fileContentsListMaximumSizeBytes,
+		),
+		btree.NewObjectCreatingNodeMerger[*model_filesystem_pb.FileContents, T](
 			parameters.fileContentsListEncoder,
 			parameters.referenceFormat,
 			/* parentNodeComputer = */ func(contents *object.Contents, childNodes []*model_filesystem_pb.FileContents, outgoingReferences object.OutgoingReferences, metadata []T) (model_core.PatchedMessage[*model_filesystem_pb.FileContents, T], error) {
@@ -58,7 +60,7 @@ func CreateFileMerkleTree[T any](ctx context.Context, parameters *FileCreationPa
 	for {
 		// Permit cancelation.
 		if err := util.StatusFromContext(ctx); err != nil {
-			return nil, err
+			return model_core.PatchedMessage[*model_filesystem_pb.FileContents, T]{}, err
 		}
 
 		// Read the next chunk of data from the file and create
@@ -69,13 +71,13 @@ func CreateFileMerkleTree[T any](ctx context.Context, parameters *FileCreationPa
 				// Emit the final FileContentsList
 				// messages and return the FileContents
 				// message of the file's root.
-				return treeBuilder.Finalize()
+				return treeBuilder.FinalizeSingle()
 			}
-			return nil, err
+			return model_core.PatchedMessage[*model_filesystem_pb.FileContents, T]{}, err
 		}
 		chunkContents, err := parameters.EncodeChunk(chunk)
 		if err != nil {
-			return nil, err
+			return model_core.PatchedMessage[*model_filesystem_pb.FileContents, T]{}, err
 		}
 
 		// Insert a FileContents message for it into the B-tree.
@@ -87,7 +89,7 @@ func CreateFileMerkleTree[T any](ctx context.Context, parameters *FileCreationPa
 			},
 			Patcher: patcher,
 		}); err != nil {
-			return nil, err
+			return model_core.PatchedMessage[*model_filesystem_pb.FileContents, T]{}, err
 		}
 	}
 }

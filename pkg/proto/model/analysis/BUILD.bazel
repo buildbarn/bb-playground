@@ -10,7 +10,7 @@ proto_library(
         "//pkg/proto/model/build:build_proto",
         "//pkg/proto/model/core:core_proto",
         "//pkg/proto/model/filesystem:filesystem_proto",
-        "@googleapis//google/rpc:status_proto",
+        "//pkg/proto/model/starlark:starlark_proto",
     ],
 )
 
@@ -23,7 +23,7 @@ go_proto_library(
         "//pkg/proto/model/build",
         "//pkg/proto/model/core",
         "//pkg/proto/model/filesystem",
-        "@org_golang_google_genproto_googleapis_rpc//status",
+        "//pkg/proto/model/starlark",
     ],
 )
 

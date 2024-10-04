@@ -6,6 +6,6 @@ import (
 	"go.starlark.net/starlark"
 )
 
-func Int[T constraints.Integer](v starlark.Value, dst *T) error {
+func Int[T constraints.Integer](thread *starlark.Thread, v starlark.Value, dst *T) error {
 	return starlark.AsInt(v, dst)
 }

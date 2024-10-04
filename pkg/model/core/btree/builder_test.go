@@ -16,17 +16,19 @@ func TestBuilder(t *testing.T) {
 	ctrl := gomock.NewController(t)
 
 	t.Run("EmptyTree", func(t *testing.T) {
-		levelBuilderFactory := NewMockLevelBuilderFactoryForTesting(ctrl)
-		builder := btree.NewBuilder[*model_filesystem_pb.FileContents, string](levelBuilderFactory)
+		chunkerFactory := NewMockChunkerFactoryForTesting(ctrl)
+		nodeMerger := NewMockNodeMergerForTesting(ctrl)
+		builder := btree.NewBuilder[*model_filesystem_pb.FileContents, string](chunkerFactory, nodeMerger.Call)
 
-		rootNode, err := builder.Finalize()
+		rootNode, err := builder.FinalizeSingle()
 		require.NoError(t, err)
-		require.Nil(t, rootNode)
+		require.False(t, rootNode.IsSet())
 	})
 
 	t.Run("SingleNodeTree", func(t *testing.T) {
-		levelBuilderFactory := NewMockLevelBuilderFactoryForTesting(ctrl)
-		builder := btree.NewBuilder[*model_filesystem_pb.FileContents, string](levelBuilderFactory)
+		chunkerFactory := NewMockChunkerFactoryForTesting(ctrl)
+		nodeMerger := NewMockNodeMergerForTesting(ctrl)
+		builder := btree.NewBuilder[*model_filesystem_pb.FileContents, string](chunkerFactory, nodeMerger.Call)
 
 		patcher := model_core.NewReferenceMessagePatcher[string]()
 		node := model_core.PatchedMessage[*model_filesystem_pb.FileContents, string]{
@@ -41,14 +43,15 @@ func TestBuilder(t *testing.T) {
 		}
 		require.NoError(t, builder.PushChild(node))
 
-		rootNode, err := builder.Finalize()
+		rootNode, err := builder.FinalizeSingle()
 		require.NoError(t, err)
-		require.Equal(t, node, *rootNode)
+		require.Equal(t, node, rootNode)
 	})
 
 	t.Run("TwoNodeTree", func(t *testing.T) {
-		levelBuilderFactory := NewMockLevelBuilderFactoryForTesting(ctrl)
-		builder := btree.NewBuilder[*model_filesystem_pb.FileContents, string](levelBuilderFactory)
+		chunkerFactory := NewMockChunkerFactoryForTesting(ctrl)
+		nodeMerger := NewMockNodeMergerForTesting(ctrl)
+		builder := btree.NewBuilder[*model_filesystem_pb.FileContents, string](chunkerFactory, nodeMerger.Call)
 
 		// Pushing the first node should only cause it to be stored.
 		patcher1 := model_core.NewReferenceMessagePatcher[string]()
@@ -78,17 +81,27 @@ func TestBuilder(t *testing.T) {
 			},
 			Patcher: patcher2,
 		}
-		levelBuilder := NewMockLevelBuilderForTesting(ctrl)
-		levelBuilderFactory.EXPECT().NewLevelBuilder().Return(levelBuilder)
-		levelBuilder.EXPECT().PushChild(node1)
-		levelBuilder.EXPECT().PushChild(node2)
-		levelBuilder.EXPECT().PopParent(false)
+		chunker := NewMockChunkerForTesting(ctrl)
+		chunkerFactory.EXPECT().NewChunker().Return(chunker)
+		chunker.EXPECT().PushSingle(node1)
+		chunker.EXPECT().PushSingle(node2)
+		chunker.EXPECT().PopMultiple(false)
 
 		require.NoError(t, builder.PushChild(node2))
 
 		// Finalizing the tree should cause the two-node level
 		// to be finalized as well. The resulting parent node
 		// should be returned as the root of the tree.
+		patcher1.Merge(patcher2)
+		nodes := model_core.PatchedMessage[[]*model_filesystem_pb.FileContents, string]{
+			Message: []*model_filesystem_pb.FileContents{
+				node1.Message,
+				node2.Message,
+			},
+			Patcher: patcher1,
+		}
+		chunker.EXPECT().PopMultiple(true).Return(nodes)
+		chunker.EXPECT().PopMultiple(true)
 		patcher3 := model_core.NewReferenceMessagePatcher[string]()
 		node3 := model_core.PatchedMessage[*model_filesystem_pb.FileContents, string]{
 			Message: &model_filesystem_pb.FileContents{
@@ -100,11 +113,13 @@ func TestBuilder(t *testing.T) {
 			},
 			Patcher: patcher3,
 		}
-		levelBuilder.EXPECT().PopParent(true).Return(&node3, nil)
-		levelBuilder.EXPECT().PopParent(true)
+		nodeMerger.EXPECT().Call(nodes).
+			DoAndReturn(func(model_core.PatchedMessage[[]*model_filesystem_pb.FileContents, string]) (model_core.PatchedMessage[*model_filesystem_pb.FileContents, string], error) {
+				return node3, nil
+			})
 
-		rootNode, err := builder.Finalize()
+		rootNode, err := builder.FinalizeSingle()
 		require.NoError(t, err)
-		require.Equal(t, node3, *rootNode)
+		require.Equal(t, node3, rootNode)
 	})
 }

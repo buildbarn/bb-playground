@@ -2,6 +2,7 @@ package evaluation
 
 import (
 	"context"
+	"errors"
 
 	model_core "github.com/buildbarn/bb-playground/pkg/model/core"
 
@@ -23,8 +24,47 @@ func getKeyString(key proto.Message) (string, error) {
 
 type keyState struct {
 	key   proto.Message
-	value model_core.Message[proto.Message]
 	next  *keyState
+	value valueState
+}
+
+type valueState interface {
+	compute(ctx context.Context, c Computer, key proto.Message, e Environment) error
+}
+
+type messageValueState struct {
+	value model_core.Message[proto.Message]
+}
+
+func (vs *messageValueState) compute(ctx context.Context, c Computer, key proto.Message, e Environment) error {
+	value, err := c.ComputeMessageValue(ctx, key, e)
+	if err != nil {
+		return err
+	}
+
+	// Value got computed.
+	// TODO: Write any objects referenced by the
+	// message to storage!
+	references, _ := value.Patcher.SortAndSetReferences()
+	vs.value = model_core.Message[proto.Message]{
+		Message:            value.Message,
+		OutgoingReferences: references,
+	}
+	return nil
+}
+
+type nativeValueState struct {
+	value any
+	err   error
+}
+
+func (vs *nativeValueState) compute(ctx context.Context, c Computer, key proto.Message, e Environment) error {
+	value, err := c.ComputeNativeValue(ctx, key, e)
+	if errors.Is(err, ErrMissingDependency) {
+		return err
+	}
+	vs.value, vs.err = value, err
+	return nil
 }
 
 type fullyComputingEnvironment struct {
@@ -45,7 +85,7 @@ func (e *fullyComputingEnvironment) enqueue(ks *keyState) {
 	e.lastPendingKey = &ks.next
 }
 
-func (e *fullyComputingEnvironment) GetValue(key proto.Message) model_core.Message[proto.Message] {
+func (e *fullyComputingEnvironment) GetMessageValue(key proto.Message) model_core.Message[proto.Message] {
 	keyStr, err := getKeyString(key)
 	if err != nil {
 		e.setError(err)
@@ -54,12 +94,34 @@ func (e *fullyComputingEnvironment) GetValue(key proto.Message) model_core.Messa
 	ks, ok := e.keys[keyStr]
 	if !ok {
 		ks = &keyState{
-			key: key,
+			key:   key,
+			value: &messageValueState{},
 		}
 		e.keys[keyStr] = ks
 		e.enqueue(ks)
 	}
-	return ks.value
+	vs := ks.value.(*messageValueState)
+	return vs.value
+}
+
+func (e *fullyComputingEnvironment) GetNativeValue(key proto.Message) (any, error) {
+	keyStr, err := getKeyString(key)
+	if err != nil {
+		return nil, err
+	}
+	ks, ok := e.keys[keyStr]
+	if !ok {
+		ks = &keyState{
+			key: key,
+			value: &nativeValueState{
+				err: ErrMissingDependency,
+			},
+		}
+		e.keys[keyStr] = ks
+		e.enqueue(ks)
+	}
+	vs := ks.value.(*nativeValueState)
+	return vs.value, vs.err
 }
 
 func FullyComputeValue(ctx context.Context, c Computer, requestedKey proto.Message) (model_core.Message[proto.Message], error) {
@@ -67,7 +129,11 @@ func FullyComputeValue(ctx context.Context, c Computer, requestedKey proto.Messa
 	if err != nil {
 		return model_core.Message[proto.Message]{}, err
 	}
-	requestedKeyState := &keyState{key: requestedKey}
+	requestedValueState := &messageValueState{}
+	requestedKeyState := &keyState{
+		key:   requestedKey,
+		value: requestedValueState,
+	}
 	e := fullyComputingEnvironment{
 		keys: map[string]*keyState{
 			requestedKeyStr: requestedKeyState,
@@ -75,31 +141,21 @@ func FullyComputeValue(ctx context.Context, c Computer, requestedKey proto.Messa
 		firstPendingKey: requestedKeyState,
 		lastPendingKey:  &requestedKeyState.next,
 	}
-	for !requestedKeyState.value.IsSet() {
+	for !requestedValueState.value.IsSet() {
 		ks := e.firstPendingKey
 		e.firstPendingKey = ks.next
 		ks.next = nil
 		if e.firstPendingKey == nil {
 			e.lastPendingKey = &e.firstPendingKey
 		}
-		value, err := c.ComputeValue(ctx, ks.key, &e)
-		if err != nil {
-			return model_core.Message[proto.Message]{}, err
-		}
-		if value.IsSet() {
-			// Value got computed.
-			// TODO: Write any objects referenced by the
-			// message to storage!
-			references, _ := value.Patcher.SortAndSetReferences()
-			ks.value = model_core.Message[proto.Message]{
-				Message:            value.Message,
-				OutgoingReferences: references,
+		if err := ks.value.compute(ctx, c, ks.key, &e); err != nil {
+			if !errors.Is(err, ErrMissingDependency) {
+				return model_core.Message[proto.Message]{}, err
 			}
-		} else {
 			// Value could not be computed, because one of
 			// its dependencies hasn't been computed yet.
 			e.enqueue(ks)
 		}
 	}
-	return requestedKeyState.value, nil
+	return requestedValueState.value, nil
 }

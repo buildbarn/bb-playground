@@ -48,7 +48,7 @@ func TestParseModuleDotBazel(t *testing.T) {
 				/* integrity = */ "",
 				/* stripPrefix = */ gomock.Any(),
 				/* patchOptions = */ &pg_starlark.PatchOptions{
-					Patches:   []label.Label{},
+					Patches:   []label.ApparentLabel{},
 					PatchCmds: []string{},
 				},
 			).Do(func(moduleName label.Module, urls []*url.URL, integrity string, stripPrefix path.Parser, patchOptions *pg_starlark.PatchOptions) {
@@ -65,9 +65,9 @@ func TestParseModuleDotBazel(t *testing.T) {
 				/* integrity = */ "sha384-oqVuAfXRKap7fdgcCY5uykM6+R9GqQ8K/uxy9rx7HNQlGYl1kPzQho1wx4JwY8wC",
 				/* stripPrefix = */ gomock.Any(),
 				/* patchOptions = */ &pg_starlark.PatchOptions{
-					Patches: []label.Label{
-						label.MustNewLabel("//:patches/foo1.diff"),
-						label.MustNewLabel("//:patches/foo2.diff"),
+					Patches: []label.ApparentLabel{
+						label.MustNewApparentLabel("@@my_module_name+//:patches/foo1.diff"),
+						label.MustNewApparentLabel("@@my_module_name+//:patches/foo2.diff"),
 					},
 					PatchCmds: []string{
 						"ls -l",
@@ -120,7 +120,7 @@ func TestParseModuleDotBazel(t *testing.T) {
 				/* remote = */ remote,
 				/* commit = */ "",
 				/* patchOptions = */ &pg_starlark.PatchOptions{
-					Patches:   []label.Label{},
+					Patches:   []label.ApparentLabel{},
 					PatchCmds: []string{},
 				},
 				/* initSubmodules = */ false,
@@ -135,9 +135,9 @@ func TestParseModuleDotBazel(t *testing.T) {
 				/* remote = */ remote,
 				/* commit = */ "1368bebd5776a80ea3161a07dafe8beb7c8c144c",
 				/* patchOptions = */ &pg_starlark.PatchOptions{
-					Patches: []label.Label{
-						label.MustNewLabel("//:patches/foo1.diff"),
-						label.MustNewLabel("//:patches/foo2.diff"),
+					Patches: []label.ApparentLabel{
+						label.MustNewApparentLabel("@@my_module_name+//:patches/foo1.diff"),
+						label.MustNewApparentLabel("@@my_module_name+//:patches/foo2.diff"),
 					},
 					PatchCmds: []string{
 						"ls -l",
@@ -211,9 +211,9 @@ func TestParseModuleDotBazel(t *testing.T) {
 				/* devDependency = */ false,
 			).Times(2),
 			handler.EXPECT().RegisterExecutionPlatforms(
-				/* platformLabels = */ []label.Label{
-					label.MustNewLabel("//:default_host_platform"),
-					label.MustNewLabel("//:remote_linux_platform"),
+				/* platformLabels = */ []label.ApparentLabel{
+					label.MustNewApparentLabel("@@my_module_name+//:default_host_platform"),
+					label.MustNewApparentLabel("@@my_module_name+//:remote_linux_platform"),
 				},
 				/* devDependency = */ true,
 			),
@@ -225,9 +225,9 @@ func TestParseModuleDotBazel(t *testing.T) {
 				/* devDependency = */ false,
 			).Times(2),
 			handler.EXPECT().RegisterToolchains(
-				/* toolchainLabels = */ []label.Label{
-					label.MustNewLabel("@bazel_tools//tools/python:autodetecting_toolchain"),
-					label.MustNewLabel("@local_config_winsdk//:all"),
+				/* toolchainLabels = */ []label.ApparentLabel{
+					label.MustNewApparentLabel("@bazel_tools//tools/python:autodetecting_toolchain"),
+					label.MustNewApparentLabel("@local_config_winsdk//:all"),
 				},
 				/* devDependency = */ true,
 			),
@@ -245,7 +245,7 @@ func TestParseModuleDotBazel(t *testing.T) {
 				/* version = */ nil,
 				/* registry = */ nil,
 				/* patchOptions = */ &pg_starlark.PatchOptions{
-					Patches:   []label.Label{},
+					Patches:   []label.ApparentLabel{},
 					PatchCmds: []string{},
 				},
 			),
@@ -254,9 +254,9 @@ func TestParseModuleDotBazel(t *testing.T) {
 				/* version = */ &version2,
 				/* registry = */ registry,
 				/* patchOptions = */ &pg_starlark.PatchOptions{
-					Patches: []label.Label{
-						label.MustNewLabel("//:patches/foo1.diff"),
-						label.MustNewLabel("//:patches/foo2.diff"),
+					Patches: []label.ApparentLabel{
+						label.MustNewApparentLabel("@@my_module_name+//:patches/foo1.diff"),
+						label.MustNewApparentLabel("@@my_module_name+//:patches/foo2.diff"),
 					},
 					PatchCmds: []string{
 						"ls -l",
@@ -272,19 +272,19 @@ func TestParseModuleDotBazel(t *testing.T) {
 		proxy3 := NewMockModuleExtensionProxy(ctrl)
 		gomock.InOrder(
 			handler.EXPECT().UseExtension(
-				/* extensionBzlFile */ label.MustNewLabel("//:extensions.bzl"),
+				/* extensionBzlFile */ label.MustNewApparentLabel("@@my_module_name+//:extensions.bzl"),
 				/* extensionName */ "foo",
 				/* devDependency */ false,
 				/* isolate */ false,
 			).Return(proxy1, nil),
 			handler.EXPECT().UseExtension(
-				/* extensionBzlFile */ label.MustNewLabel("//:extensions.bzl"),
+				/* extensionBzlFile */ label.MustNewApparentLabel("@@my_module_name+//:extensions.bzl"),
 				/* extensionName */ "foo",
 				/* devDependency */ false,
 				/* isolate */ false,
 			).Return(proxy2, nil),
 			handler.EXPECT().UseExtension(
-				/* extensionBzlFile */ label.MustNewLabel("//:extensions.bzl"),
+				/* extensionBzlFile */ label.MustNewApparentLabel("@@my_module_name+//:extensions.bzl"),
 				/* extensionName */ "foo",
 				/* devDependency */ true,
 				/* isolate */ true,
@@ -310,7 +310,7 @@ func TestParseModuleDotBazel(t *testing.T) {
 		proxy4 := NewMockRepoRuleProxy(ctrl)
 		gomock.InOrder(
 			handler.EXPECT().UseRepoRule(
-				/* repoRuleBzlFile = */ label.MustNewLabel("@bazel_tools//tools/build_defs/repo:http.bzl"),
+				/* repoRuleBzlFile = */ label.MustNewApparentLabel("@bazel_tools//tools/build_defs/repo:http.bzl"),
 				/* repoRuleName = */ "http_archive",
 			).Return(proxy4.Call, nil),
 			proxy4.EXPECT().Call(
@@ -542,6 +542,7 @@ http_archive(
     sha256 = "345277dfc4bc0569927c92ee924c7c5483faad42b3004dd9bb5a6806214d44e7",
 )
 `,
+			label.MustNewCanonicalRepo("my_module_name+"),
 			path.UNIXFormat,
 			handler,
 		))
@@ -565,6 +566,7 @@ local_path_override(
     path = "/some/path",
 )
 `,
+			label.MustNewCanonicalRepo("my_module_name+"),
 			/* localPathFormat = */ nil,
 			handler,
 		))

@@ -69,11 +69,11 @@ func (LocalPathExtractingModuleDotBazelHandler) MultipleVersionOverride(moduleNa
 	return nil
 }
 
-func (LocalPathExtractingModuleDotBazelHandler) RegisterExecutionPlatforms(platformLabels []label.Label, devDependency bool) error {
+func (LocalPathExtractingModuleDotBazelHandler) RegisterExecutionPlatforms(platformLabels []label.ApparentLabel, devDependency bool) error {
 	return nil
 }
 
-func (LocalPathExtractingModuleDotBazelHandler) RegisterToolchains(toolchainLabels []label.Label, devDependency bool) error {
+func (LocalPathExtractingModuleDotBazelHandler) RegisterToolchains(toolchainLabels []label.ApparentLabel, devDependency bool) error {
 	return nil
 }
 
@@ -81,11 +81,11 @@ func (LocalPathExtractingModuleDotBazelHandler) SingleVersionOverride(moduleName
 	return nil
 }
 
-func (LocalPathExtractingModuleDotBazelHandler) UseExtension(extensionBzlFile label.Label, extensionName string, devDependency, isolate bool) (pg_starlark.ModuleExtensionProxy, error) {
+func (LocalPathExtractingModuleDotBazelHandler) UseExtension(extensionBzlFile label.ApparentLabel, extensionName string, devDependency, isolate bool) (pg_starlark.ModuleExtensionProxy, error) {
 	return pg_starlark.NullModuleExtensionProxy, nil
 }
 
-func (LocalPathExtractingModuleDotBazelHandler) UseRepoRule(repoRuleBzlFile label.Label, repoRuleName string) (pg_starlark.RepoRuleProxy, error) {
+func (LocalPathExtractingModuleDotBazelHandler) UseRepoRule(repoRuleBzlFile label.ApparentLabel, repoRuleName string) (pg_starlark.RepoRuleProxy, error) {
 	return func(name label.ApparentRepo, devDependency bool, attrs map[string]starlark.Value) error {
 		return nil
 	}, nil
