@@ -28,12 +28,9 @@ func CreateFileMerkleTree[T any](ctx context.Context, parameters *FileCreationPa
 		parameters.chunkMinimumSizeBytes,
 		parameters.chunkMaximumSizeBytes,
 	)
-	treeBuilder := btree.NewBuilder(
-		btree.NewProllyChunkerFactory[*model_filesystem_pb.FileContents, T](
-			/* minimumCount = */ 2,
-			parameters.fileContentsListMinimumSizeBytes,
-			parameters.fileContentsListMaximumSizeBytes,
-		),
+	treeBuilder := btree.NewUniformProllyBuilder(
+		parameters.fileContentsListMinimumSizeBytes,
+		parameters.fileContentsListMaximumSizeBytes,
 		btree.NewObjectCreatingNodeMerger[*model_filesystem_pb.FileContents, T](
 			parameters.fileContentsListEncoder,
 			parameters.referenceFormat,

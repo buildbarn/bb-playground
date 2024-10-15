@@ -98,20 +98,34 @@ func (l CanonicalLabel) GetCanonicalPackage() CanonicalPackage {
 	return CanonicalPackage{value: l.value}
 }
 
+func (l CanonicalLabel) GetCanonicalRepo() CanonicalRepo {
+	repo := l.value[2:]
+	if offset := strings.IndexByte(repo, '/'); offset >= 0 {
+		repo = repo[:offset]
+	}
+	return CanonicalRepo{value: repo}
+}
+
 // GetTargetName returns the name of the target within a package.
-func (l CanonicalLabel) GetTargetName() string {
+func (l CanonicalLabel) GetTargetName() TargetName {
 	if offset := strings.IndexByte(l.value, ':'); offset >= 0 {
 		// Label has an explicit target name.
-		return l.value[offset+1:]
+		return TargetName{value: l.value[offset+1:]}
 	}
 	if offset := strings.LastIndexByte(l.value, '/'); offset >= 0 {
 		// Derive the target name from the last component.
-		return l.value[offset+1:]
+		return TargetName{value: l.value[offset+1:]}
 	}
 	// Derive the target name from the repo name.
-	return strings.TrimLeft(l.value, "@")
+	return TargetName{value: strings.TrimLeft(l.value, "@")}
 }
 
 func (l CanonicalLabel) String() string {
 	return l.value
+}
+
+func (l CanonicalLabel) AppendStarlarkIdentifier(identifier StarlarkIdentifier) CanonicalStarlarkIdentifier {
+	return CanonicalStarlarkIdentifier{
+		value: l.value + "%" + identifier.value,
+	}
 }

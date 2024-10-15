@@ -6,9 +6,15 @@
          ]
       },
       "BuildSpecification": { },
+      "BuiltinsModuleNames": {
+         "dependsOn": [
+            "BuildSpecification"
+         ]
+      },
       "CanonicalRepoName": { },
       "CompiledBzlFile": {
          "dependsOn": [
+            "BuiltinsModuleNames",
             "CanonicalRepoName",
             "CompiledBzlFileFunctions",
             "CompiledBzlFileGlobals",
@@ -18,15 +24,18 @@
       },
       "CompiledBzlFileFunctions": {
          "dependsOn": [
+            "BuiltinsModuleNames",
             "CanonicalRepoName",
             "CompiledBzlFile",
+            "CompiledBzlFileFunctions",
             "CompiledBzlFileGlobals"
          ],
          "nativeValueType": {
-            "imports": [
-               "go.starlark.net/starlark"
-            ],
-            "type": "map[string]starlark.Callable"
+            "imports": {
+               "label": "github.com/buildbarn/bb-playground/pkg/label",
+               "model_starlark": "github.com/buildbarn/bb-playground/pkg/model/starlark"
+            },
+            "type": "map[label.StarlarkIdentifier]model_starlark.CallableWithPosition"
          }
       },
       "CompiledBzlFileGlobals": {
@@ -34,9 +43,9 @@
             "CompiledBzlFile"
          ],
          "nativeValueType": {
-            "imports": [
-               "go.starlark.net/starlark"
-            ],
+            "imports": {
+               "starlark": "go.starlark.net/starlark"
+            },
             "type": "starlark.StringDict"
          }
       },
@@ -67,24 +76,33 @@
             "FileAccessParameters"
          ],
          "nativeValueType": {
-            "imports": [
-               "github.com/buildbarn/bb-playground/pkg/model/filesystem"
-            ],
-            "type": "*filesystem.FileReader"
+            "imports": {
+               "model_filesystem": "github.com/buildbarn/bb-playground/pkg/model/filesystem"
+            },
+            "type": "*model_filesystem.FileReader"
          }
       },
       "Package": {
          "dependsOn": [
+            "BuiltinsModuleNames",
             "CanonicalRepoName",
+            "CompiledBzlFile",
             "CompiledBzlFileFunctions",
             "CompiledBzlFileGlobals",
             "FileProperties",
-            "FileReader"
+            "FileReader",
+            "RepoDefaultAttrs"
          ]
       },
       "Repo": {
          "dependsOn": [
             "BuildSpecification"
+         ]
+      },
+      "RepoDefaultAttrs": {
+         "dependsOn": [
+            "FileProperties",
+            "FileReader"
          ]
       },
       "TargetCompletion": {

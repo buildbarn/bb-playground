@@ -6,7 +6,10 @@ proto_library(
     name = "starlark_proto",
     srcs = ["starlark.proto"],
     visibility = ["//visibility:public"],
-    deps = ["//pkg/proto/model/core:core_proto"],
+    deps = [
+        "//pkg/proto/model/core:core_proto",
+        "@protobuf//:empty_proto",
+    ],
 )
 
 go_proto_library(

@@ -75,6 +75,11 @@ var commonFlags = []flag{
 		flagType:    stringFlagType{},
 	},
 	{
+		longName:    "builtins_module",
+		description: "Names of modules containing Starlark code that should be loaded implicitly.",
+		flagType:    stringListFlagType{},
+	},
+	{
 		longName:    "color",
 		description: "Use terminal controls to colorize output.",
 		flagType: enumFlagType{

@@ -2,96 +2,296 @@ syntax = "proto3";
 
 package buildbarn.playground.model.starlark;
 
+import "google/protobuf/empty.proto";
 import "pkg/proto/model/core/core.proto";
 
 option go_package = "github.com/buildbarn/bb-playground/pkg/proto/model/starlark";
-
-message CompiledProgram {
-  repeated Global globals = 1;
-  bytes code = 2;
-}
 
 message Global {
   string name = 1;
   Value value = 2;
 }
 
+message CompiledProgram {
+  repeated Global globals = 1;
+
+  bytes code = 2;
+}
+
 message Value {
   oneof kind {
-    Attr attr = 1;
-    bool bool = 2;
-    bytes bytes = 3;
-    Depset depset = 4;
-    Dict dict = 5;
-    Function function = 6;
-    bytes int = 7;
-    string label = 8;
-    List list = 9;
-    IdentifierReference provider = 10;
-    IdentifierReference repository_rule = 11;
-    IdentifierReference rule = 12;
-    string str = 13;
-    Struct struct = 14;
-    IdentifierReference subrule = 15;
-    TransitionValue transition = 16;
-    Tuple tuple = 17;
+    Aspect aspect = 1;
+    Attr attr = 2;
+    bool bool = 3;
+    bytes bytes = 4;
+    Depset depset = 5;
+    Dict dict = 6;
+    string function = 7;
+    bytes int = 8;
+    string label = 9;
+    List list = 10;
+    google.protobuf.Empty none = 11;
+    Provider provider = 12;
+    RepositoryRule repository_rule = 13;
+    Rule rule = 14;
+    Select select = 15;
+    string str = 16;
+    Struct struct = 17;
+    Subrule subrule = 18;
+    ToolchainType toolchain_type = 19;
+    Transition transition = 20;
+    Tuple tuple = 21;
+  }
+}
+
+message Aspect {
+  message Definition {}
+
+  oneof kind {
+    string reference = 1;
+
+    Definition definition = 2;
   }
 }
 
 message Attr {
-  bool mandatory = 1;
+  // If set, the attribute is optional, and this field denotes the value
+  // that is used if no explicit value is provided. The type of the
+  // value must be consistent with the type of this attribute, or it
+  // must be a function. If it is a function, it is invoked to compute
+  // the default value if none is provided.
+  //
+  // If not set, the attribute is mandatory.
+  Value default = 1;
+
+  // Options that apply to all attribute types containing labels.
+  message LabelOptions {
+    repeated string providers = 1;
+
+    repeated string aspects = 2;
+
+    oneof cfg {
+      // Don't perform any transition.
+      google.protobuf.Empty cfg_target = 3;
+
+      // Transition to the platform of the named execution group.
+      string cfg_exec_group = 4;
+
+      // Apply a user-defined transition.
+      string cfg_transition_identifier = 5;
+    }
+  }
+
+  // Options that apply to all attribute types containing dicts or
+  // lists.
+  message CompositeOptions {
+    // Whether the dict or list can be empty.
+    bool allow_empty = 1;
+  }
+
+  message IntType {
+    // The list of allowed values for this attribute.
+    repeated int32 values = 1;
+  }
+
+  message IntListType {
+    CompositeOptions list_options = 1;
+  }
+
+  message LabelType {
+    LabelOptions value_options = 1;
+
+    bool allow_none = 2;
+
+    bool executable = 3;
+  }
+
+  message LabelKeyedStringDictType {
+    CompositeOptions dict_options = 1;
+
+    LabelOptions dict_key_options = 2;
+  }
+
+  message LabelListType {
+    CompositeOptions list_options = 1;
+
+    LabelOptions list_value_options = 2;
+  }
+
+  message OutputListType {
+    CompositeOptions list_options = 1;
+  }
+
+  message StringType {
+    // The list of allowed values for this attribute.
+    repeated string values = 1;
+  }
+
+  message StringDictType {
+    CompositeOptions dict_options = 1;
+  }
+
+  message StringListType {
+    CompositeOptions list_options = 1;
+  }
+
+  message StringListDictType {
+    CompositeOptions dict_options = 1;
+  }
+
+  oneof type {
+    // Accept bool values.
+    google.protobuf.Empty bool = 2;
+
+    // Accept int32 values.
+    IntType int = 3;
+
+    // Accept []int32 values.
+    IntListType int_list = 4;
+
+    // Accept Label values.
+    LabelType label = 5;
+
+    // Accept map[Label]string values.
+    LabelKeyedStringDictType label_keyed_string_dict = 6;
+
+    // Accept []Label values.
+    LabelListType label_list = 7;
+
+    // Accept string values, denoting the name of an output file.
+    google.protobuf.Empty output = 8;
+
+    // Accept []string values, denoting the names of output files.
+    OutputListType output_list = 9;
+
+    // Accept string values.
+    StringType string = 10;
+
+    // Accept map[string]string values.
+    StringDictType string_dict = 11;
+
+    // Accept []string values.
+    StringListType string_list = 12;
+
+    // Accept map[string][]string values.
+    StringListDictType string_list_dict = 13;
+  }
 }
 
 message Depset {}
 
 message Dict {
-  repeated DictEntry entries = 1;
-}
+  message Entry {
+    message Leaf {
+      Value key = 1;
+      Value value = 2;
+    }
 
-message DictEntry {
-  message Leaf {
-    Value key = 1;
-    Value value = 2;
+    message Parent {
+      buildbarn.playground.model.core.Reference reference = 1;
+    }
+
+    oneof level {
+      Leaf leaf = 1;
+      Parent parent = 2;
+    }
   }
 
-  message Parent {
-    buildbarn.playground.model.core.Reference reference = 1;
-  }
-
-  oneof level {
-    Leaf leaf = 1;
-    Parent parent = 2;
-  }
+  repeated Entry entries = 1;
 }
 
-message Function {
-  string filename = 1;
-  string name = 2;
+message ExecGroup {
+  // Set of constraints on the execution platform, deduplicated and
+  // sorted alphabetically.
+  repeated string exec_compatible_with = 1;
+
+  // Set of toolchains this execution group requires, deduplicated and
+  // sorted alphabetically by ToolchainType.toolchain_type.
+  repeated ToolchainType toolchains = 2;
 }
 
-message IdentifierReference {
-  string filename = 1;
-  string name = 2;
+message InheritableAttrs {
+  // Explanatory warning message associated with the target, indicating
+  // the reason its use is deprecated.
+  string deprecation = 1;
+
+  // Metadata targets. These are typically targets related to OSS
+  // package and license declarations.
+  repeated string package_metadata = 2;
+
+  // If true, only testonly targets (such as tests) can depend on this
+  // target.
+  bool testonly = 3;
+
+  // Which targets in other packages are permitted to depend on this
+  // target.
+  PackageGroup visibility = 4;
 }
 
 message List {
-  repeated ListElement elements = 1;
-}
+  message Element {
+    message Parent {
+      buildbarn.playground.model.core.Reference reference = 1;
+    }
 
-message ListElement {
-  message Parent {
-    buildbarn.playground.model.core.Reference reference = 1;
+    oneof level {
+      Value leaf = 1;
+      Parent parent = 2;
+    }
   }
 
-  oneof level {
-    Value leaf = 1;
-    Parent parent = 2;
-  }
+  repeated Element elements = 1;
 }
 
-message ListReference {
-  buildbarn.playground.model.core.Reference list_reference = 1;
-  uint64 elements_count = 2;
+message PackageGroup {
+  message Package {
+    // At the root level, the canonical repo for which inclusion is
+    // specified. For the levels below, a directory name of the
+    // package path.
+    string component = 1;
+
+    // If set, include the current package in this group.
+    bool include_package = 2;
+
+    // Data on whether subpackages are part of the package group. This
+    // field MUST be set, even if no subpackages are included.
+    Subpackages subpackages = 3;
+  }
+
+  message Subpackages {
+    message Overrides {
+      repeated Package packages = 1;
+    }
+
+    // If set, include all direct or transitive subpackages of the
+    // current package in this group.
+    bool include_subpackages = 1;
+
+    // If set, the package contains one or more direct or transitive
+    // subpackages whose inclusion differs from include_subpackages.
+    oneof overrides {
+      // Set if there are too many overrides to store in the current
+      // object.
+      buildbarn.playground.model.core.Reference overrides_external = 2;
+
+      // Set if there are only few overrides.
+      Overrides overrides_inline = 3;
+    }
+  }
+
+  // Tree of packages that are included in this package group, stored in
+  // the form of a tree.
+  Subpackages tree = 1;
+
+  // Alphabetically sorted list of package groups that should be merged
+  // into this one.
+  repeated string include_package_groups = 2;
+}
+
+message Provider {
+  string provider_identifier = 1;
+
+  string init_function_identifier = 2;
 }
 
 message Struct {
@@ -103,8 +303,157 @@ message StructField {
   Value value = 2;
 }
 
-message TransitionValue {}
+message ToolchainType {
+  // Label of the toolchain.
+  string toolchain_type = 1;
+
+  // Whether the rule considers the toolchain to be mandatory or
+  // optional.
+  bool mandatory = 2;
+}
 
 message Tuple {
   repeated Value elements = 1;
+}
+
+message NamedAttr {
+  // The name of the attribute.
+  string name = 1;
+
+  // The properties of the attribute.
+  Attr attr = 2;
+}
+
+message NamedExecGroup {
+  // The name of the execution group. The empty string is used to denote
+  // the target's default execution platform.
+  string name = 1;
+
+  // The properties of the execution group.
+  ExecGroup exec_group = 2;
+}
+
+message RepositoryRule {
+  message Definition {}
+
+  oneof kind {
+    string reference = 1;
+
+    Definition definition = 2;
+  }
+}
+
+message Rule {
+  message Definition {
+    // Attributes of the rule, sorted by name.
+    repeated NamedAttr attrs = 1;
+
+    // If set, the identifier of the user-defined transition to apply to
+    // its own configuration before analysis.
+    string cfg_transition_identifier = 2;
+
+    // Execution groups of the rule, sorted by name.
+    repeated NamedExecGroup exec_groups = 3;
+
+    // Identifier of the Starlark function that implements this rule.
+    string implementation = 4;
+
+    // List of providers that the implementation function must return,
+    // sorted by name.
+    repeated string provides = 5;
+  }
+
+  oneof kind {
+    string reference = 1;
+
+    Definition definition = 2;
+  }
+}
+
+message RuleTarget {
+  message AttrValue {
+    // The name of the attribute whose value is provided.
+    string name = 1;
+
+    // The value of the attribute, in the form of a sequence of select()
+    // expressions whose values need to be summed/concatenated.
+    repeated Select.Group value = 2;
+  }
+
+  // Identifier of the rule used by this target.
+  string rule_identifier = 1;
+
+  // Rule specific attributes whose values were provided explicitly.
+  repeated AttrValue attr_values = 2;
+
+  // Tags that were attached to the target, sorted alphabetically.
+  repeated string tags = 3;
+
+  // Attributes on rule targets that are inherited from calls to repo()
+  // in REPO.bazel and package() in BUILD.bazel.
+  InheritableAttrs inheritable_attrs = 4;
+}
+
+message Select {
+  message Condition {
+    string condition_identifier = 1;
+    Value value = 2;
+  }
+
+  message Group {
+    // Conditions that are present in the select() expression, sorted
+    // alphabetically by condition identifier.
+    repeated Condition conditions = 1;
+
+    // If no conditions match, a custom error message to return to the
+    // user.
+    string no_match_error = 2;
+  }
+
+  enum ConcatenationOperator {
+    NONE = 0;
+    PIPE = 1;
+    PLUS = 2;
+  }
+
+  // Non-empty list of groups of select() expressions that have been
+  // concatenated using the pipe ("|") or plus ("+") operators.
+  repeated Group groups = 1;
+
+  // If there are multiple groups, the operator that was used to
+  // concatenate.
+  ConcatenationOperator concatenation_operator = 2;
+}
+
+message Subrule {
+  message Definition {}
+
+  oneof kind {
+    string reference = 1;
+
+    Definition definition = 2;
+  }
+}
+
+message Target {
+  // Name of the target within the package.
+  string name = 1;
+
+  oneof kind {
+    // Buildable target backed by a rule.
+    RuleTarget rule_target = 2;
+
+    // Group of packages, used to control visibility of targets.
+    PackageGroup package_group = 3;
+  }
+}
+
+message Transition {
+  message Definition {}
+
+  oneof kind {
+    string reference = 1;
+
+    Definition definition = 2;
+  }
 }

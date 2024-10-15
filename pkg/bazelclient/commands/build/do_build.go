@@ -218,6 +218,7 @@ func DoBuild(args *arguments.BuildCommand, workspacePath path.Parser) {
 		DirectoryCreationParameters:     directoryParametersMessage,
 		FileCreationParameters:          fileParametersMessage,
 		IgnoreRootModuleDevDependencies: args.CommonFlags.IgnoreDevDependency,
+		BuiltinsModuleNames:             args.CommonFlags.BuiltinsModule,
 	}
 	switch args.CommonFlags.LockfileMode {
 	case arguments.LockfileMode_Off:

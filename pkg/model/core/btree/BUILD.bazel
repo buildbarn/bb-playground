@@ -8,7 +8,10 @@ go_library(
         "chunker_factory.go",
         "node_merger.go",
         "object_creating_node_merger.go",
+        "prolly_builder.go",
         "prolly_chunker_factory.go",
+        "split_builder.go",
+        "uniform_builder.go",
     ],
     importpath = "github.com/buildbarn/bb-playground/pkg/model/core/btree",
     visibility = ["//visibility:public"],
@@ -27,10 +30,10 @@ go_library(
 go_test(
     name = "btree_test",
     srcs = [
-        "builder_test.go",
         "mocks_btree_test.go",
         "mocks_encoding_test.go",
         "prolly_chunker_factory_test.go",
+        "uniform_builder_test.go",
     ],
     embed = [":btree"],
     deps = [

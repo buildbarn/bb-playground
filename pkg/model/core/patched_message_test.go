@@ -33,8 +33,8 @@ func TestNewPatchedMessageFromExisting(t *testing.T) {
 					object.MustNewSHA256V1LocalReference("e1d1549332e44eddf28662dda4ca1aae36c3dcd597cd63b3c69737f88afd75d5", 213, 0, 0, 0),
 				},
 			},
-			func(reference object.LocalReference) int {
-				require.Equal(t, object.MustNewSHA256V1LocalReference("46d71098267fa33992257c061ba8fc48017e2bcac8f9ac3be8853c8337ec896e", 58511, 0, 0, 0), reference)
+			func(index int) int {
+				require.Equal(t, 1, index)
 				return 123
 			},
 		)
@@ -76,7 +76,7 @@ func TestNewPatchedMessageFromExisting(t *testing.T) {
 				},
 				OutgoingReferences: object.OutgoingReferencesList{},
 			},
-			func(reference object.LocalReference) int {
+			func(index int) int {
 				panic("should not have been called")
 			},
 		)

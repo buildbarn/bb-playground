@@ -54,6 +54,13 @@ func (l queuedCandidates) Less(i, j int) bool {
 	return l.Slice[i].inlinedSizeIncreaseBytes < l.Slice[j].inlinedSizeIncreaseBytes
 }
 
+// Options used by the Build function.
+type Options struct {
+	ReferenceFormat  object.ReferenceFormat
+	Encoder          encoding.BinaryEncoder
+	MaximumSizeBytes int
+}
+
 // Build a Protobuf message that contains data, either inlined into the
 // message directly or stored in the form of a reference to a separate
 // object.
@@ -77,10 +84,8 @@ func Build[
 		proto.Message
 	},
 ](
-	referenceFormat object.ReferenceFormat,
-	encoder encoding.BinaryEncoder,
 	candidates []Candidate[TParentMessagePtr, TMetadata],
-	maximumSizeBytes int,
+	options *Options,
 ) (model_core.PatchedMessage[TParentMessagePtr, TMetadata], error) {
 	// Start off with an empty output message.
 	output := model_core.PatchedMessage[TParentMessagePtr, TMetadata]{
@@ -91,7 +96,7 @@ func Build[
 
 	// For each candidate, compute how much the size of the output
 	// message increases, either when inlined or stored externally.
-	bogusContents, err := referenceFormat.NewContents(nil, []byte("A"))
+	bogusContents, err := options.ReferenceFormat.NewContents(nil, []byte("A"))
 	if err != nil {
 		panic(err)
 	}
@@ -147,7 +152,7 @@ func Build[
 		}
 	}
 
-	if newOutputSizeBytes := outputSizeBytes + highestInlinedSizeIncreaseBytes; newOutputSizeBytes <= maximumSizeBytes {
+	if newOutputSizeBytes := outputSizeBytes + highestInlinedSizeIncreaseBytes; newOutputSizeBytes <= options.MaximumSizeBytes {
 		for i := 0; i < queuedCandidates.Len(); {
 			queuedCandidate := &queuedCandidates.Slice[i]
 			candidate := &candidates[queuedCandidate.candidateIndex]
@@ -181,14 +186,14 @@ func Build[
 	// instead.
 	heap.Init(&queuedCandidates)
 	var queuedCandidatesWithSameSize []queuedCandidate
-	for queuedCandidates.Len() > 0 && outputSizeBytes+queuedCandidates.Slice[0].inlinedSizeIncreaseBytes <= maximumSizeBytes {
+	for queuedCandidates.Len() > 0 && outputSizeBytes+queuedCandidates.Slice[0].inlinedSizeIncreaseBytes <= options.MaximumSizeBytes {
 		queuedCandidatesWithSameSize = append(queuedCandidatesWithSameSize[:0], heap.Pop(&queuedCandidates).(queuedCandidate))
 		inlinedSizeIncreaseBytes := queuedCandidatesWithSameSize[0].inlinedSizeIncreaseBytes
 		for queuedCandidates.Len() > 0 && queuedCandidates.Slice[0].inlinedSizeIncreaseBytes == inlinedSizeIncreaseBytes {
 			queuedCandidatesWithSameSize = append(queuedCandidatesWithSameSize, heap.Pop(&queuedCandidates).(queuedCandidate))
 		}
 
-		if newOutputSizeBytes := outputSizeBytes + inlinedSizeIncreaseBytes*len(queuedCandidatesWithSameSize); newOutputSizeBytes <= maximumSizeBytes {
+		if newOutputSizeBytes := outputSizeBytes + inlinedSizeIncreaseBytes*len(queuedCandidatesWithSameSize); newOutputSizeBytes <= options.MaximumSizeBytes {
 			for _, queuedCandidate := range queuedCandidatesWithSameSize {
 				candidate := &candidates[queuedCandidate.candidateIndex]
 				candidatesToInline[queuedCandidate.candidateIndex] = true
@@ -210,11 +215,11 @@ func Build[
 			if err != nil {
 				return model_core.PatchedMessage[TParentMessagePtr, TMetadata]{}, util.StatusWrapfWithCode(err, codes.InvalidArgument, "Failed to marshal candidate at index %d", i)
 			}
-			encodedData, err := encoder.EncodeBinary(data)
+			encodedData, err := options.Encoder.EncodeBinary(data)
 			if err != nil {
 				return model_core.PatchedMessage[TParentMessagePtr, TMetadata]{}, util.StatusWrapf(err, "Failed to encode candidate at index %d", i)
 			}
-			contents, err := referenceFormat.NewContents(references, encodedData)
+			contents, err := options.ReferenceFormat.NewContents(references, encodedData)
 			if err != nil {
 				return model_core.PatchedMessage[TParentMessagePtr, TMetadata]{}, util.StatusWrapf(err, "Failed to create object contents for candidate at index %d", i)
 			}

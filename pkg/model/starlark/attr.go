@@ -6,82 +6,115 @@ import (
 	pg_label "github.com/buildbarn/bb-playground/pkg/label"
 	model_core "github.com/buildbarn/bb-playground/pkg/model/core"
 	model_starlark_pb "github.com/buildbarn/bb-playground/pkg/proto/model/starlark"
+	"github.com/buildbarn/bb-playground/pkg/starlark/unpack"
 	"github.com/buildbarn/bb-playground/pkg/storage/dag"
+
+	"google.golang.org/protobuf/types/known/emptypb"
 
 	"go.starlark.net/starlark"
 )
 
-type attr struct {
-	attrType  AttrType
-	mandatory bool
+type Attr struct {
+	attrType     AttrType
+	defaultValue starlark.Value
 }
 
-var _ EncodableValue = &attr{}
+var _ EncodableValue = &Attr{}
 
-func NewAttr(attrType AttrType, mandatory bool) starlark.Value {
-	return &attr{
-		attrType:  attrType,
-		mandatory: mandatory,
+func NewAttr(attrType AttrType, defaultValue starlark.Value) *Attr {
+	return &Attr{
+		attrType:     attrType,
+		defaultValue: defaultValue,
 	}
 }
 
-func (l *attr) String() string {
-	return fmt.Sprintf("<attr.%s>", l.attrType.Type())
+func (a *Attr) String() string {
+	return fmt.Sprintf("<attr.%s>", a.attrType.Type())
 }
 
-func (l *attr) Type() string {
-	return "attr." + l.attrType.Type()
+func (a *Attr) Type() string {
+	return "attr." + a.attrType.Type()
 }
 
-func (l *attr) Freeze() {}
+func (Attr) Freeze() {}
 
-func (l *attr) Truth() starlark.Bool {
+func (Attr) Truth() starlark.Bool {
 	return starlark.True
 }
 
-func (l *attr) Hash() (uint32, error) {
+func (Attr) Hash() (uint32, error) {
 	// TODO
 	return 0, nil
 }
 
-func (l *attr) EncodeValue(path map[starlark.Value]struct{}, options *ValueEncodingOptions) (model_core.PatchedMessage[*model_starlark_pb.Value, dag.ObjectContentsWalker], bool, error) {
+func (a *Attr) Encode(path map[starlark.Value]struct{}, options *ValueEncodingOptions) (model_core.PatchedMessage[*model_starlark_pb.Attr, dag.ObjectContentsWalker], bool, error) {
+	patcher := model_core.NewReferenceMessagePatcher[dag.ObjectContentsWalker]()
+	var attr model_starlark_pb.Attr
+	var needsCode bool
+
+	if a.defaultValue != nil {
+		defaultValue, defaultValueNeedsCode, err := EncodeValue(a.defaultValue, path, nil, options)
+		if err != nil {
+			return model_core.PatchedMessage[*model_starlark_pb.Attr, dag.ObjectContentsWalker]{}, false, err
+		}
+		attr.Default = defaultValue.Message
+		patcher.Merge(defaultValue.Patcher)
+		needsCode = needsCode || defaultValueNeedsCode
+	}
+
+	a.attrType.Encode(&attr)
+	return model_core.PatchedMessage[*model_starlark_pb.Attr, dag.ObjectContentsWalker]{
+		Message: &attr,
+		Patcher: patcher,
+	}, needsCode, nil
+}
+
+func (a *Attr) EncodeValue(path map[starlark.Value]struct{}, currentIdentifier *pg_label.CanonicalStarlarkIdentifier, options *ValueEncodingOptions) (model_core.PatchedMessage[*model_starlark_pb.Value, dag.ObjectContentsWalker], bool, error) {
+	attr, needsCode, err := a.Encode(path, options)
+	if err != nil {
+		return model_core.PatchedMessage[*model_starlark_pb.Value, dag.ObjectContentsWalker]{}, false, err
+	}
 	return model_core.PatchedMessage[*model_starlark_pb.Value, dag.ObjectContentsWalker]{
 		Message: &model_starlark_pb.Value{
 			Kind: &model_starlark_pb.Value_Attr{
-				Attr: &model_starlark_pb.Attr{
-					Mandatory: l.mandatory,
-				},
+				Attr: attr.Message,
 			},
 		},
-		Patcher: model_core.NewReferenceMessagePatcher[dag.ObjectContentsWalker](),
-	}, false, nil
+		Patcher: attr.Patcher,
+	}, needsCode, nil
 }
 
 type AttrType interface {
 	Type() string
+	Encode(out *model_starlark_pb.Attr)
+	GetCanonicalizer(currentPackage pg_label.CanonicalPackage) unpack.Canonicalizer
 }
 
-type boolAttrType struct {
-	defaultValue bool
-}
+type boolAttrType struct{}
 
-func NewBoolAttrType(defaultValue bool) AttrType {
-	return &boolAttrType{
-		defaultValue: defaultValue,
-	}
-}
+var BoolAttrType AttrType = boolAttrType{}
 
 func (boolAttrType) Type() string {
 	return "bool"
 }
 
-type intAttrType struct {
-	defaultValue int32
+func (boolAttrType) Encode(out *model_starlark_pb.Attr) {
+	out.Type = &model_starlark_pb.Attr_Bool{
+		Bool: &emptypb.Empty{},
+	}
 }
 
-func NewIntAttrType(defaultValue int32) AttrType {
+func (boolAttrType) GetCanonicalizer(currentPackage pg_label.CanonicalPackage) unpack.Canonicalizer {
+	return unpack.Bool
+}
+
+type intAttrType struct {
+	values []int32
+}
+
+func NewIntAttrType(values []int32) AttrType {
 	return &intAttrType{
-		defaultValue: defaultValue,
+		values: values,
 	}
 }
 
@@ -89,13 +122,47 @@ func (intAttrType) Type() string {
 	return "int"
 }
 
-type labelAttrType struct {
-	defaultValue *pg_label.CanonicalLabel
+func (at *intAttrType) Encode(out *model_starlark_pb.Attr) {
+	out.Type = &model_starlark_pb.Attr_Int{
+		Int: &model_starlark_pb.Attr_IntType{
+			Values: at.values,
+		},
+	}
 }
 
-func NewLabelAttrType(defaultValue *pg_label.CanonicalLabel) AttrType {
+func (intAttrType) GetCanonicalizer(currentPackage pg_label.CanonicalPackage) unpack.Canonicalizer {
+	return unpack.Int[int32]()
+}
+
+type intListAttrType struct {
+	values []int32
+}
+
+func NewIntListAttrType() AttrType {
+	return &intListAttrType{}
+}
+
+func (intListAttrType) Type() string {
+	return "int"
+}
+
+func (intListAttrType) Encode(out *model_starlark_pb.Attr) {
+	out.Type = &model_starlark_pb.Attr_IntList{
+		IntList: &model_starlark_pb.Attr_IntListType{},
+	}
+}
+
+func (intListAttrType) GetCanonicalizer(currentPackage pg_label.CanonicalPackage) unpack.Canonicalizer {
+	return unpack.List(unpack.Int[int32]())
+}
+
+type labelAttrType struct {
+	allowNone bool
+}
+
+func NewLabelAttrType(allowNone bool) AttrType {
 	return &labelAttrType{
-		defaultValue: defaultValue,
+		allowNone: allowNone,
 	}
 }
 
@@ -103,34 +170,60 @@ func (labelAttrType) Type() string {
 	return "label"
 }
 
-type labelKeyedStringDictAttrType struct {
-	allowEmpty    bool
-	defaultValues map[pg_label.CanonicalLabel]string
+func (at *labelAttrType) Encode(out *model_starlark_pb.Attr) {
+	out.Type = &model_starlark_pb.Attr_Label{
+		Label: &model_starlark_pb.Attr_LabelType{
+			AllowNone: at.allowNone,
+		},
+	}
 }
 
-func NewLabelKeyedStringDictAttrType(allowEmpty bool, defaultValues map[pg_label.CanonicalLabel]string) AttrType {
-	return &labelKeyedStringDictAttrType{
-		defaultValues: defaultValues,
+func (ui *labelAttrType) GetCanonicalizer(currentPackage pg_label.CanonicalPackage) unpack.Canonicalizer {
+	canonicalizer := NewLabelUnpackerInto(currentPackage)
+	if ui.allowNone {
+		canonicalizer = unpack.IfNotNone(canonicalizer)
 	}
+	return canonicalizer
+}
+
+type labelKeyedStringDictAttrType struct{}
+
+func NewLabelKeyedStringDictAttrType() AttrType {
+	return &labelKeyedStringDictAttrType{}
+}
+
+func (labelKeyedStringDictAttrType) Encode(out *model_starlark_pb.Attr) {
+	out.Type = &model_starlark_pb.Attr_LabelKeyedStringDict{
+		LabelKeyedStringDict: &model_starlark_pb.Attr_LabelKeyedStringDictType{},
+	}
+}
+
+func (labelKeyedStringDictAttrType) GetCanonicalizer(currentPackage pg_label.CanonicalPackage) unpack.Canonicalizer {
+	return unpack.Dict(NewLabelUnpackerInto(currentPackage), unpack.String)
 }
 
 func (labelKeyedStringDictAttrType) Type() string {
 	return "label_keyed_string_dict"
 }
 
-type labelListAttrType struct {
-	allowEmpty    bool
-	defaultValues []pg_label.CanonicalLabel
-}
+type labelListAttrType struct{}
 
-func NewLabelListAttrType(allowEmpty bool, defaultValues []pg_label.CanonicalLabel) AttrType {
-	return &labelListAttrType{
-		defaultValues: defaultValues,
-	}
+func NewLabelListAttrType() AttrType {
+	return &labelListAttrType{}
 }
 
 func (labelListAttrType) Type() string {
 	return "label_list"
+}
+
+func (labelListAttrType) Encode(out *model_starlark_pb.Attr) {
+	out.Type = &model_starlark_pb.Attr_LabelList{
+		LabelList: &model_starlark_pb.Attr_LabelListType{},
+	}
+}
+
+func (labelListAttrType) GetCanonicalizer(currentPackage pg_label.CanonicalPackage) unpack.Canonicalizer {
+	return unpack.List(NewLabelUnpackerInto(currentPackage))
 }
 
 type outputAttrType struct{}
@@ -141,13 +234,43 @@ func (outputAttrType) Type() string {
 	return "output"
 }
 
-type stringAttrType struct {
-	defaultValue string
+func (outputAttrType) Encode(out *model_starlark_pb.Attr) {
+	out.Type = &model_starlark_pb.Attr_Output{
+		Output: &emptypb.Empty{},
+	}
 }
 
-func NewStringAttrType(defaultValue string) AttrType {
+func (outputAttrType) GetCanonicalizer(currentPackage pg_label.CanonicalPackage) unpack.Canonicalizer {
+	return unpack.TargetName
+}
+
+type outputListAttrType struct{}
+
+func NewOutputListAttrType() AttrType {
+	return &outputListAttrType{}
+}
+
+func (at *outputListAttrType) Type() string {
+	return "output_list"
+}
+
+func (at *outputListAttrType) Encode(out *model_starlark_pb.Attr) {
+	out.Type = &model_starlark_pb.Attr_OutputList{
+		OutputList: &model_starlark_pb.Attr_OutputListType{},
+	}
+}
+
+func (at *outputListAttrType) GetCanonicalizer(currentPackage pg_label.CanonicalPackage) unpack.Canonicalizer {
+	return unpack.List(unpack.TargetName)
+}
+
+type stringAttrType struct {
+	values []string
+}
+
+func NewStringAttrType(values []string) AttrType {
 	return &stringAttrType{
-		defaultValue: defaultValue,
+		values: values,
 	}
 }
 
@@ -155,30 +278,72 @@ func (stringAttrType) Type() string {
 	return "string"
 }
 
-type stringDictAttrType struct {
-	defaultValues map[string]string
+func (stringAttrType) Encode(out *model_starlark_pb.Attr) {
+	out.Type = &model_starlark_pb.Attr_String_{
+		String_: &model_starlark_pb.Attr_StringType{},
+	}
 }
 
-func NewStringDictAttrType(defaultValues map[string]string) AttrType {
-	return &stringDictAttrType{
-		defaultValues: defaultValues,
-	}
+func (stringAttrType) GetCanonicalizer(currentPackage pg_label.CanonicalPackage) unpack.Canonicalizer {
+	return unpack.String
+}
+
+type stringDictAttrType struct{}
+
+func NewStringDictAttrType() AttrType {
+	return &stringDictAttrType{}
 }
 
 func (stringDictAttrType) Type() string {
 	return "string_dict"
 }
 
-type stringListAttrType struct {
-	defaultValues []string
+func (stringDictAttrType) Encode(out *model_starlark_pb.Attr) {
+	out.Type = &model_starlark_pb.Attr_StringDict{
+		StringDict: &model_starlark_pb.Attr_StringDictType{},
+	}
 }
 
-func NewStringListAttrType(defaultValues []string) AttrType {
-	return &stringListAttrType{
-		defaultValues: defaultValues,
-	}
+func (stringDictAttrType) GetCanonicalizer(currentPackage pg_label.CanonicalPackage) unpack.Canonicalizer {
+	return unpack.Dict(unpack.String, unpack.String)
+}
+
+type stringListAttrType struct{}
+
+func NewStringListAttrType() AttrType {
+	return &stringListAttrType{}
 }
 
 func (stringListAttrType) Type() string {
 	return "string_list"
+}
+
+func (stringListAttrType) Encode(out *model_starlark_pb.Attr) {
+	out.Type = &model_starlark_pb.Attr_StringList{
+		StringList: &model_starlark_pb.Attr_StringListType{},
+	}
+}
+
+func (stringListAttrType) GetCanonicalizer(currentPackage pg_label.CanonicalPackage) unpack.Canonicalizer {
+	return unpack.List(unpack.String)
+}
+
+type stringListDictAttrType struct{}
+
+func NewStringListDictAttrType() AttrType {
+	return &stringListDictAttrType{}
+}
+
+func (stringListDictAttrType) Type() string {
+	return "string_list_dict"
+}
+
+func (at *stringListDictAttrType) Encode(out *model_starlark_pb.Attr) {
+	out.Type = &model_starlark_pb.Attr_StringListDict{
+		StringListDict: &model_starlark_pb.Attr_StringListDictType{},
+	}
+}
+
+func (stringListDictAttrType) GetCanonicalizer(currentPackage pg_label.CanonicalPackage) unpack.Canonicalizer {
+	return unpack.Dict(unpack.String, unpack.List(unpack.String))
 }

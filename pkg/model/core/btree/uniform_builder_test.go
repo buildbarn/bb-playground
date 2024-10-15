@@ -12,13 +12,13 @@ import (
 	"go.uber.org/mock/gomock"
 )
 
-func TestBuilder(t *testing.T) {
+func TestUniformBuilder(t *testing.T) {
 	ctrl := gomock.NewController(t)
 
 	t.Run("EmptyTree", func(t *testing.T) {
 		chunkerFactory := NewMockChunkerFactoryForTesting(ctrl)
 		nodeMerger := NewMockNodeMergerForTesting(ctrl)
-		builder := btree.NewBuilder[*model_filesystem_pb.FileContents, string](chunkerFactory, nodeMerger.Call)
+		builder := btree.NewUniformBuilder[*model_filesystem_pb.FileContents, string](chunkerFactory, nodeMerger.Call)
 
 		rootNode, err := builder.FinalizeSingle()
 		require.NoError(t, err)
@@ -28,7 +28,7 @@ func TestBuilder(t *testing.T) {
 	t.Run("SingleNodeTree", func(t *testing.T) {
 		chunkerFactory := NewMockChunkerFactoryForTesting(ctrl)
 		nodeMerger := NewMockNodeMergerForTesting(ctrl)
-		builder := btree.NewBuilder[*model_filesystem_pb.FileContents, string](chunkerFactory, nodeMerger.Call)
+		builder := btree.NewUniformBuilder[*model_filesystem_pb.FileContents, string](chunkerFactory, nodeMerger.Call)
 
 		patcher := model_core.NewReferenceMessagePatcher[string]()
 		node := model_core.PatchedMessage[*model_filesystem_pb.FileContents, string]{
@@ -51,7 +51,7 @@ func TestBuilder(t *testing.T) {
 	t.Run("TwoNodeTree", func(t *testing.T) {
 		chunkerFactory := NewMockChunkerFactoryForTesting(ctrl)
 		nodeMerger := NewMockNodeMergerForTesting(ctrl)
-		builder := btree.NewBuilder[*model_filesystem_pb.FileContents, string](chunkerFactory, nodeMerger.Call)
+		builder := btree.NewUniformBuilder[*model_filesystem_pb.FileContents, string](chunkerFactory, nodeMerger.Call)
 
 		// Pushing the first node should only cause it to be stored.
 		patcher1 := model_core.NewReferenceMessagePatcher[string]()

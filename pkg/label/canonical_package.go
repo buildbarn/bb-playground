@@ -120,6 +120,16 @@ func (p CanonicalPackage) AppendLabel(value string) (ApparentLabel, error) {
 	return ApparentLabel{}, invalidLabelPattern
 }
 
+// AppendTargetName appends a target name to a canonical package name,
+// thereby turning it into a canonical label.
+func (p CanonicalPackage) AppendTargetName(targetName TargetName) CanonicalLabel {
+	midfix := ":"
+	if strings.IndexByte(p.value, '/') < 0 {
+		midfix = "//:"
+	}
+	return newValidCanonicalLabel(p.value + midfix + targetName.value)
+}
+
 func (p CanonicalPackage) String() string {
 	return p.value
 }

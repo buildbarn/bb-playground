@@ -36,12 +36,12 @@ type unfinalizedDirectoryNode[TDirectory any] struct {
 }
 
 type directoryMerkleTreeBuilder[TDirectory, TFile any] struct {
-	context             context.Context
-	concurrency         *semaphore.Weighted
-	group               *errgroup.Group
-	directoryParameters *DirectoryCreationParameters
-	fileParameters      *FileCreationParameters
-	capturer            DirectoryMerkleTreeCapturer[TDirectory, TFile]
+	context                     context.Context
+	concurrency                 *semaphore.Weighted
+	group                       *errgroup.Group
+	directoryInlinedTreeOptions inlinedtree.Options
+	fileParameters              *FileCreationParameters
+	capturer                    DirectoryMerkleTreeCapturer[TDirectory, TFile]
 }
 
 func (b *directoryMerkleTreeBuilder[TDirectory, TFile]) walkDirectory(
@@ -249,7 +249,7 @@ func (b *directoryMerkleTreeBuilder[TDirectory, TFile]) maybeFinalizeDirectory(u
 			)
 		}
 
-		out, err := inlinedtree.Build(b.directoryParameters.referenceFormat, b.directoryParameters.encoder, inlineCandidates, b.directoryParameters.directoryMaximumSizeBytes)
+		out, err := inlinedtree.Build(inlineCandidates, &b.directoryInlinedTreeOptions)
 		if err != nil {
 			return util.StatusWrap(err, "Failed to build directory")
 		}
@@ -277,12 +277,16 @@ func CreateDirectoryMerkleTree[TDirectory, TFile any](
 	out *model_core.PatchedMessage[*model_filesystem_pb.Directory, TDirectory],
 ) error {
 	b := directoryMerkleTreeBuilder[TDirectory, TFile]{
-		context:             ctx,
-		concurrency:         concurrency,
-		group:               group,
-		directoryParameters: directoryParameters,
-		fileParameters:      fileParameters,
-		capturer:            capturer,
+		context:     ctx,
+		concurrency: concurrency,
+		group:       group,
+		directoryInlinedTreeOptions: inlinedtree.Options{
+			ReferenceFormat:  directoryParameters.referenceFormat,
+			Encoder:          directoryParameters.encoder,
+			MaximumSizeBytes: directoryParameters.directoryMaximumSizeBytes,
+		},
+		fileParameters: fileParameters,
+		capturer:       capturer,
 	}
 
 	var parent unfinalizedDirectory[TDirectory, TFile]

@@ -77,4 +77,11 @@ message BuildSpecification {
   // such dependencies are always ignored in the MODULE.bazel file of
   // modules other than the root module.
   bool ignore_root_module_dev_dependencies = 8;
+
+  // Names of modules containing Starlark code that needs to be
+  // preloaded.
+  //
+  // TODO: This feature is only present to aid development, and should
+  // be removed at some point.
+  repeated string builtins_module_names = 9;
 }

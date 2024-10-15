@@ -78,7 +78,7 @@ func TestCanonicalLabel(t *testing.T) {
 			"@@com_github_buildbarn_bb_storage+//cmd/hello_world": "hello_world",
 		} {
 			canonicalLabel := label.MustNewCanonicalLabel(input)
-			assert.Equal(t, output, canonicalLabel.GetTargetName())
+			assert.Equal(t, output, canonicalLabel.GetTargetName().String())
 		}
 	})
 }

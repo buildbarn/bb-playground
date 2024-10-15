@@ -6,9 +6,14 @@ import (
 	"github.com/buildbarn/bb-playground/pkg/label"
 
 	"go.starlark.net/starlark"
+	"go.starlark.net/syntax"
 )
 
-func ApparentLabel(thread *starlark.Thread, v starlark.Value, dst *label.ApparentLabel) error {
+type apparentLabelUnpackerInto struct{}
+
+var ApparentLabel UnpackerInto[label.ApparentLabel] = apparentLabelUnpackerInto{}
+
+func (apparentLabelUnpackerInto) UnpackInto(thread *starlark.Thread, v starlark.Value, dst *label.ApparentLabel) error {
 	s, ok := starlark.AsString(v)
 	if !ok {
 		return fmt.Errorf("got %s, want string", v.Type())
@@ -20,4 +25,16 @@ func ApparentLabel(thread *starlark.Thread, v starlark.Value, dst *label.Apparen
 	}
 	*dst = l
 	return nil
+}
+
+func (ui apparentLabelUnpackerInto) Canonicalize(thread *starlark.Thread, v starlark.Value) (starlark.Value, error) {
+	var l label.ApparentLabel
+	if err := ui.UnpackInto(thread, v, &l); err != nil {
+		return nil, err
+	}
+	return starlark.String(l.String()), nil
+}
+
+func (apparentLabelUnpackerInto) GetConcatenationOperator() syntax.Token {
+	return 0
 }

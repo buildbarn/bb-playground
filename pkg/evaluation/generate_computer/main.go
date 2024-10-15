@@ -21,8 +21,8 @@ type functionDefinition struct {
 }
 
 type nativeValueTypeDefinition struct {
-	Imports []string `json:"imports"`
-	Type    string   `json:"type"`
+	Imports map[string]string `json:"imports"`
+	Type    string            `json:"type"`
 }
 
 func main() {
@@ -37,11 +37,11 @@ func main() {
 
 	fmt.Printf("package %s\n", computerDefinition.GoPackage)
 
-	imports := map[string]struct{}{}
+	imports := map[string]string{}
 	for _, functionDefinition := range computerDefinition.Functions {
 		if nativeValueType := functionDefinition.NativeValueType; nativeValueType != nil {
-			for _, importName := range nativeValueType.Imports {
-				imports[importName] = struct{}{}
+			for shortName, importPath := range nativeValueType.Imports {
+				imports[shortName] = importPath
 			}
 		}
 	}
@@ -52,10 +52,20 @@ func main() {
 	fmt.Printf("\tmodel_core \"github.com/buildbarn/bb-playground/pkg/model/core\"\n")
 	fmt.Printf("\t\"google.golang.org/protobuf/proto\"\n")
 	fmt.Printf("\tpb %#v\n", computerDefinition.ProtoPackage)
-	for _, importName := range slices.Sorted(maps.Keys(imports)) {
-		fmt.Printf("\t%#v\n", importName)
+	for _, shortName := range slices.Sorted(maps.Keys(imports)) {
+		fmt.Printf("\t%s %#v\n", shortName, imports[shortName])
 	}
 	fmt.Printf(")\n")
+
+	for _, functionName := range slices.Sorted(maps.Keys(computerDefinition.Functions)) {
+		if computerDefinition.Functions[functionName].NativeValueType == nil {
+			fmt.Printf(
+				"type Patched%sValue = model_core.PatchedMessage[*pb.%s_Value, dag.ObjectContentsWalker]\n",
+				functionName,
+				functionName,
+			)
+		}
+	}
 
 	fmt.Printf("type Computer interface {\n")
 	for _, functionName := range slices.Sorted(maps.Keys(computerDefinition.Functions)) {
@@ -63,7 +73,7 @@ func main() {
 		functionDefinition := computerDefinition.Functions[functionName]
 		if nativeValueType := functionDefinition.NativeValueType; nativeValueType == nil {
 			fmt.Printf(
-				"\tCompute%sValue(context.Context, *pb.%s_Key, %sEnvironment) (model_core.PatchedMessage[*pb.%s_Value, dag.ObjectContentsWalker], error)\n",
+				"\tCompute%sValue(context.Context, *pb.%s_Key, %sEnvironment) (Patched%sValue, error)\n",
 				functionName,
 				functionName,
 				functionName,
@@ -121,7 +131,7 @@ func main() {
 			fmt.Printf("\tif !m.IsSet() {\n")
 			fmt.Printf("\t\treturn model_core.Message[*pb.%s_Value]{}\n", functionName)
 			fmt.Printf("\t}\n")
-			fmt.Printf("\treturn model_core.Message[*pb.%s_Value] {\n", functionName)
+			fmt.Printf("\treturn model_core.Message[*pb.%s_Value]{\n", functionName)
 			fmt.Printf("\t\tMessage: m.Message.(*pb.%s_Value),\n", functionName)
 			fmt.Printf("\t\tOutgoingReferences: m.OutgoingReferences,\n")
 			fmt.Printf("\t}\n")

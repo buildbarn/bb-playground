@@ -9,7 +9,7 @@ type ApparentRepo struct {
 	value string
 }
 
-const validApparentRepoPattern = "[a-zA-Z][-.\\w]*"
+const validApparentRepoPattern = `([a-zA-Z][-.\w]*|_builtins)`
 
 var validApparentRepoRegexp = regexp.MustCompile("^" + validApparentRepoPattern + "$")
 

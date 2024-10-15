@@ -1,6 +1,14 @@
 local statePath = std.extVar('STATE_PATH');
 
 {
+  global: { diagnosticsHttpServer: {
+    httpServers: [{
+      listenAddresses: [':9980'],
+      authenticationPolicy: { allow: {} },
+    }],
+    enablePrometheus: true,
+    enablePprof: true,
+  } },
   grpcServers: [{
     listenPaths: [statePath + '/playground_builder.sock'],
     authenticationPolicy: { allow: {} },

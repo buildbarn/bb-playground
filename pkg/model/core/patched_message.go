@@ -1,8 +1,6 @@
 package core
 
 import (
-	"github.com/buildbarn/bb-playground/pkg/storage/object"
-
 	"google.golang.org/protobuf/proto"
 )
 
@@ -17,7 +15,7 @@ type PatchedMessage[TMessage, TMetadata any] struct {
 
 func NewPatchedMessageFromExisting[TMessage proto.Message, TMetadata any](
 	existing Message[TMessage],
-	createMetadata func(reference object.LocalReference) TMetadata,
+	createMetadata func(index int) TMetadata,
 ) PatchedMessage[TMessage, TMetadata] {
 	clonedMessage := proto.Clone(existing.Message)
 	patcher := NewReferenceMessagePatcher[TMetadata]()
@@ -32,10 +30,28 @@ func NewPatchedMessageFromExisting[TMessage proto.Message, TMetadata any](
 	}
 }
 
+// NewSimplePatchedMessage is a helper function for creating instances
+// of PatchedMessage for messages that don't contain any references.
+func NewSimplePatchedMessage[TMetadata, TMessage any](v TMessage) PatchedMessage[TMessage, TMetadata] {
+	return PatchedMessage[TMessage, TMetadata]{
+		Message: v,
+		Patcher: NewReferenceMessagePatcher[TMetadata](),
+	}
+}
+
 func (m PatchedMessage[T, TMetadata]) IsSet() bool {
 	return m.Patcher != nil
 }
 
 func (m *PatchedMessage[T, TMetadata]) Clear() {
 	*m = PatchedMessage[T, TMetadata]{}
+}
+
+// SortAndSetReferences assigns indices to outgoing references
+func (m PatchedMessage[T, TMetadata]) SortAndSetReferences() (Message[T], []TMetadata) {
+	references, metadata := m.Patcher.SortAndSetReferences()
+	return Message[T]{
+		Message:            m.Message,
+		OutgoingReferences: references,
+	}, metadata
 }

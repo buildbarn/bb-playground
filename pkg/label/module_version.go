@@ -44,6 +44,10 @@ func MustNewModuleVersion(value string) ModuleVersion {
 	return m
 }
 
+func (mv ModuleVersion) String() string {
+	return mv.value
+}
+
 func stripIdentifier(in *string, separators string) string {
 	i := strings.IndexAny(*in, separators)
 	if i < 0 {

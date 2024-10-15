@@ -109,4 +109,35 @@ func TestCanonicalPackage(t *testing.T) {
 			}
 		})
 	})
+
+	t.Run("AppendTargetName", func(t *testing.T) {
+		require.Equal(
+			t,
+			"@@example+//:foo",
+			label.MustNewCanonicalPackage("@@example+").
+				AppendTargetName(label.MustNewTargetName("foo")).
+				String(),
+		)
+		require.Equal(
+			t,
+			"@@example+",
+			label.MustNewCanonicalPackage("@@example+").
+				AppendTargetName(label.MustNewTargetName("example+")).
+				String(),
+		)
+		require.Equal(
+			t,
+			"@@example+//hello_world:foo",
+			label.MustNewCanonicalPackage("@@example+//hello_world").
+				AppendTargetName(label.MustNewTargetName("foo")).
+				String(),
+		)
+		require.Equal(
+			t,
+			"@@example+//hello_world",
+			label.MustNewCanonicalPackage("@@example+//hello_world").
+				AppendTargetName(label.MustNewTargetName("hello_world")).
+				String(),
+		)
+	})
 }

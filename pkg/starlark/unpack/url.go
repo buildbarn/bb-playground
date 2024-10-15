@@ -5,9 +5,14 @@ import (
 	"net/url"
 
 	"go.starlark.net/starlark"
+	"go.starlark.net/syntax"
 )
 
-func URL(thread *starlark.Thread, v starlark.Value, dst **url.URL) error {
+type urlUnpackerInto struct{}
+
+var URL UnpackerInto[*url.URL] = urlUnpackerInto{}
+
+func (urlUnpackerInto) UnpackInto(thread *starlark.Thread, v starlark.Value, dst **url.URL) error {
 	s, ok := starlark.AsString(v)
 	if !ok {
 		return fmt.Errorf("got %s, want string", v.Type())
@@ -18,4 +23,16 @@ func URL(thread *starlark.Thread, v starlark.Value, dst **url.URL) error {
 	}
 	*dst = u
 	return nil
+}
+
+func (ui urlUnpackerInto) Canonicalize(thread *starlark.Thread, v starlark.Value) (starlark.Value, error) {
+	var u *url.URL
+	if err := ui.UnpackInto(thread, v, &u); err != nil {
+		return nil, err
+	}
+	return starlark.String(u.String()), nil
+}
+
+func (urlUnpackerInto) GetConcatenationOperator() syntax.Token {
+	return 0
 }

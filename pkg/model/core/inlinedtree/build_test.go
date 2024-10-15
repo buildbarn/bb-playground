@@ -26,10 +26,12 @@ func TestBuild(t *testing.T) {
 		encoder := NewMockBinaryEncoder(ctrl)
 
 		output, err := inlinedtree.Build(
-			object.MustNewReferenceFormat(object_pb.ReferenceFormat_SHA256_V1),
-			encoder,
 			[]inlinedtree.Candidate[*model_filesystem_pb.Directory, string]{},
-			/* maximumSizeBytes = */ 16*1024,
+			&inlinedtree.Options{
+				ReferenceFormat:  object.MustNewReferenceFormat(object_pb.ReferenceFormat_SHA256_V1),
+				Encoder:          encoder,
+				MaximumSizeBytes: 16 * 1024,
+			},
 		)
 		require.NoError(t, err)
 
@@ -69,8 +71,6 @@ func TestBuild(t *testing.T) {
 			Times(1)
 
 		output, err := inlinedtree.Build(
-			object.MustNewReferenceFormat(object_pb.ReferenceFormat_SHA256_V1),
-			encoder,
 			[]inlinedtree.Candidate[*model_filesystem_pb.Directory, string]{{
 				ExternalMessage: model_core.PatchedMessage[proto.Message, string]{
 					Message: leaves,
@@ -78,7 +78,11 @@ func TestBuild(t *testing.T) {
 				},
 				ParentAppender: parentAppender.Call,
 			}},
-			/* maximumSizeBytes = */ 0,
+			&inlinedtree.Options{
+				ReferenceFormat:  object.MustNewReferenceFormat(object_pb.ReferenceFormat_SHA256_V1),
+				Encoder:          encoder,
+				MaximumSizeBytes: 0,
+			},
 		)
 		require.NoError(t, err)
 
@@ -122,8 +126,6 @@ func TestBuild(t *testing.T) {
 			Times(2)
 
 		output, err := inlinedtree.Build(
-			object.MustNewReferenceFormat(object_pb.ReferenceFormat_SHA256_V1),
-			encoder,
 			[]inlinedtree.Candidate[*model_filesystem_pb.Directory, string]{{
 				ExternalMessage: model_core.PatchedMessage[proto.Message, string]{
 					Message: leaves,
@@ -131,7 +133,11 @@ func TestBuild(t *testing.T) {
 				},
 				ParentAppender: parentAppender.Call,
 			}},
-			/* maximumSizeBytes = */ 0,
+			&inlinedtree.Options{
+				ReferenceFormat:  object.MustNewReferenceFormat(object_pb.ReferenceFormat_SHA256_V1),
+				Encoder:          encoder,
+				MaximumSizeBytes: 0,
+			},
 		)
 		require.NoError(t, err)
 
@@ -180,8 +186,6 @@ func TestBuild(t *testing.T) {
 			Times(1)
 
 		output, err := inlinedtree.Build(
-			object.MustNewReferenceFormat(object_pb.ReferenceFormat_SHA256_V1),
-			encoder,
 			[]inlinedtree.Candidate[*model_filesystem_pb.Directory, string]{{
 				ExternalMessage: model_core.PatchedMessage[proto.Message, string]{
 					Message: leaves,
@@ -189,7 +193,11 @@ func TestBuild(t *testing.T) {
 				},
 				ParentAppender: parentAppender.Call,
 			}},
-			/* maximumSizeBytes = */ 100,
+			&inlinedtree.Options{
+				ReferenceFormat:  object.MustNewReferenceFormat(object_pb.ReferenceFormat_SHA256_V1),
+				Encoder:          encoder,
+				MaximumSizeBytes: 100,
+			},
 		)
 		require.NoError(t, err)
 

@@ -1,22 +1,30 @@
-load("@rules_go//go:def.bzl", "go_library")
+load("@rules_go//extras:gomock.bzl", "gomock")
+load("@rules_go//go:def.bzl", "go_library", "go_test")
 
 go_library(
     name = "starlark",
     srcs = [
+        "aspect.go",
         "attr.go",
         "build_setting.go",
-        "bzl_file_builtins.go",
+        "builtins.go",
         "depset.go",
         "encode_compiled_program.go",
         "exec_group.go",
-        "indirect_function.go",
+        "exec_transition_factory.go",
         "label.go",
-        "provider_value.go",
-        "repository_rule_value.go",
-        "rule_value.go",
-        "struct.go",
-        "subrule_value.go",
-        "transition_value.go",
+        "named_function.go",
+        "named_global.go",
+        "package_group.go",
+        "parse_repo_dot_bazel.go",
+        "provider.go",
+        "repository_rule.go",
+        "rule.go",
+        "select.go",
+        "subrule.go",
+        "target_registrar.go",
+        "toolchain_type.go",
+        "transition.go",
     ],
     importpath = "github.com/buildbarn/bb-playground/pkg/model/starlark",
     visibility = ["//visibility:public"],
@@ -24,6 +32,7 @@ go_library(
         "//pkg/label",
         "//pkg/model/core",
         "//pkg/model/core/btree",
+        "//pkg/model/core/inlinedtree",
         "//pkg/model/encoding",
         "//pkg/model/parser",
         "//pkg/proto/model/starlark",
@@ -31,6 +40,40 @@ go_library(
         "//pkg/storage/dag",
         "//pkg/storage/object",
         "@net_starlark_go//starlark",
+        "@net_starlark_go//starlarkstruct",
+        "@net_starlark_go//syntax",
         "@org_golang_google_protobuf//encoding/protojson",
+        "@org_golang_google_protobuf//proto",
+        "@org_golang_google_protobuf//types/known/emptypb",
     ],
+)
+
+go_test(
+    name = "starlark_test",
+    srcs = [
+        "mocks_encoding_test.go",
+        "package_group_test.go",
+        "parse_repo_dot_bazel_test.go",
+    ],
+    embed = [":starlark"],
+    deps = [
+        "//pkg/label",
+        "//pkg/model/core/inlinedtree",
+        "//pkg/proto/model/starlark",
+        "//pkg/proto/storage/object",
+        "//pkg/storage/object",
+        "@com_github_buildbarn_bb_storage//pkg/testutil",
+        "@com_github_stretchr_testify//require",
+        "@org_uber_go_mock//gomock",
+    ],
+)
+
+gomock(
+    name = "mocks_encoding",
+    out = "mocks_encoding_test.go",
+    interfaces = ["BinaryEncoder"],
+    library = "//pkg/model/encoding",
+    mockgen_model_library = "@org_uber_go_mock//mockgen/model",
+    mockgen_tool = "@org_uber_go_mock//mockgen",
+    package = "starlark_test",
 )

@@ -64,7 +64,7 @@ func (p *ReferenceMessagePatcher[TMetadata]) addReferenceMessage(message *core.R
 	p.maybeIncreaseHeight(reference.GetHeight() + 1)
 }
 
-func (p *ReferenceMessagePatcher[TMetadata]) addReferenceMessagesRecursively(message protoreflect.Message, outgoingReferences object.OutgoingReferences, createMetadata func(reference object.LocalReference) TMetadata) {
+func (p *ReferenceMessagePatcher[TMetadata]) addReferenceMessagesRecursively(message protoreflect.Message, outgoingReferences object.OutgoingReferences, createMetadata func(index int) TMetadata) {
 	if m, ok := message.Interface().(*core.Reference); ok {
 		// If the reference message refers to a valid object,
 		// let it be managed by the patcher. If it is invalid,
@@ -72,7 +72,7 @@ func (p *ReferenceMessagePatcher[TMetadata]) addReferenceMessagesRecursively(mes
 		// any future attempts to resolve it will fail.
 		if index, err := GetIndexFromReferenceMessage(m, outgoingReferences.GetDegree()); err == nil {
 			reference := outgoingReferences.GetOutgoingReference(index)
-			p.addReferenceMessage(m, reference, createMetadata(reference))
+			p.addReferenceMessage(m, reference, createMetadata(index))
 		}
 		m.Index = math.MaxUint32
 	} else {

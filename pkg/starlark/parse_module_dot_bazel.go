@@ -178,7 +178,7 @@ func ParseModuleDotBazel(contents string, repo label.CanonicalRepo, localPathFor
 					"strip_prefix?", unpack.Bind(thread, &stripPrefix, unpack.PathParser(path.UNIXFormat)),
 					"patches?", unpack.Bind(thread, &patchOptions.Patches, unpack.List(unpack.ApparentLabel)),
 					"patch_cmds?", unpack.Bind(thread, &patchOptions.PatchCmds, unpack.List(unpack.String)),
-					"patch_strip?", unpack.Bind(thread, &patchOptions.PatchStrip, unpack.Int),
+					"patch_strip?", unpack.Bind(thread, &patchOptions.PatchStrip, unpack.Int[int]()),
 				); err != nil {
 					return nil, err
 				}
@@ -200,7 +200,7 @@ func ParseModuleDotBazel(contents string, repo label.CanonicalRepo, localPathFor
 					b.Name(), args, kwargs,
 					"name", unpack.Bind(thread, &name, unpack.Module),
 					"version?", unpack.Bind(thread, &version, unpack.IfNonEmptyString(unpack.Pointer(unpack.ModuleVersion))),
-					"max_compatibility_level?", unpack.Bind(thread, &maxCompatibilityLevel, unpack.Int),
+					"max_compatibility_level?", unpack.Bind(thread, &maxCompatibilityLevel, unpack.Int[int]()),
 					"repo_name?", unpack.Bind(thread, &repoName, unpack.IfNonEmptyString(unpack.Pointer(unpack.ApparentRepo))),
 					"dev_dependency?", unpack.Bind(thread, &devDependency, unpack.Bool),
 				); err != nil {
@@ -232,7 +232,7 @@ func ParseModuleDotBazel(contents string, repo label.CanonicalRepo, localPathFor
 					"commit?", unpack.Bind(thread, &commit, unpack.String),
 					"patches?", unpack.Bind(thread, &patchOptions.Patches, unpack.List(unpack.ApparentLabel)),
 					"patch_cmds?", unpack.Bind(thread, &patchOptions.PatchCmds, unpack.List(unpack.String)),
-					"patch_strip?", unpack.Bind(thread, &patchOptions.PatchStrip, unpack.Int),
+					"patch_strip?", unpack.Bind(thread, &patchOptions.PatchStrip, unpack.Int[int]()),
 					"init_submodules?", unpack.Bind(thread, &initSubmodules, unpack.Bool),
 					"strip_prefix?", unpack.Bind(thread, &stripPrefix, unpack.PathParser(path.UNIXFormat)),
 				); err != nil {
@@ -285,7 +285,7 @@ func ParseModuleDotBazel(contents string, repo label.CanonicalRepo, localPathFor
 					b.Name(), args, kwargs,
 					"name", unpack.Bind(thread, &name, unpack.Module),
 					"version?", unpack.Bind(thread, &version, unpack.IfNonEmptyString(unpack.Pointer(unpack.ModuleVersion))),
-					"compatibility_level?", unpack.Bind(thread, &compatibilityLevel, unpack.Int),
+					"compatibility_level?", unpack.Bind(thread, &compatibilityLevel, unpack.Int[int]()),
 					"repo_name?", unpack.Bind(thread, &repoName, unpack.IfNonEmptyString(unpack.Pointer(unpack.ApparentRepo))),
 					"bazel_compatibility?", unpack.Bind(thread, &bazelCompatibility, unpack.List(unpack.String)),
 				); err != nil {
@@ -323,7 +323,7 @@ func ParseModuleDotBazel(contents string, repo label.CanonicalRepo, localPathFor
 			}),
 			"register_execution_platforms": starlark.NewBuiltin("register_execution_platforms", func(thread *starlark.Thread, b *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
 				var platformLabels []label.ApparentLabel
-				if err := unpack.List(unpack.ApparentLabel)(thread, args, &platformLabels); err != nil {
+				if err := unpack.List(unpack.ApparentLabel).UnpackInto(thread, args, &platformLabels); err != nil {
 					return nil, err
 				}
 				devDependency := false
@@ -340,7 +340,7 @@ func ParseModuleDotBazel(contents string, repo label.CanonicalRepo, localPathFor
 			}),
 			"register_toolchains": starlark.NewBuiltin("register_toolchains", func(thread *starlark.Thread, b *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
 				var toolchainLabels []label.ApparentLabel
-				if err := unpack.List(unpack.ApparentLabel)(thread, args, &toolchainLabels); err != nil {
+				if err := unpack.List(unpack.ApparentLabel).UnpackInto(thread, args, &toolchainLabels); err != nil {
 					return nil, err
 				}
 				devDependency := false
@@ -367,7 +367,7 @@ func ParseModuleDotBazel(contents string, repo label.CanonicalRepo, localPathFor
 					"registry?", unpack.Bind(thread, &registry, unpack.IfNonEmptyString(unpack.URL)),
 					"patches?", unpack.Bind(thread, &patchOptions.Patches, unpack.List(unpack.ApparentLabel)),
 					"patch_cmds?", unpack.Bind(thread, &patchOptions.PatchCmds, unpack.List(unpack.String)),
-					"patch_strip?", unpack.Bind(thread, &patchOptions.PatchStrip, unpack.Int),
+					"patch_strip?", unpack.Bind(thread, &patchOptions.PatchStrip, unpack.Int[int]()),
 				); err != nil {
 					return nil, err
 				}
@@ -423,7 +423,7 @@ func ParseModuleDotBazel(contents string, repo label.CanonicalRepo, localPathFor
 				repos := map[label.ApparentRepo]label.ApparentRepo{}
 				for i := 1; i < len(args); i++ {
 					var repo label.ApparentRepo
-					if err := unpack.ApparentRepo(thread, args[i], &repo); err != nil {
+					if err := unpack.ApparentRepo.UnpackInto(thread, args[i], &repo); err != nil {
 						return nil, fmt.Errorf("%s: for parameter %d: %w", b.Name(), i, err)
 					}
 					repos[repo] = repo
@@ -431,10 +431,10 @@ func ParseModuleDotBazel(contents string, repo label.CanonicalRepo, localPathFor
 
 				for _, kwarg := range kwargs {
 					var key, value label.ApparentRepo
-					if err := unpack.ApparentRepo(thread, kwarg[0], &key); err != nil {
+					if err := unpack.ApparentRepo.UnpackInto(thread, kwarg[0], &key); err != nil {
 						return nil, fmt.Errorf("%s: for parameter %s: %w", b.Name(), kwarg[0].(starlark.String), err)
 					}
-					if err := unpack.ApparentRepo(thread, kwarg[1], &value); err != nil {
+					if err := unpack.ApparentRepo.UnpackInto(thread, kwarg[1], &value); err != nil {
 						return nil, fmt.Errorf("%s: for parameter %s: %w", b.Name(), kwarg[0].(starlark.String), err)
 					}
 					if _, ok := repos[key]; ok {
@@ -470,11 +470,11 @@ func ParseModuleDotBazel(contents string, repo label.CanonicalRepo, localPathFor
 					for _, kwarg := range kwargs {
 						switch key := string(kwarg[0].(starlark.String)); key {
 						case "name":
-							if err := unpack.Pointer(unpack.ApparentRepo)(thread, kwarg[1], &name); err != nil {
+							if err := unpack.Pointer(unpack.ApparentRepo).UnpackInto(thread, kwarg[1], &name); err != nil {
 								return nil, fmt.Errorf("%s: for parameter %s: %w", b.Name(), key, err)
 							}
 						case "dev_dependency":
-							if err := unpack.Bool(thread, kwarg[1], &devDependency); err != nil {
+							if err := unpack.Bool.UnpackInto(thread, kwarg[1], &devDependency); err != nil {
 								return nil, fmt.Errorf("%s: for parameter %s: %w", b.Name(), key, err)
 							}
 						default:

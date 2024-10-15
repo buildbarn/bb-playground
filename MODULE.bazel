@@ -63,6 +63,10 @@ go_deps_dev.module_override(
     patches = ["//:patches/net_starlark_go/unwrap.diff"],
     path = "go.starlark.net",
 )
+go_deps_dev.gazelle_override(
+    build_file_generation = "on",
+    path = "github.com/cncf/xds/go",
+)
 
 llvm = use_extension("@toolchains_llvm//toolchain/extensions:llvm.bzl", "llvm", dev_dependency = True)
 llvm.toolchain(
