@@ -12,3 +12,7 @@ type Message[T any] struct {
 func (m Message[T]) IsSet() bool {
 	return m.OutgoingReferences != nil
 }
+
+func (m *Message[T]) Clear() {
+	*m = Message[T]{}
+}

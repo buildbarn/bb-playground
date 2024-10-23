@@ -22,6 +22,7 @@ go_test(
     name = "inlinedtree_test",
     srcs = [
         "build_test.go",
+        "mocks_core_test.go",
         "mocks_encoding_test.go",
         "mocks_inlinedtree_test.go",
     ],
@@ -37,6 +38,16 @@ go_test(
         "@org_golang_google_protobuf//proto",
         "@org_uber_go_mock//gomock",
     ],
+)
+
+gomock(
+    name = "mocks_core",
+    out = "mocks_core_test.go",
+    interfaces = ["ReferenceMetadata"],
+    library = "//pkg/model/core",
+    mockgen_model_library = "@org_uber_go_mock//mockgen/model",
+    mockgen_tool = "@org_uber_go_mock//mockgen",
+    package = "inlinedtree_test",
 )
 
 gomock(

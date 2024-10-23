@@ -1,0 +1,30 @@
+diff --git starlark/library.go starlark/library.go
+index 4e73a40..988ece2 100644
+--- starlark/library.go
++++ starlark/library.go
+@@ -1203,7 +1203,11 @@ func zip(thread *Thread, _ *Builtin, args Tuple, kwargs []Tuple) (Value, error)
+ // https://github.com/google/starlark-go/blob/master/doc/spec.md#dict·get
+ func dict_get(_ *Thread, b *Builtin, args Tuple, kwargs []Tuple) (Value, error) {
+ 	var key, dflt Value
+-	if err := UnpackPositionalArgs(b.Name(), args, kwargs, 1, &key, &dflt); err != nil {
++	if err := UnpackArgs(
++		b.Name(), args, kwargs,
++		"key", &key,
++		"default?", &dflt,
++	); err != nil {
+ 		return nil, err
+ 	}
+ 	if v, ok, err := b.Receiver().(*Dict).Get(key); err != nil {
+@@ -1248,7 +1252,11 @@ func dict_keys(_ *Thread, b *Builtin, args Tuple, kwargs []Tuple) (Value, error)
+ // https://github.com/google/starlark-go/blob/master/doc/spec.md#dict·pop
+ func dict_pop(_ *Thread, b *Builtin, args Tuple, kwargs []Tuple) (Value, error) {
+ 	var k, d Value
+-	if err := UnpackPositionalArgs(b.Name(), args, kwargs, 1, &k, &d); err != nil {
++	if err := UnpackArgs(
++		b.Name(), args, kwargs,
++		"key", &k,
++		"default?", &d,
++	); err != nil {
+ 		return nil, err
+ 	}
+ 	if v, found, err := b.Receiver().(*Dict).Delete(k); err != nil {

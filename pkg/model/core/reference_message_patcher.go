@@ -12,7 +12,17 @@ import (
 	"google.golang.org/protobuf/reflect/protoreflect"
 )
 
-type referenceMessages[TMetadata any] struct {
+type ReferenceMetadata interface {
+	Discard()
+}
+
+type NoopReferenceMetadata struct{}
+
+func (NoopReferenceMetadata) Discard() {}
+
+type ReferenceMetadataCreator[T any] func(index int) T
+
+type referenceMessages[TMetadata ReferenceMetadata] struct {
 	metadata TMetadata
 	indices  []*uint32
 }
@@ -27,14 +37,14 @@ type referenceMessages[TMetadata any] struct {
 // list of all outgoing references of the message, and to update the
 // indices in the Reference messages to refer to the correct outgoing
 // reference.
-type ReferenceMessagePatcher[TMetadata any] struct {
+type ReferenceMessagePatcher[TMetadata ReferenceMetadata] struct {
 	messagesByReference map[object.LocalReference]referenceMessages[TMetadata]
 	height              int
 }
 
 // NewReferenceMessagePatcher creates a new ReferenceMessagePatcher that
 // does not contain any Reference messages.
-func NewReferenceMessagePatcher[TMetadata any]() *ReferenceMessagePatcher[TMetadata] {
+func NewReferenceMessagePatcher[TMetadata ReferenceMetadata]() *ReferenceMessagePatcher[TMetadata] {
 	return &ReferenceMessagePatcher[TMetadata]{
 		messagesByReference: map[object.LocalReference]referenceMessages[TMetadata]{},
 	}
@@ -57,14 +67,22 @@ func (p *ReferenceMessagePatcher[TMetadata]) AddReference(reference object.Local
 }
 
 func (p *ReferenceMessagePatcher[TMetadata]) addReferenceMessage(message *core.Reference, reference object.LocalReference, metadata TMetadata) {
-	p.messagesByReference[reference] = referenceMessages[TMetadata]{
-		metadata: metadata,
-		indices:  append(p.messagesByReference[reference].indices, &message.Index),
+	if existingMessages, ok := p.messagesByReference[reference]; ok {
+		metadata.Discard()
+		p.messagesByReference[reference] = referenceMessages[TMetadata]{
+			metadata: existingMessages.metadata,
+			indices:  append(p.messagesByReference[reference].indices, &message.Index),
+		}
+	} else {
+		p.messagesByReference[reference] = referenceMessages[TMetadata]{
+			metadata: metadata,
+			indices:  []*uint32{&message.Index},
+		}
+		p.maybeIncreaseHeight(reference.GetHeight() + 1)
 	}
-	p.maybeIncreaseHeight(reference.GetHeight() + 1)
 }
 
-func (p *ReferenceMessagePatcher[TMetadata]) addReferenceMessagesRecursively(message protoreflect.Message, outgoingReferences object.OutgoingReferences, createMetadata func(index int) TMetadata) {
+func (p *ReferenceMessagePatcher[TMetadata]) addReferenceMessagesRecursively(message protoreflect.Message, outgoingReferences object.OutgoingReferences, createMetadata ReferenceMetadataCreator[TMetadata]) {
 	if m, ok := message.Interface().(*core.Reference); ok {
 		// If the reference message refers to a valid object,
 		// let it be managed by the patcher. If it is invalid,
@@ -102,10 +120,15 @@ func (p *ReferenceMessagePatcher[TMetadata]) Merge(other *ReferenceMessagePatche
 	if len(p.messagesByReference) < len(other.messagesByReference) {
 		p.messagesByReference, other.messagesByReference = other.messagesByReference, p.messagesByReference
 	}
-	for reference, messages := range other.messagesByReference {
-		p.messagesByReference[reference] = referenceMessages[TMetadata]{
-			metadata: messages.metadata,
-			indices:  append(p.messagesByReference[reference].indices, messages.indices...),
+	for reference, newMessages := range other.messagesByReference {
+		if existingMessages, ok := p.messagesByReference[reference]; ok {
+			newMessages.metadata.Discard()
+			p.messagesByReference[reference] = referenceMessages[TMetadata]{
+				metadata: existingMessages.metadata,
+				indices:  append(existingMessages.indices, newMessages.indices...),
+			}
+		} else {
+			p.messagesByReference[reference] = newMessages
 		}
 	}
 	p.maybeIncreaseHeight(other.height)
@@ -115,6 +138,13 @@ func (p *ReferenceMessagePatcher[TMetadata]) Merge(other *ReferenceMessagePatche
 func (p *ReferenceMessagePatcher[TMetadata]) empty() {
 	clear(p.messagesByReference)
 	p.height = 0
+}
+
+func (p *ReferenceMessagePatcher[TMetadata]) Discard() {
+	for _, messages := range p.messagesByReference {
+		messages.metadata.Discard()
+	}
+	p.empty()
 }
 
 // GetHeight returns the height that the object of the Protobuf message
@@ -177,17 +207,19 @@ func (l referencesList) Less(i, j int) bool {
 // MapReferenceMessagePatcherMetadata replaces a ReferenceMessagePatcher
 // with a new instance that contains the same references, but has
 // metadata mapped to other values, potentially of another type.
-func MapReferenceMessagePatcherMetadata[TOld, TNew any](pOld *ReferenceMessagePatcher[TOld], mapMetadata func(TOld) TNew) *ReferenceMessagePatcher[TNew] {
+func MapReferenceMessagePatcherMetadata[TOld, TNew ReferenceMetadata](pOld *ReferenceMessagePatcher[TOld], mapMetadata func(object.LocalReference, TOld) TNew) *ReferenceMessagePatcher[TNew] {
 	pNew := &ReferenceMessagePatcher[TNew]{
 		messagesByReference: make(map[object.LocalReference]referenceMessages[TNew], len(pOld.messagesByReference)),
 		height:              pOld.height,
 	}
 	for reference, oldMessages := range pOld.messagesByReference {
 		pNew.messagesByReference[reference] = referenceMessages[TNew]{
-			metadata: mapMetadata(oldMessages.metadata),
+			metadata: mapMetadata(reference, oldMessages.metadata),
 			indices:  oldMessages.indices,
 		}
 	}
 	pOld.empty()
 	return pNew
 }
+
+type ReferenceMetadataCreatorForTesting ReferenceMetadataCreator[ReferenceMetadata]

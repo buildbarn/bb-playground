@@ -113,7 +113,7 @@ func (ui *labelUnpackerInto) UnpackInto(thread *starlark.Thread, v starlark.Valu
 		}
 		canonicalRepo, err := canonicalRepoResolver.(CanonicalRepoResolver)(ui.basePackage.GetCanonicalRepo(), apparentRepo)
 		if err != nil {
-			return err
+			return fmt.Errorf("failed to resolve apparent repo %#v: %w", apparentRepo.String(), err)
 		}
 		*dst = apparentLabel.WithCanonicalRepo(canonicalRepo)
 		return nil

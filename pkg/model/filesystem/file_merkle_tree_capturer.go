@@ -1,6 +1,7 @@
 package filesystem
 
 import (
+	model_core "github.com/buildbarn/bb-playground/pkg/model/core"
 	"github.com/buildbarn/bb-playground/pkg/storage/object"
 )
 
@@ -21,24 +22,26 @@ type FileMerkleTreeCapturer[T any] interface {
 
 type noopFileMerkleTreeCapturer struct{}
 
-func (noopFileMerkleTreeCapturer) CaptureChunk(contents *object.Contents) struct{} {
-	return struct{}{}
+func (noopFileMerkleTreeCapturer) CaptureChunk(contents *object.Contents) model_core.NoopReferenceMetadata {
+	return model_core.NoopReferenceMetadata{}
 }
 
-func (noopFileMerkleTreeCapturer) CaptureFileContentsList(contents *object.Contents, children []struct{}) struct{} {
-	return struct{}{}
+func (noopFileMerkleTreeCapturer) CaptureFileContentsList(contents *object.Contents, children []model_core.NoopReferenceMetadata) model_core.NoopReferenceMetadata {
+	return model_core.NoopReferenceMetadata{}
 }
 
 // NoopFileMerkleTreeCapturer is a no-op implementation of
 // FileMerkleTreeCapturer. It can be used when only a reference of a
 // file needs to be computed, and there is no need to capture the
 // resulting Merkle tree.
-var NoopFileMerkleTreeCapturer FileMerkleTreeCapturer[struct{}] = noopFileMerkleTreeCapturer{}
+var NoopFileMerkleTreeCapturer FileMerkleTreeCapturer[model_core.NoopReferenceMetadata] = noopFileMerkleTreeCapturer{}
 
 type CapturedObject struct {
 	Contents *object.Contents
 	Children []CapturedObject
 }
+
+func (CapturedObject) Discard() {}
 
 type chunkDiscardingFileMerkleTreeCapturer struct{}
 
@@ -63,4 +66,4 @@ func (chunkDiscardingFileMerkleTreeCapturer) CaptureFileContentsList(contents *o
 // store the full contents of a file in memory.
 var ChunkDiscardingFileMerkleTreeCapturer FileMerkleTreeCapturer[CapturedObject] = chunkDiscardingFileMerkleTreeCapturer{}
 
-type FileMerkleTreeCapturerForTesting FileMerkleTreeCapturer[int]
+type FileMerkleTreeCapturerForTesting FileMerkleTreeCapturer[model_core.ReferenceMetadata]

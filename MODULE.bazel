@@ -60,7 +60,11 @@ go_deps_dev.module_override(
     path = "go.uber.org/mock",
 )
 go_deps_dev.module_override(
-    patches = ["//:patches/net_starlark_go/unwrap.diff"],
+    patches = [
+        "//:patches/net_starlark_go/dict-get-pop.diff",
+        "//:patches/net_starlark_go/octal.diff",
+        "//:patches/net_starlark_go/unwrap.diff",
+    ],
     path = "go.starlark.net",
 )
 go_deps_dev.gazelle_override(

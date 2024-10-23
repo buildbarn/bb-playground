@@ -20,7 +20,19 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
-type unfinalizedDirectory[TDirectory, TFile any] struct {
+type CapturableDirectory interface {
+	EnterCapturableDirectory(name path.Component) (CapturableDirectoryCloser, error)
+	OpenRead(name path.Component) (filesystem.FileReader, error)
+	ReadDir() ([]filesystem.FileInfo, error)
+	Readlink(name path.Component) (path.Parser, error)
+}
+
+type CapturableDirectoryCloser interface {
+	CapturableDirectory
+	Close() error
+}
+
+type unfinalizedDirectory[TDirectory, TFile model_core.ReferenceMetadata] struct {
 	leavesPatcherLock sync.Mutex
 	leaves            model_core.PatchedMessage[*model_filesystem_pb.Leaves, TFile]
 	directories       []unfinalizedDirectoryNode[TDirectory]
@@ -30,12 +42,12 @@ type unfinalizedDirectory[TDirectory, TFile any] struct {
 	out              *model_core.PatchedMessage[*model_filesystem_pb.Directory, TDirectory]
 }
 
-type unfinalizedDirectoryNode[TDirectory any] struct {
+type unfinalizedDirectoryNode[TDirectory model_core.ReferenceMetadata] struct {
 	name            path.Component
 	externalMessage model_core.PatchedMessage[*model_filesystem_pb.Directory, TDirectory]
 }
 
-type directoryMerkleTreeBuilder[TDirectory, TFile any] struct {
+type directoryMerkleTreeBuilder[TDirectory, TFile model_core.ReferenceMetadata] struct {
 	context                     context.Context
 	concurrency                 *semaphore.Weighted
 	group                       *errgroup.Group
@@ -45,7 +57,7 @@ type directoryMerkleTreeBuilder[TDirectory, TFile any] struct {
 }
 
 func (b *directoryMerkleTreeBuilder[TDirectory, TFile]) walkDirectory(
-	directory filesystem.Directory,
+	directory CapturableDirectory,
 	directoryPath *path.Trace,
 	parent *unfinalizedDirectory[TDirectory, TFile],
 	out *model_core.PatchedMessage[*model_filesystem_pb.Directory, TDirectory],
@@ -93,7 +105,7 @@ func (b *directoryMerkleTreeBuilder[TDirectory, TFile]) walkDirectory(
 		switch entry.Type() {
 		case filesystem.FileTypeDirectory:
 			childPath := directoryPath.Append(name)
-			child, err := directory.EnterDirectory(name)
+			child, err := directory.EnterCapturableDirectory(name)
 			if err != nil {
 				return util.StatusWrapf(err, "Failed to open directory %#v", childPath.GetUNIXString())
 			}
@@ -174,7 +186,9 @@ func (b *directoryMerkleTreeBuilder[TDirectory, TFile]) walkDirectory(
 
 func (b *directoryMerkleTreeBuilder[TDirectory, TFile]) maybeFinalizeDirectory(ud *unfinalizedDirectory[TDirectory, TFile]) error {
 	for ; ud.unfinalizedCount.Add(^uint32(0)) == 0; ud = ud.parent {
-		inlineCandidates := make([]inlinedtree.Candidate[*model_filesystem_pb.Directory, TDirectory], 0, 1+len(ud.directories))
+		inlineCandidates := make(inlinedtree.CandidateList[*model_filesystem_pb.Directory, TDirectory], 0, 1+len(ud.directories))
+		defer inlineCandidates.Discard()
+
 		leavesInline := &model_filesystem_pb.Directory_LeavesInline{
 			LeavesInline: ud.leaves.Message,
 		}
@@ -185,7 +199,9 @@ func (b *directoryMerkleTreeBuilder[TDirectory, TFile]) maybeFinalizeDirectory(u
 					Message: ud.leaves.Message,
 					Patcher: model_core.MapReferenceMessagePatcherMetadata(
 						ud.leaves.Patcher,
-						b.capturer.CaptureFileNode,
+						func(reference object.LocalReference, metadata TFile) TDirectory {
+							return b.capturer.CaptureFileNode(metadata)
+						},
 					),
 				},
 				ParentAppender: func(
@@ -266,13 +282,13 @@ func (b *directoryMerkleTreeBuilder[TDirectory, TFile]) maybeFinalizeDirectory(u
 // in parallel. These processes may terminate asynchronously, meaning
 // that group.Wait() needs to be called to ensure that the capturer is
 // invoked for all objects, and the output message is set.
-func CreateDirectoryMerkleTree[TDirectory, TFile any](
+func CreateDirectoryMerkleTree[TDirectory, TFile model_core.ReferenceMetadata](
 	ctx context.Context,
 	concurrency *semaphore.Weighted,
 	group *errgroup.Group,
 	directoryParameters *DirectoryCreationParameters,
 	fileParameters *FileCreationParameters,
-	directory filesystem.Directory,
+	directory CapturableDirectory,
 	capturer DirectoryMerkleTreeCapturer[TDirectory, TFile],
 	out *model_core.PatchedMessage[*model_filesystem_pb.Directory, TDirectory],
 ) error {

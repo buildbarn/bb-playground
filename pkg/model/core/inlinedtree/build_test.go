@@ -26,7 +26,7 @@ func TestBuild(t *testing.T) {
 		encoder := NewMockBinaryEncoder(ctrl)
 
 		output, err := inlinedtree.Build(
-			[]inlinedtree.Candidate[*model_filesystem_pb.Directory, string]{},
+			inlinedtree.CandidateList[*model_filesystem_pb.Directory, model_core.ReferenceMetadata]{},
 			&inlinedtree.Options{
 				ReferenceFormat:  object.MustNewReferenceFormat(object_pb.ReferenceFormat_SHA256_V1),
 				Encoder:          encoder,
@@ -57,24 +57,26 @@ func TestBuild(t *testing.T) {
 			LeavesInline: leaves,
 		}
 		parentAppender := NewMockParentAppenderForTesting(ctrl)
+		metadata1 := NewMockReferenceMetadata(ctrl)
 		parentAppender.EXPECT().Call(gomock.Any(), gomock.Nil(), gomock.Len(0)).
-			Do(func(output model_core.PatchedMessage[*model_filesystem_pb.Directory, string], externalContents *object.Contents, externalMetadata []string) {
+			Do(func(output model_core.PatchedMessage[*model_filesystem_pb.Directory, model_core.ReferenceMetadata], externalContents *object.Contents, externalMetadata []model_core.ReferenceMetadata) {
 				output.Message.Leaves = leavesInline
 			}).
 			Times(2)
 		parentAppender.EXPECT().Call(gomock.Any(), gomock.Not(gomock.Nil()), gomock.Len(0)).
-			Do(func(output model_core.PatchedMessage[*model_filesystem_pb.Directory, string], externalContents *object.Contents, externalMetadata []string) {
+			Do(func(output model_core.PatchedMessage[*model_filesystem_pb.Directory, model_core.ReferenceMetadata], externalContents *object.Contents, externalMetadata []model_core.ReferenceMetadata) {
 				output.Message.Leaves = &model_filesystem_pb.Directory_LeavesExternal{
-					LeavesExternal: output.Patcher.AddReference(externalContents.GetReference(), "Hello"),
+					LeavesExternal: output.Patcher.AddReference(externalContents.GetReference(), metadata1),
 				}
 			}).
 			Times(1)
+		metadata1.EXPECT().Discard()
 
 		output, err := inlinedtree.Build(
-			[]inlinedtree.Candidate[*model_filesystem_pb.Directory, string]{{
-				ExternalMessage: model_core.PatchedMessage[proto.Message, string]{
+			inlinedtree.CandidateList[*model_filesystem_pb.Directory, model_core.ReferenceMetadata]{{
+				ExternalMessage: model_core.PatchedMessage[proto.Message, model_core.ReferenceMetadata]{
 					Message: leaves,
-					Patcher: model_core.NewReferenceMessagePatcher[string](),
+					Patcher: model_core.NewReferenceMessagePatcher[model_core.ReferenceMetadata](),
 				},
 				ParentAppender: parentAppender.Call,
 			}},
@@ -111,25 +113,27 @@ func TestBuild(t *testing.T) {
 		}
 		parentAppender := NewMockParentAppenderForTesting(ctrl)
 		parentAppender.EXPECT().Call(gomock.Any(), gomock.Nil(), gomock.Len(0)).
-			Do(func(output model_core.PatchedMessage[*model_filesystem_pb.Directory, string], externalContents *object.Contents, externalMetadata []string) {
+			Do(func(output model_core.PatchedMessage[*model_filesystem_pb.Directory, model_core.ReferenceMetadata], externalContents *object.Contents, externalMetadata []model_core.ReferenceMetadata) {
 				output.Message.Leaves = &model_filesystem_pb.Directory_LeavesInline{
 					LeavesInline: leaves,
 				}
 			}).
 			Times(1)
+		metadata1 := NewMockReferenceMetadata(ctrl)
 		parentAppender.EXPECT().Call(gomock.Any(), gomock.Not(gomock.Nil()), gomock.Len(0)).
-			Do(func(output model_core.PatchedMessage[*model_filesystem_pb.Directory, string], externalContents *object.Contents, externalMetadata []string) {
+			Do(func(output model_core.PatchedMessage[*model_filesystem_pb.Directory, model_core.ReferenceMetadata], externalContents *object.Contents, externalMetadata []model_core.ReferenceMetadata) {
 				output.Message.Leaves = &model_filesystem_pb.Directory_LeavesExternal{
-					LeavesExternal: output.Patcher.AddReference(externalContents.GetReference(), "Hello"),
+					LeavesExternal: output.Patcher.AddReference(externalContents.GetReference(), metadata1),
 				}
 			}).
 			Times(2)
+		metadata1.EXPECT().Discard().Times(1)
 
 		output, err := inlinedtree.Build(
-			[]inlinedtree.Candidate[*model_filesystem_pb.Directory, string]{{
-				ExternalMessage: model_core.PatchedMessage[proto.Message, string]{
+			inlinedtree.CandidateList[*model_filesystem_pb.Directory, model_core.ReferenceMetadata]{{
+				ExternalMessage: model_core.PatchedMessage[proto.Message, model_core.ReferenceMetadata]{
 					Message: leaves,
-					Patcher: model_core.NewReferenceMessagePatcher[string](),
+					Patcher: model_core.NewReferenceMessagePatcher[model_core.ReferenceMetadata](),
 				},
 				ParentAppender: parentAppender.Call,
 			}},
@@ -152,8 +156,8 @@ func TestBuild(t *testing.T) {
 		require.Equal(t, object.OutgoingReferencesList{
 			object.MustNewSHA256V1LocalReference("013ab9b8d7bfdce48a964249f169d6b99bb58ec55b11a7df0f7305ae8a5577df", 84, 0, 0, 0),
 		}, references)
-		require.Equal(t, []string{
-			"Hello",
+		require.Equal(t, []model_core.ReferenceMetadata{
+			metadata1,
 		}, metadata)
 	})
 
@@ -173,23 +177,25 @@ func TestBuild(t *testing.T) {
 		}
 		parentAppender := NewMockParentAppenderForTesting(ctrl)
 		parentAppender.EXPECT().Call(gomock.Any(), gomock.Nil(), gomock.Len(0)).
-			Do(func(output model_core.PatchedMessage[*model_filesystem_pb.Directory, string], externalContents *object.Contents, externalMetadata []string) {
+			Do(func(output model_core.PatchedMessage[*model_filesystem_pb.Directory, model_core.ReferenceMetadata], externalContents *object.Contents, externalMetadata []model_core.ReferenceMetadata) {
 				output.Message.Leaves = leavesInline
 			}).
 			Times(2)
+		metadata1 := NewMockReferenceMetadata(ctrl)
 		parentAppender.EXPECT().Call(gomock.Any(), gomock.Not(gomock.Nil()), gomock.Len(0)).
-			Do(func(output model_core.PatchedMessage[*model_filesystem_pb.Directory, string], externalContents *object.Contents, externalMetadata []string) {
+			Do(func(output model_core.PatchedMessage[*model_filesystem_pb.Directory, model_core.ReferenceMetadata], externalContents *object.Contents, externalMetadata []model_core.ReferenceMetadata) {
 				output.Message.Leaves = &model_filesystem_pb.Directory_LeavesExternal{
-					LeavesExternal: output.Patcher.AddReference(externalContents.GetReference(), "Hello"),
+					LeavesExternal: output.Patcher.AddReference(externalContents.GetReference(), metadata1),
 				}
 			}).
 			Times(1)
+		metadata1.EXPECT().Discard()
 
 		output, err := inlinedtree.Build(
-			[]inlinedtree.Candidate[*model_filesystem_pb.Directory, string]{{
-				ExternalMessage: model_core.PatchedMessage[proto.Message, string]{
+			inlinedtree.CandidateList[*model_filesystem_pb.Directory, model_core.ReferenceMetadata]{{
+				ExternalMessage: model_core.PatchedMessage[proto.Message, model_core.ReferenceMetadata]{
 					Message: leaves,
-					Patcher: model_core.NewReferenceMessagePatcher[string](),
+					Patcher: model_core.NewReferenceMessagePatcher[model_core.ReferenceMetadata](),
 				},
 				ParentAppender: parentAppender.Call,
 			}},

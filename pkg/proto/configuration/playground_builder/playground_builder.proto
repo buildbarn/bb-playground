@@ -2,8 +2,10 @@ syntax = "proto3";
 
 package buildbarn.playground.configuration.playground_builder;
 
+import "pkg/proto/configuration/filesystem/filesystem.proto";
 import "pkg/proto/configuration/global/global.proto";
 import "pkg/proto/configuration/grpc/grpc.proto";
+import "pkg/proto/configuration/http/http.proto";
 
 option go_package = "github.com/buildbarn/bb-playground/pkg/proto/configuration/playground_builder";
 
@@ -14,5 +16,13 @@ message ApplicationConfiguration {
   // gRPC servers to spawn to listen for requests from clients.
   repeated buildbarn.configuration.grpc.ServerConfiguration grpc_servers = 2;
 
+  // gRPC client that communicates with the storage frontend.
   buildbarn.configuration.grpc.ClientConfiguration storage_grpc_client = 3;
+
+  // HTTP client that is used to download files from Bazel Central
+  // Registry and other locations.
+  buildbarn.configuration.http.ClientConfiguration http_client = 4;
+
+  // Storage space for temporary files (e.g., files downloaded via HTTP).
+  buildbarn.configuration.filesystem.FilePoolConfiguration file_pool = 5;
 }

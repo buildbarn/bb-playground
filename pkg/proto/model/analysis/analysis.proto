@@ -122,6 +122,19 @@ message DirectoryAccessParameters {
   }
 }
 
+message DirectoryCreationParameters {
+  message Key {}
+
+  message Value {
+    buildbarn.playground.model.filesystem.DirectoryCreationParameters
+        directory_creation_parameters = 1;
+  }
+}
+
+message DirectoryCreationParametersObject {
+  message Key {}
+}
+
 message FileAccessParameters {
   message Key {}
 
@@ -129,6 +142,19 @@ message FileAccessParameters {
     buildbarn.playground.model.filesystem.FileAccessParameters
         file_access_parameters = 1;
   }
+}
+
+message FileCreationParameters {
+  message Key {}
+
+  message Value {
+    buildbarn.playground.model.filesystem.FileCreationParameters
+        file_creation_parameters = 1;
+  }
+}
+
+message FileCreationParametersObject {
+  message Key {}
 }
 
 message FileProperties {
@@ -160,6 +186,209 @@ message FileProperties {
 
 message FileReader {
   message Key {}
+}
+
+message HttpArchiveContents {
+  message Key {
+    enum Format {
+      // The format of the archive is not specified.
+      UNKNOWN = 0;
+
+      // Gzip compressed tarball.
+      TAR_GZ = 1;
+
+      // ZIP archive, using the file format documented at
+      // https://support.pkware.com/pkzip/appnote.
+      ZIP = 2;
+    }
+
+    // The URL to fetch.
+    string url = 1;
+
+    // The format of the archive.
+    Format format = 2;
+
+    // TODO: Should we add 'integrity' here as well, or is this
+    // something we want to validate separately?
+  }
+
+  message Value {
+    oneof result {
+      buildbarn.playground.model.core.Reference exists = 1;
+
+      google.protobuf.Empty does_not_exist = 2;
+
+      string failure = 3;
+    }
+  }
+}
+
+message HttpFileContents {
+  message Key {
+    // The URL to fetch.
+    string url = 1;
+
+    // TODO: Should we add 'integrity' here as well, or is this
+    // something we want to validate separately?
+  }
+
+  message Value {
+    message Exists {
+      // The contents of the file, if the file was non-empty.
+      buildbarn.playground.model.filesystem.FileContents contents = 1;
+    }
+
+    oneof result {
+      // The file was successfully downloaded from the HTTP server.
+      Exists exists = 1;
+
+      // The HTTP server responded with status code 404.
+      google.protobuf.Empty does_not_exist = 2;
+
+      string failure = 3;
+    }
+  }
+}
+
+message ModuleRegistryUrls {
+  message Key {}
+
+  message Value {
+    // URLs of registries from which modules may be downloaded.
+    repeated string registry_urls = 1;
+  }
+}
+
+message ModuleRepoMapping {
+  message Key {
+    // The module instance for which a mapping of repos needs to be
+    // computed.
+    string module_instance = 1;
+  }
+
+  message Value {
+    message Success {
+      message Mapping {
+        // The name of the apparent repo that is visible from within the
+        // module.
+        string apparent_repo = 1;
+
+        // The name of the canonical repo to which the apparent repo
+        // maps.
+        //
+        // This field is not set for repos belonging to module
+        // extensions, as the exact name of such repos can only be
+        // determined by loading .bzl files. Loading such files depends
+        // on the repo mapping being computed.
+        string canonical_repo = 2;
+      }
+
+      // The list of repos that can be accessed from within this module
+      // instance, sorted alphabetically by apparent repo.
+      repeated Mapping mappings = 1;
+    }
+
+    oneof result {
+      // Successfully computed the set of repos visible from within the
+      // current module instance.
+      Success success = 1;
+
+      // Failure occurred computing the repos visible from within the
+      // current module instance (e.g., due to being unable to parse
+      // MODULE.bazel).
+      string failure = 2;
+    }
+  }
+}
+
+message BuildList {
+  message Module {
+    // The name of the module.
+    string name = 1;
+
+    // The version of the module.
+    string version = 2;
+
+    // The compatibility level of the module.
+    int32 compatibility_level = 3;
+
+    // The URL of the registry in which the module was found.
+    string registry_url = 4;
+  }
+
+  // Modules that were referenced by the main module, or one of
+  // transitive dependencies, sorted by name and version.
+  repeated Module modules = 1;
+}
+
+message ModuleFinalBuildList {
+  message Key {}
+
+  message Value {
+    oneof result {
+      BuildList success = 1;
+      string failure = 2;
+    }
+  }
+}
+
+message ModuleRoughBuildList {
+  message Key {}
+
+  message Value {
+    oneof result {
+      BuildList success = 1;
+      string failure = 2;
+    }
+  }
+}
+
+message OverridesList {
+  message Module {
+    // Name of the module.
+    string name = 1;
+
+    // If multiple_version_override() is called, a sorted list of
+    // version numbers that are permitted to coexist.
+    repeated string versions = 2;
+  }
+
+  // Alphabetically sorted list of modules for which overrides are
+  // in place. For these modules, computation of the rough build
+  // list may assume that sources can be accessed directly, without
+  // needing to separately load a MODULE.bazel file from Bazel
+  // Central Registry (BCR).
+  repeated Module modules = 1;
+}
+
+message ModulesWithMultipleVersions {
+  message Key {}
+
+  message Value {
+    oneof result {
+      OverridesList success = 1;
+      string failure = 2;
+    }
+  }
+}
+
+message ModulesWithMultipleVersionsObject {
+  message Key {}
+}
+
+message ModulesWithOverrides {
+  message Key {}
+
+  message Value {
+    oneof result {
+      OverridesList success = 1;
+
+      // Failure occurred determining the set of modules for which
+      // (e.g., invalid module name or malformed MODULE.bazel in the
+      // root module).
+      string failure = 2;
+    }
+  }
 }
 
 message Package {
@@ -248,6 +477,14 @@ message RepoDefaultAttrs {
       // Failed to obtain default values of attributes.
       string failure = 2;
     }
+  }
+}
+
+message RootModuleName {
+  message Key {}
+
+  message Value {
+    string root_module_name = 1;
   }
 }
 

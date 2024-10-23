@@ -11,7 +11,11 @@
             "BuildSpecification"
          ]
       },
-      "CanonicalRepoName": { },
+      "CanonicalRepoName": {
+         "dependsOn": [
+            "ModuleRepoMapping"
+         ]
+      },
       "CompiledBzlFile": {
          "dependsOn": [
             "BuiltinsModuleNames",
@@ -59,10 +63,42 @@
             "BuildSpecification"
          ]
       },
-      "FileAccessParameters": {
+      "DirectoryCreationParameters": {
          "dependsOn": [
             "BuildSpecification"
          ]
+      },
+      "DirectoryCreationParametersObject": {
+         "dependsOn": [
+            "DirectoryCreationParameters"
+         ],
+         "nativeValueType": {
+            "imports": {
+               "model_filesystem": "github.com/buildbarn/bb-playground/pkg/model/filesystem"
+            },
+            "type": "*model_filesystem.DirectoryCreationParameters"
+         }
+      },
+      "FileAccessParameters": {
+         "dependsOn": [
+            "FileCreationParameters"
+         ]
+      },
+      "FileCreationParameters": {
+         "dependsOn": [
+            "BuildSpecification"
+         ]
+      },
+      "FileCreationParametersObject": {
+         "dependsOn": [
+            "FileCreationParameters"
+         ],
+         "nativeValueType": {
+            "imports": {
+               "model_filesystem": "github.com/buildbarn/bb-playground/pkg/model/filesystem"
+            },
+            "type": "*model_filesystem.FileCreationParameters"
+         }
       },
       "FileProperties": {
          "dependsOn": [
@@ -82,6 +118,67 @@
             "type": "*model_filesystem.FileReader"
          }
       },
+      "HttpArchiveContents": {
+         "dependsOn": [
+            "DirectoryCreationParametersObject",
+            "FileReader",
+            "FileCreationParametersObject",
+            "HttpFileContents"
+         ]
+      },
+      "HttpFileContents": {
+         "dependsOn": [
+            "FileCreationParametersObject"
+         ]
+      },
+      "ModuleFinalBuildList": {
+         "dependsOn": [
+            "ModuleRoughBuildList"
+         ]
+      },
+      "ModuleRegistryUrls": {
+         "dependsOn": [
+            "BuildSpecification"
+         ]
+      },
+      "ModuleRepoMapping": {
+         "dependsOn": [
+            "FileProperties",
+            "FileReader",
+            "ModulesWithMultipleVersionsObject"
+         ]
+      },
+      "ModuleRoughBuildList": {
+         "dependsOn": [
+            "FileProperties",
+            "FileReader",
+            "HttpFileContents",
+            "ModuleRegistryUrls",
+            "ModulesWithOverrides",
+            "RootModuleName"
+         ]
+      },
+      "ModulesWithMultipleVersions": {
+         "dependsOn": [
+            "ModulesWithOverrides"
+         ]
+      },
+      "ModulesWithMultipleVersionsObject": {
+         "dependsOn": [
+            "ModulesWithMultipleVersions"
+         ],
+         "nativeValueType": {
+            "imports": {
+               "label": "github.com/buildbarn/bb-playground/pkg/label"
+            },
+            "type": "map[label.Module]OverrideVersions"
+         }
+      },
+      "ModulesWithOverrides": {
+         "dependsOn": [
+            "BuildSpecification"
+         ]
+      },
       "Package": {
          "dependsOn": [
             "BuiltinsModuleNames",
@@ -96,13 +193,23 @@
       },
       "Repo": {
          "dependsOn": [
-            "BuildSpecification"
+            "BuildSpecification",
+            "DirectoryCreationParametersObject",
+            "FileReader",
+            "HttpArchiveContents",
+            "HttpFileContents",
+            "ModuleFinalBuildList"
          ]
       },
       "RepoDefaultAttrs": {
          "dependsOn": [
             "FileProperties",
             "FileReader"
+         ]
+      },
+      "RootModuleName": {
+         "dependsOn": [
+            "BuildSpecification"
          ]
       },
       "TargetCompletion": {

@@ -6,7 +6,7 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
-type splitBuilder[TNode proto.Message, TMetadata any] struct {
+type splitBuilder[TNode proto.Message, TMetadata model_core.ReferenceMetadata] struct {
 	leavesChunker    Chunker[TNode, TMetadata]
 	leavesNodeMerger NodeMerger[TNode, TMetadata]
 	parentsBuilder   Builder[TNode, TMetadata]
@@ -18,7 +18,7 @@ type splitBuilder[TNode proto.Message, TMetadata any] struct {
 // NewSplitBuilder creates a Builder that can use a different Chunker
 // for leaf and parent objects. This can, for example, be used to make
 // leaf nodes larger than parents.
-func NewSplitBuilder[TNode proto.Message, TMetadata any](leavesChunker Chunker[TNode, TMetadata], leavesNodeMerger NodeMerger[TNode, TMetadata], parentsBuilder Builder[TNode, TMetadata]) Builder[TNode, TMetadata] {
+func NewSplitBuilder[TNode proto.Message, TMetadata model_core.ReferenceMetadata](leavesChunker Chunker[TNode, TMetadata], leavesNodeMerger NodeMerger[TNode, TMetadata], parentsBuilder Builder[TNode, TMetadata]) Builder[TNode, TMetadata] {
 	return &splitBuilder[TNode, TMetadata]{
 		leavesChunker:    leavesChunker,
 		leavesNodeMerger: leavesNodeMerger,
@@ -37,7 +37,7 @@ func (b *splitBuilder[TNode, TMetadata]) pushChildrenToParent(children model_cor
 		if err != nil {
 			return err
 		}
-		if err := b.leavesChunker.PushSingle(rootNode); err != nil {
+		if err := b.parentsBuilder.PushChild(rootNode); err != nil {
 			return err
 		}
 		b.firstChildren.Clear()

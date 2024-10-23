@@ -16,11 +16,12 @@ type ModuleVersion struct {
 }
 
 const (
-	versionIdentifierPattern    = `(0|[1-9][0-9]*|[0-9]*[a-zA-Z][0-9a-zA-Z]*)`
-	prereleaseIdentifierPattern = `(0|[1-9][0-9]*|[0-9]*[a-zA-Z-][0-9a-zA-Z-]*)`
-	buildIdentifierPattern      = `[0-9a-zA-Z-]+`
-	validModuleVersionPattern   = versionIdentifierPattern + `(\.` + versionIdentifierPattern + `)*` +
-		`(-` + prereleaseIdentifierPattern + `(\.` + prereleaseIdentifierPattern + `)*)?` +
+	versionIdentifierPattern      = `(0|[1-9][0-9]*|[0-9]*[a-zA-Z][0-9a-zA-Z]*)`
+	prereleaseIdentifierPattern   = `(0|[1-9][0-9]*|[0-9]*[a-zA-Z-][0-9a-zA-Z-]*)`
+	buildIdentifierPattern        = `[0-9a-zA-Z-]+`
+	canonicalModuleVersionPattern = versionIdentifierPattern + `(\.` + versionIdentifierPattern + `)*` +
+		`(-` + prereleaseIdentifierPattern + `(\.` + prereleaseIdentifierPattern + `)*)?`
+	validModuleVersionPattern = canonicalModuleVersionPattern +
 		`(\+` + buildIdentifierPattern + `(\.` + buildIdentifierPattern + `)*)?`
 )
 

@@ -11,7 +11,7 @@ import (
 
 var marshalOptions = proto.MarshalOptions{UseCachedSize: true}
 
-type prollyChunkerFactory[TNode proto.Message, TMetadata any] struct {
+type prollyChunkerFactory[TNode proto.Message, TMetadata model_core.ReferenceMetadata] struct {
 	minimumCount     int
 	minimumSizeBytes int
 	maximumSizeBytes int
@@ -33,7 +33,7 @@ type prollyChunkerFactory[TNode proto.Message, TMetadata any] struct {
 //	message TNodeList {
 //	  repeated TNode nodes = 1;
 //	}
-func NewProllyChunkerFactory[TNode proto.Message, TMetadata any](
+func NewProllyChunkerFactory[TNode proto.Message, TMetadata model_core.ReferenceMetadata](
 	minimumCount, minimumSizeBytes, maximumSizeBytes int,
 ) ChunkerFactory[TNode, TMetadata] {
 	return &prollyChunkerFactory[TNode, TMetadata]{
@@ -56,7 +56,7 @@ type prollyCut struct {
 	hash                uint64
 }
 
-type prollyChunker[TNode proto.Message, TMetadata any] struct {
+type prollyChunker[TNode proto.Message, TMetadata model_core.ReferenceMetadata] struct {
 	factory *prollyChunkerFactory[TNode, TMetadata]
 
 	nodes               []model_core.PatchedMessage[TNode, TMetadata]

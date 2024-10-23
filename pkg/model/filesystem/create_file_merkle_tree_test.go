@@ -6,6 +6,7 @@ import (
 	"io"
 	"testing"
 
+	model_core "github.com/buildbarn/bb-playground/pkg/model/core"
 	model_filesystem "github.com/buildbarn/bb-playground/pkg/model/filesystem"
 	model_core_pb "github.com/buildbarn/bb-playground/pkg/proto/model/core"
 	model_filesystem_pb "github.com/buildbarn/bb-playground/pkg/proto/model/filesystem"
@@ -54,10 +55,11 @@ func TestCreateFileMerkleTree(t *testing.T) {
 		// There should be no FileContentsList, as those are
 		// only used to join multiple objects together.
 		capturer := NewMockFileMerkleTreeCapturerForTesting(ctrl)
+		metadata1 := NewMockReferenceMetadata(ctrl)
 		capturer.EXPECT().CaptureChunk(gomock.Any()).
-			DoAndReturn(func(contents *object.Contents) int {
+			DoAndReturn(func(contents *object.Contents) model_core.ReferenceMetadata {
 				require.Equal(t, object.MustNewSHA256V1LocalReference("185f8db32271fe25f561a6fc938b2e264306ec304eda518007d1764826381969", 5, 0, 0, 0), contents.GetReference())
-				return 123
+				return metadata1
 			})
 
 		rootFileContents, err := model_filesystem.CreateFileMerkleTree(
@@ -78,7 +80,7 @@ func TestCreateFileMerkleTree(t *testing.T) {
 		require.Equal(t, object.OutgoingReferencesList{
 			object.MustNewSHA256V1LocalReference("185f8db32271fe25f561a6fc938b2e264306ec304eda518007d1764826381969", 5, 0, 0, 0),
 		}, references)
-		require.Equal(t, []int{123}, metadata)
+		require.Equal(t, []model_core.ReferenceMetadata{metadata1}, metadata)
 	})
 
 	t.Run("MersenneTwister1GB", func(t *testing.T) {

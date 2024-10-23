@@ -16,4 +16,5 @@ local statePath = std.extVar('STATE_PATH');
   storageGrpcClient: {
     address: 'unix://%s/playground_storage_frontend.sock' % statePath,
   },
+  filePool: { directoryPath: statePath + '/playground_builder_filepool' },
 }

@@ -152,7 +152,7 @@ func (v *moduleExtensionProxyValue) AttrNames() []string {
 
 // Parse a MODULE.bazel file, and call into ModuleDotBazelHandler for
 // every observed declaration.
-func ParseModuleDotBazel(contents string, repo label.CanonicalRepo, localPathFormat path.Format, handler RootModuleDotBazelHandler) error {
+func ParseModuleDotBazel(contents string, filename label.CanonicalLabel, localPathFormat path.Format, handler RootModuleDotBazelHandler) error {
 	_, err := starlark.ExecFile(
 		&starlark.Thread{
 			Name: "main",
@@ -161,7 +161,7 @@ func ParseModuleDotBazel(contents string, repo label.CanonicalRepo, localPathFor
 				fmt.Println(msg)
 			},
 		},
-		fmt.Sprintf("@@%s//:MODULE.bazel", repo),
+		filename.String(),
 		contents,
 		starlark.StringDict{
 			"archive_override": starlark.NewBuiltin("archive_override", func(thread *starlark.Thread, b *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {

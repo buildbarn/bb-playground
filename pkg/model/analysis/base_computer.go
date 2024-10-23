@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log"
 	"maps"
+	"net/http"
 	"path"
 	"slices"
 	"sort"
@@ -22,11 +23,11 @@ import (
 	model_starlark "github.com/buildbarn/bb-playground/pkg/model/starlark"
 	model_analysis_pb "github.com/buildbarn/bb-playground/pkg/proto/model/analysis"
 	model_build_pb "github.com/buildbarn/bb-playground/pkg/proto/model/build"
-	model_core_pb "github.com/buildbarn/bb-playground/pkg/proto/model/core"
 	model_filesystem_pb "github.com/buildbarn/bb-playground/pkg/proto/model/filesystem"
 	model_starlark_pb "github.com/buildbarn/bb-playground/pkg/proto/model/starlark"
 	"github.com/buildbarn/bb-playground/pkg/storage/dag"
 	"github.com/buildbarn/bb-playground/pkg/storage/object"
+	re_filesystem "github.com/buildbarn/bb-remote-execution/pkg/filesystem"
 	bb_path "github.com/buildbarn/bb-storage/pkg/filesystem/path"
 	"github.com/buildbarn/bb-storage/pkg/util"
 
@@ -43,17 +44,23 @@ type baseComputer struct {
 	objectDownloader            object.Downloader[object.LocalReference]
 	buildSpecificationReference object.LocalReference
 	buildSpecificationEncoder   model_encoding.BinaryEncoder
+	httpClient                  *http.Client
+	filePool                    re_filesystem.FilePool
 }
 
 func NewBaseComputer(
 	objectDownloader object.Downloader[object.LocalReference],
 	buildSpecificationReference object.LocalReference,
 	buildSpecificationEncoder model_encoding.BinaryEncoder,
+	httpClient *http.Client,
+	filePool re_filesystem.FilePool,
 ) Computer {
 	return &baseComputer{
 		objectDownloader:            objectDownloader,
 		buildSpecificationReference: buildSpecificationReference,
 		buildSpecificationEncoder:   buildSpecificationEncoder,
+		httpClient:                  httpClient,
+		filePool:                    filePool,
 	}
 }
 
@@ -242,7 +249,7 @@ func (c *baseComputer) newStarlarkThread(e starlarkThreadEnvironment, builtinsMo
 		identifierLabel := identifier.GetCanonicalLabel()
 		callables, err := e.GetCompiledBzlFileFunctionsValue(&model_analysis_pb.CompiledBzlFileFunctions_Key{
 			Label:               identifierLabel.String(),
-			BuiltinsModuleNames: trimBuiltinModuleNames(builtinsModuleNames, identifierLabel.GetCanonicalRepo().GetModule()),
+			BuiltinsModuleNames: trimBuiltinModuleNames(builtinsModuleNames, identifierLabel.GetCanonicalRepo().GetModuleInstance().GetModule()),
 		})
 		if err != nil {
 			return nil, err
@@ -254,28 +261,6 @@ func (c *baseComputer) newStarlarkThread(e starlarkThreadEnvironment, builtinsMo
 		return callable, nil
 	})
 	return thread
-}
-
-func (c *baseComputer) ComputeCanonicalRepoNameValue(ctx context.Context, key *model_analysis_pb.CanonicalRepoName_Key, e CanonicalRepoNameEnvironment) (PatchedCanonicalRepoNameValue, error) {
-	// TODO: Provide an actual implementation!
-	var toCanonicalrepo string
-	switch key.ToApparentRepo {
-	case "_builtins":
-		toCanonicalrepo = "builtins_bazel+"
-	case "io_bazel_rules_go":
-		toCanonicalrepo = "rules_go+"
-	case "io_bazel_rules_go_bazel_features":
-		toCanonicalrepo = "bazel_features+"
-	case "proto_bazel_features":
-		toCanonicalrepo = "bazel_features+"
-	default:
-		toCanonicalrepo = key.ToApparentRepo + "+"
-	}
-	return model_core.NewSimplePatchedMessage[dag.ObjectContentsWalker](&model_analysis_pb.CanonicalRepoName_Value{
-		Result: &model_analysis_pb.CanonicalRepoName_Value_ToCanonicalRepo{
-			ToCanonicalRepo: toCanonicalrepo,
-		},
-	}), nil
 }
 
 func (c *baseComputer) ComputeBuildResultValue(ctx context.Context, key *model_analysis_pb.BuildResult_Key, e BuildResultEnvironment) (PatchedBuildResultValue, error) {
@@ -503,7 +488,10 @@ func (c *baseComputer) ComputeCompiledBzlFileValue(ctx context.Context, key *mod
 		globals, err := program.Init(thread, bzlFileBuiltins)
 		if err != nil {
 			if !errors.Is(err, evaluation.ErrMissingDependency) {
-				log.Printf("FAILURE: %s %s", canonicalLabel.String(), err)
+				var evalErr *starlark.EvalError
+				if errors.As(err, &evalErr) {
+					return PatchedCompiledBzlFileValue{}, errors.New(evalErr.Backtrace())
+				}
 			}
 			return PatchedCompiledBzlFileValue{}, err
 		}
@@ -671,16 +659,6 @@ func (c *baseComputer) ComputeDirectoryAccessParametersValue(ctx context.Context
 	}
 	return model_core.NewSimplePatchedMessage[dag.ObjectContentsWalker](&model_analysis_pb.DirectoryAccessParameters_Value{
 		DirectoryAccessParameters: buildSpecification.Message.BuildSpecification.GetDirectoryCreationParameters().GetAccess(),
-	}), nil
-}
-
-func (c *baseComputer) ComputeFileAccessParametersValue(ctx context.Context, key *model_analysis_pb.FileAccessParameters_Key, e FileAccessParametersEnvironment) (PatchedFileAccessParametersValue, error) {
-	buildSpecification := e.GetBuildSpecificationValue(&model_analysis_pb.BuildSpecification_Key{})
-	if !buildSpecification.IsSet() {
-		return PatchedFileAccessParametersValue{}, evaluation.ErrMissingDependency
-	}
-	return model_core.NewSimplePatchedMessage[dag.ObjectContentsWalker](&model_analysis_pb.FileAccessParameters_Value{
-		FileAccessParameters: buildSpecification.Message.BuildSpecification.GetFileCreationParameters().GetAccess(),
 	}), nil
 }
 
@@ -944,7 +922,7 @@ func (c *baseComputer) ComputePackageValue(ctx context.Context, key *model_analy
 			canonicalLabel := identifier.GetCanonicalLabel()
 			compiledBzlFile := e.GetCompiledBzlFileValue(&model_analysis_pb.CompiledBzlFile_Key{
 				Label:               canonicalLabel.String(),
-				BuiltinsModuleNames: trimBuiltinModuleNames(builtinsModuleNames, canonicalLabel.GetCanonicalRepo().GetModule()),
+				BuiltinsModuleNames: trimBuiltinModuleNames(builtinsModuleNames, canonicalLabel.GetCanonicalRepo().GetModuleInstance().GetModule()),
 			})
 			if !compiledBzlFile.IsSet() {
 				return model_core.Message[*model_starlark_pb.Value]{}, evaluation.ErrMissingDependency
@@ -1182,57 +1160,6 @@ func (c *baseComputer) ComputeRepoDefaultAttrsValue(ctx context.Context, key *mo
 			},
 		}), nil
 	}
-}
-
-func (c *baseComputer) ComputeRepoValue(ctx context.Context, key *model_analysis_pb.Repo_Key, e RepoEnvironment) (PatchedRepoValue, error) {
-	canonicalRepo, err := label.NewCanonicalRepo(key.CanonicalRepo)
-	if err != nil {
-		return model_core.NewSimplePatchedMessage[dag.ObjectContentsWalker](&model_analysis_pb.Repo_Value{
-			Result: &model_analysis_pb.Repo_Value_Failure{
-				Failure: util.StatusWrapf(err, "Invalid canonical repo %#v", key.CanonicalRepo).Error(),
-			},
-		}), nil
-	}
-
-	buildSpecification := e.GetBuildSpecificationValue(&model_analysis_pb.BuildSpecification_Key{})
-	if !buildSpecification.IsSet() {
-		return PatchedRepoValue{}, evaluation.ErrMissingDependency
-	}
-
-	// TODO: Actually implement proper handling of MODULE.bazel.
-
-	moduleName := canonicalRepo.GetModule().String()
-	modules := buildSpecification.Message.BuildSpecification.GetModules()
-	if i := sort.Search(
-		len(modules),
-		func(i int) bool { return modules[i].Name >= moduleName },
-	); i < len(modules) && modules[i].Name == moduleName {
-		module := modules[i]
-		rootDirectoryReference := model_core.NewPatchedMessageFromExisting(
-			model_core.Message[*model_core_pb.Reference]{
-				Message:            module.RootDirectoryReference,
-				OutgoingReferences: buildSpecification.OutgoingReferences,
-			},
-			func(index int) dag.ObjectContentsWalker {
-				return dag.ExistingObjectContentsWalker
-			},
-		)
-
-		return PatchedRepoValue{
-			Message: &model_analysis_pb.Repo_Value{
-				Result: &model_analysis_pb.Repo_Value_RootDirectoryReference{
-					RootDirectoryReference: rootDirectoryReference.Message,
-				},
-			},
-			Patcher: rootDirectoryReference.Patcher,
-		}, nil
-	}
-
-	return model_core.NewSimplePatchedMessage[dag.ObjectContentsWalker](&model_analysis_pb.Repo_Value{
-		Result: &model_analysis_pb.Repo_Value_Failure{
-			Failure: fmt.Sprintf("Module %#v not found", moduleName),
-		},
-	}), nil
 }
 
 func (c *baseComputer) ComputeTargetCompletionValue(ctx context.Context, key *model_analysis_pb.TargetCompletion_Key, e TargetCompletionEnvironment) (PatchedTargetCompletionValue, error) {

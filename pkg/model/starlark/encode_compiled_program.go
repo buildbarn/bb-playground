@@ -8,6 +8,7 @@ import (
 	"maps"
 	"math/big"
 	"slices"
+	"strings"
 
 	pg_label "github.com/buildbarn/bb-playground/pkg/label"
 	model_core "github.com/buildbarn/bb-playground/pkg/model/core"
@@ -106,34 +107,31 @@ func EncodeCompiledProgram(program *starlark.Program, globals starlark.StringDic
 
 func EncodeValue(value starlark.Value, path map[starlark.Value]struct{}, currentIdentifier *pg_label.CanonicalStarlarkIdentifier, options *ValueEncodingOptions) (model_core.PatchedMessage[*model_starlark_pb.Value, dag.ObjectContentsWalker], bool, error) {
 	if value == starlark.None {
-		return model_core.PatchedMessage[*model_starlark_pb.Value, dag.ObjectContentsWalker]{
-			Message: &model_starlark_pb.Value{
-				Kind: &model_starlark_pb.Value_None{
-					None: &emptypb.Empty{},
-				},
+		return model_core.NewSimplePatchedMessage[dag.ObjectContentsWalker](&model_starlark_pb.Value{
+			Kind: &model_starlark_pb.Value_None{
+				None: &emptypb.Empty{},
 			},
-			Patcher: model_core.NewReferenceMessagePatcher[dag.ObjectContentsWalker](),
-		}, false, nil
+		}), false, nil
 	}
 	switch typedValue := value.(type) {
 	case starlark.Bool:
-		return model_core.PatchedMessage[*model_starlark_pb.Value, dag.ObjectContentsWalker]{
-			Message: &model_starlark_pb.Value{
-				Kind: &model_starlark_pb.Value_Bool{
-					Bool: bool(typedValue),
-				},
+		return model_core.NewSimplePatchedMessage[dag.ObjectContentsWalker](&model_starlark_pb.Value{
+			Kind: &model_starlark_pb.Value_Bool{
+				Bool: bool(typedValue),
 			},
-			Patcher: model_core.NewReferenceMessagePatcher[dag.ObjectContentsWalker](),
-		}, false, nil
+		}), false, nil
+	case *starlark.Builtin:
+		return model_core.NewSimplePatchedMessage[dag.ObjectContentsWalker](&model_starlark_pb.Value{
+			Kind: &model_starlark_pb.Value_Builtin{
+				Builtin: typedValue.Name(),
+			},
+		}), false, nil
 	case starlark.Bytes:
-		return model_core.PatchedMessage[*model_starlark_pb.Value, dag.ObjectContentsWalker]{
-			Message: &model_starlark_pb.Value{
-				Kind: &model_starlark_pb.Value_Bytes{
-					Bytes: []byte(typedValue),
-				},
+		return model_core.NewSimplePatchedMessage[dag.ObjectContentsWalker](&model_starlark_pb.Value{
+			Kind: &model_starlark_pb.Value_Bytes{
+				Bytes: []byte(typedValue),
 			},
-			Patcher: model_core.NewReferenceMessagePatcher[dag.ObjectContentsWalker](),
-		}, false, nil
+		}), false, nil
 	case *starlark.Dict:
 		if _, ok := path[value]; ok {
 			return model_core.PatchedMessage[*model_starlark_pb.Value, dag.ObjectContentsWalker]{}, false, errors.New("value is defined recursively")
@@ -204,23 +202,17 @@ func EncodeValue(value starlark.Value, path map[starlark.Value]struct{}, current
 		}, needsCode, nil
 	case *starlark.Function:
 		filename := pg_label.MustNewCanonicalLabel(typedValue.Position().Filename())
-		return model_core.PatchedMessage[*model_starlark_pb.Value, dag.ObjectContentsWalker]{
-			Message: &model_starlark_pb.Value{
-				Kind: &model_starlark_pb.Value_Function{
-					Function: filename.AppendStarlarkIdentifier(pg_label.MustNewStarlarkIdentifier(typedValue.Name())).String(),
-				},
+		return model_core.NewSimplePatchedMessage[dag.ObjectContentsWalker](&model_starlark_pb.Value{
+			Kind: &model_starlark_pb.Value_Function{
+				Function: filename.AppendStarlarkIdentifier(pg_label.MustNewStarlarkIdentifier(typedValue.Name())).String(),
 			},
-			Patcher: model_core.NewReferenceMessagePatcher[dag.ObjectContentsWalker](),
-		}, filename == options.CurrentFilename, nil
+		}), filename == options.CurrentFilename, nil
 	case starlark.Int:
-		return model_core.PatchedMessage[*model_starlark_pb.Value, dag.ObjectContentsWalker]{
-			Message: &model_starlark_pb.Value{
-				Kind: &model_starlark_pb.Value_Int{
-					Int: typedValue.BigInt().Bytes(),
-				},
+		return model_core.NewSimplePatchedMessage[dag.ObjectContentsWalker](&model_starlark_pb.Value{
+			Kind: &model_starlark_pb.Value_Int{
+				Int: typedValue.BigInt().Bytes(),
 			},
-			Patcher: model_core.NewReferenceMessagePatcher[dag.ObjectContentsWalker](),
-		}, false, nil
+		}), false, nil
 	case *starlark.List:
 		if _, ok := path[value]; ok {
 			return model_core.PatchedMessage[*model_starlark_pb.Value, dag.ObjectContentsWalker]{}, false, errors.New("value is defined recursively")
@@ -282,14 +274,11 @@ func EncodeValue(value starlark.Value, path map[starlark.Value]struct{}, current
 			Patcher: elements.Patcher,
 		}, needsCode, nil
 	case starlark.String:
-		return model_core.PatchedMessage[*model_starlark_pb.Value, dag.ObjectContentsWalker]{
-			Message: &model_starlark_pb.Value{
-				Kind: &model_starlark_pb.Value_Str{
-					Str: string(typedValue),
-				},
+		return model_core.NewSimplePatchedMessage[dag.ObjectContentsWalker](&model_starlark_pb.Value{
+			Kind: &model_starlark_pb.Value_Str{
+				Str: string(typedValue),
 			},
-			Patcher: model_core.NewReferenceMessagePatcher[dag.ObjectContentsWalker](),
-		}, false, nil
+		}), false, nil
 	case *starlarkstruct.Struct:
 		keys := typedValue.AttrNames()
 		fields := make([]*model_starlark_pb.StructField, 0, len(keys))
@@ -421,6 +410,24 @@ func DecodeValue(encodedValue model_core.Message[*model_starlark_pb.Value], curr
 		return NewAttr(attrType, defaultValue), nil
 	case *model_starlark_pb.Value_Bool:
 		return starlark.Bool(typedValue.Bool), nil
+	case *model_starlark_pb.Value_Builtin:
+		parts := strings.Split(typedValue.Builtin, ".")
+		value, ok := BzlFileBuiltins[parts[0]]
+		if !ok {
+			return nil, fmt.Errorf("builtin %#v does not exist", parts[0])
+		}
+		for i := 1; i < len(parts); i++ {
+			hasAttrs, ok := value.(starlark.HasAttrs)
+			if !ok {
+				return nil, fmt.Errorf("builtin %#v does have attributes", strings.Join(parts[:i], "."))
+			}
+			var err error
+			value, err = hasAttrs.Attr(parts[i])
+			if err != nil {
+				return nil, fmt.Errorf("builtin %#v does not exist", strings.Join(parts[:i+1], "."))
+			}
+		}
+		return value, nil
 	case *model_starlark_pb.Value_Bytes:
 		return starlark.Bytes(typedValue.Bytes), nil
 	case *model_starlark_pb.Value_Dict:

@@ -15,7 +15,7 @@ import (
 // ParentNodeComputer can be used by ObjectCreatingNodeMerger to combine
 // the values of nodes stored in an object into a single node that can
 // be stored in its parent.
-type ParentNodeComputer[TNode proto.Message, TMetadata any] func(
+type ParentNodeComputer[TNode proto.Message, TMetadata model_core.ReferenceMetadata] func(
 	contents *object.Contents,
 	childNodes []TNode,
 	outgoingReferences object.OutgoingReferences,
@@ -25,7 +25,7 @@ type ParentNodeComputer[TNode proto.Message, TMetadata any] func(
 // NewObjectCreatingNodeMerger creates a NodeMerger that can be used in
 // combination with Builder to construct B-trees that are backed by
 // storage objects that reference each other.
-func NewObjectCreatingNodeMerger[TNode proto.Message, TMetadata any](encoder model_encoding.BinaryEncoder, referenceFormat object.ReferenceFormat, parentNodeComputer ParentNodeComputer[TNode, TMetadata]) NodeMerger[TNode, TMetadata] {
+func NewObjectCreatingNodeMerger[TNode proto.Message, TMetadata model_core.ReferenceMetadata](encoder model_encoding.BinaryEncoder, referenceFormat object.ReferenceFormat, parentNodeComputer ParentNodeComputer[TNode, TMetadata]) NodeMerger[TNode, TMetadata] {
 	return func(list model_core.PatchedMessage[[]TNode, TMetadata]) (model_core.PatchedMessage[TNode, TMetadata], error) {
 		// Marshal each of the messages, preprending a tag and
 		// size. This allows the resulting objects to be
@@ -61,4 +61,4 @@ func NewObjectCreatingNodeMerger[TNode proto.Message, TMetadata any](encoder mod
 	}
 }
 
-type ParentNodeComputerForTesting ParentNodeComputer[*model_filesystem_pb.FileContents, string]
+type ParentNodeComputerForTesting ParentNodeComputer[*model_filesystem_pb.FileContents, model_core.ReferenceMetadata]

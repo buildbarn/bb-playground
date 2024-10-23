@@ -31,6 +31,7 @@ go_test(
     name = "btree_test",
     srcs = [
         "mocks_btree_test.go",
+        "mocks_core_test.go",
         "mocks_encoding_test.go",
         "prolly_chunker_factory_test.go",
         "uniform_builder_test.go",
@@ -55,6 +56,16 @@ gomock(
         "ParentNodeComputerForTesting",
     ],
     library = "//pkg/model/core/btree",
+    mockgen_model_library = "@org_uber_go_mock//mockgen/model",
+    mockgen_tool = "@org_uber_go_mock//mockgen",
+    package = "btree_test",
+)
+
+gomock(
+    name = "mocks_core",
+    out = "mocks_core_test.go",
+    interfaces = ["ReferenceMetadata"],
+    library = "//pkg/model/core",
     mockgen_model_library = "@org_uber_go_mock//mockgen/model",
     mockgen_tool = "@org_uber_go_mock//mockgen",
     package = "btree_test",

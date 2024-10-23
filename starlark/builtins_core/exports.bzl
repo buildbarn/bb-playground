@@ -47,9 +47,6 @@ _genrule = rule(
     },
 )
 
-def _config_common_toolchain_type(name, *, mandatory = True):
-    return config_common.toolchain_type(name, mandatory = mandatory)
-
 def _proto_common_incompatible_enable_proto_toolchain_resolution():
     return True
 
@@ -77,7 +74,7 @@ exported_toplevels = {
     "PackageSpecificationInfo": _PackageSpecificationInfo,
     "ProguardSpecProvider": _ProguardSpecProvider,
     "config_common": struct(
-        toolchain_type = _config_common_toolchain_type,
+        toolchain_type = config_common.toolchain_type,
     ),
     "coverage_common": struct(),
     "platform_common": struct(

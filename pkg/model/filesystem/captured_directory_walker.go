@@ -24,7 +24,7 @@ import (
 type capturedDirectoryWalkerOptions struct {
 	directoryParameters *DirectoryAccessParameters
 	fileParameters      *FileCreationParameters
-	rootDirectory       filesystem.Directory
+	rootDirectory       CapturableDirectory
 }
 
 // openFile opens a file underneath the root directory for reading. This
@@ -32,20 +32,22 @@ type capturedDirectoryWalkerOptions struct {
 // ObjectContentsWalker that is backed by a file.
 func (o *capturedDirectoryWalkerOptions) openFile(pathTrace *path.Trace) (filesystem.FileReader, error) {
 	var dPathTrace *path.Trace
-	d := filesystem.NopDirectoryCloser(o.rootDirectory)
+	d := o.rootDirectory
+	var dCloser io.Closer = io.NopCloser(nil)
 	defer func() {
-		d.Close()
+		dCloser.Close()
 	}()
 
 	components := pathTrace.ToList()
 	for _, component := range components[:len(components)-1] {
 		dPathTrace = dPathTrace.Append(component)
-		dChild, err := d.EnterDirectory(component)
+		dChild, err := d.EnterCapturableDirectory(component)
 		if err != nil {
 			return nil, util.StatusWrapf(err, "Failed to enter directory %#v", dPathTrace.GetUNIXString())
 		}
-		d.Close()
+		dCloser.Close()
 		d = dChild
+		dCloser = dChild
 	}
 
 	return d.OpenRead(components[len(components)-1])
@@ -105,7 +107,7 @@ type capturedDirectoryWalker struct {
 // must reobtain them from the underlying file system. This is why the
 // caller must provide a handle to the root directory on which the
 // provided Merkle tree is based.
-func NewCapturedDirectoryWalker(directoryParameters *DirectoryAccessParameters, fileParameters *FileCreationParameters, rootDirectory filesystem.Directory, rootObject *CapturedObject) dag.ObjectContentsWalker {
+func NewCapturedDirectoryWalker(directoryParameters *DirectoryAccessParameters, fileParameters *FileCreationParameters, rootDirectory CapturableDirectory, rootObject *CapturedObject) dag.ObjectContentsWalker {
 	return &capturedDirectoryWalker{
 		options: &capturedDirectoryWalkerOptions{
 			directoryParameters: directoryParameters,
@@ -276,6 +278,25 @@ func (w *recomputingConcatenatedFileWalker) GetContents(ctx context.Context) (*o
 		object:  &objects[0],
 	}
 	return wComputed.GetContents(ctx)
+}
+
+func NewCapturedFileWalker(fileParameters *FileCreationParameters, r filesystem.FileReader, fileReference object.LocalReference, fileSizeBytes uint64, fileObject *CapturedObject) dag.ObjectContentsWalker {
+	options := &computedConcatenatedFileObjectOptions{
+		fileParameters: fileParameters,
+		file:           r,
+	}
+	options.referenceCount.Store(1)
+	if fileReference.GetHeight() == 0 {
+		return &concatenatedFileChunkWalker{
+			options:   options,
+			reference: fileReference,
+			sizeBytes: uint32(fileSizeBytes),
+		}
+	}
+	return &computedConcatenatedFileWalker{
+		options: options,
+		object:  fileObject,
+	}
 }
 
 func (w *recomputingConcatenatedFileWalker) Discard() {}

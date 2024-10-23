@@ -56,10 +56,16 @@ func TestFullyComputeValue(t *testing.T) {
 				}, nil
 			}).
 			AnyTimes()
+		valueChildrenStorer := NewMockValueChildrenStorer(ctrl)
 
-		m, err := evaluation.FullyComputeValue(ctx, computer, &wrapperspb.UInt32Value{
-			Value: 93,
-		})
+		m, err := evaluation.FullyComputeValue(
+			ctx,
+			computer,
+			&wrapperspb.UInt32Value{
+				Value: 93,
+			},
+			valueChildrenStorer.Call,
+		)
 		require.NoError(t, err)
 		testutil.RequireEqualProto(t, &wrapperspb.UInt64Value{
 			Value: 12200160415121876738,

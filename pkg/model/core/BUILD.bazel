@@ -1,3 +1,4 @@
+load("@rules_go//extras:gomock.bzl", "gomock")
 load("@rules_go//go:def.bzl", "go_library", "go_test")
 
 go_library(
@@ -24,15 +25,30 @@ go_library(
 go_test(
     name = "core_test",
     srcs = [
+        "mocks_core_test.go",
         "patched_message_test.go",
         "reference_message_patcher_test.go",
     ],
+    embed = [":core"],
     deps = [
-        ":core",
         "//pkg/proto/model/core",
         "//pkg/proto/model/filesystem",
         "//pkg/storage/object",
         "@com_github_buildbarn_bb_storage//pkg/testutil",
         "@com_github_stretchr_testify//require",
+        "@org_uber_go_mock//gomock",
     ],
+)
+
+gomock(
+    name = "mocks_core",
+    out = "mocks_core_test.go",
+    interfaces = [
+        "ReferenceMetadata",
+        "ReferenceMetadataCreatorForTesting",
+    ],
+    library = "//pkg/model/core",
+    mockgen_model_library = "@org_uber_go_mock//mockgen/model",
+    mockgen_tool = "@org_uber_go_mock//mockgen",
+    package = "core_test",
 )

@@ -23,24 +23,25 @@ message Value {
     Aspect aspect = 1;
     Attr attr = 2;
     bool bool = 3;
-    bytes bytes = 4;
-    Depset depset = 5;
-    Dict dict = 6;
-    string function = 7;
-    bytes int = 8;
-    string label = 9;
-    List list = 10;
-    google.protobuf.Empty none = 11;
-    Provider provider = 12;
-    RepositoryRule repository_rule = 13;
-    Rule rule = 14;
-    Select select = 15;
-    string str = 16;
-    Struct struct = 17;
-    Subrule subrule = 18;
-    ToolchainType toolchain_type = 19;
-    Transition transition = 20;
-    Tuple tuple = 21;
+    string builtin = 4;
+    bytes bytes = 5;
+    Depset depset = 6;
+    Dict dict = 7;
+    string function = 8;
+    bytes int = 9;
+    string label = 10;
+    List list = 11;
+    google.protobuf.Empty none = 12;
+    Provider provider = 13;
+    RepositoryRule repository_rule = 14;
+    Rule rule = 15;
+    Select select = 16;
+    string str = 17;
+    Struct struct = 18;
+    Subrule subrule = 19;
+    ToolchainType toolchain_type = 20;
+    Transition transition = 21;
+    Tuple tuple = 22;
   }
 }
 

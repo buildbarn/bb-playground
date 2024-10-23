@@ -7,6 +7,6 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
-type NodeMerger[TNode proto.Message, TMetadata any] func(model_core.PatchedMessage[[]TNode, TMetadata]) (model_core.PatchedMessage[TNode, TMetadata], error)
+type NodeMerger[TNode proto.Message, TMetadata model_core.ReferenceMetadata] func(model_core.PatchedMessage[[]TNode, TMetadata]) (model_core.PatchedMessage[TNode, TMetadata], error)
 
-type NodeMergerForTesting NodeMerger[*model_filesystem_pb.FileContents, string]
+type NodeMergerForTesting NodeMerger[*model_filesystem_pb.FileContents, model_core.ReferenceMetadata]

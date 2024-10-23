@@ -542,7 +542,7 @@ http_archive(
     sha256 = "345277dfc4bc0569927c92ee924c7c5483faad42b3004dd9bb5a6806214d44e7",
 )
 `,
-			label.MustNewCanonicalRepo("my_module_name+"),
+			label.MustNewCanonicalLabel("@@my_module_name+//:MODULE.bazel"),
 			path.UNIXFormat,
 			handler,
 		))
@@ -566,7 +566,7 @@ local_path_override(
     path = "/some/path",
 )
 `,
-			label.MustNewCanonicalRepo("my_module_name+"),
+			label.MustNewCanonicalLabel("@@my_module_name+//:MODULE.bazel"),
 			/* localPathFormat = */ nil,
 			handler,
 		))

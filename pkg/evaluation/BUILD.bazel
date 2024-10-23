@@ -13,6 +13,8 @@ go_library(
     deps = [
         "//pkg/model/core",
         "//pkg/storage/dag",
+        "//pkg/storage/object",
+        "@org_golang_google_protobuf//encoding/protojson",
         "@org_golang_google_protobuf//proto",
         "@org_golang_google_protobuf//types/known/anypb",
     ],
@@ -40,7 +42,10 @@ go_test(
 gomock(
     name = "mocks_evaluation",
     out = "mocks_evaluation_test.go",
-    interfaces = ["Computer"],
+    interfaces = [
+        "Computer",
+        "ValueChildrenStorer",
+    ],
     library = "//pkg/evaluation",
     mockgen_model_library = "@org_uber_go_mock//mockgen/model",
     mockgen_tool = "@org_uber_go_mock//mockgen",

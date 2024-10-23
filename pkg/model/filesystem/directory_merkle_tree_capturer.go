@@ -1,6 +1,7 @@
 package filesystem
 
 import (
+	model_core "github.com/buildbarn/bb-playground/pkg/model/core"
 	"github.com/buildbarn/bb-playground/pkg/storage/object"
 )
 
@@ -14,15 +15,15 @@ type DirectoryMerkleTreeCapturer[TDirectory, TFile any] interface {
 
 type fileDiscardingDirectoryMerkleTreeCapturer struct{}
 
-func (fileDiscardingDirectoryMerkleTreeCapturer) CaptureChunk(contents *object.Contents) struct{} {
-	return struct{}{}
+func (fileDiscardingDirectoryMerkleTreeCapturer) CaptureChunk(contents *object.Contents) model_core.NoopReferenceMetadata {
+	return model_core.NoopReferenceMetadata{}
 }
 
-func (fileDiscardingDirectoryMerkleTreeCapturer) CaptureFileContentsList(contents *object.Contents, children []struct{}) struct{} {
-	return struct{}{}
+func (fileDiscardingDirectoryMerkleTreeCapturer) CaptureFileContentsList(contents *object.Contents, children []model_core.NoopReferenceMetadata) model_core.NoopReferenceMetadata {
+	return model_core.NoopReferenceMetadata{}
 }
 
-func (fileDiscardingDirectoryMerkleTreeCapturer) CaptureFileNode(struct{}) CapturedObject {
+func (fileDiscardingDirectoryMerkleTreeCapturer) CaptureFileNode(model_core.NoopReferenceMetadata) CapturedObject {
 	return CapturedObject{}
 }
 
@@ -48,4 +49,4 @@ func (fileDiscardingDirectoryMerkleTreeCapturer) CaptureLeaves(contents *object.
 // uploading directory structures with changes to only a small number of
 // files. The Merkle trees of files can be recomputed if it turns out
 // they still need to be uploaded.
-var FileDiscardingDirectoryMerkleTreeCapturer DirectoryMerkleTreeCapturer[CapturedObject, struct{}] = fileDiscardingDirectoryMerkleTreeCapturer{}
+var FileDiscardingDirectoryMerkleTreeCapturer DirectoryMerkleTreeCapturer[CapturedObject, model_core.NoopReferenceMetadata] = fileDiscardingDirectoryMerkleTreeCapturer{}

@@ -18,7 +18,7 @@ func TestUniformBuilder(t *testing.T) {
 	t.Run("EmptyTree", func(t *testing.T) {
 		chunkerFactory := NewMockChunkerFactoryForTesting(ctrl)
 		nodeMerger := NewMockNodeMergerForTesting(ctrl)
-		builder := btree.NewUniformBuilder[*model_filesystem_pb.FileContents, string](chunkerFactory, nodeMerger.Call)
+		builder := btree.NewUniformBuilder[*model_filesystem_pb.FileContents, model_core.ReferenceMetadata](chunkerFactory, nodeMerger.Call)
 
 		rootNode, err := builder.FinalizeSingle()
 		require.NoError(t, err)
@@ -28,14 +28,15 @@ func TestUniformBuilder(t *testing.T) {
 	t.Run("SingleNodeTree", func(t *testing.T) {
 		chunkerFactory := NewMockChunkerFactoryForTesting(ctrl)
 		nodeMerger := NewMockNodeMergerForTesting(ctrl)
-		builder := btree.NewUniformBuilder[*model_filesystem_pb.FileContents, string](chunkerFactory, nodeMerger.Call)
+		builder := btree.NewUniformBuilder[*model_filesystem_pb.FileContents, model_core.ReferenceMetadata](chunkerFactory, nodeMerger.Call)
 
-		patcher := model_core.NewReferenceMessagePatcher[string]()
-		node := model_core.PatchedMessage[*model_filesystem_pb.FileContents, string]{
+		patcher := model_core.NewReferenceMessagePatcher[model_core.ReferenceMetadata]()
+		metadata := NewMockReferenceMetadata(ctrl)
+		node := model_core.PatchedMessage[*model_filesystem_pb.FileContents, model_core.ReferenceMetadata]{
 			Message: &model_filesystem_pb.FileContents{
 				Reference: patcher.AddReference(
 					object.MustNewSHA256V1LocalReference("8e81422ce5470c6fde1f2455d2eb0eb0eec4d6352eada7c36f99c8182dd3a1df", 42, 0, 0, 0),
-					"Hello",
+					metadata,
 				),
 				TotalSizeBytes: 42,
 			},
@@ -51,18 +52,19 @@ func TestUniformBuilder(t *testing.T) {
 	t.Run("TwoNodeTree", func(t *testing.T) {
 		chunkerFactory := NewMockChunkerFactoryForTesting(ctrl)
 		nodeMerger := NewMockNodeMergerForTesting(ctrl)
-		builder := btree.NewUniformBuilder[*model_filesystem_pb.FileContents, string](chunkerFactory, nodeMerger.Call)
+		builder := btree.NewUniformBuilder[*model_filesystem_pb.FileContents, model_core.ReferenceMetadata](chunkerFactory, nodeMerger.Call)
 
 		// Pushing the first node should only cause it to be stored.
-		patcher1 := model_core.NewReferenceMessagePatcher[string]()
+		patcher1 := model_core.NewReferenceMessagePatcher[model_core.ReferenceMetadata]()
+		metadata1 := NewMockReferenceMetadata(ctrl)
 		fileContents1 := &model_filesystem_pb.FileContents{
 			Reference: patcher1.AddReference(
 				object.MustNewSHA256V1LocalReference("8e81422ce5470c6fde1f2455d2eb0eb0eec4d6352eada7c36f99c8182dd3a1df", 42, 0, 0, 0),
-				"Hello",
+				metadata1,
 			),
 			TotalSizeBytes: 42,
 		}
-		node1 := model_core.PatchedMessage[*model_filesystem_pb.FileContents, string]{
+		node1 := model_core.PatchedMessage[*model_filesystem_pb.FileContents, model_core.ReferenceMetadata]{
 			Message: fileContents1,
 			Patcher: patcher1,
 		}
@@ -70,12 +72,13 @@ func TestUniformBuilder(t *testing.T) {
 
 		// Pushing the second node should cause a new level to
 		// be created.
-		patcher2 := model_core.NewReferenceMessagePatcher[string]()
-		node2 := model_core.PatchedMessage[*model_filesystem_pb.FileContents, string]{
+		patcher2 := model_core.NewReferenceMessagePatcher[model_core.ReferenceMetadata]()
+		metadata2 := NewMockReferenceMetadata(ctrl)
+		node2 := model_core.PatchedMessage[*model_filesystem_pb.FileContents, model_core.ReferenceMetadata]{
 			Message: &model_filesystem_pb.FileContents{
 				Reference: patcher2.AddReference(
 					object.MustNewSHA256V1LocalReference("8a5aae1152fcf85722d50b557e8462c92d0fe02e34f17aae9e70c389d4d0c140", 51, 0, 0, 0),
-					"World",
+					metadata2,
 				),
 				TotalSizeBytes: 51,
 			},
@@ -93,7 +96,7 @@ func TestUniformBuilder(t *testing.T) {
 		// to be finalized as well. The resulting parent node
 		// should be returned as the root of the tree.
 		patcher1.Merge(patcher2)
-		nodes := model_core.PatchedMessage[[]*model_filesystem_pb.FileContents, string]{
+		nodes := model_core.PatchedMessage[[]*model_filesystem_pb.FileContents, model_core.ReferenceMetadata]{
 			Message: []*model_filesystem_pb.FileContents{
 				node1.Message,
 				node2.Message,
@@ -102,19 +105,20 @@ func TestUniformBuilder(t *testing.T) {
 		}
 		chunker.EXPECT().PopMultiple(true).Return(nodes)
 		chunker.EXPECT().PopMultiple(true)
-		patcher3 := model_core.NewReferenceMessagePatcher[string]()
-		node3 := model_core.PatchedMessage[*model_filesystem_pb.FileContents, string]{
+		patcher3 := model_core.NewReferenceMessagePatcher[model_core.ReferenceMetadata]()
+		metadata3 := NewMockReferenceMetadata(ctrl)
+		node3 := model_core.PatchedMessage[*model_filesystem_pb.FileContents, model_core.ReferenceMetadata]{
 			Message: &model_filesystem_pb.FileContents{
 				Reference: patcher3.AddReference(
 					object.MustNewSHA256V1LocalReference("4a552ba6f6bbd650497185ec68791ba2749364f493b17cbd318d6a53a2fd48eb", 100, 1, 2, 0),
-					"HelloWorld",
+					metadata3,
 				),
 				TotalSizeBytes: 93,
 			},
 			Patcher: patcher3,
 		}
 		nodeMerger.EXPECT().Call(nodes).
-			DoAndReturn(func(model_core.PatchedMessage[[]*model_filesystem_pb.FileContents, string]) (model_core.PatchedMessage[*model_filesystem_pb.FileContents, string], error) {
+			DoAndReturn(func(model_core.PatchedMessage[[]*model_filesystem_pb.FileContents, model_core.ReferenceMetadata]) (model_core.PatchedMessage[*model_filesystem_pb.FileContents, model_core.ReferenceMetadata], error) {
 				return node3, nil
 			})
 

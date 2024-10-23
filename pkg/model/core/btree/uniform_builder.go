@@ -6,7 +6,7 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
-type uniformBuilder[TNode proto.Message, TMetadata any] struct {
+type uniformBuilder[TNode proto.Message, TMetadata model_core.ReferenceMetadata] struct {
 	chunkerFactory ChunkerFactory[TNode, TMetadata]
 	nodeMerger     NodeMerger[TNode, TMetadata]
 
@@ -18,7 +18,7 @@ type uniformBuilder[TNode proto.Message, TMetadata any] struct {
 // state (i.e., does not contain any nodes). The resulting B-tree will
 // be uniform, meaning that all layers will be constructed using the
 // same Chunker.
-func NewUniformBuilder[TNode proto.Message, TMetadata any](chunkerFactory ChunkerFactory[TNode, TMetadata], nodeMerger NodeMerger[TNode, TMetadata]) Builder[TNode, TMetadata] {
+func NewUniformBuilder[TNode proto.Message, TMetadata model_core.ReferenceMetadata](chunkerFactory ChunkerFactory[TNode, TMetadata], nodeMerger NodeMerger[TNode, TMetadata]) Builder[TNode, TMetadata] {
 	return &uniformBuilder[TNode, TMetadata]{
 		chunkerFactory: chunkerFactory,
 		nodeMerger:     nodeMerger,

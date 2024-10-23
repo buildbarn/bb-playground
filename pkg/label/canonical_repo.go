@@ -10,7 +10,8 @@ type CanonicalRepo struct {
 	value string
 }
 
-const validCanonicalRepoPattern = validModulePattern + `\+`
+const validCanonicalRepoPattern = validModuleInstancePattern +
+	`(\+` + validStarlarkIdentifierPattern + `\+` + validApparentRepoPattern + `)?`
 
 var validCanonicalRepoRegexp = regexp.MustCompile("^" + validCanonicalRepoPattern + "$")
 
@@ -35,11 +36,19 @@ func (r CanonicalRepo) String() string {
 	return r.value
 }
 
-// GetModule returns the module to which this repo belongs.
-func (r CanonicalRepo) GetModule() Module {
-	return Module{value: r.value[:strings.IndexByte(r.value, '+')]}
+func (r CanonicalRepo) GetModuleInstance() ModuleInstance {
+	versionIndex := strings.IndexByte(r.value, '+') + 1
+	if offset := strings.IndexByte(r.value[versionIndex:], '+'); offset >= 0 {
+		return ModuleInstance{value: r.value[:versionIndex+offset]}
+	}
+	return ModuleInstance{value: r.value}
 }
 
 func (r CanonicalRepo) GetRootPackage() CanonicalPackage {
 	return CanonicalPackage{value: "@@" + r.value}
+}
+
+func (r CanonicalRepo) HasModuleExtension() bool {
+	version := r.value[strings.IndexByte(r.value, '+')+1:]
+	return strings.IndexByte(version, '+') >= 0
 }

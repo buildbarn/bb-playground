@@ -69,6 +69,18 @@ func newGRPCClient(endpoint string, commonFlags *arguments.CommonFlags) (*grpc.C
 	return grpc.NewClient(target, grpc.WithTransportCredentials(clientCredentials))
 }
 
+type localCapturableDirectoryCloser struct {
+	filesystem.DirectoryCloser
+}
+
+func (d localCapturableDirectoryCloser) EnterCapturableDirectory(name path.Component) (model_filesystem.CapturableDirectoryCloser, error) {
+	child, err := d.DirectoryCloser.EnterDirectory(name)
+	if err != nil {
+		return nil, err
+	}
+	return localCapturableDirectoryCloser{DirectoryCloser: child}, nil
+}
+
 func DoBuild(args *arguments.BuildCommand, workspacePath path.Parser) {
 	logger := logging.NewLoggerFromFlags(&args.CommonFlags)
 	commands.ValidateInsideWorkspace(logger, "build", workspacePath)
@@ -98,7 +110,12 @@ func DoBuild(args *arguments.BuildCommand, workspacePath path.Parser) {
 	}
 	modulePaths := map[label.Module]path.Parser{}
 	moduleDotBazelHandler := NewLocalPathExtractingModuleDotBazelHandler(modulePaths, workspacePath)
-	if err := pg_starlark.ParseModuleDotBazel(string(moduleDotBazelContents), label.MustNewCanonicalRepo("main+"), path.LocalFormat, moduleDotBazelHandler); err != nil {
+	if err := pg_starlark.ParseModuleDotBazel(
+		string(moduleDotBazelContents),
+		label.MustNewCanonicalLabel("@@main+//:MODULE.bazel"),
+		path.LocalFormat,
+		moduleDotBazelHandler,
+	); err != nil {
 		logger.Fatal("Failed to parse MODULE.bazel: ", err)
 	}
 	rootModuleName, err := moduleDotBazelHandler.GetRootModuleName()
@@ -179,7 +196,7 @@ func DoBuild(args *arguments.BuildCommand, workspacePath path.Parser) {
 	// uploaded to storage.
 	logger.Info("Scanning module sources")
 	group, groupCtx := errgroup.WithContext(context.Background())
-	moduleRootDirectories := make([]filesystem.Directory, 0, len(moduleNames))
+	moduleRootDirectories := make([]model_filesystem.CapturableDirectory, 0, len(moduleNames))
 	moduleRootDirectoryMessages := make([]model_core.PatchedMessage[*model_filesystem_pb.Directory, model_filesystem.CapturedObject], len(moduleNames))
 	createMerkleTreesConcurrency := semaphore.NewWeighted(int64(runtime.NumCPU()))
 	group.Go(func() error {
@@ -189,14 +206,17 @@ func DoBuild(args *arguments.BuildCommand, workspacePath path.Parser) {
 			if err != nil {
 				return util.StatusWrapf(err, "Failed to open root directory of module %#v", moduleName.String())
 			}
-			moduleRootDirectories = append(moduleRootDirectories, moduleRootDirectory)
+			moduleRootCapturableDirectory := localCapturableDirectoryCloser{
+				DirectoryCloser: moduleRootDirectory,
+			}
+			moduleRootDirectories = append(moduleRootDirectories, moduleRootCapturableDirectory)
 			if err := model_filesystem.CreateDirectoryMerkleTree(
 				groupCtx,
 				createMerkleTreesConcurrency,
 				group,
 				directoryParameters,
 				fileParameters,
-				moduleRootDirectory,
+				moduleRootCapturableDirectory,
 				model_filesystem.FileDiscardingDirectoryMerkleTreeCapturer,
 				&moduleRootDirectoryMessages[i],
 			); err != nil {

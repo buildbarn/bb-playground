@@ -38,3 +38,10 @@ func (m Module) ToApparentRepo() ApparentRepo {
 	// Every module name is also a valid apparent repo name.
 	return ApparentRepo{value: m.value}
 }
+
+func (m Module) ToModuleInstance(mv *ModuleVersion) ModuleInstance {
+	if mv == nil {
+		return ModuleInstance{value: m.value + "+"}
+	}
+	return ModuleInstance{value: m.value + "+" + mv.value}
+}

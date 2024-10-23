@@ -65,7 +65,8 @@ func (n *packageGroupNode) lookupPackage(canonicalPackage pg_label.CanonicalPack
 // toProto converts the data contained in a tree of packageGroupNode to
 // its Protobuf message counterpart.
 func (n *packageGroupNode) toProto(inlinedTreeOptions *inlinedtree.Options) (model_core.PatchedMessage[*model_starlark_pb.PackageGroup_Subpackages, dag.ObjectContentsWalker], error) {
-	inlineCandidates := make([]inlinedtree.Candidate[*model_starlark_pb.PackageGroup_Subpackages, dag.ObjectContentsWalker], 0, 2)
+	inlineCandidates := make(inlinedtree.CandidateList[*model_starlark_pb.PackageGroup_Subpackages, dag.ObjectContentsWalker], 0, 2)
+	defer inlineCandidates.Discard()
 
 	// Set the IncludeSubpackages field.
 	inlineCandidates = append(inlineCandidates, inlinedtree.Candidate[*model_starlark_pb.PackageGroup_Subpackages, dag.ObjectContentsWalker]{
