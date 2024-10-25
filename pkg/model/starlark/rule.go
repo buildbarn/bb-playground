@@ -191,16 +191,18 @@ func (r *rule) CallInternal(thread *starlark.Thread, args starlark.Tuple, kwargs
 	targetRegistrar.targets[name] = model_core.PatchedMessage[*model_starlark_pb.Target, dag.ObjectContentsWalker]{
 		Message: &model_starlark_pb.Target{
 			Name: name,
-			Kind: &model_starlark_pb.Target_RuleTarget{
-				RuleTarget: &model_starlark_pb.RuleTarget{
-					RuleIdentifier: r.Identifier.String(),
-					AttrValues:     attrValues,
-					Tags:           slices.Compact(tags),
-					InheritableAttrs: &model_starlark_pb.InheritableAttrs{
-						Deprecation:     deprecation,
-						PackageMetadata: packageMetadata,
-						Testonly:        testOnly,
-						Visibility:      visibilityPackageGroup.Message,
+			Definition: &model_starlark_pb.TargetDefinition{
+				Kind: &model_starlark_pb.TargetDefinition_RuleTarget{
+					RuleTarget: &model_starlark_pb.RuleTarget{
+						RuleIdentifier: r.Identifier.String(),
+						AttrValues:     attrValues,
+						Tags:           slices.Compact(tags),
+						InheritableAttrs: &model_starlark_pb.InheritableAttrs{
+							Deprecation:     deprecation,
+							PackageMetadata: packageMetadata,
+							Testonly:        testOnly,
+							Visibility:      visibilityPackageGroup.Message,
+						},
 					},
 				},
 			},
@@ -281,11 +283,12 @@ func NewStarlarkRuleDefinition(
 
 func (rd *starlarkRuleDefinition) Encode(path map[starlark.Value]struct{}, options *ValueEncodingOptions) (model_core.PatchedMessage[*model_starlark_pb.Rule_Definition, dag.ObjectContentsWalker], bool, error) {
 	definition := model_starlark_pb.Rule_Definition{
-		Attrs:      make([]*model_starlark_pb.NamedAttr, 0, len(rd.attrs)),
-		ExecGroups: make([]*model_starlark_pb.NamedExecGroup, 0, len(rd.execGroups)),
+		Attrs:          make([]*model_starlark_pb.NamedAttr, 0, len(rd.attrs)),
+		ExecGroups:     make([]*model_starlark_pb.NamedExecGroup, 0, len(rd.execGroups)),
+		Implementation: rd.implementation.identifier.String(),
 	}
 	patcher := model_core.NewReferenceMessagePatcher[dag.ObjectContentsWalker]()
-	needsCode := false
+	needsCode := rd.implementation.identifier.GetCanonicalLabel() == options.CurrentFilename
 
 	for _, name := range slices.SortedFunc(
 		maps.Keys(rd.attrs),

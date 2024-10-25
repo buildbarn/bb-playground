@@ -43,6 +43,7 @@ var commonBuiltins = starlark.StringDict{
 			if len(args) != 1 {
 				return nil, fmt.Errorf("%s: got %d positional arguments, want 1", b.Name(), len(args))
 			}
+
 			var conditions map[pg_label.CanonicalLabel]starlark.Value
 			noMatchError := ""
 			if err := starlark.UnpackArgs(
@@ -52,7 +53,22 @@ var commonBuiltins = starlark.StringDict{
 			); err != nil {
 				return nil, err
 			}
-			return NewSelect(conditions, noMatchError), nil
+
+			// Even though select() takes the default
+			// condition as part of the dictionary, we store
+			// the default value separately. Extract it.
+			var defaultValue starlark.Value
+			for label, value := range conditions {
+				if label.GetCanonicalPackage().GetPackagePath() == "conditions" && label.GetTargetName().String() == "default" {
+					if defaultValue != nil {
+						return nil, fmt.Errorf("%s: got multiple default conditions", b.Name())
+					}
+					delete(conditions, label)
+					defaultValue = value
+				}
+			}
+
+			return NewSelect(conditions, defaultValue, noMatchError), nil
 		},
 	),
 }
@@ -807,6 +823,7 @@ var BzlFileBuiltins = starlark.StringDict{
 			attrs := map[pg_label.StarlarkIdentifier]*Attr{}
 			var buildSetting starlark.Value
 			var cfg *Transition
+			defaultExecGroup := true
 			doc := ""
 			execGroups := map[string]*ExecGroup{}
 			executable := false
@@ -827,6 +844,7 @@ var BzlFileBuiltins = starlark.StringDict{
 				"attrs?", unpack.Bind(thread, &attrs, unpack.Dict(unpack.StarlarkIdentifier, unpack.Type[*Attr]("attr.*"))),
 				"build_setting?", &buildSetting,
 				"cfg?", unpack.Bind(thread, &cfg, unpack.IfNotNone(unpack.Type[*Transition]("transition"))),
+				"default_exec_group?", unpack.Bind(thread, &defaultExecGroup, unpack.Bool),
 				"doc?", unpack.Bind(thread, &doc, unpack.String),
 				"executable?", unpack.Bind(thread, &executable, unpack.Bool),
 				"exec_compatible_with?", unpack.Bind(thread, &execCompatibleWith, unpack.List(NewLabelUnpackerInto(currentFilePackage(thread)))),
@@ -843,10 +861,14 @@ var BzlFileBuiltins = starlark.StringDict{
 				return nil, err
 			}
 
-			if _, ok := execGroups[""]; ok {
-				return nil, errors.New("cannot declare exec_group with name \"\", as it is implicitly provided by the rule")
+			if defaultExecGroup {
+				if _, ok := execGroups[""]; ok {
+					return nil, errors.New("cannot declare exec_group with name \"\" when default_exec_group=True")
+				}
+				execGroups[""] = NewExecGroup(execCompatibleWith, toolchains)
+			} else if len(execCompatibleWith) > 0 || len(toolchains) > 0 {
+				return nil, errors.New("cannot provide exec_compatible_with or toolchains when default_exec_group=False")
 			}
-			execGroups[""] = NewExecGroup(execCompatibleWith, toolchains)
 
 			return NewRule(nil, NewStarlarkRuleDefinition(
 				attrs,

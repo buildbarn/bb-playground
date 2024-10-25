@@ -406,9 +406,14 @@ message Select {
     // alphabetically by condition identifier.
     repeated Condition conditions = 1;
 
-    // If no conditions match, a custom error message to return to the
-    // user.
-    string no_match_error = 2;
+    oneof no_match {
+      // If none of the conditions match, yield a given value.
+      Value no_match_value = 2;
+
+      // If none of the conditions match, return a custom error message
+      // to return to the user.
+      string no_match_error = 3;
+    }
   }
 
   enum ConcatenationOperator {
@@ -436,10 +441,7 @@ message Subrule {
   }
 }
 
-message Target {
-  // Name of the target within the package.
-  string name = 1;
-
+message TargetDefinition {
   oneof kind {
     // Buildable target backed by a rule.
     RuleTarget rule_target = 2;
@@ -447,6 +449,13 @@ message Target {
     // Group of packages, used to control visibility of targets.
     PackageGroup package_group = 3;
   }
+}
+
+message Target {
+  // Name of the target within the package.
+  string name = 1;
+
+  TargetDefinition definition = 2;
 }
 
 message Transition {

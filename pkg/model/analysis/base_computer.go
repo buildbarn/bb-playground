@@ -1,11 +1,9 @@
 package analysis
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"fmt"
-	"log"
 	"maps"
 	"net/http"
 	"path"
@@ -33,7 +31,6 @@ import (
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
-	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/types/known/emptypb"
 
 	"go.starlark.net/starlark"
@@ -86,11 +83,11 @@ type resolveApparentLabelEnvironment interface {
 	GetCanonicalRepoNameValue(*model_analysis_pb.CanonicalRepoName_Key) model_core.Message[*model_analysis_pb.CanonicalRepoName_Value]
 }
 
-func (c *baseComputer) resolveApparentLabel(e resolveApparentLabelEnvironment, fromRepo label.CanonicalRepo, toApparentLabel label.ApparentLabel) (*label.CanonicalLabel, error) {
+func resolveApparentLabel(e resolveApparentLabelEnvironment, fromRepo label.CanonicalRepo, toApparentLabel label.ApparentLabel) (label.CanonicalLabel, error) {
 	toCanonicalLabel, ok := toApparentLabel.AsCanonicalLabel()
 	if ok {
 		// Label was already canonical. Nothing to do.
-		return &toCanonicalLabel, nil
+		return toCanonicalLabel, nil
 	}
 
 	// Perform resolution.
@@ -102,28 +99,29 @@ func (c *baseComputer) resolveApparentLabel(e resolveApparentLabelEnvironment, f
 		FromCanonicalRepo: fromRepo.String(),
 		ToApparentRepo:    toApparentRepo.String(),
 	})
+	var badLabel label.CanonicalLabel
 	if !v.IsSet() {
-		return nil, evaluation.ErrMissingDependency
+		return badLabel, evaluation.ErrMissingDependency
 	}
 	switch resultType := v.Message.Result.(type) {
 	case *model_analysis_pb.CanonicalRepoName_Value_ToCanonicalRepo:
 		toCanonicalRepo, err := label.NewCanonicalRepo(resultType.ToCanonicalRepo)
 		if err != nil {
-			return nil, fmt.Errorf("invalid canonical repo name %#v: %w", resultType.ToCanonicalRepo, err)
+			return badLabel, fmt.Errorf("invalid canonical repo name %#v: %w", resultType.ToCanonicalRepo, err)
 		}
 		toCanonicalLabel := toApparentLabel.WithCanonicalRepo(toCanonicalRepo)
-		return &toCanonicalLabel, nil
+		return toCanonicalLabel, nil
 	case *model_analysis_pb.CanonicalRepoName_Value_Failure:
-		return nil, errors.New(resultType.Failure)
+		return badLabel, errors.New(resultType.Failure)
 	default:
-		return nil, errors.New("invalid result type for canonical repo name resolution")
+		return badLabel, errors.New("invalid result type for canonical repo name resolution")
 	}
 }
 
 type loadBzlGlobalsEnvironment interface {
 	resolveApparentLabelEnvironment
 	GetBuiltinsModuleNamesValue(key *model_analysis_pb.BuiltinsModuleNames_Key) model_core.Message[*model_analysis_pb.BuiltinsModuleNames_Value]
-	GetCompiledBzlFileGlobalsValue(key *model_analysis_pb.CompiledBzlFileGlobals_Key) (starlark.StringDict, error)
+	GetCompiledBzlFileDecodedGlobalsValue(key *model_analysis_pb.CompiledBzlFileDecodedGlobals_Key) (starlark.StringDict, error)
 }
 
 func (c *baseComputer) loadBzlGlobals(e loadBzlGlobalsEnvironment, canonicalPackage label.CanonicalPackage, loadLabelStr string, builtinsModuleNames []string) (starlark.StringDict, error) {
@@ -136,11 +134,11 @@ func (c *baseComputer) loadBzlGlobals(e loadBzlGlobalsEnvironment, canonicalPack
 		return nil, fmt.Errorf("invalid label %#v in load() statement: %w", loadLabelStr, err)
 	}
 	canonicalRepo := canonicalPackage.GetCanonicalRepo()
-	canonicalLoadLabel, err := c.resolveApparentLabel(e, canonicalRepo, apparentLoadLabel)
+	canonicalLoadLabel, err := resolveApparentLabel(e, canonicalRepo, apparentLoadLabel)
 	if err != nil {
 		return nil, fmt.Errorf("failed to resolve label %#v in load() statement: %w", apparentLoadLabel.String(), err)
 	}
-	return e.GetCompiledBzlFileGlobalsValue(&model_analysis_pb.CompiledBzlFileGlobals_Key{
+	return e.GetCompiledBzlFileDecodedGlobalsValue(&model_analysis_pb.CompiledBzlFileDecodedGlobals_Key{
 		Label:               canonicalLoadLabel.String(),
 		BuiltinsModuleNames: builtinsModuleNames,
 	})
@@ -165,7 +163,7 @@ func (c *baseComputer) preloadBzlGlobals(e loadBzlGlobalsEnvironment, canonicalP
 }
 
 type getBzlFileBuiltinsEnvironment interface {
-	GetCompiledBzlFileGlobalsValue(key *model_analysis_pb.CompiledBzlFileGlobals_Key) (starlark.StringDict, error)
+	GetCompiledBzlFileDecodedGlobalsValue(key *model_analysis_pb.CompiledBzlFileDecodedGlobals_Key) (starlark.StringDict, error)
 }
 
 func (c *baseComputer) getBzlFileBuiltins(e getBzlFileBuiltinsEnvironment, builtinsModuleNames []string, baseBuiltins starlark.StringDict, dictName string) (starlark.StringDict, error) {
@@ -175,7 +173,7 @@ func (c *baseComputer) getBzlFileBuiltins(e getBzlFileBuiltinsEnvironment, built
 	}
 	for i, builtinsModuleName := range builtinsModuleNames {
 		exportsFile := fmt.Sprintf("@@%s+//:exports.bzl", builtinsModuleName)
-		globals, err := e.GetCompiledBzlFileGlobalsValue(&model_analysis_pb.CompiledBzlFileGlobals_Key{
+		globals, err := e.GetCompiledBzlFileDecodedGlobalsValue(&model_analysis_pb.CompiledBzlFileDecodedGlobals_Key{
 			Label:               exportsFile,
 			BuiltinsModuleNames: builtinsModuleNames[:i],
 		})
@@ -267,7 +265,6 @@ func (c *baseComputer) ComputeBuildResultValue(ctx context.Context, key *model_a
 	// TODO: Do something proper here.
 	missing := false
 	for _, pkg := range []string{
-		"",
 		"//cmd/bb_copy",
 		"//cmd/bb_replicator",
 		"//cmd/bb_storage",
@@ -332,8 +329,6 @@ func (c *baseComputer) ComputeBuildResultValue(ctx context.Context, key *model_a
 		"//pkg/random",
 		"//pkg/testutil",
 		"//pkg/util",
-		"//tools",
-		"//tools/github_workflows",
 	} {
 		targetCompletion := e.GetTargetCompletionValue(&model_analysis_pb.TargetCompletion_Key{
 			Label: "@@com_github_buildbarn_bb_storage+" + pkg,
@@ -344,7 +339,7 @@ func (c *baseComputer) ComputeBuildResultValue(ctx context.Context, key *model_a
 			case *model_analysis_pb.TargetCompletion_Value_Failure:
 				return model_core.NewSimplePatchedMessage[dag.ObjectContentsWalker](&model_analysis_pb.BuildResult_Value{
 					Result: &model_analysis_pb.BuildResult_Value_Failure{
-						Failure: resultType.Failure,
+						Failure: fmt.Sprintf("Target %#v: %s", pkg, resultType.Failure),
 					},
 				}), nil
 			default:
@@ -393,263 +388,6 @@ func (c *baseComputer) ComputeBuiltinsModuleNamesValue(ctx context.Context, key 
 	return model_core.NewSimplePatchedMessage[dag.ObjectContentsWalker](&model_analysis_pb.BuiltinsModuleNames_Value{
 		BuiltinsModuleNames: buildSpecification.Message.BuildSpecification.GetBuiltinsModuleNames(),
 	}), nil
-}
-
-func (c *baseComputer) ComputeCompiledBzlFileValue(ctx context.Context, key *model_analysis_pb.CompiledBzlFile_Key, e CompiledBzlFileEnvironment) (PatchedCompiledBzlFileValue, error) {
-	canonicalLabel, err := label.NewCanonicalLabel(key.Label)
-	if err != nil {
-		return model_core.NewSimplePatchedMessage[dag.ObjectContentsWalker](&model_analysis_pb.CompiledBzlFile_Value{
-			Result: &model_analysis_pb.CompiledBzlFile_Value_Failure{
-				Failure: fmt.Sprintf("invalid label %#v: %s", key.Label, err),
-			},
-		}), nil
-	}
-	canonicalPackage := canonicalLabel.GetCanonicalPackage()
-	canonicalRepo := canonicalPackage.GetCanonicalRepo()
-
-	bzlFileProperties := e.GetFilePropertiesValue(&model_analysis_pb.FileProperties_Key{
-		CanonicalRepo: canonicalRepo.String(),
-		Path:          path.Join(canonicalPackage.GetPackagePath(), canonicalLabel.GetTargetName().String()),
-	})
-	fileReader, fileReaderErr := e.GetFileReaderValue(&model_analysis_pb.FileReader_Key{})
-	if fileReaderErr != nil && !errors.Is(fileReaderErr, evaluation.ErrMissingDependency) {
-		return model_core.NewSimplePatchedMessage[dag.ObjectContentsWalker](&model_analysis_pb.CompiledBzlFile_Value{
-			Result: &model_analysis_pb.CompiledBzlFile_Value_Failure{
-				Failure: fileReaderErr.Error(),
-			},
-		}), nil
-	}
-	bzlFileBuiltins, bzlFileBuiltinsErr := c.getBzlFileBuiltins(e, key.BuiltinsModuleNames, model_starlark.BzlFileBuiltins, "exported_toplevels")
-	if bzlFileBuiltinsErr != nil && !errors.Is(bzlFileBuiltinsErr, evaluation.ErrMissingDependency) {
-		return model_core.NewSimplePatchedMessage[dag.ObjectContentsWalker](&model_analysis_pb.CompiledBzlFile_Value{
-			Result: &model_analysis_pb.CompiledBzlFile_Value_Failure{
-				Failure: bzlFileBuiltinsErr.Error(),
-			},
-		}), nil
-	}
-
-	if !bzlFileProperties.IsSet() {
-		return PatchedCompiledBzlFileValue{}, evaluation.ErrMissingDependency
-	}
-	switch bzlFilePropertiesResult := bzlFileProperties.Message.Result.(type) {
-	case *model_analysis_pb.FileProperties_Value_Exists:
-		if fileReaderErr != nil {
-			return PatchedCompiledBzlFileValue{}, fileReaderErr
-		}
-		if bzlFileBuiltinsErr != nil {
-			return PatchedCompiledBzlFileValue{}, bzlFileBuiltinsErr
-		}
-
-		buildFileContentsEntry, err := model_filesystem.NewFileContentsEntryFromProto(
-			model_core.Message[*model_filesystem_pb.FileContents]{
-				Message:            bzlFilePropertiesResult.Exists.GetContents(),
-				OutgoingReferences: bzlFileProperties.OutgoingReferences,
-			},
-			c.buildSpecificationReference.GetReferenceFormat(),
-		)
-		if err != nil {
-			return model_core.NewSimplePatchedMessage[dag.ObjectContentsWalker](&model_analysis_pb.CompiledBzlFile_Value{
-				Result: &model_analysis_pb.CompiledBzlFile_Value_Failure{
-					Failure: fmt.Sprintf("invalid file contents: %s", err),
-				},
-			}), nil
-		}
-		bzlFileData, err := fileReader.FileReadAll(ctx, buildFileContentsEntry, 1<<20)
-		if err != nil {
-			return PatchedCompiledBzlFileValue{}, err
-		}
-
-		_, program, err := starlark.SourceProgramOptions(
-			&syntax.FileOptions{},
-			canonicalLabel.String(),
-			bzlFileData,
-			bzlFileBuiltins.Has,
-		)
-		if err != nil {
-			return model_core.NewSimplePatchedMessage[dag.ObjectContentsWalker](&model_analysis_pb.CompiledBzlFile_Value{
-				Result: &model_analysis_pb.CompiledBzlFile_Value_Failure{
-					Failure: err.Error(),
-				},
-			}), nil
-		}
-
-		if err := c.preloadBzlGlobals(e, canonicalPackage, program, key.BuiltinsModuleNames); err != nil {
-			if !errors.Is(err, evaluation.ErrMissingDependency) {
-				return model_core.NewSimplePatchedMessage[dag.ObjectContentsWalker](&model_analysis_pb.CompiledBzlFile_Value{
-					Result: &model_analysis_pb.CompiledBzlFile_Value_Failure{
-						Failure: err.Error(),
-					},
-				}), nil
-			}
-			return PatchedCompiledBzlFileValue{}, err
-		}
-
-		thread := c.newStarlarkThread(e, key.BuiltinsModuleNames)
-		globals, err := program.Init(thread, bzlFileBuiltins)
-		if err != nil {
-			if !errors.Is(err, evaluation.ErrMissingDependency) {
-				var evalErr *starlark.EvalError
-				if errors.As(err, &evalErr) {
-					return PatchedCompiledBzlFileValue{}, errors.New(evalErr.Backtrace())
-				}
-			}
-			return PatchedCompiledBzlFileValue{}, err
-		}
-		model_starlark.NameAndExtractGlobals(globals, canonicalLabel)
-
-		// TODO! Use proper encoding options!
-		compiledProgram, err := model_starlark.EncodeCompiledProgram(program, globals, c.getValueEncodingOptions(canonicalLabel))
-		if err != nil {
-			return model_core.NewSimplePatchedMessage[dag.ObjectContentsWalker](&model_analysis_pb.CompiledBzlFile_Value{
-				Result: &model_analysis_pb.CompiledBzlFile_Value_Failure{
-					Failure: err.Error(),
-				},
-			}), nil
-		}
-		return PatchedCompiledBzlFileValue{
-			Message: &model_analysis_pb.CompiledBzlFile_Value{
-				Result: &model_analysis_pb.CompiledBzlFile_Value_CompiledProgram{
-					CompiledProgram: compiledProgram.Message,
-				},
-			},
-			Patcher: compiledProgram.Patcher,
-		}, nil
-	case *model_analysis_pb.FileProperties_Value_DoesNotExist:
-		return model_core.NewSimplePatchedMessage[dag.ObjectContentsWalker](&model_analysis_pb.CompiledBzlFile_Value{
-			Result: &model_analysis_pb.CompiledBzlFile_Value_Failure{
-				Failure: fmt.Sprintf("%#v does not exist", canonicalLabel.String()),
-			},
-		}), nil
-	case *model_analysis_pb.FileProperties_Value_Failure:
-		return model_core.NewSimplePatchedMessage[dag.ObjectContentsWalker](&model_analysis_pb.CompiledBzlFile_Value{
-			Result: &model_analysis_pb.CompiledBzlFile_Value_Failure{
-				Failure: bzlFilePropertiesResult.Failure,
-			},
-		}), nil
-	default:
-		return model_core.NewSimplePatchedMessage[dag.ObjectContentsWalker](&model_analysis_pb.CompiledBzlFile_Value{
-			Result: &model_analysis_pb.CompiledBzlFile_Value_Failure{
-				Failure: "File properties value has an unknown result type",
-			},
-		}), nil
-	}
-}
-
-func (c *baseComputer) ComputeCompiledBzlFileFunctionsValue(ctx context.Context, key *model_analysis_pb.CompiledBzlFileFunctions_Key, e CompiledBzlFileFunctionsEnvironment) (map[label.StarlarkIdentifier]model_starlark.CallableWithPosition, error) {
-	compiledBzlFile := e.GetCompiledBzlFileValue(&model_analysis_pb.CompiledBzlFile_Key{
-		Label:               key.Label,
-		BuiltinsModuleNames: key.BuiltinsModuleNames,
-	})
-	bzlFileBuiltins, bzlFileBuiltinsErr := c.getBzlFileBuiltins(e, key.BuiltinsModuleNames, model_starlark.BzlFileBuiltins, "exported_toplevels")
-	if !compiledBzlFile.IsSet() {
-		return nil, evaluation.ErrMissingDependency
-	}
-	if bzlFileBuiltinsErr != nil {
-		return nil, bzlFileBuiltinsErr
-	}
-
-	switch resultType := compiledBzlFile.Message.Result.(type) {
-	case *model_analysis_pb.CompiledBzlFile_Value_CompiledProgram:
-		canonicalLabel, err := label.NewCanonicalLabel(key.Label)
-		if err != nil {
-			return nil, err
-		}
-		program, err := starlark.CompiledProgram(bytes.NewBuffer(resultType.CompiledProgram.Code))
-		if err != nil {
-			return nil, fmt.Errorf("failed to load previously compiled file %#v: %w", key.Label, err)
-		}
-		if err := c.preloadBzlGlobals(e, canonicalLabel.GetCanonicalPackage(), program, key.BuiltinsModuleNames); err != nil {
-			return nil, err
-		}
-
-		thread := c.newStarlarkThread(e, key.BuiltinsModuleNames)
-		globals, err := program.Init(thread, bzlFileBuiltins)
-		if err != nil {
-			return nil, err
-		}
-		model_starlark.NameAndExtractGlobals(globals, canonicalLabel)
-		globals.Freeze()
-
-		callables := map[label.StarlarkIdentifier]model_starlark.CallableWithPosition{}
-		for name, value := range globals {
-			if callable, ok := value.(model_starlark.CallableWithPosition); ok {
-				callables[label.MustNewStarlarkIdentifier(name)] = callable
-			}
-		}
-		return callables, nil
-	case *model_analysis_pb.CompiledBzlFile_Value_Failure:
-		return nil, errors.New(resultType.Failure)
-	default:
-		return nil, errors.New("compiled .bzl file value has an unknown result type")
-	}
-}
-
-func (c *baseComputer) ComputeCompiledBzlFileGlobalsValue(ctx context.Context, key *model_analysis_pb.CompiledBzlFileGlobals_Key, e CompiledBzlFileGlobalsEnvironment) (starlark.StringDict, error) {
-	compiledBzlFile := e.GetCompiledBzlFileValue(&model_analysis_pb.CompiledBzlFile_Key{
-		Label:               key.Label,
-		BuiltinsModuleNames: key.BuiltinsModuleNames,
-	})
-	if !compiledBzlFile.IsSet() {
-		return nil, evaluation.ErrMissingDependency
-	}
-
-	switch resultType := compiledBzlFile.Message.Result.(type) {
-	case *model_analysis_pb.CompiledBzlFile_Value_CompiledProgram:
-		currentFilename, err := label.NewCanonicalLabel(key.Label)
-		if err != nil {
-			return nil, fmt.Errorf("invalid label %#v: %w", key.Label, err)
-		}
-		return model_starlark.DecodeGlobals(
-			model_core.Message[[]*model_starlark_pb.Global]{
-				Message:            resultType.CompiledProgram.Globals,
-				OutgoingReferences: compiledBzlFile.OutgoingReferences,
-			},
-			currentFilename,
-			&model_starlark.ValueDecodingOptions{
-				Context:          ctx,
-				ObjectDownloader: c.objectDownloader,
-				ObjectEncoder:    model_encoding.NewChainedBinaryEncoder(nil),
-			},
-		)
-	case *model_analysis_pb.CompiledBzlFile_Value_Failure:
-		return nil, errors.New(resultType.Failure)
-	default:
-		return nil, errors.New("File properties value has an unknown result type")
-	}
-}
-
-func (c *baseComputer) ComputeConfiguredTargetValue(ctx context.Context, key *model_analysis_pb.ConfiguredTarget_Key, e ConfiguredTargetEnvironment) (PatchedConfiguredTargetValue, error) {
-	targetLabel, err := label.NewCanonicalLabel(key.Label)
-	if err != nil {
-		return model_core.NewSimplePatchedMessage[dag.ObjectContentsWalker](&model_analysis_pb.ConfiguredTarget_Value{
-			Result: &model_analysis_pb.ConfiguredTarget_Value_Failure{
-				Failure: fmt.Sprintf("invalid target label %#v: %s", key.Label, err),
-			},
-		}), nil
-	}
-	packageValue := e.GetPackageValue(&model_analysis_pb.Package_Key{
-		Label: targetLabel.GetCanonicalPackage().String(),
-	})
-	if !packageValue.IsSet() {
-		return PatchedConfiguredTargetValue{}, evaluation.ErrMissingDependency
-	}
-
-	switch resultType := packageValue.Message.Result.(type) {
-	case *model_analysis_pb.Package_Value_Success_:
-		return model_core.NewSimplePatchedMessage[dag.ObjectContentsWalker](&model_analysis_pb.ConfiguredTarget_Value{
-			Result: &model_analysis_pb.ConfiguredTarget_Value_Success{
-				Success: &emptypb.Empty{},
-			},
-		}), nil
-	case *model_analysis_pb.Package_Value_Failure:
-		return model_core.NewSimplePatchedMessage[dag.ObjectContentsWalker](&model_analysis_pb.ConfiguredTarget_Value{
-			Result: &model_analysis_pb.ConfiguredTarget_Value_Failure{
-				Failure: resultType.Failure,
-			},
-		}), nil
-	default:
-		return PatchedConfiguredTargetValue{}, errors.New("Package value has an unknown result type")
-	}
 }
 
 func (c *baseComputer) ComputeDirectoryAccessParametersValue(ctx context.Context, key *model_analysis_pb.DirectoryAccessParameters_Key, e DirectoryAccessParametersEnvironment) (PatchedDirectoryAccessParametersValue, error) {
@@ -943,7 +681,6 @@ func (c *baseComputer) ComputePackageValue(ctx context.Context, key *model_analy
 						OutgoingReferences: compiledBzlFile.OutgoingReferences,
 					}, nil
 				}
-				log.Print(protojson.Format(compiledBzlFile.Message))
 				return model_core.Message[*model_starlark_pb.Value]{}, fmt.Errorf("global %#v does not exist", identifier.String())
 			case *model_analysis_pb.CompiledBzlFile_Value_Failure:
 				return model_core.Message[*model_starlark_pb.Value]{}, errors.New(resultType.Failure)
@@ -982,19 +719,19 @@ func (c *baseComputer) ComputePackageValue(ctx context.Context, key *model_analy
 			btree.NewObjectCreatingNodeMerger(
 				model_encoding.NewChainedBinaryEncoder(nil),
 				c.buildSpecificationReference.GetReferenceFormat(),
-				/* parentNodeComputer = */ func(contents *object.Contents, childNodes []*model_analysis_pb.Package_Value_Success_TargetList_Element, outgoingReferences object.OutgoingReferences, metadata []dag.ObjectContentsWalker) (model_core.PatchedMessage[*model_analysis_pb.Package_Value_Success_TargetList_Element, dag.ObjectContentsWalker], error) {
+				/* parentNodeComputer = */ func(contents *object.Contents, childNodes []*model_analysis_pb.Package_Value_TargetList_Element, outgoingReferences object.OutgoingReferences, metadata []dag.ObjectContentsWalker) (model_core.PatchedMessage[*model_analysis_pb.Package_Value_TargetList_Element, dag.ObjectContentsWalker], error) {
 					var firstName string
 					switch firstElement := childNodes[0].Level.(type) {
-					case *model_analysis_pb.Package_Value_Success_TargetList_Element_Leaf:
+					case *model_analysis_pb.Package_Value_TargetList_Element_Leaf:
 						firstName = firstElement.Leaf.Name
-					case *model_analysis_pb.Package_Value_Success_TargetList_Element_Parent_:
+					case *model_analysis_pb.Package_Value_TargetList_Element_Parent_:
 						firstName = firstElement.Parent.FirstName
 					}
 					patcher := model_core.NewReferenceMessagePatcher[dag.ObjectContentsWalker]()
-					return model_core.PatchedMessage[*model_analysis_pb.Package_Value_Success_TargetList_Element, dag.ObjectContentsWalker]{
-						Message: &model_analysis_pb.Package_Value_Success_TargetList_Element{
-							Level: &model_analysis_pb.Package_Value_Success_TargetList_Element_Parent_{
-								Parent: &model_analysis_pb.Package_Value_Success_TargetList_Element_Parent{
+					return model_core.PatchedMessage[*model_analysis_pb.Package_Value_TargetList_Element, dag.ObjectContentsWalker]{
+						Message: &model_analysis_pb.Package_Value_TargetList_Element{
+							Level: &model_analysis_pb.Package_Value_TargetList_Element_Parent_{
+								Parent: &model_analysis_pb.Package_Value_TargetList_Element_Parent{
 									Reference: patcher.AddReference(contents.GetReference(), dag.NewSimpleObjectContentsWalker(contents, metadata)),
 									FirstName: firstName,
 								},
@@ -1009,9 +746,9 @@ func (c *baseComputer) ComputePackageValue(ctx context.Context, key *model_analy
 		targets := targetRegistrar.GetTargets()
 		for _, name := range slices.Sorted(maps.Keys(targets)) {
 			target := targets[name]
-			if err := treeBuilder.PushChild(model_core.PatchedMessage[*model_analysis_pb.Package_Value_Success_TargetList_Element, dag.ObjectContentsWalker]{
-				Message: &model_analysis_pb.Package_Value_Success_TargetList_Element{
-					Level: &model_analysis_pb.Package_Value_Success_TargetList_Element_Leaf{
+			if err := treeBuilder.PushChild(model_core.PatchedMessage[*model_analysis_pb.Package_Value_TargetList_Element, dag.ObjectContentsWalker]{
+				Message: &model_analysis_pb.Package_Value_TargetList_Element{
+					Level: &model_analysis_pb.Package_Value_TargetList_Element_Leaf{
 						Leaf: target.Message,
 					},
 				},
@@ -1026,16 +763,11 @@ func (c *baseComputer) ComputePackageValue(ctx context.Context, key *model_analy
 			return PatchedPackageValue{}, err
 		}
 
-		log.Printf("SUCCESS: %s", canonicalPackage)
-		log.Print(protojson.Format(&model_analysis_pb.Package_Value_Success_TargetList{
-			Elements: targetsList.Message,
-		}))
-
 		return PatchedPackageValue{
 			Message: &model_analysis_pb.Package_Value{
-				Result: &model_analysis_pb.Package_Value_Success_{
-					Success: &model_analysis_pb.Package_Value_Success{
-						Targets: targetsList.Message,
+				Result: &model_analysis_pb.Package_Value_Success{
+					Success: &model_analysis_pb.Package_Value_TargetList{
+						Elements: targetsList.Message,
 					},
 				},
 			},

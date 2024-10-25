@@ -1,5 +1,11 @@
 {
    "functions": {
+      "AllModuleInstances": {
+         "dependsOn": [
+            "ModuleFinalBuildList",
+            "ModulesWithOverrides"
+         ]
+      },
       "BuildResult": {
          "dependsOn": [
             "TargetCompletion"
@@ -20,29 +26,13 @@
          "dependsOn": [
             "BuiltinsModuleNames",
             "CanonicalRepoName",
+            "CompiledBzlFileDecodedGlobals",
             "CompiledBzlFileFunctions",
-            "CompiledBzlFileGlobals",
             "FileProperties",
             "FileReader"
          ]
       },
-      "CompiledBzlFileFunctions": {
-         "dependsOn": [
-            "BuiltinsModuleNames",
-            "CanonicalRepoName",
-            "CompiledBzlFile",
-            "CompiledBzlFileFunctions",
-            "CompiledBzlFileGlobals"
-         ],
-         "nativeValueType": {
-            "imports": {
-               "label": "github.com/buildbarn/bb-playground/pkg/label",
-               "model_starlark": "github.com/buildbarn/bb-playground/pkg/model/starlark"
-            },
-            "type": "map[label.StarlarkIdentifier]model_starlark.CallableWithPosition"
-         }
-      },
-      "CompiledBzlFileGlobals": {
+      "CompiledBzlFileDecodedGlobals": {
          "dependsOn": [
             "CompiledBzlFile"
          ],
@@ -53,9 +43,51 @@
             "type": "starlark.StringDict"
          }
       },
+      "CompiledBzlFileFunctions": {
+         "dependsOn": [
+            "BuiltinsModuleNames",
+            "CanonicalRepoName",
+            "CompiledBzlFile",
+            "CompiledBzlFileDecodedGlobals",
+            "CompiledBzlFileFunctions"
+         ],
+         "nativeValueType": {
+            "imports": {
+               "label": "github.com/buildbarn/bb-playground/pkg/label",
+               "model_starlark": "github.com/buildbarn/bb-playground/pkg/model/starlark"
+            },
+            "type": "map[label.StarlarkIdentifier]model_starlark.CallableWithPosition"
+         }
+      },
+      "CompiledBzlFileGlobal": {
+         "dependsOn": [
+            "BuiltinsModuleNames",
+            "CompiledBzlFile"
+         ]
+      },
+      "ConfiguredRule": {
+         "dependsOn": [
+            "CompiledBzlFileGlobal",
+            "ResolvedToolchains"
+         ]
+      },
+      "ConfiguredRuleObject": {
+         "dependsOn": [
+            "ConfiguredRule"
+         ],
+         "nativeValueType": {
+            "type": "*ConfiguredRule"
+         }
+      },
       "ConfiguredTarget": {
          "dependsOn": [
-            "Package"
+            "BuiltinsModuleNames",
+            "CanonicalRepoName",
+            "CompiledBzlFileDecodedGlobals",
+            "CompiledBzlFileFunctions",
+            "CompiledBzlFileGlobal",
+            "ConfiguredRuleObject",
+            "Target"
          ]
       },
       "DirectoryAccessParameters": {
@@ -131,6 +163,13 @@
             "FileCreationParametersObject"
          ]
       },
+      "ModuleDotBazelContents": {
+         "dependsOn": [
+            "FileProperties",
+            "HttpFileContents",
+            "ModuleFinalBuildList"
+         ]
+      },
       "ModuleFinalBuildList": {
          "dependsOn": [
             "ModuleRoughBuildList"
@@ -143,8 +182,8 @@
       },
       "ModuleRepoMapping": {
          "dependsOn": [
-            "FileProperties",
             "FileReader",
+            "ModuleDotBazelContents",
             "ModulesWithMultipleVersionsObject"
          ]
       },
@@ -184,11 +223,20 @@
             "BuiltinsModuleNames",
             "CanonicalRepoName",
             "CompiledBzlFile",
+            "CompiledBzlFileDecodedGlobals",
             "CompiledBzlFileFunctions",
-            "CompiledBzlFileGlobals",
             "FileProperties",
             "FileReader",
             "RepoDefaultAttrs"
+         ]
+      },
+      "RegisteredExecutionPlatforms": {
+         "dependsOn": [
+            "AllModuleInstances",
+            "CanonicalRepoName",
+            "ConfiguredTarget",
+            "FileReader",
+            "ModuleDotBazelContents"
          ]
       },
       "Repo": {
@@ -207,9 +255,19 @@
             "FileReader"
          ]
       },
+      "ResolvedToolchains": {
+         "dependsOn": [
+            "RegisteredExecutionPlatforms"
+         ]
+      },
       "RootModuleName": {
          "dependsOn": [
             "BuildSpecification"
+         ]
+      },
+      "Target": {
+         "dependsOn": [
+            "Package"
          ]
       },
       "TargetCompletion": {

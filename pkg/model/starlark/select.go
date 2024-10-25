@@ -17,10 +17,9 @@ import (
 	"go.starlark.net/syntax"
 )
 
-var defaultConditionLabel = pg_label.MustNewCanonicalLabel("@@todo+//conditions:default")
-
 type selectGroup struct {
 	conditions   map[pg_label.CanonicalLabel]starlark.Value
+	defaultValue starlark.Value
 	noMatchError string
 }
 
@@ -35,10 +34,11 @@ var (
 	_ EncodableValue     = &rule{}
 )
 
-func NewSelect(conditions map[pg_label.CanonicalLabel]starlark.Value, noMatchError string) *Select {
+func NewSelect(conditions map[pg_label.CanonicalLabel]starlark.Value, defaultValue starlark.Value, noMatchError string) *Select {
 	return &Select{
 		groups: []selectGroup{{
 			conditions:   conditions,
+			defaultValue: defaultValue,
 			noMatchError: noMatchError,
 		}},
 	}
@@ -90,9 +90,7 @@ func (s *Select) Binary(op syntax.Token, y starlark.Value, side starlark.Side) (
 		}
 	default:
 		newGroup := selectGroup{
-			conditions: map[pg_label.CanonicalLabel]starlark.Value{
-				defaultConditionLabel: y,
-			},
+			defaultValue: y,
 		}
 		if side == starlark.Left {
 			newGroups = append(append([]selectGroup(nil), s.groups...), newGroup)
@@ -113,9 +111,9 @@ func (s *Select) EncodeGroups(path map[starlark.Value]struct{}, options *ValueEn
 
 	for _, group := range s.groups {
 		encodedGroup := model_starlark_pb.Select_Group{
-			Conditions:   make([]*model_starlark_pb.Select_Condition, 0, len(group.conditions)),
-			NoMatchError: group.noMatchError,
+			Conditions: make([]*model_starlark_pb.Select_Condition, 0, len(group.conditions)),
 		}
+
 		for _, condition := range slices.SortedFunc(
 			maps.Keys(group.conditions),
 			func(a, b pg_label.CanonicalLabel) int { return strings.Compare(a.String(), b.String()) },
@@ -124,6 +122,7 @@ func (s *Select) EncodeGroups(path map[starlark.Value]struct{}, options *ValueEn
 			if err != nil {
 				return model_core.PatchedMessage[[]*model_starlark_pb.Select_Group, dag.ObjectContentsWalker]{}, false, err
 			}
+
 			encodedGroup.Conditions = append(encodedGroup.Conditions, &model_starlark_pb.Select_Condition{
 				ConditionIdentifier: condition.String(),
 				Value:               value.Message,
@@ -131,6 +130,24 @@ func (s *Select) EncodeGroups(path map[starlark.Value]struct{}, options *ValueEn
 			patcher.Merge(value.Patcher)
 			needsCode = needsCode || valueNeedsCode
 		}
+
+		if group.defaultValue != nil {
+			value, valueNeedsCode, err := EncodeValue(group.defaultValue, path, nil, options)
+			if err != nil {
+				return model_core.PatchedMessage[[]*model_starlark_pb.Select_Group, dag.ObjectContentsWalker]{}, false, err
+			}
+			needsCode = needsCode || valueNeedsCode
+
+			encodedGroup.NoMatch = &model_starlark_pb.Select_Group_NoMatchValue{
+				NoMatchValue: value.Message,
+			}
+			patcher.Merge(value.Patcher)
+		} else if group.noMatchError != "" {
+			encodedGroup.NoMatch = &model_starlark_pb.Select_Group_NoMatchError{
+				NoMatchError: group.noMatchError,
+			}
+		}
+
 		groups = append(groups, &encodedGroup)
 	}
 
@@ -199,8 +216,19 @@ func (ui *selectUnpackerInto) UnpackInto(thread *starlark.Thread, v starlark.Val
 				}
 				canonicalizedConditions[condition] = canonicalValue
 			}
+
+			var defaultValue starlark.Value
+			if group.defaultValue != nil {
+				var err error
+				defaultValue, err = ui.valueUnpackerInto.Canonicalize(thread, group.defaultValue)
+				if err != nil {
+					return fmt.Errorf("canonicalizing default value: %w", err)
+				}
+			}
+
 			canonicalizedGroups = append(canonicalizedGroups, selectGroup{
 				conditions:   canonicalizedConditions,
+				defaultValue: defaultValue,
 				noMatchError: group.noMatchError,
 			})
 		}
@@ -209,16 +237,12 @@ func (ui *selectUnpackerInto) UnpackInto(thread *starlark.Thread, v starlark.Val
 			concatenationOperator: typedV.concatenationOperator,
 		}
 	default:
-		canonicalV, err := ui.valueUnpackerInto.Canonicalize(thread, v)
+		canonicalValue, err := ui.valueUnpackerInto.Canonicalize(thread, v)
 		if err != nil {
 			return err
 		}
 		*dst = &Select{
-			groups: []selectGroup{{
-				conditions: map[pg_label.CanonicalLabel]starlark.Value{
-					defaultConditionLabel: canonicalV,
-				},
-			}},
+			groups: []selectGroup{{defaultValue: canonicalValue}},
 		}
 	}
 	return nil

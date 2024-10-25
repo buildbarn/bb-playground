@@ -130,6 +130,10 @@ func parseOverridesList(overridesList *model_analysis_pb.OverridesList) (map[lab
 	return modules, nil
 }
 
+func getModuleDotBazelURL(registryURL string, module label.Module, moduleVersion label.ModuleVersion) (string, error) {
+	return url.JoinPath(registryURL, "modules", module.String(), moduleVersion.String(), "MODULE.bazel")
+}
+
 func (c *baseComputer) ComputeModuleRoughBuildListValue(ctx context.Context, key *model_analysis_pb.ModuleRoughBuildList_Key, e ModuleRoughBuildListEnvironment) (PatchedModuleRoughBuildListValue, error) {
 	rootModuleNameValue := e.GetRootModuleNameValue(&model_analysis_pb.RootModuleName_Key{})
 	modulesWithOverridesValue := e.GetModulesWithOverridesValue(&model_analysis_pb.ModulesWithOverrides_Key{})
@@ -254,13 +258,7 @@ ProcessModule:
 			// yet, as there is no guarantee that this is
 			// the definitive version to load.
 			for _, registryURL := range registryURLs {
-				moduleFileURL, err := url.JoinPath(
-					registryURL,
-					"modules",
-					module.name.String(),
-					module.version.String(),
-					"MODULE.bazel",
-				)
+				moduleFileURL, err := getModuleDotBazelURL(registryURL, module.name, module.version)
 				if err != nil {
 					return model_core.NewSimplePatchedMessage[dag.ObjectContentsWalker](&model_analysis_pb.ModuleRoughBuildList_Value{
 						Result: &model_analysis_pb.ModuleRoughBuildList_Value_Failure{

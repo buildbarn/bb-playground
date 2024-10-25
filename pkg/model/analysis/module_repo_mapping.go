@@ -11,9 +11,7 @@ import (
 	"github.com/buildbarn/bb-playground/pkg/evaluation"
 	"github.com/buildbarn/bb-playground/pkg/label"
 	model_core "github.com/buildbarn/bb-playground/pkg/model/core"
-	model_filesystem "github.com/buildbarn/bb-playground/pkg/model/filesystem"
 	model_analysis_pb "github.com/buildbarn/bb-playground/pkg/proto/model/analysis"
-	model_filesystem_pb "github.com/buildbarn/bb-playground/pkg/proto/model/filesystem"
 	pg_starlark "github.com/buildbarn/bb-playground/pkg/starlark"
 	"github.com/buildbarn/bb-playground/pkg/storage/dag"
 
@@ -136,60 +134,6 @@ func (c *baseComputer) ComputeModuleRepoMappingValue(ctx context.Context, key *m
 		return PatchedModuleRepoMappingValue{}, err
 	}
 
-	moduleFileLabel := moduleInstance.GetBareCanonicalRepo().
-		GetRootPackage().
-		AppendTargetName(moduleDotBazelTargetName)
-	moduleFileProperties := e.GetFilePropertiesValue(&model_analysis_pb.FileProperties_Key{
-		CanonicalRepo: moduleInstance.String(),
-		Path:          moduleDotBazelFilename,
-	})
-	if !moduleFileProperties.IsSet() {
-		return PatchedModuleRepoMappingValue{}, evaluation.ErrMissingDependency
-	}
-	var moduleFileContents model_core.Message[*model_filesystem_pb.FileContents]
-	switch moduleFilePropertiesResult := moduleFileProperties.Message.Result.(type) {
-	case *model_analysis_pb.FileProperties_Value_Exists:
-		moduleFileContents = model_core.Message[*model_filesystem_pb.FileContents]{
-			Message:            moduleFilePropertiesResult.Exists.Contents,
-			OutgoingReferences: moduleFileProperties.OutgoingReferences,
-		}
-	case *model_analysis_pb.FileProperties_Value_DoesNotExist:
-		return model_core.NewSimplePatchedMessage[dag.ObjectContentsWalker](&model_analysis_pb.ModuleRepoMapping_Value{
-			Result: &model_analysis_pb.ModuleRepoMapping_Value_Failure{
-				Failure: fmt.Sprintf("File %#v does not exist", moduleFileLabel.String()),
-			},
-		}), nil
-	case *model_analysis_pb.FileProperties_Value_Failure:
-		return model_core.NewSimplePatchedMessage[dag.ObjectContentsWalker](&model_analysis_pb.ModuleRepoMapping_Value{
-			Result: &model_analysis_pb.ModuleRepoMapping_Value_Failure{
-				Failure: fmt.Sprintf("Failed to obtain properties of %#v: %s", moduleFileLabel.String(), moduleFilePropertiesResult.Failure),
-			},
-		}), nil
-	default:
-		return model_core.NewSimplePatchedMessage[dag.ObjectContentsWalker](&model_analysis_pb.ModuleRepoMapping_Value{
-			Result: &model_analysis_pb.ModuleRepoMapping_Value_Failure{
-				Failure: "File properties value has an unknown result type",
-			},
-		}), nil
-	}
-
-	moduleFileContentsEntry, err := model_filesystem.NewFileContentsEntryFromProto(
-		moduleFileContents,
-		c.buildSpecificationReference.GetReferenceFormat(),
-	)
-	if err != nil {
-		return model_core.NewSimplePatchedMessage[dag.ObjectContentsWalker](&model_analysis_pb.ModuleRepoMapping_Value{
-			Result: &model_analysis_pb.ModuleRepoMapping_Value_Failure{
-				Failure: fmt.Sprintf("Invalid file contents entry for file %#v: %s", moduleFileLabel.String(), err),
-			},
-		}), nil
-	}
-
-	moduleFileData, err := fileReader.FileReadAll(ctx, moduleFileContentsEntry, 1<<20)
-	if err != nil {
-		return PatchedModuleRepoMappingValue{}, err
-	}
-
 	handler := repoMappingCapturingModuleDotBazelHandler{
 		moduleInstance:              moduleInstance,
 		modulesWithMultipleVersions: modulesWithMultipleVersions,
@@ -198,17 +142,15 @@ func (c *baseComputer) ComputeModuleRepoMappingValue(ctx context.Context, key *m
 
 		repos: map[label.ApparentRepo]*label.CanonicalRepo{},
 	}
-	if err := pg_starlark.ParseModuleDotBazel(
-		string(moduleFileData),
-		moduleFileLabel,
-		nil,
-		pg_starlark.NewOverrideIgnoringRootModuleDotBazelHandler(&handler),
-	); err != nil {
-		return model_core.NewSimplePatchedMessage[dag.ObjectContentsWalker](&model_analysis_pb.ModuleRepoMapping_Value{
-			Result: &model_analysis_pb.ModuleRepoMapping_Value_Failure{
-				Failure: err.Error(),
-			},
-		}), nil
+	if err := c.parseModuleInstanceModuleDotBazel(ctx, moduleInstance, e, fileReader, &handler); err != nil {
+		if !errors.Is(err, evaluation.ErrMissingDependency) {
+			return model_core.NewSimplePatchedMessage[dag.ObjectContentsWalker](&model_analysis_pb.ModuleRepoMapping_Value{
+				Result: &model_analysis_pb.ModuleRepoMapping_Value_Failure{
+					Failure: err.Error(),
+				},
+			}), nil
+		}
+		return PatchedModuleRepoMappingValue{}, err
 	}
 
 	// Add "bazel_tools" implicitly.

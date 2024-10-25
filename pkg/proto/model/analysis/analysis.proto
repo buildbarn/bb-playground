@@ -10,6 +10,21 @@ import "pkg/proto/model/starlark/starlark.proto";
 
 option go_package = "github.com/buildbarn/bb-playground/pkg/proto/model/analysis";
 
+message AllModuleInstances {
+  message Key {}
+
+  message Value {
+    message Success {
+      repeated string module_instances = 1;
+    }
+
+    oneof result {
+      Success success = 1;
+      string failure = 2;
+    }
+  }
+}
+
 message BuildSpecification {
   message Key {}
 
@@ -77,6 +92,16 @@ message CompiledBzlFile {
   }
 }
 
+message CompiledBzlFileDecodedGlobals {
+  message Key {
+    // The label of the .bzl file. The label MUST include a canonical
+    // repo name.
+    string label = 1;
+
+    repeated string builtins_module_names = 2;
+  }
+}
+
 message CompiledBzlFileFunctions {
   message Key {
     // The label of the .bzl file. The label MUST include a canonical
@@ -87,13 +112,70 @@ message CompiledBzlFileFunctions {
   }
 }
 
-message CompiledBzlFileGlobals {
+message CompiledBzlFileGlobal {
   message Key {
-    // The label of the .bzl file. The label MUST include a canonical
-    // repo name.
-    string label = 1;
+    string identifier = 1;
+  }
 
-    repeated string builtins_module_names = 2;
+  message Value {
+    oneof result {
+      buildbarn.playground.model.starlark.Value success = 1;
+      string failure = 2;
+    }
+  }
+}
+
+message ConfiguredRule {
+  message Key {
+    // The canonical Starlark identifier of the rule whose
+    string identifier = 1;
+
+    // TODO: Add a configuration ID field.
+  }
+
+  message Value {
+    message Success {
+      message ExecGroup {
+        message Toolchain {
+          // Starlark identifier of the toolchain type.
+          string toolchain_type = 1;
+
+          repeated buildbarn.playground.model.starlark.StructField
+              toolchain_info_fields = 2;
+        }
+
+        // The name of the execution group. The empty string is used to
+        // denote the rule's default execution group.
+        string name = 1;
+
+        // Resolved toolchains that are used by actions running in this
+        // execution group.
+        repeated Toolchain Toolchains = 2;
+
+        // TODO: Add the actual execution platform here as well.
+      }
+
+      // Execution groups that are declared by the rule, with their
+      // resolved execution platforms and toolchains. Execution groups
+      // are sorted by name.
+      repeated ExecGroup exec_groups = 1;
+
+      // TODO: Expose the values of private attributes.
+    }
+
+    oneof result {
+      Success success = 1;
+      string failure = 2;
+    }
+  }
+}
+
+message ConfiguredRuleObject {
+  message Key {
+    // The canonical Starlark identifier of the rule whose
+    string identifier = 1;
+
+    // TODO: Add a configuration ID field.
   }
 }
 
@@ -250,6 +332,27 @@ message HttpFileContents {
   }
 }
 
+message ModuleDotBazelContents {
+  message Key {
+    // The module instance whose MODULE.bazel file needs to be obtained.
+    string module_instance = 1;
+  }
+
+  message Value {
+    message Success {
+      // The contents of the module instance's MODULE.bazel file, if the
+      // file was non-empty.
+      buildbarn.playground.model.filesystem.FileContents contents = 1;
+    }
+
+    oneof result {
+      Success success = 1;
+
+      string failure = 2;
+    }
+  }
+}
+
 message ModuleRegistryUrls {
   message Key {}
 
@@ -399,44 +502,70 @@ message Package {
   }
 
   message Value {
-    message Success {
-      message TargetList {
-        message Element {
-          message Parent {
-            // Reference to an object of type TargetList that contains
-            // properties of targets in the package.
-            buildbarn.playground.model.core.Reference reference = 1;
+    message TargetList {
+      message Element {
+        message Parent {
+          // Reference to an object of type TargetList that contains
+          // properties of targets in the package.
+          buildbarn.playground.model.core.Reference reference = 1;
 
-            // The name of the first target contained in this B-tree.
-            // This field can be used to efficiently look up targets
-            // contained in the B-tree.
-            string first_name = 2;
-          }
-
-          oneof level {
-            // Properties of a single target.
-            buildbarn.playground.model.starlark.Target leaf = 1;
-
-            // More targets are stored in another object.
-            Parent parent = 2;
-          }
+          // The name of the first target contained in this B-tree.
+          // This field can be used to efficiently look up targets
+          // contained in the B-tree.
+          string first_name = 2;
         }
 
-        repeated Element elements = 1;
+        oneof level {
+          // Properties of a single target.
+          buildbarn.playground.model.starlark.Target leaf = 1;
+
+          // More targets are stored in another object.
+          Parent parent = 2;
+        }
       }
 
       // B-tree of targets contained within the package. Targets are
       // sorted by name.
-      repeated TargetList.Element targets = 1;
+      repeated Element elements = 1;
     }
 
     oneof result {
       // Successfully processed the package's BUILD.bazel file, and
       // extracted the targets contained within.
-      Success success = 1;
+      TargetList success = 1;
 
       // Failed to processed the package's BUILD.bazel file or one of
       // its dependencies.
+      string failure = 2;
+    }
+  }
+}
+
+message RegisteredExecutionPlatforms {
+  message Key {}
+
+  message Value {
+    message Success {
+      message ExecutionPlatform {
+        message ExecProperty {
+          string name = 1;
+          string value = 2;
+        }
+
+        repeated string constraint_values = 1;
+        repeated ExecProperty exec_properties = 2;
+
+        // TODO: Also add flags, required_settings, etc.?
+      }
+
+      // List of platforms that are available for executing commands,
+      // ordered by preference.
+      repeated ExecutionPlatform execution_platforms = 1;
+    }
+
+    oneof result {
+      Success success = 1;
+
       string failure = 2;
     }
   }
@@ -480,11 +609,52 @@ message RepoDefaultAttrs {
   }
 }
 
+message ResolvedToolchains {
+  message Key {
+    // The set of toolchains to resolve, and any constraints placed on
+    // the execution platform.
+    buildbarn.playground.model.starlark.ExecGroup exec_group = 1;
+  }
+
+  message Value {
+    message Success {
+      // TODO: Put the name of the selected execution platform in here.
+
+      // Identifiers of the resolved toolchains, using the same order as
+      // the toolchain types in the key. Any optional toolchains that
+      // could not be resolved will have their identifier set to the
+      // empty string.
+      repeated string resolved_toolchain_identifiers = 1;
+    }
+
+    oneof result {
+      Success success = 1;
+
+      string failure = 2;
+    }
+  }
+}
+
 message RootModuleName {
   message Key {}
 
   message Value {
     string root_module_name = 1;
+  }
+}
+
+message Target {
+  message Key {
+    // The label of the target whose properties to obtain.
+    string label = 1;
+  }
+
+  message Value {
+    oneof result {
+      buildbarn.playground.model.starlark.TargetDefinition success = 1;
+
+      string failure = 2;
+    }
   }
 }
 
