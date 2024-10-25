@@ -4,15 +4,13 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log"
+	"strings"
 
 	"github.com/buildbarn/bb-playground/pkg/evaluation"
 	model_core "github.com/buildbarn/bb-playground/pkg/model/core"
 	model_analysis_pb "github.com/buildbarn/bb-playground/pkg/proto/model/analysis"
 	model_starlark_pb "github.com/buildbarn/bb-playground/pkg/proto/model/starlark"
 	"github.com/buildbarn/bb-playground/pkg/storage/dag"
-
-	"google.golang.org/protobuf/encoding/protojson"
 )
 
 func (c *baseComputer) ComputeConfiguredRuleValue(ctx context.Context, key *model_analysis_pb.ConfiguredRule_Key, e ConfiguredRuleEnvironment) (PatchedConfiguredRuleValue, error) {
@@ -68,14 +66,27 @@ func (c *baseComputer) ComputeConfiguredRuleValue(ctx context.Context, key *mode
 			missingResolvedToolchains = true
 			continue
 		}
-		log.Printf("--- %s ---", execGroup.Name)
-		log.Print(protojson.Format(resolvedToolchains.Message))
+		panic("TODO: Add resolved toolchain to configured rule")
 	}
 	if missingResolvedToolchains {
 		return PatchedConfiguredRuleValue{}, evaluation.ErrMissingDependency
 	}
 
-	panic("TODO")
+	for _, attr := range ruleDefinition.Message.Attrs {
+		if strings.HasPrefix(attr.Name, "_") {
+			panic("TODO: Already evaluate private attributes!")
+		}
+	}
+
+	patcher := model_core.NewReferenceMessagePatcher[dag.ObjectContentsWalker]()
+	return model_core.PatchedMessage[*model_analysis_pb.ConfiguredRule_Value, dag.ObjectContentsWalker]{
+		Message: &model_analysis_pb.ConfiguredRule_Value{
+			Result: &model_analysis_pb.ConfiguredRule_Value_Success_{
+				Success: &model_analysis_pb.ConfiguredRule_Value_Success{},
+			},
+		},
+		Patcher: patcher,
+	}, nil
 }
 
 type ConfiguredRule struct{}
@@ -89,7 +100,7 @@ func (c *baseComputer) ComputeConfiguredRuleObjectValue(ctx context.Context, key
 	}
 	switch resultType := configuredRuleValue.Message.Result.(type) {
 	case *model_analysis_pb.ConfiguredRule_Value_Success_:
-		panic(protojson.Format(resultType.Success))
+		return &ConfiguredRule{}, nil
 	case *model_analysis_pb.ConfiguredRule_Value_Failure:
 		return nil, errors.New(resultType.Failure)
 	default:
