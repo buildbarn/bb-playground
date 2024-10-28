@@ -280,33 +280,17 @@ func EncodeValue(value starlark.Value, path map[starlark.Value]struct{}, current
 			},
 		}), false, nil
 	case *starlarkstruct.Struct:
-		keys := typedValue.AttrNames()
-		fields := make([]*model_starlark_pb.StructField, 0, len(keys))
-		patcher := model_core.NewReferenceMessagePatcher[dag.ObjectContentsWalker]()
-		needsCode := false
-		for _, key := range keys {
-			value, _ := typedValue.Attr(key)
-			encodedValue, valueNeedsCode, err := EncodeValue(value, path, nil, options)
-			if err != nil {
-				return model_core.PatchedMessage[*model_starlark_pb.Value, dag.ObjectContentsWalker]{}, false, fmt.Errorf("field %#v: %w", key, err)
-			}
-			fields = append(fields, &model_starlark_pb.StructField{
-				Key:   key,
-				Value: encodedValue.Message,
-			})
-			patcher.Merge(encodedValue.Patcher)
-			needsCode = needsCode || valueNeedsCode
+		encodedStruct, needsCode, err := encodeStruct(typedValue, path, "", options)
+		if err != nil {
+			return model_core.PatchedMessage[*model_starlark_pb.Value, dag.ObjectContentsWalker]{}, false, err
 		}
-
 		return model_core.PatchedMessage[*model_starlark_pb.Value, dag.ObjectContentsWalker]{
 			Message: &model_starlark_pb.Value{
 				Kind: &model_starlark_pb.Value_Struct{
-					Struct: &model_starlark_pb.Struct{
-						Fields: fields,
-					},
+					Struct: encodedStruct.Message,
 				},
 			},
-			Patcher: patcher,
+			Patcher: encodedStruct.Patcher,
 		}, needsCode, nil
 	case starlark.Tuple:
 		encodedValues := make([]*model_starlark_pb.Value, 0, len(typedValue))
@@ -340,6 +324,34 @@ func EncodeValue(value starlark.Value, path map[starlark.Value]struct{}, current
 	}
 }
 
+func encodeStruct(strukt *starlarkstruct.Struct, path map[starlark.Value]struct{}, providerIdentifier string, options *ValueEncodingOptions) (model_core.PatchedMessage[*model_starlark_pb.Struct, dag.ObjectContentsWalker], bool, error) {
+	keys := strukt.AttrNames()
+	fields := make([]*model_starlark_pb.StructField, 0, len(keys))
+	patcher := model_core.NewReferenceMessagePatcher[dag.ObjectContentsWalker]()
+	needsCode := false
+	for _, key := range keys {
+		value, _ := strukt.Attr(key)
+		encodedValue, valueNeedsCode, err := EncodeValue(value, path, nil, options)
+		if err != nil {
+			return model_core.PatchedMessage[*model_starlark_pb.Struct, dag.ObjectContentsWalker]{}, false, fmt.Errorf("field %#v: %w", key, err)
+		}
+		fields = append(fields, &model_starlark_pb.StructField{
+			Key:   key,
+			Value: encodedValue.Message,
+		})
+		patcher.Merge(encodedValue.Patcher)
+		needsCode = needsCode || valueNeedsCode
+	}
+
+	return model_core.PatchedMessage[*model_starlark_pb.Struct, dag.ObjectContentsWalker]{
+		Message: &model_starlark_pb.Struct{
+			Fields:             fields,
+			ProviderIdentifier: providerIdentifier,
+		},
+		Patcher: patcher,
+	}, needsCode, nil
+}
+
 func DecodeGlobals(encodedGlobals model_core.Message[[]*model_starlark_pb.Global], currentFilename pg_label.CanonicalLabel, options *ValueDecodingOptions) (starlark.StringDict, error) {
 	globals := make(map[string]starlark.Value, len(encodedGlobals.Message))
 	for _, encodedGlobal := range encodedGlobals.Message {
@@ -365,6 +377,7 @@ type ValueDecodingOptions struct {
 	Context          context.Context
 	ObjectDownloader object.Downloader[object.LocalReference]
 	ObjectEncoder    model_encoding.BinaryEncoder
+	LabelCreator     func(pg_label.CanonicalLabel) (starlark.Value, error)
 }
 
 func DecodeValue(encodedValue model_core.Message[*model_starlark_pb.Value], currentIdentifier *pg_label.CanonicalStarlarkIdentifier, options *ValueDecodingOptions) (starlark.Value, error) {
@@ -464,7 +477,7 @@ func DecodeValue(encodedValue model_core.Message[*model_starlark_pb.Value], curr
 		if err != nil {
 			return nil, err
 		}
-		return NewLabel(canonicalLabel), nil
+		return options.LabelCreator(canonicalLabel)
 	case *model_starlark_pb.Value_Provider:
 		providerIdentifier, err := pg_label.NewCanonicalStarlarkIdentifier(typedValue.Provider.ProviderIdentifier)
 		if err != nil {
@@ -540,19 +553,21 @@ func DecodeValue(encodedValue model_core.Message[*model_starlark_pb.Value], curr
 	case *model_starlark_pb.Value_Str:
 		return starlark.String(typedValue.Str), nil
 	case *model_starlark_pb.Value_Struct:
-		encodedFields := typedValue.Struct.Fields
-		fields := make(map[string]starlark.Value, len(encodedFields))
-		for _, encodedField := range encodedFields {
-			fieldValue, err := DecodeValue(model_core.Message[*model_starlark_pb.Value]{
-				Message:            encodedField.Value,
-				OutgoingReferences: encodedValue.OutgoingReferences,
-			}, nil, options)
+		strukt, err := decodeStruct(model_core.Message[*model_starlark_pb.Struct]{
+			Message:            typedValue.Struct,
+			OutgoingReferences: encodedValue.OutgoingReferences,
+		}, options)
+		if err != nil {
+			return nil, err
+		}
+		if providerIdentifier := typedValue.Struct.ProviderIdentifier; providerIdentifier != "" {
+			i, err := pg_label.NewCanonicalStarlarkIdentifier(providerIdentifier)
 			if err != nil {
 				return nil, err
 			}
-			fields[encodedField.Key] = fieldValue
+			return NewProviderInstance(strukt, i), nil
 		}
-		return starlarkstruct.FromStringDict(starlarkstruct.Default, fields), nil
+		return strukt, nil
 	case *model_starlark_pb.Value_Subrule:
 		switch subruleKind := typedValue.Subrule.Kind.(type) {
 		case *model_starlark_pb.Subrule_Reference:
@@ -639,6 +654,34 @@ func DecodeAttrType(attr *model_starlark_pb.Attr) (AttrType, error) {
 	default:
 		return nil, errors.New("unknown attribute type")
 	}
+}
+
+func decodeStruct(m model_core.Message[*model_starlark_pb.Struct], options *ValueDecodingOptions) (*starlarkstruct.Struct, error) {
+	encodedFields := m.Message.Fields
+	fields := make(map[string]starlark.Value, len(encodedFields))
+	for _, encodedField := range encodedFields {
+		fieldValue, err := DecodeValue(model_core.Message[*model_starlark_pb.Value]{
+			Message:            encodedField.Value,
+			OutgoingReferences: m.OutgoingReferences,
+		}, nil, options)
+		if err != nil {
+			return nil, err
+		}
+		fields[encodedField.Key] = fieldValue
+	}
+	return starlarkstruct.FromStringDict(starlarkstruct.Default, fields), nil
+}
+
+func DecodeProviderInstance(m model_core.Message[*model_starlark_pb.Struct], options *ValueDecodingOptions) (ProviderInstance, error) {
+	strukt, err := decodeStruct(m, options)
+	if err != nil {
+		return ProviderInstance{}, err
+	}
+	providerIdentifier, err := pg_label.NewCanonicalStarlarkIdentifier(m.Message.ProviderIdentifier)
+	if err != nil {
+		return ProviderInstance{}, err
+	}
+	return NewProviderInstance(strukt, providerIdentifier), nil
 }
 
 type dictEntriesDecodingOptions struct {

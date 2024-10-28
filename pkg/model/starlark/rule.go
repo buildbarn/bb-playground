@@ -155,62 +155,46 @@ func (r *rule) CallInternal(thread *starlark.Thread, args starlark.Tuple, kwargs
 			}
 			attrValues = append(attrValues,
 				&model_starlark_pb.RuleTarget_AttrValue{
-					Name:  attrName,
-					Value: encodedGroups.Message,
+					Name:       attrName,
+					ValueParts: encodedGroups.Message,
 				},
 			)
 			patcher.Merge(encodedGroups.Patcher)
 		}
 	}
 
-	var visibilityPackageGroup model_core.PatchedMessage[*model_starlark_pb.PackageGroup, dag.ObjectContentsWalker]
-	if len(visibility) > 0 {
-		// Explicit visibility provided. Construct new package group.
-		var err error
-		visibilityPackageGroup, err = NewPackageGroupFromVisibility(visibility, targetRegistrar.inlinedTreeOptions)
-		if err != nil {
-			return nil, err
-		}
-	} else {
-		// Inherit visibility from repo() in the REPO.bazel file
-		// or package() in the BUILD.bazel file.
-		visibilityPackageGroup = model_core.NewPatchedMessageFromExisting(
-			model_core.Message[*model_starlark_pb.PackageGroup]{
-				Message:            targetRegistrar.defaultInheritableAttrs.Message.Visibility,
-				OutgoingReferences: targetRegistrar.defaultInheritableAttrs.OutgoingReferences,
-			},
-			targetRegistrar.createDefaultInheritableAttrsMetadata,
-		)
+	sort.Strings(tags)
+
+	visibilityPackageGroup, err := targetRegistrar.getVisibilityPackageGroup(visibility)
+	if err != nil {
+		return nil, err
 	}
 	patcher.Merge(visibilityPackageGroup.Patcher)
 
-	sort.Strings(tags)
-	if _, ok := targetRegistrar.targets[name]; ok {
-		return nil, fmt.Errorf("package contains multiple targets with name %#v", name)
-	}
-	targetRegistrar.targets[name] = model_core.PatchedMessage[*model_starlark_pb.Target, dag.ObjectContentsWalker]{
-		Message: &model_starlark_pb.Target{
-			Name: name,
-			Definition: &model_starlark_pb.TargetDefinition{
-				Kind: &model_starlark_pb.TargetDefinition_RuleTarget{
-					RuleTarget: &model_starlark_pb.RuleTarget{
-						RuleIdentifier: r.Identifier.String(),
-						AttrValues:     attrValues,
-						Tags:           slices.Compact(tags),
-						InheritableAttrs: &model_starlark_pb.InheritableAttrs{
-							Deprecation:     deprecation,
-							PackageMetadata: packageMetadata,
-							Testonly:        testOnly,
-							Visibility:      visibilityPackageGroup.Message,
+	return starlark.None, targetRegistrar.registerTarget(
+		name,
+		model_core.PatchedMessage[*model_starlark_pb.Target, dag.ObjectContentsWalker]{
+			Message: &model_starlark_pb.Target{
+				Name: name,
+				Definition: &model_starlark_pb.TargetDefinition{
+					Kind: &model_starlark_pb.TargetDefinition_RuleTarget{
+						RuleTarget: &model_starlark_pb.RuleTarget{
+							RuleIdentifier: r.Identifier.String(),
+							AttrValues:     attrValues,
+							Tags:           slices.Compact(tags),
+							InheritableAttrs: &model_starlark_pb.InheritableAttrs{
+								Deprecation:     deprecation,
+								PackageMetadata: packageMetadata,
+								Testonly:        testOnly,
+								Visibility:      visibilityPackageGroup.Message,
+							},
 						},
 					},
 				},
 			},
+			Patcher: patcher,
 		},
-		Patcher: patcher,
-	}
-
-	return starlark.None, nil
+	)
 }
 
 func (r *rule) EncodeValue(path map[starlark.Value]struct{}, currentIdentifier *pg_label.CanonicalStarlarkIdentifier, options *ValueEncodingOptions) (model_core.PatchedMessage[*model_starlark_pb.Value, dag.ObjectContentsWalker], bool, error) {

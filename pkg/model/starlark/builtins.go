@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	pg_label "github.com/buildbarn/bb-playground/pkg/label"
+	model_core "github.com/buildbarn/bb-playground/pkg/model/core"
 	model_starlark_pb "github.com/buildbarn/bb-playground/pkg/proto/model/starlark"
 	"github.com/buildbarn/bb-playground/pkg/starlark/unpack"
 	"github.com/buildbarn/bb-playground/pkg/storage/dag"
@@ -35,6 +36,14 @@ var commonBuiltins = starlark.StringDict{
 				return nil, err
 			}
 			return NewLabel(input), nil
+		},
+	),
+	"glob": starlark.NewBuiltin(
+		"glob",
+		func(thread *starlark.Thread, b *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
+			return starlark.NewList([]starlark.Value{
+				starlark.String("TODO: Implement glob()"),
+			}), nil
 		},
 	),
 	"select": starlark.NewBuiltin(
@@ -74,6 +83,63 @@ var commonBuiltins = starlark.StringDict{
 }
 
 var BuildFileBuiltins = starlark.StringDict{
+	"alias": starlark.NewBuiltin(
+		"alias",
+		func(thread *starlark.Thread, b *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
+			targetRegistrar := thread.Local(TargetRegistrarKey).(*TargetRegistrar)
+
+			var name string
+			var actual *Select
+			var visibility []pg_label.CanonicalLabel
+			labelUnpackerInto := NewLabelUnpackerInto(currentFilePackage(thread))
+			if err := starlark.UnpackArgs(
+				b.Name(), args, kwargs,
+				"name", unpack.Bind(thread, &name, unpack.Stringer(unpack.TargetName)),
+				"actual", unpack.Bind(thread, &actual, NewSelectUnpackerInto(labelUnpackerInto)),
+				"visibility?", unpack.Bind(thread, &visibility, unpack.List(labelUnpackerInto)),
+			); err != nil {
+				return nil, err
+			}
+
+			patcher := model_core.NewReferenceMessagePatcher[dag.ObjectContentsWalker]()
+			visibilityPackageGroup, err := targetRegistrar.getVisibilityPackageGroup(visibility)
+			if err != nil {
+				return nil, err
+			}
+			patcher.Merge(visibilityPackageGroup.Patcher)
+
+			valueEncodingOptions := thread.Local(ValueEncodingOptionsKey).(*ValueEncodingOptions)
+			actualGroups, _, err := actual.EncodeGroups(
+				/* path = */ map[starlark.Value]struct{}{},
+				valueEncodingOptions,
+			)
+			if err != nil {
+				return nil, err
+			}
+			if l := len(actualGroups.Message); l != 1 {
+				return nil, fmt.Errorf("\"actual\" is a select() that contains %d groups, while 1 group was expected", l)
+			}
+			patcher.Merge(actualGroups.Patcher)
+
+			return starlark.None, targetRegistrar.registerTarget(
+				name,
+				model_core.PatchedMessage[*model_starlark_pb.Target, dag.ObjectContentsWalker]{
+					Message: &model_starlark_pb.Target{
+						Name: name,
+						Definition: &model_starlark_pb.TargetDefinition{
+							Kind: &model_starlark_pb.TargetDefinition_Alias{
+								Alias: &model_starlark_pb.Alias{
+									Actual:     actualGroups.Message[0],
+									Visibility: visibilityPackageGroup.Message,
+								},
+							},
+						},
+					},
+					Patcher: patcher,
+				},
+			)
+		},
+	),
 	"package": starlark.NewBuiltin(
 		"package",
 		func(thread *starlark.Thread, b *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {

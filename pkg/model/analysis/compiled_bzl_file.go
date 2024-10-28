@@ -11,7 +11,6 @@ import (
 	"github.com/buildbarn/bb-playground/pkg/evaluation"
 	"github.com/buildbarn/bb-playground/pkg/label"
 	model_core "github.com/buildbarn/bb-playground/pkg/model/core"
-	model_encoding "github.com/buildbarn/bb-playground/pkg/model/encoding"
 	model_filesystem "github.com/buildbarn/bb-playground/pkg/model/filesystem"
 	model_starlark "github.com/buildbarn/bb-playground/pkg/model/starlark"
 	model_analysis_pb "github.com/buildbarn/bb-playground/pkg/proto/model/analysis"
@@ -184,11 +183,9 @@ func (c *baseComputer) ComputeCompiledBzlFileDecodedGlobalsValue(ctx context.Con
 				OutgoingReferences: compiledBzlFile.OutgoingReferences,
 			},
 			currentFilename,
-			&model_starlark.ValueDecodingOptions{
-				Context:          ctx,
-				ObjectDownloader: c.objectDownloader,
-				ObjectEncoder:    model_encoding.NewChainedBinaryEncoder(nil),
-			},
+			c.getValueDecodingOptions(ctx, func(canonicalLabel label.CanonicalLabel) (starlark.Value, error) {
+				return model_starlark.NewLabel(canonicalLabel), nil
+			}),
 		)
 	case *model_analysis_pb.CompiledBzlFile_Value_Failure:
 		return nil, errors.New(resultType.Failure)

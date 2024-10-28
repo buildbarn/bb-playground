@@ -40,7 +40,7 @@ func (c *baseComputer) parseModuleInstanceModuleDotBazel(ctx context.Context, mo
 	case *model_analysis_pb.ModuleDotBazelContents_Value_Failure:
 		return fmt.Errorf("failed to obtain properties of %#v: %s", moduleFileLabel.String(), result.Failure)
 	default:
-		return errors.New("MODULE.bazel contents value has an unknown result type")
+		return errors.New(moduleDotBazelFilename + " contents value has an unknown result type")
 	}
 
 	moduleFileContentsEntry, err := model_filesystem.NewFileContentsEntryFromProto(

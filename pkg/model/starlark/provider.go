@@ -65,7 +65,10 @@ func (p *Provider) CallInternal(thread *starlark.Thread, args starlark.Tuple, kw
 	for _, kwarg := range kwargs {
 		fields[string(kwarg[0].(starlark.String))] = kwarg[1]
 	}
-	return starlarkstruct.FromStringDict(starlarkstruct.Default, fields), nil
+	return ProviderInstance{
+		Struct:   starlarkstruct.FromStringDict(starlarkstruct.Default, fields),
+		provider: p,
+	}, nil
 }
 
 func (p *Provider) EncodeValue(path map[starlark.Value]struct{}, currentIdentifier *pg_label.CanonicalStarlarkIdentifier, options *ValueEncodingOptions) (model_core.PatchedMessage[*model_starlark_pb.Value, dag.ObjectContentsWalker], bool, error) {
@@ -88,5 +91,44 @@ func (p *Provider) EncodeValue(path map[starlark.Value]struct{}, currentIdentifi
 			},
 		},
 		Patcher: model_core.NewReferenceMessagePatcher[dag.ObjectContentsWalker](),
+	}, needsCode, nil
+}
+
+type ProviderInstance struct {
+	*starlarkstruct.Struct
+	provider *Provider
+}
+
+func NewProviderInstance(strukt *starlarkstruct.Struct, providerIdentifier pg_label.CanonicalStarlarkIdentifier) ProviderInstance {
+	return ProviderInstance{
+		Struct: strukt,
+		provider: &Provider{
+			LateNamedValue: LateNamedValue{
+				Identifier: &providerIdentifier,
+			},
+		},
+	}
+}
+
+func (pi ProviderInstance) EncodeStruct(path map[starlark.Value]struct{}, options *ValueEncodingOptions) (model_core.PatchedMessage[*model_starlark_pb.Struct, dag.ObjectContentsWalker], bool, error) {
+	providerIdentifier := pi.provider.Identifier
+	if providerIdentifier == nil {
+		return model_core.PatchedMessage[*model_starlark_pb.Struct, dag.ObjectContentsWalker]{}, false, errors.New("provider does not have a name")
+	}
+	return encodeStruct(pi.Struct, path, providerIdentifier.String(), options)
+}
+
+func (pi ProviderInstance) EncodeValue(path map[starlark.Value]struct{}, currentIdentifier *pg_label.CanonicalStarlarkIdentifier, options *ValueEncodingOptions) (model_core.PatchedMessage[*model_starlark_pb.Value, dag.ObjectContentsWalker], bool, error) {
+	encodedStruct, needsCode, err := pi.EncodeStruct(path, options)
+	if err != nil {
+		return model_core.PatchedMessage[*model_starlark_pb.Value, dag.ObjectContentsWalker]{}, false, err
+	}
+	return model_core.PatchedMessage[*model_starlark_pb.Value, dag.ObjectContentsWalker]{
+		Message: &model_starlark_pb.Value{
+			Kind: &model_starlark_pb.Value_Struct{
+				Struct: encodedStruct.Message,
+			},
+		},
+		Patcher: encodedStruct.Patcher,
 	}, needsCode, nil
 }

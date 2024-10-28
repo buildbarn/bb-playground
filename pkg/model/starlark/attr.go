@@ -192,6 +192,10 @@ func NewLabelKeyedStringDictAttrType() AttrType {
 	return &labelKeyedStringDictAttrType{}
 }
 
+func (labelKeyedStringDictAttrType) Type() string {
+	return "label_keyed_string_dict"
+}
+
 func (labelKeyedStringDictAttrType) Encode(out *model_starlark_pb.Attr) {
 	out.Type = &model_starlark_pb.Attr_LabelKeyedStringDict{
 		LabelKeyedStringDict: &model_starlark_pb.Attr_LabelKeyedStringDictType{},
@@ -200,10 +204,6 @@ func (labelKeyedStringDictAttrType) Encode(out *model_starlark_pb.Attr) {
 
 func (labelKeyedStringDictAttrType) GetCanonicalizer(currentPackage pg_label.CanonicalPackage) unpack.Canonicalizer {
 	return unpack.Dict(NewLabelUnpackerInto(currentPackage), unpack.String)
-}
-
-func (labelKeyedStringDictAttrType) Type() string {
-	return "label_keyed_string_dict"
 }
 
 type labelListAttrType struct{}

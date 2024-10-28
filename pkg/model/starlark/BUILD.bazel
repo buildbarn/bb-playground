@@ -22,6 +22,7 @@ go_library(
         "rule.go",
         "select.go",
         "subrule.go",
+        "target_reference.go",
         "target_registrar.go",
         "toolchain_type.go",
         "transition.go",

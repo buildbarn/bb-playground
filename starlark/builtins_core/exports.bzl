@@ -3,16 +3,50 @@ CcLauncherInfo = provider()
 CcNativeLibraryInfo = provider()
 CcToolchainConfigInfo = provider()
 CcToolchainInfo = provider()
+ConstraintValueInfo = provider()
+ConstraintSettingInfo = provider()
 DebugPackageInfo = provider()
 DefaultInfo = provider()
 InstrumentedFilesInfo = provider()
 OutputGroupInfo = provider()
 PackageSpecificationInfo = provider()
+PlatformInfo = provider()
 ProguardSpecProvider = provider()
 RunEnvironmentInfo = provider()
 StaticallyLinkedMarkerProvider = provider()
 TemplateVariableInfo = provider()
 ToolchainInfo = provider()
+
+def _constraint_setting_impl(ctx):
+    return [ConstraintSettingInfo(
+        label = ctx.label,
+    )]
+
+constraint_setting = rule(
+    implementation = _constraint_setting_impl,
+    default_exec_group = False,
+    provides = [ConstraintSettingInfo],
+    # TODO: Provide the default_constraint_setting attribute. How can we
+    # offer this without causing cycles? Maybe change attr.label() to
+    # provide a flag to not inspect the configured target?
+)
+
+def _constraint_value_impl(ctx):
+    return [ConstraintValueInfo(
+        constraint = ctx.attr.constraint_setting[ConstraintSettingInfo],
+        label = ctx.label,
+    )]
+
+constraint_value = rule(
+    implementation = _constraint_value_impl,
+    default_exec_group = False,
+    attrs = {
+        "constraint_setting": attr.label(
+            mandatory = True,
+            providers = [ConstraintSettingInfo],
+        ),
+    },
+)
 
 def _filegroup_impl(ctx):
     fail("TODO")
@@ -24,6 +58,7 @@ filegroup = rule(
         "output_group": attr.string(),
         "srcs": attr.label_list(allow_files = True),
     },
+    default_exec_group = False,
 )
 
 def _genrule_impl(ctx):
@@ -47,15 +82,50 @@ genrule = rule(
     },
 )
 
+def licenses(license_types):
+    # This function is deprecated. Licenses can nowadays be attached in
+    # the form of metadata. Provide a no-op stub.
+    pass
+
 def _platform_impl(ctx):
-    fail("TODO")
+    # Convert all constraint values to a dict mapping the constraint
+    # setting to the corresponding value.
+    constraints = {}
+    for value in ctx.attr.constraint_values:
+        value_info = value[ConstraintValueInfo]
+        setting_label = value_info.constraint.label
+        value_label = value_info.label
+        if setting_label in constraints:
+            fail("constraint_values contains multiple values for constraint setting %s: %s and %s" % (
+                setting_label,
+                constraints[setting_label],
+                value_label,
+            ))
+        constraints[setting_label] = value_label
+
+    exec_properties = ctx.attr.exec_properties
+
+    # Inherit properties from the parent platform.
+    if ctx.attr.parents:
+        if len(ctx.attr.parents) != 1:
+            fail("providing multiple parents is not supported")
+        parent = ctx.attr.parents[0][PlatformInfo]
+        constraints = parent.constraints | constraints
+        exec_properties = parent.exec_properties | exec_properties
+
+    return [PlatformInfo(
+        constraints = constraints,
+        exec_properties = exec_properties,
+    )]
 
 platform = rule(
     implementation = _platform_impl,
     attrs = {
         "constraint_values": attr.label_list(),
         "exec_properties": attr.string_dict(),
-        "parents": attr.label_list(),
+        "parents": attr.label_list(
+            providers = [PlatformInfo],
+        ),
     },
     # platform() cannot contain any exec_groups, as that would cause a
     # cyclic dependency when configuring these targets.
@@ -75,8 +145,11 @@ def builtins_internal_java_common_internal_do_not_use_incompatible_disable_non_e
     return "TODO"
 
 exported_rules = {
+    "constraint_setting": constraint_setting,
+    "constraint_value": constraint_value,
     "filegroup": filegroup,
     "genrule": genrule,
+    "licenses": licenses,
     "platform": platform,
 }
 exported_toplevels = {

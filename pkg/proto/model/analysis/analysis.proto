@@ -188,8 +188,15 @@ message ConfiguredTarget {
   }
 
   message Value {
+    message Success {
+      // The values of the provider instances that this target produced,
+      // sorted alphabetically by provider identifier.
+      repeated buildbarn.playground.model.starlark.Struct provider_instances =
+          1;
+    }
+
     oneof result {
-      google.protobuf.Empty success = 1;
+      Success success = 1;
       string failure = 2;
     }
   }

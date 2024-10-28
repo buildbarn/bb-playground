@@ -131,7 +131,7 @@ func parseOverridesList(overridesList *model_analysis_pb.OverridesList) (map[lab
 }
 
 func getModuleDotBazelURL(registryURL string, module label.Module, moduleVersion label.ModuleVersion) (string, error) {
-	return url.JoinPath(registryURL, "modules", module.String(), moduleVersion.String(), "MODULE.bazel")
+	return url.JoinPath(registryURL, "modules", module.String(), moduleVersion.String(), moduleDotBazelFilename)
 }
 
 func (c *baseComputer) ComputeModuleRoughBuildListValue(ctx context.Context, key *model_analysis_pb.ModuleRoughBuildList_Key, e ModuleRoughBuildListEnvironment) (PatchedModuleRoughBuildListValue, error) {
@@ -335,8 +335,11 @@ ProcessModule:
 		includeDevDependencies = false
 		if err := pg_starlark.ParseModuleDotBazel(
 			string(moduleFileData),
-			// TODO: Construct label via pkg/label utility functions.
-			label.MustNewCanonicalLabel(fmt.Sprintf("@@%s+//:MODULE.bazel", module.name.String())),
+			module.name.
+				ToModuleInstance(nil).
+				GetBareCanonicalRepo().
+				GetRootPackage().
+				AppendTargetName(moduleDotBazelTargetName),
 			nil,
 			pg_starlark.NewOverrideIgnoringRootModuleDotBazelHandler(&handler),
 		); err != nil {

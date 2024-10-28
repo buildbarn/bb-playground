@@ -45,6 +45,15 @@ message Value {
   }
 }
 
+message Alias {
+  // The label of the target to which the alias expands.
+  Select.Group actual = 1;
+
+  // The visibility of the alias, which may differ from the visibility
+  // of the target to which the alias expands.
+  PackageGroup visibility = 2;
+}
+
 message Aspect {
   message Definition {}
 
@@ -296,7 +305,12 @@ message Provider {
 }
 
 message Struct {
+  // The fields contained within the struct.
   repeated StructField fields = 1;
+
+  // If set, the struct was created by invoking a provider. The value
+  // corresponds to the identifier of the provider.
+  string provider_identifier = 2;
 }
 
 message StructField {
@@ -378,7 +392,7 @@ message RuleTarget {
 
     // The value of the attribute, in the form of a sequence of select()
     // expressions whose values need to be summed/concatenated.
-    repeated Select.Group value = 2;
+    repeated Select.Group value_parts = 2;
   }
 
   // Identifier of the rule used by this target.
@@ -443,11 +457,14 @@ message Subrule {
 
 message TargetDefinition {
   oneof kind {
-    // Buildable target backed by a rule.
-    RuleTarget rule_target = 2;
+    // Reference to another target.
+    Alias alias = 1;
 
     // Group of packages, used to control visibility of targets.
-    PackageGroup package_group = 3;
+    PackageGroup package_group = 2;
+
+    // Buildable target backed by a rule.
+    RuleTarget rule_target = 3;
   }
 }
 

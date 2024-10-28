@@ -73,6 +73,7 @@
       },
       "ConfiguredRuleObject": {
          "dependsOn": [
+            "CompiledBzlFileGlobal",
             "ConfiguredRule"
          ],
          "nativeValueType": {
@@ -87,6 +88,7 @@
             "CompiledBzlFileFunctions",
             "CompiledBzlFileGlobal",
             "ConfiguredRuleObject",
+            "ConfiguredTarget",
             "Target"
          ]
       },
