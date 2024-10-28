@@ -77,14 +77,14 @@ func getDefaultInheritableAttrs(thread *starlark.Thread, b *starlark.Builtin, ar
 	testOnly := previousInheritableAttrs.Message.Testonly
 	var visibility []pg_label.CanonicalLabel
 	canonicalPackage := currentFilePackage(thread)
-	labelStringListUnpackerInto := unpack.List(unpack.Stringer(NewLabelUnpackerInto(canonicalPackage)))
+	labelStringListUnpackerInto := unpack.List(unpack.Stringer(NewLabelOrStringUnpackerInto(canonicalPackage)))
 	if err := starlark.UnpackArgs(
 		b.Name(), args, kwargs,
 		"default_applicable_licenses?", unpack.Bind(thread, &applicableLicenses, labelStringListUnpackerInto),
 		"default_deprecation?", unpack.Bind(thread, &deprecation, unpack.String),
 		"default_package_metadata?", unpack.Bind(thread, &packageMetadata, labelStringListUnpackerInto),
 		"default_testonly?", unpack.Bind(thread, &testOnly, unpack.Bool),
-		"default_visibility?", unpack.Bind(thread, &visibility, unpack.List(NewLabelUnpackerInto(canonicalPackage))),
+		"default_visibility?", unpack.Bind(thread, &visibility, unpack.List(NewLabelOrStringUnpackerInto(canonicalPackage))),
 	); err != nil {
 		return model_core.PatchedMessage[*model_starlark_pb.InheritableAttrs, dag.ObjectContentsWalker]{}, err
 	}

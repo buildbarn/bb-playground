@@ -79,17 +79,17 @@ type CanonicalRepoResolver = func(fromCanonicalRepo pg_label.CanonicalRepo, toAp
 
 const CanonicalRepoResolverKey = "canonical_repo_resolver"
 
-type labelUnpackerInto struct {
+type labelOrStringUnpackerInto struct {
 	basePackage pg_label.CanonicalPackage
 }
 
-func NewLabelUnpackerInto(basePackage pg_label.CanonicalPackage) unpack.UnpackerInto[pg_label.CanonicalLabel] {
-	return &labelUnpackerInto{
+func NewLabelOrStringUnpackerInto(basePackage pg_label.CanonicalPackage) unpack.UnpackerInto[pg_label.CanonicalLabel] {
+	return &labelOrStringUnpackerInto{
 		basePackage: basePackage,
 	}
 }
 
-func (ui *labelUnpackerInto) UnpackInto(thread *starlark.Thread, v starlark.Value, dst *pg_label.CanonicalLabel) error {
+func (ui *labelOrStringUnpackerInto) UnpackInto(thread *starlark.Thread, v starlark.Value, dst *pg_label.CanonicalLabel) error {
 	switch typedV := v.(type) {
 	case starlark.String:
 		// Label value is a bare string. Parse it.
@@ -126,7 +126,32 @@ func (ui *labelUnpackerInto) UnpackInto(thread *starlark.Thread, v starlark.Valu
 	}
 }
 
-func (ui *labelUnpackerInto) Canonicalize(thread *starlark.Thread, v starlark.Value) (starlark.Value, error) {
+func (ui *labelOrStringUnpackerInto) Canonicalize(thread *starlark.Thread, v starlark.Value) (starlark.Value, error) {
+	var l pg_label.CanonicalLabel
+	if err := ui.UnpackInto(thread, v, &l); err != nil {
+		return nil, err
+	}
+	return label{value: l}, nil
+}
+
+func (labelOrStringUnpackerInto) GetConcatenationOperator() syntax.Token {
+	return 0
+}
+
+type labelUnpackerInto struct{}
+
+var LabelUnpackerInto unpack.UnpackerInto[pg_label.CanonicalLabel] = labelUnpackerInto{}
+
+func (labelUnpackerInto) UnpackInto(thread *starlark.Thread, v starlark.Value, dst *pg_label.CanonicalLabel) error {
+	l, ok := v.(label)
+	if !ok {
+		return fmt.Errorf("got %s, want Label", v.Type())
+	}
+	*dst = l.value
+	return nil
+}
+
+func (ui labelUnpackerInto) Canonicalize(thread *starlark.Thread, v starlark.Value) (starlark.Value, error) {
 	var l pg_label.CanonicalLabel
 	if err := ui.UnpackInto(thread, v, &l); err != nil {
 		return nil, err

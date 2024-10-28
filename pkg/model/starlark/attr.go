@@ -179,7 +179,7 @@ func (at *labelAttrType) Encode(out *model_starlark_pb.Attr) {
 }
 
 func (ui *labelAttrType) GetCanonicalizer(currentPackage pg_label.CanonicalPackage) unpack.Canonicalizer {
-	canonicalizer := NewLabelUnpackerInto(currentPackage)
+	canonicalizer := NewLabelOrStringUnpackerInto(currentPackage)
 	if ui.allowNone {
 		canonicalizer = unpack.IfNotNone(canonicalizer)
 	}
@@ -203,7 +203,7 @@ func (labelKeyedStringDictAttrType) Encode(out *model_starlark_pb.Attr) {
 }
 
 func (labelKeyedStringDictAttrType) GetCanonicalizer(currentPackage pg_label.CanonicalPackage) unpack.Canonicalizer {
-	return unpack.Dict(NewLabelUnpackerInto(currentPackage), unpack.String)
+	return unpack.Dict(NewLabelOrStringUnpackerInto(currentPackage), unpack.String)
 }
 
 type labelListAttrType struct{}
@@ -223,7 +223,7 @@ func (labelListAttrType) Encode(out *model_starlark_pb.Attr) {
 }
 
 func (labelListAttrType) GetCanonicalizer(currentPackage pg_label.CanonicalPackage) unpack.Canonicalizer {
-	return unpack.List(NewLabelUnpackerInto(currentPackage))
+	return unpack.List(NewLabelOrStringUnpackerInto(currentPackage))
 }
 
 type outputAttrType struct{}

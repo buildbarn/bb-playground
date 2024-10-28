@@ -31,7 +31,7 @@ var commonBuiltins = starlark.StringDict{
 			var input pg_label.CanonicalLabel
 			if err := starlark.UnpackArgs(
 				b.Name(), args, kwargs,
-				"input", unpack.Bind(thread, &input, NewLabelUnpackerInto(currentFilePackage(thread))),
+				"input", unpack.Bind(thread, &input, NewLabelOrStringUnpackerInto(currentFilePackage(thread))),
 			); err != nil {
 				return nil, err
 			}
@@ -57,7 +57,7 @@ var commonBuiltins = starlark.StringDict{
 			noMatchError := ""
 			if err := starlark.UnpackArgs(
 				b.Name(), args, kwargs,
-				"conditions", unpack.Bind(thread, &conditions, unpack.Dict(NewLabelUnpackerInto(currentFilePackage(thread)), unpack.Any)),
+				"conditions", unpack.Bind(thread, &conditions, unpack.Dict(NewLabelOrStringUnpackerInto(currentFilePackage(thread)), unpack.Any)),
 				"no_match_error?", unpack.Bind(thread, &noMatchError, unpack.String),
 			); err != nil {
 				return nil, err
@@ -91,12 +91,12 @@ var BuildFileBuiltins = starlark.StringDict{
 			var name string
 			var actual *Select
 			var visibility []pg_label.CanonicalLabel
-			labelUnpackerInto := NewLabelUnpackerInto(currentFilePackage(thread))
+			labelOrStringUnpackerInto := NewLabelOrStringUnpackerInto(currentFilePackage(thread))
 			if err := starlark.UnpackArgs(
 				b.Name(), args, kwargs,
 				"name", unpack.Bind(thread, &name, unpack.Stringer(unpack.TargetName)),
-				"actual", unpack.Bind(thread, &actual, NewSelectUnpackerInto(labelUnpackerInto)),
-				"visibility?", unpack.Bind(thread, &visibility, unpack.List(labelUnpackerInto)),
+				"actual", unpack.Bind(thread, &actual, NewSelectUnpackerInto(labelOrStringUnpackerInto)),
+				"visibility?", unpack.Bind(thread, &visibility, unpack.List(labelOrStringUnpackerInto)),
 			); err != nil {
 				return nil, err
 			}
@@ -706,7 +706,7 @@ var BzlFileBuiltins = starlark.StringDict{
 				mandatory := true
 				if err := starlark.UnpackArgs(
 					b.Name(), args, kwargs,
-					"name", unpack.Bind(thread, &name, NewLabelUnpackerInto(currentFilePackage(thread))),
+					"name", unpack.Bind(thread, &name, NewLabelOrStringUnpackerInto(currentFilePackage(thread))),
 					"mandatory?", unpack.Bind(thread, &mandatory, unpack.Bool),
 				); err != nil {
 					return nil, err
@@ -763,7 +763,7 @@ var BzlFileBuiltins = starlark.StringDict{
 			var toolchains []*ToolchainType
 			if err := starlark.UnpackArgs(
 				b.Name(), args, kwargs,
-				"exec_compatible_with?", unpack.Bind(thread, &execCompatibleWith, unpack.List(NewLabelUnpackerInto(currentFilePackage(thread)))),
+				"exec_compatible_with?", unpack.Bind(thread, &execCompatibleWith, unpack.List(NewLabelOrStringUnpackerInto(currentFilePackage(thread)))),
 				"toolchains?", unpack.Bind(thread, &toolchains, unpack.List(ToolchainTypeUnpackerInto)),
 			); err != nil {
 				return nil, err
@@ -817,7 +817,7 @@ var BzlFileBuiltins = starlark.StringDict{
 				var input pg_label.CanonicalLabel
 				if err := starlark.UnpackArgs(
 					b.Name(), args, kwargs,
-					"input", unpack.Bind(thread, &input, NewLabelUnpackerInto(canonicalPackage.(pg_label.CanonicalPackage))),
+					"input", unpack.Bind(thread, &input, NewLabelOrStringUnpackerInto(canonicalPackage.(pg_label.CanonicalPackage))),
 				); err != nil {
 					return nil, err
 				}
@@ -913,7 +913,7 @@ var BzlFileBuiltins = starlark.StringDict{
 				"default_exec_group?", unpack.Bind(thread, &defaultExecGroup, unpack.Bool),
 				"doc?", unpack.Bind(thread, &doc, unpack.String),
 				"executable?", unpack.Bind(thread, &executable, unpack.Bool),
-				"exec_compatible_with?", unpack.Bind(thread, &execCompatibleWith, unpack.List(NewLabelUnpackerInto(currentFilePackage(thread)))),
+				"exec_compatible_with?", unpack.Bind(thread, &execCompatibleWith, unpack.List(NewLabelOrStringUnpackerInto(currentFilePackage(thread)))),
 				"exec_groups?", unpack.Bind(thread, &execGroups, unpack.Dict(unpack.String, unpack.Type[*ExecGroup]("exec_group"))),
 				"fragments?", unpack.Bind(thread, &fragments, unpack.List(unpack.String)),
 				"host_fragments?", unpack.Bind(thread, &hostFragments, unpack.List(unpack.String)),
@@ -979,7 +979,7 @@ var BzlFileBuiltins = starlark.StringDict{
 			var implementation *NamedFunction
 			var inputs []pg_label.CanonicalLabel
 			var outputs []pg_label.CanonicalLabel
-			canonicalLabelListUnpackerInto := unpack.List(NewLabelUnpackerInto(currentFilePackage(thread)))
+			canonicalLabelListUnpackerInto := unpack.List(NewLabelOrStringUnpackerInto(currentFilePackage(thread)))
 			if err := starlark.UnpackArgs(
 				b.Name(), args, kwargs,
 				"implementation", unpack.Bind(thread, &implementation, NamedFunctionUnpackerInto),

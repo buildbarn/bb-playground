@@ -123,7 +123,7 @@ func (r *rule) CallInternal(thread *starlark.Thread, args starlark.Tuple, kwargs
 	var tags []string
 	testOnly := defaultInheritableAttrs.Testonly
 	var visibility []pg_label.CanonicalLabel
-	labelStringListUnpackerInto := unpack.List(unpack.Stringer(NewLabelUnpackerInto(currentPackage)))
+	labelStringListUnpackerInto := unpack.List(unpack.Stringer(NewLabelOrStringUnpackerInto(currentPackage)))
 	unpackers = append(
 		unpackers,
 		"name", unpack.Bind(thread, &name, unpack.Stringer(unpack.TargetName)),
@@ -131,7 +131,7 @@ func (r *rule) CallInternal(thread *starlark.Thread, args starlark.Tuple, kwargs
 		"package_metadata?", unpack.Bind(thread, &packageMetadata, labelStringListUnpackerInto),
 		"tags?", unpack.Bind(thread, &tags, unpack.List(unpack.String)),
 		"testonly?", unpack.Bind(thread, &testOnly, unpack.Bool),
-		"visibility?", unpack.Bind(thread, &visibility, unpack.List(NewLabelUnpackerInto(currentPackage))),
+		"visibility?", unpack.Bind(thread, &visibility, unpack.List(NewLabelOrStringUnpackerInto(currentPackage))),
 	)
 
 	if err := starlark.UnpackArgs(

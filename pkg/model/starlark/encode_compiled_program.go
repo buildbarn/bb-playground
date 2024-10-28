@@ -553,7 +553,7 @@ func DecodeValue(encodedValue model_core.Message[*model_starlark_pb.Value], curr
 	case *model_starlark_pb.Value_Str:
 		return starlark.String(typedValue.Str), nil
 	case *model_starlark_pb.Value_Struct:
-		strukt, err := decodeStruct(model_core.Message[*model_starlark_pb.Struct]{
+		strukt, err := DecodeStruct(model_core.Message[*model_starlark_pb.Struct]{
 			Message:            typedValue.Struct,
 			OutgoingReferences: encodedValue.OutgoingReferences,
 		}, options)
@@ -656,7 +656,7 @@ func DecodeAttrType(attr *model_starlark_pb.Attr) (AttrType, error) {
 	}
 }
 
-func decodeStruct(m model_core.Message[*model_starlark_pb.Struct], options *ValueDecodingOptions) (*starlarkstruct.Struct, error) {
+func DecodeStruct(m model_core.Message[*model_starlark_pb.Struct], options *ValueDecodingOptions) (*starlarkstruct.Struct, error) {
 	encodedFields := m.Message.Fields
 	fields := make(map[string]starlark.Value, len(encodedFields))
 	for _, encodedField := range encodedFields {
@@ -673,7 +673,7 @@ func decodeStruct(m model_core.Message[*model_starlark_pb.Struct], options *Valu
 }
 
 func DecodeProviderInstance(m model_core.Message[*model_starlark_pb.Struct], options *ValueDecodingOptions) (ProviderInstance, error) {
-	strukt, err := decodeStruct(m, options)
+	strukt, err := DecodeStruct(m, options)
 	if err != nil {
 		return ProviderInstance{}, err
 	}

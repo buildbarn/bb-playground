@@ -554,19 +554,37 @@ message RegisteredExecutionPlatforms {
   message Value {
     message Success {
       message ExecutionPlatform {
-        message ExecProperty {
-          string name = 1;
+        message Constraint {
+          // The label of the constraint_setting() target.
+          string setting = 1;
+
+          // The label of the constraint_value() target.
           string value = 2;
         }
 
-        repeated string constraint_values = 1;
+        message ExecProperty {
+          // The name of the remote execution property.
+          string name = 1;
+
+          // The value of the remote execution property.
+          string value = 2;
+        }
+
+        // Constraints that apply to the execution platform, such as the
+        // CPU architecture or operating system. Constraints are sorted
+        // alphabetically by setting.
+        repeated Constraint constraints = 1;
+
+        // Properties that need to be sent to the remote execution
+        // system to select appropriate workers. Properties are sorted
+        // alphabetically by name.
         repeated ExecProperty exec_properties = 2;
 
         // TODO: Also add flags, required_settings, etc.?
       }
 
       // List of platforms that are available for executing commands,
-      // ordered by preference.
+      // ordered by decreasing preference.
       repeated ExecutionPlatform execution_platforms = 1;
     }
 
