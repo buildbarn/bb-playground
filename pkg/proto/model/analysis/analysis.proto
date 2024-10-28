@@ -596,6 +596,18 @@ message RegisteredExecutionPlatforms {
   }
 }
 
+message RegisteredToolchains {
+  message Key {}
+
+  message Value {
+    oneof result {
+      google.protobuf.Empty success = 1;
+
+      string failure = 2;
+    }
+  }
+}
+
 message Repo {
   message Key {
     // The canonical name of the repo whose file contents are being

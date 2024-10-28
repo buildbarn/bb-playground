@@ -241,6 +241,13 @@
             "ModuleDotBazelContents"
          ]
       },
+      "RegisteredToolchains": {
+         "dependsOn": [
+            "AllModuleInstances",
+            "FileReader",
+            "ModuleDotBazelContents"
+         ]
+      },
       "Repo": {
          "dependsOn": [
             "BuildSpecification",
@@ -259,7 +266,8 @@
       },
       "ResolvedToolchains": {
          "dependsOn": [
-            "RegisteredExecutionPlatforms"
+            "RegisteredExecutionPlatforms",
+            "RegisteredToolchains"
          ]
       },
       "RootModuleName": {

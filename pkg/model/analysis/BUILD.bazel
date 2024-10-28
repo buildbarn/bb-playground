@@ -32,6 +32,7 @@ go_library(
         "modules_with_overrides.go",
         "package.go",
         "registered_execution_platforms.go",
+        "registered_toolchains.go",
         "repo.go",
         "resolved_toolchains.go",
         "root_module_name.go",
