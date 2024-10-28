@@ -39,13 +39,14 @@ def _constraint_value_impl(ctx):
 
 constraint_value = rule(
     implementation = _constraint_value_impl,
-    default_exec_group = False,
     attrs = {
         "constraint_setting": attr.label(
             mandatory = True,
             providers = [ConstraintSettingInfo],
         ),
     },
+    default_exec_group = False,
+    provides = [ConstraintValueInfo],
 )
 
 def _filegroup_impl(ctx):
@@ -121,7 +122,9 @@ def _platform_impl(ctx):
 platform = rule(
     implementation = _platform_impl,
     attrs = {
-        "constraint_values": attr.label_list(),
+        "constraint_values": attr.label_list(
+            providers = [ConstraintValueInfo],
+        ),
         "exec_properties": attr.string_dict(),
         "parents": attr.label_list(
             providers = [PlatformInfo],
@@ -130,6 +133,7 @@ platform = rule(
     # platform() cannot contain any exec_groups, as that would cause a
     # cyclic dependency when configuring these targets.
     default_exec_group = False,
+    provides = [PlatformInfo],
 )
 
 def proto_common_incompatible_enable_proto_toolchain_resolution():
