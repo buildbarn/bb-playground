@@ -176,6 +176,10 @@ func (c *baseComputer) ComputeRegisteredExecutionPlatformsValue(ctx context.Cont
 		return PatchedRegisteredExecutionPlatformsValue{}, err
 	}
 
+	// TODO: We currently iterate over all modules in alphabetical
+	// order. Is this desirable? Maybe we should process the root
+	// module first?
+	// TODO: We should also respect --extra_execution_platforms.
 	var executionPlatforms []*model_analysis_pb.RegisteredExecutionPlatforms_Value_Success_ExecutionPlatform
 	missingDependency := false
 	for _, moduleInstanceStr := range allModuleInstances {
