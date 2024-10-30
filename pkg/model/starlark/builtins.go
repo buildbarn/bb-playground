@@ -797,6 +797,36 @@ var BzlFileBuiltins = starlark.StringDict{
 			},
 		),
 	}),
+	"module_extension": starlark.NewBuiltin(
+		"module_extension",
+		func(thread *starlark.Thread, b *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
+			if len(args) > 1 {
+				return nil, fmt.Errorf("%s: got %d positional arguments, want at most 1", b.Name(), len(args))
+			}
+			var implementation *NamedFunction
+			archDependent := false
+			doc := ""
+			var environ []string
+			osDependent := false
+			var tagClasses map[pg_label.StarlarkIdentifier]*TagClass
+			if err := starlark.UnpackArgs(
+				b.Name(), args, kwargs,
+				// Positional arguments.
+				"implementation", unpack.Bind(thread, &implementation, NamedFunctionUnpackerInto),
+				// Keyword arguments.
+				"arch_dependent?", unpack.Bind(thread, &archDependent, unpack.Bool),
+				"doc?", unpack.Bind(thread, &doc, unpack.String),
+				"environ?", unpack.Bind(thread, &environ, unpack.List(unpack.String)),
+				"os_dependent?", unpack.Bind(thread, &osDependent, unpack.Bool),
+				"tag_classes?", unpack.Bind(thread, &tagClasses, unpack.Dict(unpack.StarlarkIdentifier, unpack.Type[*TagClass]("tag_class"))),
+			); err != nil {
+				return nil, err
+			}
+			return NewModuleExtension(nil, &model_starlark_pb.ModuleExtension_Definition{
+				Implementation: implementation.identifier.String(),
+			}), nil
+		},
+	),
 	"native": starlarkstruct.FromStringDict(starlarkstruct.Default, starlark.StringDict{
 		"package_relative_label": starlark.NewBuiltin(
 			"package_relative_label",
@@ -865,6 +895,7 @@ var BzlFileBuiltins = starlark.StringDict{
 			attrs := map[pg_label.StarlarkIdentifier]*Attr{}
 			doc := ""
 			var environ []string
+			local := false
 			if err := starlark.UnpackArgs(
 				b.Name(), args, kwargs,
 				// Positional arguments.
@@ -873,6 +904,7 @@ var BzlFileBuiltins = starlark.StringDict{
 				"attrs?", unpack.Bind(thread, &attrs, unpack.Dict(unpack.StarlarkIdentifier, unpack.Type[*Attr]("attr.*"))),
 				"doc?", unpack.Bind(thread, &doc, unpack.String),
 				"environ?", unpack.Bind(thread, &environ, unpack.List(unpack.String)),
+				"local?", unpack.Bind(thread, &local, unpack.Bool),
 			); err != nil {
 				return nil, err
 			}
@@ -968,6 +1000,26 @@ var BzlFileBuiltins = starlark.StringDict{
 				return nil, err
 			}
 			return NewSubrule(nil, &model_starlark_pb.Subrule_Definition{}), nil
+		},
+	),
+	"tag_class": starlark.NewBuiltin(
+		"tag_class",
+		func(thread *starlark.Thread, b *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
+			if len(args) > 1 {
+				return nil, fmt.Errorf("%s: got %d positional arguments, want at most 1", b.Name(), len(args))
+			}
+			attrs := map[pg_label.StarlarkIdentifier]*Attr{}
+			doc := ""
+			if err := starlark.UnpackArgs(
+				b.Name(), args, kwargs,
+				// Positional arguments.
+				"attrs?", unpack.Bind(thread, &attrs, unpack.Dict(unpack.StarlarkIdentifier, unpack.Type[*Attr]("attr.*"))),
+				// Keyword arguments.
+				"doc?", unpack.Bind(thread, &doc, unpack.String),
+			); err != nil {
+				return nil, err
+			}
+			return NewTagClass(NewStarlarkTagClassDefinition(attrs)), nil
 		},
 	),
 	"transition": starlark.NewBuiltin(

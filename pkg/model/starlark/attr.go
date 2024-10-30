@@ -2,6 +2,9 @@ package starlark
 
 import (
 	"fmt"
+	"maps"
+	"slices"
+	"strings"
 
 	pg_label "github.com/buildbarn/bb-playground/pkg/label"
 	model_core "github.com/buildbarn/bb-playground/pkg/model/core"
@@ -346,4 +349,29 @@ func (at *stringListDictAttrType) Encode(out *model_starlark_pb.Attr) {
 
 func (stringListDictAttrType) GetCanonicalizer(currentPackage pg_label.CanonicalPackage) unpack.Canonicalizer {
 	return unpack.Dict(unpack.String, unpack.List(unpack.String))
+}
+
+func encodeNamedAttrs(attrs map[pg_label.StarlarkIdentifier]*Attr, path map[starlark.Value]struct{}, options *ValueEncodingOptions) (model_core.PatchedMessage[[]*model_starlark_pb.NamedAttr, dag.ObjectContentsWalker], bool, error) {
+	encodedAttrs := make([]*model_starlark_pb.NamedAttr, 0, len(attrs))
+	patcher := model_core.NewReferenceMessagePatcher[dag.ObjectContentsWalker]()
+	needsCode := false
+	for _, name := range slices.SortedFunc(
+		maps.Keys(attrs),
+		func(a, b pg_label.StarlarkIdentifier) int { return strings.Compare(a.String(), b.String()) },
+	) {
+		attr, attrNeedsCode, err := attrs[name].Encode(path, options)
+		if err != nil {
+			return model_core.PatchedMessage[[]*model_starlark_pb.NamedAttr, dag.ObjectContentsWalker]{}, false, fmt.Errorf("attr %#v: %w", name, err)
+		}
+		encodedAttrs = append(encodedAttrs, &model_starlark_pb.NamedAttr{
+			Name: name.String(),
+			Attr: attr.Message,
+		})
+		patcher.Merge(attr.Patcher)
+		needsCode = needsCode || attrNeedsCode
+	}
+	return model_core.PatchedMessage[[]*model_starlark_pb.NamedAttr, dag.ObjectContentsWalker]{
+		Message: encodedAttrs,
+		Patcher: patcher,
+	}, needsCode, nil
 }

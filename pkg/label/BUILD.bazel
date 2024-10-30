@@ -10,6 +10,7 @@ go_library(
         "canonical_repo.go",
         "canonical_starlark_identifier.go",
         "module.go",
+        "module_extension.go",
         "module_instance.go",
         "module_version.go",
         "starlark_identifier.go",
@@ -26,6 +27,7 @@ go_test(
         "canonical_label_test.go",
         "canonical_package_test.go",
         "canonical_repo_test.go",
+        "canonical_starlark_identifier_test.go",
         "module_version_test.go",
     ],
     deps = [

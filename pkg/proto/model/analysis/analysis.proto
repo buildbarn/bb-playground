@@ -360,6 +360,16 @@ message ModuleDotBazelContents {
   }
 }
 
+message ModuleExtension {
+  message Key {
+    // Starlark identifier of the module extension. Note that even
+    // though the identifier is prefixed with a canonical repo, the
+    // identifier may not be canonical due to indirection in the
+    // Starlark code.
+    string identifier = 1;
+  }
+}
+
 message ModuleRegistryUrls {
   message Key {}
 
@@ -379,18 +389,32 @@ message ModuleRepoMapping {
   message Value {
     message Success {
       message Mapping {
+        message ModuleExtensionRepo {
+          // Starlark identifier of the module extension. Note that even
+          // though the identifier is prefixed with a canonical repo,
+          // the identifier may not be canonical due to indirection in
+          // the Starlark code.
+          string extension_identifier = 1;
+
+          // The apparent name of the repo that is provided by the
+          // module extension.
+          string to_apparent_repo = 2;
+        }
+
         // The name of the apparent repo that is visible from within the
         // module.
-        string apparent_repo = 1;
+        string from_apparent_repo = 1;
 
-        // The name of the canonical repo to which the apparent repo
-        // maps.
-        //
-        // This field is not set for repos belonging to module
-        // extensions, as the exact name of such repos can only be
-        // determined by loading .bzl files. Loading such files depends
-        // on the repo mapping being computed.
-        string canonical_repo = 2;
+        oneof target {
+          // The name of the canonical repo to which the apparent repo
+          // maps.
+          string canonical_repo = 2;
+
+          // The name of the canonical repo isn't known just yet,
+          // because the repo is provided by a module extension and
+          // mapped into the module instance by calling use_repo().
+          ModuleExtensionRepo module_extension_repo = 3;
+        }
       }
 
       // The list of repos that can be accessed from within this module
@@ -672,11 +696,18 @@ message ResolvedToolchains {
   }
 }
 
-message RootModuleName {
+message RootModule {
   message Key {}
 
   message Value {
+    // The name of the root module.
     string root_module_name = 1;
+
+    // Whether to ignore `bazel_dep` and `use_extension` declared as
+    // `dev_dependency` in the MODULE.bazel of the root module. Note
+    // that such dependencies are always ignored in the MODULE.bazel
+    // file of modules other than the root module.
+    bool ignore_root_module_dev_dependencies = 2;
   }
 }
 
@@ -706,6 +737,18 @@ message TargetCompletion {
   message Value {
     oneof result {
       google.protobuf.Empty success = 1;
+      string failure = 2;
+    }
+  }
+}
+
+message UsedModuleExtensions {
+  message Key {}
+
+  message Value {
+    oneof result {
+      google.protobuf.Empty success = 1;
+
       string failure = 2;
     }
   }

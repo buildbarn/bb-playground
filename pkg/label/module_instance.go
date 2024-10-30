@@ -53,6 +53,6 @@ func (mi ModuleInstance) GetBareCanonicalRepo() CanonicalRepo {
 	return CanonicalRepo{value: mi.value}
 }
 
-func (mi ModuleInstance) GetCanonicalRepoWithModuleExtension(extensionName StarlarkIdentifier, repo ApparentRepo) CanonicalRepo {
-	return CanonicalRepo{value: mi.value + "+" + extensionName.value + "+" + repo.value}
+func (mi ModuleInstance) GetModuleExtension(extensionName StarlarkIdentifier) ModuleExtension {
+	return ModuleExtension{value: mi.value + `+` + extensionName.value}
 }

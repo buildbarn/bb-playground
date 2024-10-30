@@ -136,6 +136,13 @@ platform = rule(
     provides = [PlatformInfo],
 )
 
+def _toolchain_impl(ctx):
+    pass
+
+toolchain = rule(
+    implementation = _toolchain_impl,
+)
+
 def proto_common_incompatible_enable_proto_toolchain_resolution():
     return True
 
@@ -155,6 +162,7 @@ exported_rules = {
     "genrule": genrule,
     "licenses": licenses,
     "platform": platform,
+    "toolchain": toolchain,
 }
 exported_toplevels = {
     "DefaultInfo": DefaultInfo,

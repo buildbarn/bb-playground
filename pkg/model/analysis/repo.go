@@ -21,6 +21,8 @@ import (
 	"github.com/buildbarn/bb-playground/pkg/storage/object"
 	"github.com/buildbarn/bb-storage/pkg/filesystem/path"
 	"github.com/buildbarn/bb-storage/pkg/util"
+
+	"google.golang.org/protobuf/encoding/protojson"
 )
 
 type sourceJSON struct {
@@ -379,7 +381,12 @@ func (c *baseComputer) ComputeRepoValue(ctx context.Context, key *model_analysis
 			}
 		}
 	} else {
-		// TODO: Look up module extension.
+		// TODO!
+		usedModuleExtensions := e.GetUsedModuleExtensionsValue(&model_analysis_pb.UsedModuleExtensions_Key{})
+		if !usedModuleExtensions.IsSet() {
+			return PatchedRepoValue{}, evaluation.ErrMissingDependency
+		}
+		panic(protojson.Format(usedModuleExtensions.Message))
 	}
 
 	return model_core.NewSimplePatchedMessage[dag.ObjectContentsWalker](&model_analysis_pb.Repo_Value{

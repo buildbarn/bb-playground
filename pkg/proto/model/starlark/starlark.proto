@@ -31,17 +31,19 @@ message Value {
     bytes int = 9;
     string label = 10;
     List list = 11;
-    google.protobuf.Empty none = 12;
-    Provider provider = 13;
-    RepositoryRule repository_rule = 14;
-    Rule rule = 15;
-    Select select = 16;
-    string str = 17;
-    Struct struct = 18;
-    Subrule subrule = 19;
-    ToolchainType toolchain_type = 20;
-    Transition transition = 21;
-    Tuple tuple = 22;
+    ModuleExtension module_extension = 12;
+    google.protobuf.Empty none = 13;
+    Provider provider = 14;
+    RepositoryRule repository_rule = 15;
+    Rule rule = 16;
+    Select select = 17;
+    string str = 18;
+    Struct struct = 19;
+    Subrule subrule = 20;
+    TagClass tag_class = 21;
+    ToolchainType toolchain_type = 22;
+    Transition transition = 23;
+    Tuple tuple = 24;
   }
 }
 
@@ -253,6 +255,18 @@ message List {
   repeated Element elements = 1;
 }
 
+message ModuleExtension {
+  message Definition {
+    string implementation = 1;
+  }
+
+  oneof kind {
+    string reference = 1;
+
+    Definition definition = 2;
+  }
+}
+
 message PackageGroup {
   message Package {
     // At the root level, the canonical repo for which inclusion is
@@ -316,6 +330,11 @@ message Struct {
 message StructField {
   string key = 1;
   Value value = 2;
+}
+
+message TagClass {
+  // Attributes of the tag class, sorted by name.
+  repeated NamedAttr attrs = 1;
 }
 
 message ToolchainType {

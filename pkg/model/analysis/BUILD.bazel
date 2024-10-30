@@ -11,7 +11,6 @@ genrule(
 go_library(
     name = "analysis",
     srcs = [
-        "all_module_instances.go",
         "base_computer.go",
         "canonical_repo_name.go",
         "compiled_bzl_file.go",
@@ -24,6 +23,7 @@ go_library(
         "http_archive_contents.go",
         "http_file_contents.go",
         "module_dot_bazel_contents.go",
+        "module_extension.go",
         "module_final_build_list.go",
         "module_registry_urls.go",
         "module_repo_mapping.go",
@@ -35,8 +35,9 @@ go_library(
         "registered_toolchains.go",
         "repo.go",
         "resolved_toolchains.go",
-        "root_module_name.go",
+        "root_module.go",
         "target.go",
+        "used_module_extensions.go",
     ],
     importpath = "github.com/buildbarn/bb-playground/pkg/model/analysis",
     visibility = ["//visibility:public"],

@@ -26,14 +26,14 @@ const moduleDotBazelFilename = "MODULE.bazel"
 var moduleDotBazelTargetName = label.MustNewTargetName(moduleDotBazelFilename)
 
 type bazelDepCapturingModuleDotBazelHandler struct {
-	includeDevDependencies bool
+	ignoreDevDependencies bool
 
 	compatibilityLevel int
 	dependencies       map[label.Module]*label.ModuleVersion
 }
 
 func (h *bazelDepCapturingModuleDotBazelHandler) BazelDep(name label.Module, version *label.ModuleVersion, maxCompatibilityLevel int, repoName label.ApparentRepo, devDependency bool) error {
-	if !devDependency || h.includeDevDependencies {
+	if !devDependency || !h.ignoreDevDependencies {
 		if _, ok := h.dependencies[name]; ok {
 			return fmt.Errorf("module depends on module %#v multiple times", name.String())
 		}
@@ -55,7 +55,7 @@ func (bazelDepCapturingModuleDotBazelHandler) RegisterToolchains(toolchainLabels
 	return nil
 }
 
-func (bazelDepCapturingModuleDotBazelHandler) UseExtension(extensionBzlFile label.ApparentLabel, extensionName string, devDependency, isolate bool) (pg_starlark.ModuleExtensionProxy, error) {
+func (bazelDepCapturingModuleDotBazelHandler) UseExtension(extensionBzlFile label.ApparentLabel, extensionName label.StarlarkIdentifier, devDependency, isolate bool) (pg_starlark.ModuleExtensionProxy, error) {
 	return pg_starlark.NullModuleExtensionProxy, nil
 }
 
@@ -135,16 +135,16 @@ func getModuleDotBazelURL(registryURL string, module label.Module, moduleVersion
 }
 
 func (c *baseComputer) ComputeModuleRoughBuildListValue(ctx context.Context, key *model_analysis_pb.ModuleRoughBuildList_Key, e ModuleRoughBuildListEnvironment) (PatchedModuleRoughBuildListValue, error) {
-	rootModuleNameValue := e.GetRootModuleNameValue(&model_analysis_pb.RootModuleName_Key{})
+	rootModuleValue := e.GetRootModuleValue(&model_analysis_pb.RootModule_Key{})
 	modulesWithOverridesValue := e.GetModulesWithOverridesValue(&model_analysis_pb.ModulesWithOverrides_Key{})
 	registryURLsValue := e.GetModuleRegistryUrlsValue(&model_analysis_pb.ModuleRegistryUrls_Key{})
-	if !rootModuleNameValue.IsSet() || !modulesWithOverridesValue.IsSet() || !registryURLsValue.IsSet() {
+	if !rootModuleValue.IsSet() || !modulesWithOverridesValue.IsSet() || !registryURLsValue.IsSet() {
 		return PatchedModuleRoughBuildListValue{}, evaluation.ErrMissingDependency
 	}
 
 	// Obtain the root module name. Traversal of the modules needs
 	// to start there.
-	rootModuleName, err := label.NewModule(rootModuleNameValue.Message.RootModuleName)
+	rootModuleName, err := label.NewModule(rootModuleValue.Message.RootModuleName)
 	if err != nil {
 		return model_core.NewSimplePatchedMessage[dag.ObjectContentsWalker](&model_analysis_pb.ModuleRoughBuildList_Value{
 			Result: &model_analysis_pb.ModuleRoughBuildList_Value_Failure{
@@ -193,7 +193,7 @@ func (c *baseComputer) ComputeModuleRoughBuildListValue(ctx context.Context, key
 		return PatchedModuleRoughBuildListValue{}, err
 	}
 
-	includeDevDependencies := true
+	ignoreDevDependencies := rootModuleValue.Message.IgnoreRootModuleDevDependencies
 	modulesToCheck := []moduleToCheck{{
 		name:    rootModuleName,
 		version: label.MustNewModuleVersion("0"),
@@ -329,10 +329,10 @@ ProcessModule:
 		}
 
 		handler := bazelDepCapturingModuleDotBazelHandler{
-			includeDevDependencies: includeDevDependencies,
-			dependencies:           map[label.Module]*label.ModuleVersion{},
+			ignoreDevDependencies: ignoreDevDependencies,
+			dependencies:          map[label.Module]*label.ModuleVersion{},
 		}
-		includeDevDependencies = false
+		ignoreDevDependencies = true
 		if err := pg_starlark.ParseModuleDotBazel(
 			string(moduleFileData),
 			module.name.

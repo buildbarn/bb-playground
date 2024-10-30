@@ -29,6 +29,14 @@ func NewCanonicalStarlarkIdentifier(value string) (CanonicalStarlarkIdentifier, 
 	}, nil
 }
 
+func MustNewCanonicalStarlarkIdentifier(value string) CanonicalStarlarkIdentifier {
+	i, err := NewCanonicalStarlarkIdentifier(value)
+	if err != nil {
+		panic(err)
+	}
+	return i
+}
+
 func (i CanonicalStarlarkIdentifier) String() string {
 	return i.value
 }
@@ -43,4 +51,14 @@ func (i CanonicalStarlarkIdentifier) GetStarlarkIdentifier() StarlarkIdentifier 
 	return StarlarkIdentifier{
 		value: i.value[strings.LastIndexByte(i.value, '%')+1:],
 	}
+}
+
+// ToModuleExtension converts a Starlark identifier of a module
+// extension declared in a .bzl file and converts it to a string that
+// can be prefixed to repos that are declared by the module extension.
+func (i CanonicalStarlarkIdentifier) ToModuleExtension() ModuleExtension {
+	v := i.value[2:]
+	versionIndex := strings.IndexByte(v, '+') + 1
+	versionEnd := strings.IndexAny(v[versionIndex:], "+/")
+	return ModuleExtension{value: v[:versionIndex+versionEnd] + `+` + v[strings.LastIndexByte(v, '%')+1:]}
 }

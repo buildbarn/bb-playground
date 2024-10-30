@@ -64,6 +64,110 @@ func (c *baseComputer) parseModuleInstanceModuleDotBazel(ctx context.Context, mo
 	)
 }
 
+type visitModuleDotBazelFilesBreadthFirstEnvironment interface {
+	parseActiveModuleDotBazelEnvironment
+
+	GetFileReaderValue(*model_analysis_pb.FileReader_Key) (*model_filesystem.FileReader, error)
+	GetModulesWithMultipleVersionsObjectValue(*model_analysis_pb.ModulesWithMultipleVersionsObject_Key) (map[label.Module]OverrideVersions, error)
+	GetRootModuleValue(*model_analysis_pb.RootModule_Key) model_core.Message[*model_analysis_pb.RootModule_Value]
+}
+
+type dependencQueueingModuleDotBazelHandler struct {
+	pg_starlark.ChildModuleDotBazelHandler
+
+	modulesWithMultipleVersions map[label.Module]OverrideVersions
+	moduleInstancesToCheck      *[]label.ModuleInstance
+	moduleInstancesSeen         map[label.ModuleInstance]struct{}
+	ignoreDevDependencies       bool
+}
+
+func (h *dependencQueueingModuleDotBazelHandler) BazelDep(name label.Module, version *label.ModuleVersion, maxCompatibilityLevel int, repoName label.ApparentRepo, devDependency bool) error {
+	if devDependency && h.ignoreDevDependencies {
+		return nil
+	}
+
+	var moduleInstance label.ModuleInstance
+	overrideVersions, ok := h.modulesWithMultipleVersions[name]
+	if ok {
+		v, err := overrideVersions.LookupNearestVersion(version)
+		if err != nil {
+			return fmt.Errorf("invalid dependency of module %#v: %w", name.String(), err)
+		}
+		moduleInstance = name.ToModuleInstance(&v)
+	} else {
+		moduleInstance = name.ToModuleInstance(nil)
+	}
+
+	if _, ok := h.moduleInstancesSeen[moduleInstance]; !ok {
+		*h.moduleInstancesToCheck = append(*h.moduleInstancesToCheck, moduleInstance)
+		h.moduleInstancesSeen[moduleInstance] = struct{}{}
+	}
+
+	return h.ChildModuleDotBazelHandler.BazelDep(name, version, maxCompatibilityLevel, repoName, devDependency)
+}
+
+func (c *baseComputer) visitModuleDotBazelFilesBreadthFirst(
+	ctx context.Context,
+	e visitModuleDotBazelFilesBreadthFirstEnvironment,
+	createHandler func(moduleInstance label.ModuleInstance, ignoreDevDependencies bool) pg_starlark.ChildModuleDotBazelHandler,
+) error {
+	rootModuleValue := e.GetRootModuleValue(&model_analysis_pb.RootModule_Key{})
+	if !rootModuleValue.IsSet() {
+		return evaluation.ErrMissingDependency
+	}
+	modulesWithMultipleVersions, err := e.GetModulesWithMultipleVersionsObjectValue(&model_analysis_pb.ModulesWithMultipleVersionsObject_Key{})
+	if err != nil {
+		return err
+	}
+	fileReader, err := e.GetFileReaderValue(&model_analysis_pb.FileReader_Key{})
+	if err != nil {
+		return err
+	}
+
+	// The root module is the starting point of our traversal.
+	rootModuleName, err := label.NewModule(rootModuleValue.Message.RootModuleName)
+	if err != nil {
+		return err
+	}
+	rootModuleInstance := rootModuleName.ToModuleInstance(nil)
+	moduleInstancesToCheck := []label.ModuleInstance{rootModuleInstance}
+	moduleInstancesSeen := map[label.ModuleInstance]struct{}{
+		rootModuleInstance: {},
+	}
+	ignoreDevDependencies := rootModuleValue.Message.IgnoreRootModuleDevDependencies
+
+	var finalErr error
+	for len(moduleInstancesToCheck) > 0 {
+		moduleInstance := moduleInstancesToCheck[0]
+		moduleInstancesToCheck = moduleInstancesToCheck[1:]
+
+		if err := c.parseModuleInstanceModuleDotBazel(
+			ctx,
+			moduleInstance,
+			e,
+			fileReader,
+			&dependencQueueingModuleDotBazelHandler{
+				ChildModuleDotBazelHandler:  createHandler(moduleInstance, ignoreDevDependencies),
+				modulesWithMultipleVersions: modulesWithMultipleVersions,
+				moduleInstancesToCheck:      &moduleInstancesToCheck,
+				moduleInstancesSeen:         moduleInstancesSeen,
+				ignoreDevDependencies:       ignoreDevDependencies,
+			},
+		); err != nil {
+			// Continue iteration if we have missing
+			// dependency errors, so that we compute these
+			// aggressively.
+			if !errors.Is(err, evaluation.ErrMissingDependency) {
+				return err
+			}
+			finalErr = err
+		}
+
+		ignoreDevDependencies = true
+	}
+	return finalErr
+}
+
 func (c *baseComputer) ComputeModuleDotBazelContentsValue(ctx context.Context, key *model_analysis_pb.ModuleDotBazelContents_Key, e ModuleDotBazelContentsEnvironment) (PatchedModuleDotBazelContentsValue, error) {
 	moduleInstance, err := label.NewModuleInstance(key.ModuleInstance)
 	if err != nil {

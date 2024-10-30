@@ -68,7 +68,7 @@ type ChildModuleDotBazelHandler interface {
 	Module(name label.Module, version *label.ModuleVersion, compatibilityLevel int, repoName label.ApparentRepo, bazelCompatibility []string) error
 	RegisterExecutionPlatforms(platformLabels []label.ApparentLabel, devDependency bool) error
 	RegisterToolchains(toolchainLabels []label.ApparentLabel, devDependency bool) error
-	UseExtension(extensionBzlFile label.ApparentLabel, extensionName string, devDependency, isolate bool) (ModuleExtensionProxy, error)
+	UseExtension(extensionBzlFile label.ApparentLabel, extensionName label.StarlarkIdentifier, devDependency, isolate bool) (ModuleExtensionProxy, error)
 	UseRepoRule(repoRuleBzlFile label.ApparentLabel, repoRuleName string) (RepoRuleProxy, error)
 }
 
@@ -106,14 +106,14 @@ func (overrideIgnoringRootModuleDotBazelHandler) SingleVersionOverride(moduleNam
 }
 
 type moduleExtensionProxyValue struct {
-	name  string
+	name  label.StarlarkIdentifier
 	proxy ModuleExtensionProxy
 }
 
 var _ starlark.HasAttrs = &moduleExtensionProxyValue{}
 
 func (v *moduleExtensionProxyValue) String() string {
-	return v.name
+	return v.name.String()
 }
 
 func (v *moduleExtensionProxyValue) Type() string {
@@ -127,7 +127,7 @@ func (v *moduleExtensionProxyValue) Truth() starlark.Bool {
 }
 
 func (v *moduleExtensionProxyValue) Hash() (uint32, error) {
-	return starlark.String(v.name).Hash()
+	return starlark.String(v.name.String()).Hash()
 }
 
 func (v *moduleExtensionProxyValue) Attr(name string) (starlark.Value, error) {
@@ -383,13 +383,13 @@ func ParseModuleDotBazel(contents string, filename label.CanonicalLabel, localPa
 					return nil, fmt.Errorf("%s: got %d positional arguments, want at most 2", b.Name(), len(args))
 				}
 				var extensionBzlFile label.ApparentLabel
-				var extensionName string
+				var extensionName label.StarlarkIdentifier
 				devDependency := false
 				isolate := false
 				if err := starlark.UnpackArgs(
 					b.Name(), args, kwargs,
 					"extension_bzl_file", unpack.Bind(thread, &extensionBzlFile, unpack.ApparentLabel),
-					"extension_name", unpack.Bind(thread, &extensionName, unpack.String),
+					"extension_name", unpack.Bind(thread, &extensionName, unpack.StarlarkIdentifier),
 					"dev_dependency?", unpack.Bind(thread, &devDependency, unpack.Bool),
 					"isolate?", unpack.Bind(thread, &isolate, unpack.Bool),
 				); err != nil {

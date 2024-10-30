@@ -3,7 +3,6 @@ package analysis
 import (
 	"context"
 	"errors"
-	"fmt"
 
 	"github.com/buildbarn/bb-playground/pkg/evaluation"
 	"github.com/buildbarn/bb-playground/pkg/label"
@@ -16,8 +15,9 @@ import (
 )
 
 type registeredToolchainExtractingModuleDotBazelHandler struct {
-	environment    RegisteredToolchainsEnvironment
-	moduleInstance label.ModuleInstance
+	environment           RegisteredToolchainsEnvironment
+	moduleInstance        label.ModuleInstance
+	ignoreDevDependencies bool
 }
 
 func (registeredToolchainExtractingModuleDotBazelHandler) BazelDep(name label.Module, version *label.ModuleVersion, maxCompatibilityLevel int, repoName label.ApparentRepo, devDependency bool) error {
@@ -32,11 +32,33 @@ func (registeredToolchainExtractingModuleDotBazelHandler) RegisterExecutionPlatf
 	return nil
 }
 
-func (registeredToolchainExtractingModuleDotBazelHandler) RegisterToolchains(toolchainLabels []label.ApparentLabel, devDependency bool) error {
-	panic("TODO")
+func (h *registeredToolchainExtractingModuleDotBazelHandler) RegisterToolchains(toolchainLabels []label.ApparentLabel, devDependency bool) error {
+	if !devDependency || !h.ignoreDevDependencies {
+		for _, apparentToolchainLabel := range toolchainLabels {
+			canonicalPlatformLabel, err := resolveApparentLabel(h.environment, h.moduleInstance.GetBareCanonicalRepo(), apparentToolchainLabel)
+			if err != nil {
+				return err
+			}
+			configuredTargetValue := h.environment.GetConfiguredTargetValue(&model_analysis_pb.ConfiguredTarget_Key{
+				Label: canonicalPlatformLabel.String(),
+			})
+			if !configuredTargetValue.IsSet() {
+				return evaluation.ErrMissingDependency
+			}
+			switch result := configuredTargetValue.Message.Result.(type) {
+			case *model_analysis_pb.ConfiguredTarget_Value_Success_:
+				panic("TODO")
+			case *model_analysis_pb.ConfiguredTarget_Value_Failure:
+				return errors.New(result.Failure)
+			default:
+				return errors.New("configured target value has an unknown result type")
+			}
+		}
+	}
+	return nil
 }
 
-func (registeredToolchainExtractingModuleDotBazelHandler) UseExtension(extensionBzlFile label.ApparentLabel, extensionName string, devDependency, isolate bool) (pg_starlark.ModuleExtensionProxy, error) {
+func (registeredToolchainExtractingModuleDotBazelHandler) UseExtension(extensionBzlFile label.ApparentLabel, extensionName label.StarlarkIdentifier, devDependency, isolate bool) (pg_starlark.ModuleExtensionProxy, error) {
 	return pg_starlark.NullModuleExtensionProxy, nil
 }
 
@@ -47,30 +69,13 @@ func (registeredToolchainExtractingModuleDotBazelHandler) UseRepoRule(repoRuleBz
 }
 
 func (c *baseComputer) ComputeRegisteredToolchainsValue(ctx context.Context, key *model_analysis_pb.RegisteredToolchains_Key, e RegisteredToolchainsEnvironment) (PatchedRegisteredToolchainsValue, error) {
-	allModuleInstancesValue := e.GetAllModuleInstancesValue(&model_analysis_pb.AllModuleInstances_Key{})
-	if !allModuleInstancesValue.IsSet() {
-		return PatchedRegisteredToolchainsValue{}, evaluation.ErrMissingDependency
-	}
-	var allModuleInstances []string
-	switch result := allModuleInstancesValue.Message.Result.(type) {
-	case *model_analysis_pb.AllModuleInstances_Value_Success_:
-		allModuleInstances = result.Success.ModuleInstances
-	case *model_analysis_pb.AllModuleInstances_Value_Failure:
-		return model_core.NewSimplePatchedMessage[dag.ObjectContentsWalker](&model_analysis_pb.RegisteredToolchains_Value{
-			Result: &model_analysis_pb.RegisteredToolchains_Value_Failure{
-				Failure: result.Failure,
-			},
-		}), nil
-	default:
-		return model_core.NewSimplePatchedMessage[dag.ObjectContentsWalker](&model_analysis_pb.RegisteredToolchains_Value{
-			Result: &model_analysis_pb.RegisteredToolchains_Value_Failure{
-				Failure: "All module instances value has an unknown result type",
-			},
-		}), nil
-	}
-
-	fileReader, err := e.GetFileReaderValue(&model_analysis_pb.FileReader_Key{})
-	if err != nil {
+	if err := c.visitModuleDotBazelFilesBreadthFirst(ctx, e, func(moduleInstance label.ModuleInstance, ignoreDevDependencies bool) pg_starlark.ChildModuleDotBazelHandler {
+		return &registeredToolchainExtractingModuleDotBazelHandler{
+			environment:           e,
+			moduleInstance:        moduleInstance,
+			ignoreDevDependencies: ignoreDevDependencies,
+		}
+	}); err != nil {
 		if !errors.Is(err, evaluation.ErrMissingDependency) {
 			return model_core.NewSimplePatchedMessage[dag.ObjectContentsWalker](&model_analysis_pb.RegisteredToolchains_Value{
 				Result: &model_analysis_pb.RegisteredToolchains_Value_Failure{
@@ -78,40 +83,6 @@ func (c *baseComputer) ComputeRegisteredToolchainsValue(ctx context.Context, key
 				},
 			}), nil
 		}
-		return PatchedRegisteredToolchainsValue{}, err
-	}
-
-	// TODO: We currently iterate over all modules in alphabetical
-	// order. Is this desirable? Maybe we should process the root
-	// module first?
-	// TODO: We should also respect --extra_toolchains.
-	missingDependency := false
-	for _, moduleInstanceStr := range allModuleInstances {
-		moduleInstance, err := label.NewModuleInstance(moduleInstanceStr)
-		if err != nil {
-			return model_core.NewSimplePatchedMessage[dag.ObjectContentsWalker](&model_analysis_pb.RegisteredToolchains_Value{
-				Result: &model_analysis_pb.RegisteredToolchains_Value_Failure{
-					Failure: fmt.Sprintf("Invalid module instance %#v: %s", moduleInstanceStr, err),
-				},
-			}), nil
-		}
-		handler := registeredToolchainExtractingModuleDotBazelHandler{
-			environment:    e,
-			moduleInstance: moduleInstance,
-		}
-		if err := c.parseModuleInstanceModuleDotBazel(ctx, moduleInstance, e, fileReader, &handler); err != nil {
-			if !errors.Is(err, evaluation.ErrMissingDependency) {
-				return model_core.NewSimplePatchedMessage[dag.ObjectContentsWalker](&model_analysis_pb.RegisteredToolchains_Value{
-					Result: &model_analysis_pb.RegisteredToolchains_Value_Failure{
-						Failure: err.Error(),
-					},
-				}), nil
-			}
-			missingDependency = true
-			continue
-		}
-	}
-	if missingDependency {
 		return PatchedRegisteredToolchainsValue{}, evaluation.ErrMissingDependency
 	}
 

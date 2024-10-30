@@ -273,19 +273,19 @@ func TestParseModuleDotBazel(t *testing.T) {
 		gomock.InOrder(
 			handler.EXPECT().UseExtension(
 				/* extensionBzlFile */ label.MustNewApparentLabel("@@my_module_name+//:extensions.bzl"),
-				/* extensionName */ "foo",
+				/* extensionName */ label.MustNewStarlarkIdentifier("foo"),
 				/* devDependency */ false,
 				/* isolate */ false,
 			).Return(proxy1, nil),
 			handler.EXPECT().UseExtension(
 				/* extensionBzlFile */ label.MustNewApparentLabel("@@my_module_name+//:extensions.bzl"),
-				/* extensionName */ "foo",
+				/* extensionName */ label.MustNewStarlarkIdentifier("foo"),
 				/* devDependency */ false,
 				/* isolate */ false,
 			).Return(proxy2, nil),
 			handler.EXPECT().UseExtension(
 				/* extensionBzlFile */ label.MustNewApparentLabel("@@my_module_name+//:extensions.bzl"),
-				/* extensionName */ "foo",
+				/* extensionName */ label.MustNewStarlarkIdentifier("foo"),
 				/* devDependency */ true,
 				/* isolate */ true,
 			).Return(proxy3, nil),

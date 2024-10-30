@@ -266,41 +266,27 @@ func NewStarlarkRuleDefinition(
 }
 
 func (rd *starlarkRuleDefinition) Encode(path map[starlark.Value]struct{}, options *ValueEncodingOptions) (model_core.PatchedMessage[*model_starlark_pb.Rule_Definition, dag.ObjectContentsWalker], bool, error) {
-	definition := model_starlark_pb.Rule_Definition{
-		Attrs:          make([]*model_starlark_pb.NamedAttr, 0, len(rd.attrs)),
-		ExecGroups:     make([]*model_starlark_pb.NamedExecGroup, 0, len(rd.execGroups)),
-		Implementation: rd.implementation.identifier.String(),
-	}
-	patcher := model_core.NewReferenceMessagePatcher[dag.ObjectContentsWalker]()
-	needsCode := rd.implementation.identifier.GetCanonicalLabel() == options.CurrentFilename
-
-	for _, name := range slices.SortedFunc(
-		maps.Keys(rd.attrs),
-		func(a, b pg_label.StarlarkIdentifier) int { return strings.Compare(a.String(), b.String()) },
-	) {
-		attr, attrNeedsCode, err := rd.attrs[name].Encode(path, options)
-		if err != nil {
-			return model_core.PatchedMessage[*model_starlark_pb.Rule_Definition, dag.ObjectContentsWalker]{}, false, fmt.Errorf("attr %#v: %w", name, err)
-		}
-		definition.Attrs = append(definition.Attrs, &model_starlark_pb.NamedAttr{
-			Name: name.String(),
-			Attr: attr.Message,
-		})
-		patcher.Merge(attr.Patcher)
-		needsCode = needsCode || attrNeedsCode
+	namedAttrs, namedAttrsNeedCode, err := encodeNamedAttrs(rd.attrs, path, options)
+	if err != nil {
+		return model_core.PatchedMessage[*model_starlark_pb.Rule_Definition, dag.ObjectContentsWalker]{}, false, err
 	}
 
+	execGroups := make([]*model_starlark_pb.NamedExecGroup, 0, len(rd.execGroups))
 	for _, name := range slices.Sorted(maps.Keys(rd.execGroups)) {
-		definition.ExecGroups = append(definition.ExecGroups, &model_starlark_pb.NamedExecGroup{
+		execGroups = append(execGroups, &model_starlark_pb.NamedExecGroup{
 			Name:      name,
 			ExecGroup: rd.execGroups[name].Encode(),
 		})
 	}
 
 	return model_core.PatchedMessage[*model_starlark_pb.Rule_Definition, dag.ObjectContentsWalker]{
-		Message: &definition,
-		Patcher: patcher,
-	}, needsCode, nil
+		Message: &model_starlark_pb.Rule_Definition{
+			Implementation: rd.implementation.identifier.String(),
+			Attrs:          namedAttrs.Message,
+			ExecGroups:     execGroups,
+		},
+		Patcher: namedAttrs.Patcher,
+	}, namedAttrsNeedCode || rd.implementation.identifier.GetCanonicalLabel() == options.CurrentFilename, nil
 }
 
 func (rd *starlarkRuleDefinition) GetAttrsCheap(thread *starlark.Thread) (map[pg_label.StarlarkIdentifier]*Attr, error) {

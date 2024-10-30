@@ -81,7 +81,7 @@ func (LocalPathExtractingModuleDotBazelHandler) SingleVersionOverride(moduleName
 	return nil
 }
 
-func (LocalPathExtractingModuleDotBazelHandler) UseExtension(extensionBzlFile label.ApparentLabel, extensionName string, devDependency, isolate bool) (pg_starlark.ModuleExtensionProxy, error) {
+func (LocalPathExtractingModuleDotBazelHandler) UseExtension(extensionBzlFile label.ApparentLabel, extensionName label.StarlarkIdentifier, devDependency, isolate bool) (pg_starlark.ModuleExtensionProxy, error) {
 	return pg_starlark.NullModuleExtensionProxy, nil
 }
 

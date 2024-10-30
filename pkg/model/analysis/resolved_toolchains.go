@@ -2,6 +2,7 @@ package analysis
 
 import (
 	"context"
+	"log"
 
 	"github.com/buildbarn/bb-playground/pkg/evaluation"
 	model_analysis_pb "github.com/buildbarn/bb-playground/pkg/proto/model/analysis"
@@ -16,5 +17,7 @@ func (c *baseComputer) ComputeResolvedToolchainsValue(ctx context.Context, key *
 		return PatchedResolvedToolchainsValue{}, evaluation.ErrMissingDependency
 	}
 
-	panic(protojson.Format(registeredExecutionPlatforms.Message))
+	log.Print(protojson.Format(registeredExecutionPlatforms.Message))
+	log.Print(protojson.Format(registeredToolchains.Message))
+	panic("TODO")
 }

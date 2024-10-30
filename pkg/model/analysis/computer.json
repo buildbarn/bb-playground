@@ -1,11 +1,5 @@
 {
    "functions": {
-      "AllModuleInstances": {
-         "dependsOn": [
-            "ModuleFinalBuildList",
-            "ModulesWithOverrides"
-         ]
-      },
       "BuildResult": {
          "dependsOn": [
             "TargetCompletion"
@@ -19,6 +13,7 @@
       },
       "CanonicalRepoName": {
          "dependsOn": [
+            "CompiledBzlFileGlobal",
             "ModuleRepoMapping"
          ]
       },
@@ -172,6 +167,15 @@
             "ModuleFinalBuildList"
          ]
       },
+      "ModuleExtension": {
+         "dependsOn": [
+            "CompiledBzlFileGlobal",
+            "ModuleExtension"
+         ],
+         "nativeValueType": {
+            "type": "*ModuleExtension"
+         }
+      },
       "ModuleFinalBuildList": {
          "dependsOn": [
             "ModuleRoughBuildList"
@@ -186,7 +190,8 @@
          "dependsOn": [
             "FileReader",
             "ModuleDotBazelContents",
-            "ModulesWithMultipleVersionsObject"
+            "ModulesWithMultipleVersionsObject",
+            "RootModule"
          ]
       },
       "ModuleRoughBuildList": {
@@ -196,7 +201,7 @@
             "HttpFileContents",
             "ModuleRegistryUrls",
             "ModulesWithOverrides",
-            "RootModuleName"
+            "RootModule"
          ]
       },
       "ModulesWithMultipleVersions": {
@@ -234,18 +239,22 @@
       },
       "RegisteredExecutionPlatforms": {
          "dependsOn": [
-            "AllModuleInstances",
             "CanonicalRepoName",
             "ConfiguredTarget",
             "FileReader",
-            "ModuleDotBazelContents"
+            "ModuleDotBazelContents",
+            "ModulesWithMultipleVersionsObject",
+            "RootModule"
          ]
       },
       "RegisteredToolchains": {
          "dependsOn": [
-            "AllModuleInstances",
+            "CanonicalRepoName",
+            "ConfiguredTarget",
             "FileReader",
-            "ModuleDotBazelContents"
+            "ModuleDotBazelContents",
+            "ModulesWithMultipleVersionsObject",
+            "RootModule"
          ]
       },
       "Repo": {
@@ -255,7 +264,8 @@
             "FileReader",
             "HttpArchiveContents",
             "HttpFileContents",
-            "ModuleFinalBuildList"
+            "ModuleFinalBuildList",
+            "UsedModuleExtensions"
          ]
       },
       "RepoDefaultAttrs": {
@@ -270,7 +280,7 @@
             "RegisteredToolchains"
          ]
       },
-      "RootModuleName": {
+      "RootModule": {
          "dependsOn": [
             "BuildSpecification"
          ]
@@ -283,6 +293,16 @@
       "TargetCompletion": {
          "dependsOn": [
             "ConfiguredTarget"
+         ]
+      },
+      "UsedModuleExtensions": {
+         "dependsOn": [
+            "CanonicalRepoName",
+            "FileReader",
+            "ModuleDotBazelContents",
+            "ModuleExtension",
+            "ModulesWithMultipleVersionsObject",
+            "RootModule"
          ]
       }
    },
