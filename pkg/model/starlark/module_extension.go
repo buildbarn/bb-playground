@@ -1,8 +1,6 @@
 package starlark
 
 import (
-	"errors"
-
 	pg_label "github.com/buildbarn/bb-playground/pkg/label"
 	model_core "github.com/buildbarn/bb-playground/pkg/model/core"
 	model_starlark_pb "github.com/buildbarn/bb-playground/pkg/proto/model/starlark"
@@ -11,9 +9,12 @@ import (
 	"go.starlark.net/starlark"
 )
 
+type ModuleExtensionDefinition interface {
+	EncodableValue
+}
+
 type moduleExtension struct {
-	LateNamedValue
-	definition *model_starlark_pb.ModuleExtension_Definition
+	ModuleExtensionDefinition
 }
 
 var (
@@ -21,12 +22,9 @@ var (
 	_ EncodableValue = &moduleExtension{}
 )
 
-func NewModuleExtension(identifier *pg_label.CanonicalStarlarkIdentifier, definition *model_starlark_pb.ModuleExtension_Definition) starlark.Value {
+func NewModuleExtension(definition ModuleExtensionDefinition) starlark.Value {
 	return &moduleExtension{
-		LateNamedValue: LateNamedValue{
-			Identifier: identifier,
-		},
-		definition: definition,
+		ModuleExtensionDefinition: definition,
 	}
 }
 
@@ -49,34 +47,59 @@ func (me *moduleExtension) Hash() (uint32, error) {
 	return 0, nil
 }
 
-func (me *moduleExtension) EncodeValue(path map[starlark.Value]struct{}, currentIdentifier *pg_label.CanonicalStarlarkIdentifier, options *ValueEncodingOptions) (model_core.PatchedMessage[*model_starlark_pb.Value, dag.ObjectContentsWalker], bool, error) {
-	if me.Identifier == nil {
-		return model_core.PatchedMessage[*model_starlark_pb.Value, dag.ObjectContentsWalker]{}, false, errors.New("module extension does not have a name")
+type starlarkModuleExtensionDefinition struct {
+	implementation NamedFunction
+	tagClasses     map[pg_label.StarlarkIdentifier]*TagClass
+}
+
+func NewStarlarkModuleExtensionDefinition(implementation NamedFunction, tagClasses map[pg_label.StarlarkIdentifier]*TagClass) ModuleExtensionDefinition {
+	return &starlarkModuleExtensionDefinition{
+		implementation: implementation,
+		tagClasses:     tagClasses,
 	}
-	if currentIdentifier == nil || *currentIdentifier != *me.Identifier {
-		// Not the canonical identifier under which this module
-		// extension is known. Emit a reference.
-		return model_core.PatchedMessage[*model_starlark_pb.Value, dag.ObjectContentsWalker]{
-			Message: &model_starlark_pb.Value{
-				Kind: &model_starlark_pb.Value_ModuleExtension{
-					ModuleExtension: &model_starlark_pb.ModuleExtension{
-						Kind: &model_starlark_pb.ModuleExtension_Reference{
-							Reference: me.Identifier.String(),
-						},
-					},
-				},
-			},
-			Patcher: model_core.NewReferenceMessagePatcher[dag.ObjectContentsWalker](),
-		}, false, nil
+}
+
+func (med *starlarkModuleExtensionDefinition) EncodeValue(path map[starlark.Value]struct{}, currentIdentifier *pg_label.CanonicalStarlarkIdentifier, options *ValueEncodingOptions) (model_core.PatchedMessage[*model_starlark_pb.Value, dag.ObjectContentsWalker], bool, error) {
+	implementation, needsCode, err := med.implementation.Encode(path, options)
+	if err != nil {
+		return model_core.PatchedMessage[*model_starlark_pb.Value, dag.ObjectContentsWalker]{}, false, err
 	}
 
-	return model_core.NewSimplePatchedMessage[dag.ObjectContentsWalker](&model_starlark_pb.Value{
-		Kind: &model_starlark_pb.Value_ModuleExtension{
-			ModuleExtension: &model_starlark_pb.ModuleExtension{
-				Kind: &model_starlark_pb.ModuleExtension_Definition_{
-					Definition: me.definition,
+	return model_core.PatchedMessage[*model_starlark_pb.Value, dag.ObjectContentsWalker]{
+		Message: &model_starlark_pb.Value{
+			Kind: &model_starlark_pb.Value_ModuleExtension{
+				ModuleExtension: &model_starlark_pb.ModuleExtension{
+					Implementation: implementation.Message,
 				},
 			},
 		},
-	}), false, nil
+		Patcher: implementation.Patcher,
+	}, needsCode, nil
+}
+
+type protoModuleExtensionDefinition struct {
+	message model_core.Message[*model_starlark_pb.ModuleExtension]
+}
+
+func NewProtoModuleExtensionDefinition(message model_core.Message[*model_starlark_pb.ModuleExtension]) ModuleExtensionDefinition {
+	return &protoModuleExtensionDefinition{
+		message: message,
+	}
+}
+
+func (med *protoModuleExtensionDefinition) EncodeValue(path map[starlark.Value]struct{}, currentIdentifier *pg_label.CanonicalStarlarkIdentifier, options *ValueEncodingOptions) (model_core.PatchedMessage[*model_starlark_pb.Value, dag.ObjectContentsWalker], bool, error) {
+	patchedMessage := model_core.NewPatchedMessageFromExisting(
+		med.message,
+		func(index int) dag.ObjectContentsWalker {
+			return dag.ExistingObjectContentsWalker
+		},
+	)
+	return model_core.PatchedMessage[*model_starlark_pb.Value, dag.ObjectContentsWalker]{
+		Message: &model_starlark_pb.Value{
+			Kind: &model_starlark_pb.Value_ModuleExtension{
+				ModuleExtension: patchedMessage.Message,
+			},
+		},
+		Patcher: patchedMessage.Patcher,
+	}, false, nil
 }

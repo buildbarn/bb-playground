@@ -4,6 +4,7 @@ load("@rules_go//go:def.bzl", "go_library", "go_test")
 go_library(
     name = "core",
     srcs = [
+        "file_writing_merkle_tree_capturer.go",
         "get_index_from_reference_message.go",
         "message.go",
         "patched_message.go",
@@ -14,6 +15,7 @@ go_library(
     deps = [
         "//pkg/ds",
         "//pkg/proto/model/core",
+        "//pkg/storage/dag",
         "//pkg/storage/object",
         "@org_golang_google_grpc//codes",
         "@org_golang_google_grpc//status",

@@ -18,18 +18,14 @@ func (c *baseComputer) ComputeModulesWithOverridesValue(ctx context.Context, key
 	// TODO: Check whether an override exists in the root module's
 	// MODULE.bazel!
 	modules := buildSpecification.Message.BuildSpecification.GetModules()
-	overridesList := make([]*model_analysis_pb.OverridesList_Module, 0, len(modules))
+	overridesList := make([]*model_analysis_pb.OverridesListModule, 0, len(modules))
 	for _, module := range modules {
-		overridesList = append(overridesList, &model_analysis_pb.OverridesList_Module{
+		overridesList = append(overridesList, &model_analysis_pb.OverridesListModule{
 			Name: module.Name,
 		})
 	}
 
 	return model_core.NewSimplePatchedMessage[dag.ObjectContentsWalker](&model_analysis_pb.ModulesWithOverrides_Value{
-		Result: &model_analysis_pb.ModulesWithOverrides_Value_Success{
-			Success: &model_analysis_pb.OverridesList{
-				Modules: overridesList,
-			},
-		},
+		OverridesList: overridesList,
 	}), nil
 }

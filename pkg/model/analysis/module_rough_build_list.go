@@ -16,7 +16,6 @@ import (
 	model_filesystem_pb "github.com/buildbarn/bb-playground/pkg/proto/model/filesystem"
 	pg_starlark "github.com/buildbarn/bb-playground/pkg/starlark"
 	"github.com/buildbarn/bb-playground/pkg/storage/dag"
-	"github.com/buildbarn/bb-storage/pkg/util"
 
 	"go.starlark.net/starlark"
 )
@@ -71,7 +70,7 @@ type moduleToCheck struct {
 }
 
 type roughBuildList struct {
-	ds.Slice[*model_analysis_pb.BuildList_Module]
+	ds.Slice[*model_analysis_pb.BuildListModule]
 }
 
 func (l roughBuildList) Less(i, j int) bool {
@@ -108,9 +107,9 @@ func (ov OverrideVersions) LookupNearestVersion(version *label.ModuleVersion) (l
 	return ov[index], nil
 }
 
-func parseOverridesList(overridesList *model_analysis_pb.OverridesList) (map[label.Module]OverrideVersions, error) {
-	modules := make(map[label.Module]OverrideVersions, len(overridesList.Modules))
-	for _, module := range overridesList.Modules {
+func parseOverridesList(overridesList []*model_analysis_pb.OverridesListModule) (map[label.Module]OverrideVersions, error) {
+	modules := make(map[label.Module]OverrideVersions, len(overridesList))
+	for _, module := range overridesList {
 		moduleNameStr := module.Name
 		moduleName, err := label.NewModule(moduleNameStr)
 		if err != nil {
@@ -138,7 +137,8 @@ func (c *baseComputer) ComputeModuleRoughBuildListValue(ctx context.Context, key
 	rootModuleValue := e.GetRootModuleValue(&model_analysis_pb.RootModule_Key{})
 	modulesWithOverridesValue := e.GetModulesWithOverridesValue(&model_analysis_pb.ModulesWithOverrides_Key{})
 	registryURLsValue := e.GetModuleRegistryUrlsValue(&model_analysis_pb.ModuleRegistryUrls_Key{})
-	if !rootModuleValue.IsSet() || !modulesWithOverridesValue.IsSet() || !registryURLsValue.IsSet() {
+	fileReader, gotFileReader := e.GetFileReaderValue(&model_analysis_pb.FileReader_Key{})
+	if !rootModuleValue.IsSet() || !modulesWithOverridesValue.IsSet() || !registryURLsValue.IsSet() || !gotFileReader {
 		return PatchedModuleRoughBuildListValue{}, evaluation.ErrMissingDependency
 	}
 
@@ -146,50 +146,14 @@ func (c *baseComputer) ComputeModuleRoughBuildListValue(ctx context.Context, key
 	// to start there.
 	rootModuleName, err := label.NewModule(rootModuleValue.Message.RootModuleName)
 	if err != nil {
-		return model_core.NewSimplePatchedMessage[dag.ObjectContentsWalker](&model_analysis_pb.ModuleRoughBuildList_Value{
-			Result: &model_analysis_pb.ModuleRoughBuildList_Value_Failure{
-				Failure: err.Error(),
-			},
-		}), nil
+		return PatchedModuleRoughBuildListValue{}, fmt.Errorf("invalid root module name %#v: %w", rootModuleValue.Message.RootModuleName, err)
 	}
 
 	// Obtain the list of modules for which overrides are in place.
 	// For these we should not attempt to load MODULE.bazel files
 	// from Bazel Central Registry (BCR).
-	var modulesWithOverrides map[label.Module]OverrideVersions
-	switch modulesWithOverridesResult := modulesWithOverridesValue.Message.Result.(type) {
-	case *model_analysis_pb.ModulesWithOverrides_Value_Success:
-		modulesWithOverrides, err = parseOverridesList(modulesWithOverridesResult.Success)
-		if err != nil {
-			return model_core.NewSimplePatchedMessage[dag.ObjectContentsWalker](&model_analysis_pb.ModuleRoughBuildList_Value{
-				Result: &model_analysis_pb.ModuleRoughBuildList_Value_Failure{
-					Failure: err.Error(),
-				},
-			}), nil
-		}
-	case *model_analysis_pb.ModulesWithOverrides_Value_Failure:
-		return model_core.NewSimplePatchedMessage[dag.ObjectContentsWalker](&model_analysis_pb.ModuleRoughBuildList_Value{
-			Result: &model_analysis_pb.ModuleRoughBuildList_Value_Failure{
-				Failure: modulesWithOverridesResult.Failure,
-			},
-		}), nil
-	default:
-		return model_core.NewSimplePatchedMessage[dag.ObjectContentsWalker](&model_analysis_pb.ModuleRoughBuildList_Value{
-			Result: &model_analysis_pb.ModuleRoughBuildList_Value_Failure{
-				Failure: "Module has override value has an unknown result type",
-			},
-		}), nil
-	}
-
-	fileReader, err := e.GetFileReaderValue(&model_analysis_pb.FileReader_Key{})
+	modulesWithOverrides, err := parseOverridesList(modulesWithOverridesValue.Message.OverridesList)
 	if err != nil {
-		if !errors.Is(err, evaluation.ErrMissingDependency) {
-			return model_core.NewSimplePatchedMessage[dag.ObjectContentsWalker](&model_analysis_pb.ModuleRoughBuildList_Value{
-				Result: &model_analysis_pb.ModuleRoughBuildList_Value_Failure{
-					Failure: err.Error(),
-				},
-			}), nil
-		}
 		return PatchedModuleRoughBuildListValue{}, err
 	}
 
@@ -208,48 +172,32 @@ ProcessModule:
 		module := modulesToCheck[0]
 		modulesToCheck = modulesToCheck[1:]
 		var moduleFileContents model_core.Message[*model_filesystem_pb.FileContents]
-		var buildListEntry *model_analysis_pb.BuildList_Module
+		var buildListEntry *model_analysis_pb.BuildListModule
 		if versions, ok := modulesWithOverrides[module.name]; ok {
 			// An override for the module exists. This means
 			// that we can access its sources directly and
 			// load the MODULE.bazel file contained within.
-			moduleRepo := module.name.String() + "+"
+			var moduleInstance label.ModuleInstance
 			if len(versions) > 1 {
-				moduleRepo += module.version.String()
+				moduleInstance = module.name.ToModuleInstance(&module.version)
+			} else {
+				moduleInstance = module.name.ToModuleInstance(nil)
 			}
+			moduleRepo := moduleInstance.GetBareCanonicalRepo()
 			moduleFileProperties := e.GetFilePropertiesValue(&model_analysis_pb.FileProperties_Key{
-				CanonicalRepo: moduleRepo,
+				CanonicalRepo: moduleRepo.String(),
 				Path:          moduleDotBazelFilename,
 			})
 			if !moduleFileProperties.IsSet() {
 				missingDependencies = true
 				continue ProcessModule
 			}
-
-			switch moduleFilePropertiesResult := moduleFileProperties.Message.Result.(type) {
-			case *model_analysis_pb.FileProperties_Value_Exists:
-				moduleFileContents = model_core.Message[*model_filesystem_pb.FileContents]{
-					Message:            moduleFilePropertiesResult.Exists.Contents,
-					OutgoingReferences: moduleFileProperties.OutgoingReferences,
-				}
-			case *model_analysis_pb.FileProperties_Value_DoesNotExist:
-				return model_core.NewSimplePatchedMessage[dag.ObjectContentsWalker](&model_analysis_pb.ModuleRoughBuildList_Value{
-					Result: &model_analysis_pb.ModuleRoughBuildList_Value_Failure{
-						Failure: fmt.Sprintf("%#v does not exist", moduleDotBazelFilename),
-					},
-				}), nil
-			case *model_analysis_pb.FileProperties_Value_Failure:
-				return model_core.NewSimplePatchedMessage[dag.ObjectContentsWalker](&model_analysis_pb.ModuleRoughBuildList_Value{
-					Result: &model_analysis_pb.ModuleRoughBuildList_Value_Failure{
-						Failure: moduleFilePropertiesResult.Failure,
-					},
-				}), nil
-			default:
-				return model_core.NewSimplePatchedMessage[dag.ObjectContentsWalker](&model_analysis_pb.ModuleRoughBuildList_Value{
-					Result: &model_analysis_pb.ModuleRoughBuildList_Value_Failure{
-						Failure: "File properties value has an unknown result type",
-					},
-				}), nil
+			if moduleFileProperties.Message.Exists == nil {
+				return PatchedModuleRoughBuildListValue{}, fmt.Errorf("file %#v does not exist", moduleRepo.GetRootPackage().AppendTargetName(moduleDotBazelTargetName).String())
+			}
+			moduleFileContents = model_core.Message[*model_filesystem_pb.FileContents]{
+				Message:            moduleFileProperties.Message.Exists.Contents,
+				OutgoingReferences: moduleFileProperties.OutgoingReferences,
 			}
 		} else {
 			// No override exists. Download the MODULE.bazel
@@ -260,52 +208,27 @@ ProcessModule:
 			for _, registryURL := range registryURLs {
 				moduleFileURL, err := getModuleDotBazelURL(registryURL, module.name, module.version)
 				if err != nil {
-					return model_core.NewSimplePatchedMessage[dag.ObjectContentsWalker](&model_analysis_pb.ModuleRoughBuildList_Value{
-						Result: &model_analysis_pb.ModuleRoughBuildList_Value_Failure{
-							Failure: fmt.Sprintf("Failed to construct URL for module %s with version %s in registry %#v: %s", module.name, module.version, registryURL),
-						},
-					}), nil
+					return PatchedModuleRoughBuildListValue{}, fmt.Errorf("failed to construct URL for module %s with version %s in registry %#v: %w", module.name, module.version, registryURL, err)
 				}
 				httpFileContents := e.GetHttpFileContentsValue(&model_analysis_pb.HttpFileContents_Key{Url: moduleFileURL})
 				if !httpFileContents.IsSet() {
 					missingDependencies = true
 					continue ProcessModule
 				}
-
-				switch httpFileContentsResult := httpFileContents.Message.Result.(type) {
-				case *model_analysis_pb.HttpFileContents_Value_Exists_:
+				if httpFileContents.Message.Exists != nil {
 					moduleFileContents = model_core.Message[*model_filesystem_pb.FileContents]{
-						Message:            httpFileContentsResult.Exists.Contents,
+						Message:            httpFileContents.Message.Exists.Contents,
 						OutgoingReferences: httpFileContents.OutgoingReferences,
 					}
-					buildListEntry = &model_analysis_pb.BuildList_Module{
+					buildListEntry = &model_analysis_pb.BuildListModule{
 						Name:        module.name.String(),
 						Version:     module.version.String(),
 						RegistryUrl: registryURL,
 					}
 					goto GotModuleFileContents
-				case *model_analysis_pb.HttpFileContents_Value_DoesNotExist:
-					// Attempt next registry.
-				case *model_analysis_pb.HttpFileContents_Value_Failure:
-					return model_core.NewSimplePatchedMessage[dag.ObjectContentsWalker](&model_analysis_pb.ModuleRoughBuildList_Value{
-						Result: &model_analysis_pb.ModuleRoughBuildList_Value_Failure{
-							Failure: fmt.Sprintf("Failed to fetch %#v: %s", moduleFileURL, httpFileContentsResult.Failure),
-						},
-					}), nil
-				default:
-					return model_core.NewSimplePatchedMessage[dag.ObjectContentsWalker](&model_analysis_pb.ModuleRoughBuildList_Value{
-						Result: &model_analysis_pb.ModuleRoughBuildList_Value_Failure{
-							Failure: "HTTP file contents value has an unknown result type",
-						},
-					}), nil
 				}
 			}
-
-			return model_core.NewSimplePatchedMessage[dag.ObjectContentsWalker](&model_analysis_pb.ModuleRoughBuildList_Value{
-				Result: &model_analysis_pb.ModuleRoughBuildList_Value_Failure{
-					Failure: fmt.Sprintf("Module %s with version %s cannot be found in any of the provided registries", module.name, module.version),
-				},
-			}), nil
+			return PatchedModuleRoughBuildListValue{}, fmt.Errorf("module %s with version %s cannot be found in any of the provided registries", module.name, module.version)
 		}
 
 	GotModuleFileContents:
@@ -316,11 +239,7 @@ ProcessModule:
 			c.buildSpecificationReference.GetReferenceFormat(),
 		)
 		if err != nil {
-			return model_core.NewSimplePatchedMessage[dag.ObjectContentsWalker](&model_analysis_pb.ModuleRoughBuildList_Value{
-				Result: &model_analysis_pb.ModuleRoughBuildList_Value_Failure{
-					Failure: util.StatusWrap(err, "Invalid file contents").Error(),
-				},
-			}), nil
+			return PatchedModuleRoughBuildListValue{}, fmt.Errorf("invalid file contents: %w", err)
 		}
 
 		moduleFileData, err := fileReader.FileReadAll(ctx, moduleFileContentsEntry, 1<<20)
@@ -343,11 +262,7 @@ ProcessModule:
 			nil,
 			pg_starlark.NewOverrideIgnoringRootModuleDotBazelHandler(&handler),
 		); err != nil {
-			return model_core.NewSimplePatchedMessage[dag.ObjectContentsWalker](&model_analysis_pb.ModuleRoughBuildList_Value{
-				Result: &model_analysis_pb.ModuleRoughBuildList_Value_Failure{
-					Failure: err.Error(),
-				},
-			}), nil
+			return PatchedModuleRoughBuildListValue{}, err
 		}
 
 		if buildListEntry != nil {
@@ -361,11 +276,7 @@ ProcessModule:
 				// No override exists, meaning we need
 				// to check an exact version.
 				if dependencyVersion == nil {
-					return model_core.NewSimplePatchedMessage[dag.ObjectContentsWalker](&model_analysis_pb.ModuleRoughBuildList_Value{
-						Result: &model_analysis_pb.ModuleRoughBuildList_Value_Failure{
-							Failure: fmt.Sprintf("Module %s depends on module %s without specifying a version number, while no override is in place", module.name, dependencyName),
-						},
-					}), nil
+					return PatchedModuleRoughBuildListValue{}, fmt.Errorf("module %s depends on module %s without specifying a version number, while no override is in place", module.name, dependencyName)
 				}
 				dependency.version = *dependencyVersion
 			} else if len(versions) > 0 {
@@ -374,11 +285,7 @@ ProcessModule:
 				// the nearest higher version number.
 				v, err := versions.LookupNearestVersion(dependencyVersion)
 				if err != nil {
-					return model_core.NewSimplePatchedMessage[dag.ObjectContentsWalker](&model_analysis_pb.ModuleRoughBuildList_Value{
-						Result: &model_analysis_pb.ModuleRoughBuildList_Value_Failure{
-							Failure: fmt.Sprintf("Dependency of module %s on module %s: %s", module.name, dependencyName, err),
-						},
-					}), nil
+					return PatchedModuleRoughBuildListValue{}, fmt.Errorf("dependency of module %s on module %s: %s", module.name, dependencyName, err)
 				}
 				dependency.version = v
 			}
@@ -395,10 +302,6 @@ ProcessModule:
 
 	sort.Sort(buildList)
 	return model_core.NewSimplePatchedMessage[dag.ObjectContentsWalker](&model_analysis_pb.ModuleRoughBuildList_Value{
-		Result: &model_analysis_pb.ModuleRoughBuildList_Value_Success{
-			Success: &model_analysis_pb.BuildList{
-				Modules: buildList.Slice,
-			},
-		},
+		BuildList: buildList.Slice,
 	}), nil
 }

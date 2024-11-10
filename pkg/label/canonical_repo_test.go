@@ -43,23 +43,27 @@ func TestCanonicalRepo(t *testing.T) {
 		})
 	})
 
-	t.Run("HasModuleExtension", func(t *testing.T) {
+	t.Run("GetModuleExtension", func(t *testing.T) {
 		t.Run("False", func(t *testing.T) {
 			for _, input := range []string{
 				"com_github_buildbarn_bb_storage+",
 				"com_github_buildbarn_bb_storage+1.0",
 			} {
-				assert.False(t, label.MustNewCanonicalRepo(input).HasModuleExtension())
+				_, _, ok := label.MustNewCanonicalRepo(input).GetModuleExtension()
+				assert.False(t, ok)
 			}
 		})
 
 		t.Run("True", func(t *testing.T) {
-			for _, input := range []string{
-				"gazelle++go_deps+bazel_gazelle_go_repository_config",
-				"gazelle+0.39.1+go_deps+bazel_gazelle_go_repository_config",
-			} {
-				assert.True(t, label.MustNewCanonicalRepo(input).HasModuleExtension())
-			}
+			moduleExtension, apparentRepo, ok := label.MustNewCanonicalRepo("gazelle++go_deps+bazel_gazelle_go_repository_config").GetModuleExtension()
+			require.True(t, ok)
+			assert.Equal(t, "gazelle++go_deps", moduleExtension.String())
+			assert.Equal(t, "bazel_gazelle_go_repository_config", apparentRepo.String())
+
+			moduleExtension, apparentRepo, ok = label.MustNewCanonicalRepo("gazelle+0.39.1+go_deps+bazel_gazelle_go_repository_config").GetModuleExtension()
+			require.True(t, ok)
+			assert.Equal(t, "gazelle+0.39.1+go_deps", moduleExtension.String())
+			assert.Equal(t, "bazel_gazelle_go_repository_config", apparentRepo.String())
 		})
 	})
 }

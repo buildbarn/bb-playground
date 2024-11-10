@@ -69,16 +69,71 @@ func newGRPCClient(endpoint string, commonFlags *arguments.CommonFlags) (*grpc.C
 	return grpc.NewClient(target, grpc.WithTransportCredentials(clientCredentials))
 }
 
-type localCapturableDirectoryCloser struct {
+type localCapturableDirectoryOptions[TFile model_core.ReferenceMetadata] struct {
+	fileParameters *model_filesystem.FileCreationParameters
+	capturer       model_filesystem.FileMerkleTreeCapturer[TFile]
+}
+
+type localCapturableDirectory[TDirectory, TFile model_core.ReferenceMetadata] struct {
+	filesystem.DirectoryCloser
+	options *localCapturableDirectoryOptions[TFile]
+}
+
+func (d *localCapturableDirectory[TDirectory, TFile]) EnterCapturableDirectory(name path.Component) (model_core.PatchedMessage[*model_filesystem_pb.Directory, TDirectory], model_filesystem.CapturableDirectory[TDirectory, TFile], error) {
+	child, err := d.DirectoryCloser.EnterDirectory(name)
+	if err != nil {
+		return model_core.PatchedMessage[*model_filesystem_pb.Directory, TDirectory]{}, nil, err
+	}
+	return model_core.PatchedMessage[*model_filesystem_pb.Directory, TDirectory]{},
+		&localCapturableDirectory[TDirectory, TFile]{
+			DirectoryCloser: child,
+			options:         d.options,
+		}, nil
+}
+
+func (d *localCapturableDirectory[TDirectory, TFile]) OpenForFileMerkleTreeCreation(name path.Component) (model_filesystem.CapturableFile[TFile], error) {
+	f, err := d.OpenRead(name)
+	if err != nil {
+		return nil, err
+	}
+	return &localCapturableFile[TFile]{
+		file:    f,
+		options: d.options,
+	}, nil
+}
+
+type localCapturedDirectory struct {
 	filesystem.DirectoryCloser
 }
 
-func (d localCapturableDirectoryCloser) EnterCapturableDirectory(name path.Component) (model_filesystem.CapturableDirectoryCloser, error) {
+func (d localCapturedDirectory) EnterCapturedDirectory(name path.Component) (model_filesystem.CapturedDirectory, error) {
 	child, err := d.DirectoryCloser.EnterDirectory(name)
 	if err != nil {
 		return nil, err
 	}
-	return localCapturableDirectoryCloser{DirectoryCloser: child}, nil
+	return localCapturedDirectory{
+		DirectoryCloser: child,
+	}, nil
+}
+
+type localCapturableFile[TFile model_core.ReferenceMetadata] struct {
+	file    filesystem.FileReader
+	options *localCapturableDirectoryOptions[TFile]
+}
+
+func (f *localCapturableFile[TFile]) CreateFileMerkleTree(ctx context.Context) (model_core.PatchedMessage[*model_filesystem_pb.FileContents, TFile], error) {
+	defer f.Discard()
+	return model_filesystem.CreateFileMerkleTree(
+		ctx,
+		f.options.fileParameters,
+		io.NewSectionReader(f.file, 0, math.MaxInt64),
+		f.options.capturer,
+	)
+}
+
+func (f *localCapturableFile[TFile]) Discard() {
+	f.file.Close()
+	f.file = nil
 }
 
 func DoBuild(args *arguments.BuildCommand, workspacePath path.Parser) {
@@ -196,7 +251,7 @@ func DoBuild(args *arguments.BuildCommand, workspacePath path.Parser) {
 	// uploaded to storage.
 	logger.Info("Scanning module sources")
 	group, groupCtx := errgroup.WithContext(context.Background())
-	moduleRootDirectories := make([]model_filesystem.CapturableDirectory, 0, len(moduleNames))
+	moduleRootDirectories := make([]model_filesystem.CapturedDirectory, 0, len(moduleNames))
 	moduleRootDirectoryMessages := make([]model_core.PatchedMessage[*model_filesystem_pb.Directory, model_filesystem.CapturedObject], len(moduleNames))
 	createMerkleTreesConcurrency := semaphore.NewWeighted(int64(runtime.NumCPU()))
 	group.Go(func() error {
@@ -206,17 +261,21 @@ func DoBuild(args *arguments.BuildCommand, workspacePath path.Parser) {
 			if err != nil {
 				return util.StatusWrapf(err, "Failed to open root directory of module %#v", moduleName.String())
 			}
-			moduleRootCapturableDirectory := localCapturableDirectoryCloser{
+			moduleRootDirectories = append(moduleRootDirectories, localCapturedDirectory{
 				DirectoryCloser: moduleRootDirectory,
-			}
-			moduleRootDirectories = append(moduleRootDirectories, moduleRootCapturableDirectory)
+			})
 			if err := model_filesystem.CreateDirectoryMerkleTree(
 				groupCtx,
 				createMerkleTreesConcurrency,
 				group,
 				directoryParameters,
-				fileParameters,
-				moduleRootCapturableDirectory,
+				&localCapturableDirectory[model_filesystem.CapturedObject, model_core.NoopReferenceMetadata]{
+					DirectoryCloser: moduleRootDirectory,
+					options: &localCapturableDirectoryOptions[model_core.NoopReferenceMetadata]{
+						fileParameters: fileParameters,
+						capturer:       model_filesystem.NoopFileMerkleTreeCapturer,
+					},
+				},
 				model_filesystem.FileDiscardingDirectoryMerkleTreeCapturer,
 				&moduleRootDirectoryMessages[i],
 			); err != nil {

@@ -30,12 +30,11 @@ func TestFullyComputeValue(t *testing.T) {
 				// Base case: fib(0) and fib(1).
 				k := key.(*wrapperspb.UInt32Value)
 				if k.Value <= 1 {
-					return model_core.PatchedMessage[proto.Message, dag.ObjectContentsWalker]{
-						Message: &wrapperspb.UInt64Value{
+					return model_core.NewSimplePatchedMessage[dag.ObjectContentsWalker, proto.Message](
+						&wrapperspb.UInt64Value{
 							Value: uint64(k.Value),
 						},
-						Patcher: model_core.NewReferenceMessagePatcher[dag.ObjectContentsWalker](),
-					}, nil
+					), nil
 				}
 
 				// Recursion: fib(n) = fib(n-2) + fib(n-1).
@@ -48,12 +47,11 @@ func TestFullyComputeValue(t *testing.T) {
 				if !v0.IsSet() || !v1.IsSet() {
 					return model_core.PatchedMessage[proto.Message, dag.ObjectContentsWalker]{}, evaluation.ErrMissingDependency
 				}
-				return model_core.PatchedMessage[proto.Message, dag.ObjectContentsWalker]{
-					Message: &wrapperspb.UInt64Value{
+				return model_core.NewSimplePatchedMessage[dag.ObjectContentsWalker, proto.Message](
+					&wrapperspb.UInt64Value{
 						Value: v0.Message.(*wrapperspb.UInt64Value).Value + v1.Message.(*wrapperspb.UInt64Value).Value,
 					},
-					Patcher: model_core.NewReferenceMessagePatcher[dag.ObjectContentsWalker](),
-				}, nil
+				), nil
 			}).
 			AnyTimes()
 		valueChildrenStorer := NewMockValueChildrenStorer(ctrl)

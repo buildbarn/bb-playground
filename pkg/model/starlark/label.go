@@ -1,6 +1,7 @@
 package starlark
 
 import (
+	"errors"
 	"fmt"
 
 	pg_label "github.com/buildbarn/bb-playground/pkg/label"
@@ -30,7 +31,7 @@ func NewLabel(value pg_label.CanonicalLabel) starlark.Value {
 }
 
 func (l label) String() string {
-	return fmt.Sprintf("Label(%#v)", l.value.String())
+	return l.value.String()
 }
 
 func (l label) Type() string {
@@ -65,19 +66,24 @@ func (l label) AttrNames() []string {
 }
 
 func (l label) EncodeValue(path map[starlark.Value]struct{}, currentIdentifier *pg_label.CanonicalStarlarkIdentifier, options *ValueEncodingOptions) (model_core.PatchedMessage[*model_starlark_pb.Value, dag.ObjectContentsWalker], bool, error) {
-	return model_core.PatchedMessage[*model_starlark_pb.Value, dag.ObjectContentsWalker]{
-		Message: &model_starlark_pb.Value{
+	return model_core.NewSimplePatchedMessage[dag.ObjectContentsWalker](
+		&model_starlark_pb.Value{
 			Kind: &model_starlark_pb.Value_Label{
 				Label: l.value.String(),
 			},
 		},
-		Patcher: model_core.NewReferenceMessagePatcher[dag.ObjectContentsWalker](),
-	}, false, nil
+	), false, nil
 }
 
-type CanonicalRepoResolver = func(fromCanonicalRepo pg_label.CanonicalRepo, toApparentRepo pg_label.ApparentRepo) (pg_label.CanonicalRepo, error)
+type (
+	CanonicalRepoResolver = func(fromCanonicalRepo pg_label.CanonicalRepo, toApparentRepo pg_label.ApparentRepo) (pg_label.CanonicalRepo, error)
+	RootModuleResolver    = func() (pg_label.Module, error)
+)
 
-const CanonicalRepoResolverKey = "canonical_repo_resolver"
+const (
+	CanonicalRepoResolverKey = "canonical_repo_resolver"
+	RootModuleResolverKey    = "root_module_resolver"
+)
 
 type labelOrStringUnpackerInto struct {
 	basePackage pg_label.CanonicalPackage
@@ -102,20 +108,30 @@ func (ui *labelOrStringUnpackerInto) UnpackInto(thread *starlark.Thread, v starl
 			return nil
 		}
 
-		// Label value has an apparent repo name. Resolve it.
-		apparentRepo, ok := apparentLabel.GetApparentRepo()
-		if !ok {
-			panic("label that is not canonical should include an apparent repo name")
+		if apparentRepo, ok := apparentLabel.GetApparentRepo(); ok {
+			// Label value has an apparent repo name. Resolve it.
+			canonicalRepoResolver := thread.Local(CanonicalRepoResolverKey)
+			if canonicalRepoResolver == nil {
+				return fmt.Errorf("label has apparent repo %#v, which cannot be resolved to a canonical repo from within this context", apparentRepo.String())
+			}
+			canonicalRepo, err := canonicalRepoResolver.(CanonicalRepoResolver)(ui.basePackage.GetCanonicalRepo(), apparentRepo)
+			if err != nil {
+				return fmt.Errorf("failed to resolve apparent repo %#v: %w", apparentRepo.String(), err)
+			}
+			*dst = apparentLabel.WithCanonicalRepo(canonicalRepo)
+			return nil
 		}
-		canonicalRepoResolver := thread.Local(CanonicalRepoResolverKey)
-		if canonicalRepoResolver == nil {
-			return fmt.Errorf("label has apparent repo %#v, which cannot be resolved to a canonical repo from within this context", apparentRepo.String())
+
+		// Label is prefixed with "@@". Resolve to the root module.
+		rootModuleResolver := thread.Local(RootModuleResolverKey)
+		if rootModuleResolver == nil {
+			return errors.New("label is prefixed with \"@@\", which cannot be resolved to the root module from within this context")
 		}
-		canonicalRepo, err := canonicalRepoResolver.(CanonicalRepoResolver)(ui.basePackage.GetCanonicalRepo(), apparentRepo)
+		rootModule, err := rootModuleResolver.(RootModuleResolver)()
 		if err != nil {
-			return fmt.Errorf("failed to resolve apparent repo %#v: %w", apparentRepo.String(), err)
+			return fmt.Errorf("failed to resolve root module: %w", err)
 		}
-		*dst = apparentLabel.WithCanonicalRepo(canonicalRepo)
+		*dst = apparentLabel.WithCanonicalRepo(rootModule.ToModuleInstance(nil).GetBareCanonicalRepo())
 		return nil
 	case label:
 		// Label value is already wrapped in Label().

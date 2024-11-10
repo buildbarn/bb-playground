@@ -11,7 +11,6 @@ proto_library(
         "//pkg/proto/model/core:core_proto",
         "//pkg/proto/model/filesystem:filesystem_proto",
         "//pkg/proto/model/starlark:starlark_proto",
-        "@protobuf//:empty_proto",
     ],
 )
 

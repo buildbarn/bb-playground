@@ -75,22 +75,30 @@ func (p *Provider) EncodeValue(path map[starlark.Value]struct{}, currentIdentifi
 	if p.Identifier == nil {
 		return model_core.PatchedMessage[*model_starlark_pb.Value, dag.ObjectContentsWalker]{}, false, errors.New("provider does not have a name")
 	}
-	var initFunctionIdentifier string
-	if p.initFunction != nil {
-		initFunctionIdentifier = p.initFunction.identifier.String()
+
+	provider := &model_starlark_pb.Provider{
+		ProviderIdentifier: p.Identifier.String(),
 	}
-	// TODO!
+	patcher := model_core.NewReferenceMessagePatcher[dag.ObjectContentsWalker]()
 	needsCode := false
+
+	if p.initFunction != nil {
+		initFunction, initFunctionNeedsCode, err := p.initFunction.Encode(path, options)
+		if err != nil {
+			return model_core.PatchedMessage[*model_starlark_pb.Value, dag.ObjectContentsWalker]{}, false, err
+		}
+		provider.InitFunction = initFunction.Message
+		patcher.Merge(initFunction.Patcher)
+		needsCode = needsCode || initFunctionNeedsCode
+	}
+
 	return model_core.PatchedMessage[*model_starlark_pb.Value, dag.ObjectContentsWalker]{
 		Message: &model_starlark_pb.Value{
 			Kind: &model_starlark_pb.Value_Provider{
-				Provider: &model_starlark_pb.Provider{
-					ProviderIdentifier:     p.Identifier.String(),
-					InitFunctionIdentifier: initFunctionIdentifier,
-				},
+				Provider: provider,
 			},
 		},
-		Patcher: model_core.NewReferenceMessagePatcher[dag.ObjectContentsWalker](),
+		Patcher: patcher,
 	}, needsCode, nil
 }
 

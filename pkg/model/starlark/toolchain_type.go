@@ -85,14 +85,13 @@ func (tt *ToolchainType) AttrNames() []string {
 }
 
 func (tt *ToolchainType) EncodeValue(path map[starlark.Value]struct{}, currentIdentifier *pg_label.CanonicalStarlarkIdentifier, options *ValueEncodingOptions) (model_core.PatchedMessage[*model_starlark_pb.Value, dag.ObjectContentsWalker], bool, error) {
-	return model_core.PatchedMessage[*model_starlark_pb.Value, dag.ObjectContentsWalker]{
-		Message: &model_starlark_pb.Value{
+	return model_core.NewSimplePatchedMessage[dag.ObjectContentsWalker](
+		&model_starlark_pb.Value{
 			Kind: &model_starlark_pb.Value_ToolchainType{
 				ToolchainType: tt.Encode(),
 			},
 		},
-		Patcher: model_core.NewReferenceMessagePatcher[dag.ObjectContentsWalker](),
-	}, false, nil
+	), false, nil
 }
 
 type toolchainTypeUnpackerInto struct{}

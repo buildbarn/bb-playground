@@ -7,6 +7,7 @@ ConstraintValueInfo = provider()
 ConstraintSettingInfo = provider()
 DebugPackageInfo = provider()
 DefaultInfo = provider()
+ExecutionInfo = provider()
 InstrumentedFilesInfo = provider()
 OutputGroupInfo = provider()
 PackageSpecificationInfo = provider()
@@ -146,6 +147,9 @@ toolchain = rule(
 def proto_common_incompatible_enable_proto_toolchain_resolution():
     return True
 
+def builtins_internal_apple_common_dotted_version(v):
+    return [int(p) for p in v.split(".")]
+
 def builtins_internal_cc_internal_empty_compilation_outputs():
     return "TODO"
 
@@ -185,14 +189,18 @@ exported_toplevels = {
     "proto_common": struct(
         incompatible_enable_proto_toolchain_resolution = proto_common_incompatible_enable_proto_toolchain_resolution,
     ),
-    "testing": struct(),
+    "testing": struct(
+        ExecutionInfo = ExecutionInfo,
+    ),
 }
 
 exported_toplevels["_builtins"] = struct(
     internal = struct(
         CcNativeLibraryInfo = CcNativeLibraryInfo,
         StaticallyLinkedMarkerProvider = StaticallyLinkedMarkerProvider,
-        apple_common = struct(),
+        apple_common = struct(
+            dotted_version = builtins_internal_apple_common_dotted_version,
+        ),
         cc_common = struct(
             CcToolchainInfo = CcToolchainInfo,
             do_not_use_tools_cpp_compiler_present = None,

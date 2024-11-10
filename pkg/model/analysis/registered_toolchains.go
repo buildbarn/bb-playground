@@ -2,14 +2,11 @@ package analysis
 
 import (
 	"context"
-	"errors"
 
 	"github.com/buildbarn/bb-playground/pkg/evaluation"
 	"github.com/buildbarn/bb-playground/pkg/label"
-	model_core "github.com/buildbarn/bb-playground/pkg/model/core"
 	model_analysis_pb "github.com/buildbarn/bb-playground/pkg/proto/model/analysis"
 	pg_starlark "github.com/buildbarn/bb-playground/pkg/starlark"
-	"github.com/buildbarn/bb-playground/pkg/storage/dag"
 
 	"go.starlark.net/starlark"
 )
@@ -45,14 +42,7 @@ func (h *registeredToolchainExtractingModuleDotBazelHandler) RegisterToolchains(
 			if !configuredTargetValue.IsSet() {
 				return evaluation.ErrMissingDependency
 			}
-			switch result := configuredTargetValue.Message.Result.(type) {
-			case *model_analysis_pb.ConfiguredTarget_Value_Success_:
-				panic("TODO")
-			case *model_analysis_pb.ConfiguredTarget_Value_Failure:
-				return errors.New(result.Failure)
-			default:
-				return errors.New("configured target value has an unknown result type")
-			}
+			panic("TODO")
 		}
 	}
 	return nil
@@ -76,14 +66,7 @@ func (c *baseComputer) ComputeRegisteredToolchainsValue(ctx context.Context, key
 			ignoreDevDependencies: ignoreDevDependencies,
 		}
 	}); err != nil {
-		if !errors.Is(err, evaluation.ErrMissingDependency) {
-			return model_core.NewSimplePatchedMessage[dag.ObjectContentsWalker](&model_analysis_pb.RegisteredToolchains_Value{
-				Result: &model_analysis_pb.RegisteredToolchains_Value_Failure{
-					Failure: err.Error(),
-				},
-			}), nil
-		}
-		return PatchedRegisteredToolchainsValue{}, evaluation.ErrMissingDependency
+		return PatchedRegisteredToolchainsValue{}, err
 	}
 
 	panic("TODO")

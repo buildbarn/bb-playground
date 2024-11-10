@@ -6,7 +6,8 @@ import (
 	"strings"
 )
 
-const validApparentLabelPattern = `@(` + validApparentRepoPattern + `|@` + validCanonicalRepoPattern + `)` + validMaybeAbsoluteLabelPattern
+const validApparentLabelPattern = `@(` + validApparentRepoPattern + `|@` + validCanonicalRepoPattern + `)` + validMaybeAbsoluteLabelPattern +
+	`|@@` + validAbsoluteLabelPattern
 
 var validApparentLabelRegexp = regexp.MustCompile("^" + validApparentLabelPattern + "$")
 
@@ -45,7 +46,7 @@ func (l ApparentLabel) String() string {
 // AsCanonicalLabel upgrades an existing ApparentLabel to a
 // CanonicalLabel if it prefixed with a canonical repo name.
 func (l ApparentLabel) AsCanonicalLabel() (CanonicalLabel, bool) {
-	if l.value[1] == '@' {
+	if len(l.value) > 2 && l.value[1] == '@' && l.value[2] != '/' {
 		return CanonicalLabel{value: l.value}, true
 	}
 	return CanonicalLabel{}, false

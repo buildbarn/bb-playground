@@ -18,13 +18,21 @@ import (
 	"google.golang.org/grpc/status"
 )
 
+// CapturedDirectory is called into by CapturedDirectoryWalker to
+// traverse a directory hierarchy and read file contents.
+type CapturedDirectory interface {
+	Close() error
+	EnterCapturedDirectory(name path.Component) (CapturedDirectory, error)
+	OpenRead(name path.Component) (filesystem.FileReader, error)
+}
+
 // capturedDirectoryWalkerOptions contains all state that is shared by
 // all the transitively created instances of ObjectContentsWalker that
 // are returned by NewCapturedDirectoryWalker().
 type capturedDirectoryWalkerOptions struct {
 	directoryParameters *DirectoryAccessParameters
 	fileParameters      *FileCreationParameters
-	rootDirectory       CapturableDirectory
+	rootDirectory       CapturedDirectory
 }
 
 // openFile opens a file underneath the root directory for reading. This
@@ -41,7 +49,7 @@ func (o *capturedDirectoryWalkerOptions) openFile(pathTrace *path.Trace) (filesy
 	components := pathTrace.ToList()
 	for _, component := range components[:len(components)-1] {
 		dPathTrace = dPathTrace.Append(component)
-		dChild, err := d.EnterCapturableDirectory(component)
+		dChild, err := d.EnterCapturedDirectory(component)
 		if err != nil {
 			return nil, util.StatusWrapf(err, "Failed to enter directory %#v", dPathTrace.GetUNIXString())
 		}
@@ -107,7 +115,7 @@ type capturedDirectoryWalker struct {
 // must reobtain them from the underlying file system. This is why the
 // caller must provide a handle to the root directory on which the
 // provided Merkle tree is based.
-func NewCapturedDirectoryWalker(directoryParameters *DirectoryAccessParameters, fileParameters *FileCreationParameters, rootDirectory CapturableDirectory, rootObject *CapturedObject) dag.ObjectContentsWalker {
+func NewCapturedDirectoryWalker(directoryParameters *DirectoryAccessParameters, fileParameters *FileCreationParameters, rootDirectory CapturedDirectory, rootObject *CapturedObject) dag.ObjectContentsWalker {
 	return &capturedDirectoryWalker{
 		options: &capturedDirectoryWalkerOptions{
 			directoryParameters: directoryParameters,

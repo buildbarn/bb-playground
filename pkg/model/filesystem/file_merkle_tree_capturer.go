@@ -22,6 +22,12 @@ type FileMerkleTreeCapturer[T any] interface {
 
 type noopFileMerkleTreeCapturer struct{}
 
+// NoopFileMerkleTreeCapturer is a no-op implementation of
+// FileMerkleTreeCapturer. It can be used when only a reference of a
+// file needs to be computed, and there is no need to capture the
+// resulting Merkle tree.
+var NoopFileMerkleTreeCapturer FileMerkleTreeCapturer[model_core.NoopReferenceMetadata] = noopFileMerkleTreeCapturer{}
+
 func (noopFileMerkleTreeCapturer) CaptureChunk(contents *object.Contents) model_core.NoopReferenceMetadata {
 	return model_core.NoopReferenceMetadata{}
 }
@@ -29,12 +35,6 @@ func (noopFileMerkleTreeCapturer) CaptureChunk(contents *object.Contents) model_
 func (noopFileMerkleTreeCapturer) CaptureFileContentsList(contents *object.Contents, children []model_core.NoopReferenceMetadata) model_core.NoopReferenceMetadata {
 	return model_core.NoopReferenceMetadata{}
 }
-
-// NoopFileMerkleTreeCapturer is a no-op implementation of
-// FileMerkleTreeCapturer. It can be used when only a reference of a
-// file needs to be computed, and there is no need to capture the
-// resulting Merkle tree.
-var NoopFileMerkleTreeCapturer FileMerkleTreeCapturer[model_core.NoopReferenceMetadata] = noopFileMerkleTreeCapturer{}
 
 type CapturedObject struct {
 	Contents *object.Contents
@@ -44,6 +44,13 @@ type CapturedObject struct {
 func (CapturedObject) Discard() {}
 
 type chunkDiscardingFileMerkleTreeCapturer struct{}
+
+// ChunkDiscardingFileMerkleTreeCapturer is an implementation of
+// FileMerkleTreeCapturer that only preserves the FileContentsList
+// messages of the Merkle tree. This can be of use when incrementally
+// replicating the contents of a file. In those cases it's wasteful to
+// store the full contents of a file in memory.
+var ChunkDiscardingFileMerkleTreeCapturer FileMerkleTreeCapturer[CapturedObject] = chunkDiscardingFileMerkleTreeCapturer{}
 
 func (chunkDiscardingFileMerkleTreeCapturer) CaptureChunk(contents *object.Contents) CapturedObject {
 	return CapturedObject{}
@@ -59,11 +66,22 @@ func (chunkDiscardingFileMerkleTreeCapturer) CaptureFileContentsList(contents *o
 	return o
 }
 
-// ChunkDiscardingFileMerkleTreeCapturer is an implementation of
-// FileMerkleTreeCapturer that only preserves the FileContentsList
-// messages of the Merkle tree. This can be of use when incrementally
-// replicating the contents of a file. In those cases it's wasteful to
-// store the full contents of a file in memory.
-var ChunkDiscardingFileMerkleTreeCapturer FileMerkleTreeCapturer[CapturedObject] = chunkDiscardingFileMerkleTreeCapturer{}
+type fileWritingFileMerkleTreeCapturer struct {
+	capturer *model_core.FileWritingMerkleTreeCapturer
+}
+
+func NewFileWritingFileMerkleTreeCapturer(capturer *model_core.FileWritingMerkleTreeCapturer) FileMerkleTreeCapturer[model_core.FileBackedObjectLocation] {
+	return fileWritingFileMerkleTreeCapturer{
+		capturer: capturer,
+	}
+}
+
+func (c fileWritingFileMerkleTreeCapturer) CaptureChunk(contents *object.Contents) model_core.FileBackedObjectLocation {
+	return c.capturer.CaptureObject(contents, nil)
+}
+
+func (c fileWritingFileMerkleTreeCapturer) CaptureFileContentsList(contents *object.Contents, children []model_core.FileBackedObjectLocation) model_core.FileBackedObjectLocation {
+	return c.capturer.CaptureObject(contents, children)
+}
 
 type FileMerkleTreeCapturerForTesting FileMerkleTreeCapturer[model_core.ReferenceMetadata]

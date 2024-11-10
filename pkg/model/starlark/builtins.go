@@ -126,8 +126,8 @@ var BuildFileBuiltins = starlark.StringDict{
 				model_core.PatchedMessage[*model_starlark_pb.Target, dag.ObjectContentsWalker]{
 					Message: &model_starlark_pb.Target{
 						Name: name,
-						Definition: &model_starlark_pb.TargetDefinition{
-							Kind: &model_starlark_pb.TargetDefinition_Alias{
+						Definition: &model_starlark_pb.Target_Definition{
+							Kind: &model_starlark_pb.Target_Definition_Alias{
 								Alias: &model_starlark_pb.Alias{
 									Actual:     actualGroups.Message[0],
 									Visibility: visibilityPackageGroup.Message,
@@ -186,9 +186,10 @@ var BzlFileBuiltins = starlark.StringDict{
 			if len(args) > 1 {
 				return nil, fmt.Errorf("%s: got %d positional arguments, want at most 1", b.Name(), len(args))
 			}
-			var implementation *NamedFunction
+			var implementation NamedFunction
 			var attrAspects []string
 			attrs := map[pg_label.StarlarkIdentifier]*Attr{}
+			doc := ""
 			var fragments []string
 			var provides []*Provider
 			var requiredAspectProviders [][]*Provider
@@ -201,6 +202,7 @@ var BzlFileBuiltins = starlark.StringDict{
 				// Keyword arguments.
 				"attr_aspects?", unpack.Bind(thread, &attrAspects, unpack.List(unpack.String)),
 				"attrs?", unpack.Bind(thread, &attrs, unpack.Dict(unpack.StarlarkIdentifier, unpack.Type[*Attr]("attr.*"))),
+				"doc?", unpack.Bind(thread, &doc, unpack.String),
 				"fragments?", unpack.Bind(thread, &fragments, unpack.List(unpack.String)),
 				"provides?", unpack.Bind(thread, &provides, unpack.List(unpack.Type[*Provider]("provider"))),
 				"required_aspect_providers?", unpack.Bind(thread, &requiredAspectProviders, providersListUnpackerInto),
@@ -803,7 +805,7 @@ var BzlFileBuiltins = starlark.StringDict{
 			if len(args) > 1 {
 				return nil, fmt.Errorf("%s: got %d positional arguments, want at most 1", b.Name(), len(args))
 			}
-			var implementation *NamedFunction
+			var implementation NamedFunction
 			archDependent := false
 			doc := ""
 			var environ []string
@@ -822,14 +824,13 @@ var BzlFileBuiltins = starlark.StringDict{
 			); err != nil {
 				return nil, err
 			}
-			return NewModuleExtension(nil, &model_starlark_pb.ModuleExtension_Definition{
-				Implementation: implementation.identifier.String(),
-			}), nil
+			return NewModuleExtension(NewStarlarkModuleExtensionDefinition(implementation, tagClasses)), nil
 		},
 	),
 	"native": starlarkstruct.FromStringDict(starlarkstruct.Default, starlark.StringDict{
+		"bazel_version": starlark.String("8.0.0"),
 		"package_relative_label": starlark.NewBuiltin(
-			"package_relative_label",
+			"native.package_relative_label",
 			func(thread *starlark.Thread, b *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
 				// This function is identical to Label(),
 				// except that it resolves the label
@@ -870,7 +871,7 @@ var BzlFileBuiltins = starlark.StringDict{
 				"doc?", unpack.Bind(thread, &doc, unpack.String),
 				// Keyword arguments.
 				"fields?", &fields,
-				"init?", unpack.Bind(thread, &init, NamedFunctionUnpackerInto),
+				"init?", unpack.Bind(thread, &init, unpack.Pointer(NamedFunctionUnpackerInto)),
 			); err != nil {
 				return nil, err
 			}
@@ -891,8 +892,9 @@ var BzlFileBuiltins = starlark.StringDict{
 			if len(args) > 1 {
 				return nil, fmt.Errorf("%s: got %d positional arguments, want at most 1", b.Name(), len(args))
 			}
-			var implementation *NamedFunction
+			var implementation NamedFunction
 			attrs := map[pg_label.StarlarkIdentifier]*Attr{}
+			configure := false
 			doc := ""
 			var environ []string
 			local := false
@@ -902,13 +904,14 @@ var BzlFileBuiltins = starlark.StringDict{
 				"implementation", unpack.Bind(thread, &implementation, NamedFunctionUnpackerInto),
 				// Keyword arguments.
 				"attrs?", unpack.Bind(thread, &attrs, unpack.Dict(unpack.StarlarkIdentifier, unpack.Type[*Attr]("attr.*"))),
+				"configure?", unpack.Bind(thread, &configure, unpack.Bool),
 				"doc?", unpack.Bind(thread, &doc, unpack.String),
 				"environ?", unpack.Bind(thread, &environ, unpack.List(unpack.String)),
 				"local?", unpack.Bind(thread, &local, unpack.Bool),
 			); err != nil {
 				return nil, err
 			}
-			return NewRepositoryRule(nil, &model_starlark_pb.RepositoryRule_Definition{}), nil
+			return NewRepositoryRule(nil, NewStarlarkRepositoryRuleDefinition(implementation, attrs)), nil
 		},
 	),
 	"rule": starlark.NewBuiltin(
@@ -917,7 +920,7 @@ var BzlFileBuiltins = starlark.StringDict{
 			if len(args) > 1 {
 				return nil, fmt.Errorf("%s: got %d positional arguments, want at most 1", b.Name(), len(args))
 			}
-			var implementation *NamedFunction
+			var implementation NamedFunction
 			attrs := map[pg_label.StarlarkIdentifier]*Attr{}
 			var buildSetting starlark.Value
 			var cfg *Transition
@@ -928,7 +931,7 @@ var BzlFileBuiltins = starlark.StringDict{
 			var execCompatibleWith []pg_label.CanonicalLabel
 			var fragments []string
 			var hostFragments []string
-			var initializer *NamedFunction
+			var initializer NamedFunction
 			outputs := map[string]string{}
 			var provides []*Provider
 			var subrules starlark.Value
@@ -984,7 +987,7 @@ var BzlFileBuiltins = starlark.StringDict{
 			if len(args) > 1 {
 				return nil, fmt.Errorf("%s: got %d positional arguments, want at most 1", b.Name(), len(args))
 			}
-			var implementation *NamedFunction
+			var implementation NamedFunction
 			attrs := map[pg_label.StarlarkIdentifier]*Attr{}
 			var fragments []string
 			var toolchains []*ToolchainType
@@ -1028,7 +1031,7 @@ var BzlFileBuiltins = starlark.StringDict{
 			if len(args) > 0 {
 				return nil, fmt.Errorf("%s: got %d positional arguments, want 0", b.Name(), len(args))
 			}
-			var implementation *NamedFunction
+			var implementation NamedFunction
 			var inputs []pg_label.CanonicalLabel
 			var outputs []pg_label.CanonicalLabel
 			canonicalLabelListUnpackerInto := unpack.List(NewLabelOrStringUnpackerInto(currentFilePackage(thread)))
@@ -1041,6 +1044,13 @@ var BzlFileBuiltins = starlark.StringDict{
 				return nil, err
 			}
 			return NewTransition(nil, &model_starlark_pb.Transition_Definition{}), nil
+		},
+	),
+	"visibility": starlark.NewBuiltin(
+		"visibility",
+		func(thread *starlark.Thread, b *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
+			// TODO: Implement!
+			return starlark.None, nil
 		},
 	),
 }

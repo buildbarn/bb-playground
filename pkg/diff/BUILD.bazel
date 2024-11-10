@@ -1,0 +1,23 @@
+load("@rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "diff",
+    srcs = [
+        "find_text_fragment_offsets_bytes.go",
+        "replace_text_fragments.go",
+    ],
+    importpath = "github.com/buildbarn/bb-playground/pkg/diff",
+    visibility = ["//visibility:public"],
+    deps = ["@com_github_bluekeyes_go_gitdiff//gitdiff"],
+)
+
+go_test(
+    name = "diff_test",
+    srcs = ["diff_test.go"],
+    data = glob(["testdata/**"]),
+    deps = [
+        ":diff",
+        "@com_github_bluekeyes_go_gitdiff//gitdiff",
+        "@com_github_stretchr_testify//require",
+    ],
+)

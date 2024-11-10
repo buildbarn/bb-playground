@@ -13,7 +13,6 @@
       },
       "CanonicalRepoName": {
          "dependsOn": [
-            "CompiledBzlFileGlobal",
             "ModuleRepoMapping"
          ]
       },
@@ -22,9 +21,10 @@
             "BuiltinsModuleNames",
             "CanonicalRepoName",
             "CompiledBzlFileDecodedGlobals",
-            "CompiledBzlFileFunctions",
+            "CompiledBzlFileFunctionFactory",
             "FileProperties",
-            "FileReader"
+            "FileReader",
+            "RootModule"
          ]
       },
       "CompiledBzlFileDecodedGlobals": {
@@ -38,20 +38,20 @@
             "type": "starlark.StringDict"
          }
       },
-      "CompiledBzlFileFunctions": {
+      "CompiledBzlFileFunctionFactory": {
          "dependsOn": [
             "BuiltinsModuleNames",
             "CanonicalRepoName",
             "CompiledBzlFile",
             "CompiledBzlFileDecodedGlobals",
-            "CompiledBzlFileFunctions"
+            "CompiledBzlFileFunctionFactory",
+            "RootModule"
          ],
          "nativeValueType": {
             "imports": {
-               "label": "github.com/buildbarn/bb-playground/pkg/label",
-               "model_starlark": "github.com/buildbarn/bb-playground/pkg/model/starlark"
+               "starlark": "go.starlark.net/starlark"
             },
-            "type": "map[label.StarlarkIdentifier]model_starlark.CallableWithPosition"
+            "type": "*starlark.FunctionFactory"
          }
       },
       "CompiledBzlFileGlobal": {
@@ -80,10 +80,11 @@
             "BuiltinsModuleNames",
             "CanonicalRepoName",
             "CompiledBzlFileDecodedGlobals",
-            "CompiledBzlFileFunctions",
+            "CompiledBzlFileFunctionFactory",
             "CompiledBzlFileGlobal",
             "ConfiguredRuleObject",
             "ConfiguredTarget",
+            "RootModule",
             "Target"
          ]
       },
@@ -167,14 +168,21 @@
             "ModuleFinalBuildList"
          ]
       },
-      "ModuleExtension": {
+      "ModuleExtensionRepo": {
          "dependsOn": [
+            "ModuleExtensionRepos"
+         ]
+      },
+      "ModuleExtensionRepos": {
+         "dependsOn": [
+            "BuiltinsModuleNames",
+            "CanonicalRepoName",
+            "CompiledBzlFileDecodedGlobals",
+            "CompiledBzlFileFunctionFactory",
             "CompiledBzlFileGlobal",
-            "ModuleExtension"
-         ],
-         "nativeValueType": {
-            "type": "*ModuleExtension"
-         }
+            "RootModule",
+            "UsedModuleExtension"
+         ]
       },
       "ModuleFinalBuildList": {
          "dependsOn": [
@@ -231,10 +239,11 @@
             "CanonicalRepoName",
             "CompiledBzlFile",
             "CompiledBzlFileDecodedGlobals",
-            "CompiledBzlFileFunctions",
+            "CompiledBzlFileFunctionFactory",
             "FileProperties",
             "FileReader",
-            "RepoDefaultAttrs"
+            "RepoDefaultAttrs",
+            "RootModule"
          ]
       },
       "RegisteredExecutionPlatforms": {
@@ -260,12 +269,19 @@
       "Repo": {
          "dependsOn": [
             "BuildSpecification",
+            "BuiltinsModuleNames",
+            "CanonicalRepoName",
+            "CompiledBzlFileDecodedGlobals",
+            "CompiledBzlFileFunctionFactory",
             "DirectoryCreationParametersObject",
+            "FileCreationParametersObject",
             "FileReader",
             "HttpArchiveContents",
             "HttpFileContents",
+            "ModuleExtensionRepo",
             "ModuleFinalBuildList",
-            "UsedModuleExtensions"
+            "RepositoryRuleObject",
+            "RootModule"
          ]
       },
       "RepoDefaultAttrs": {
@@ -273,6 +289,14 @@
             "FileProperties",
             "FileReader"
          ]
+      },
+      "RepositoryRuleObject": {
+         "dependsOn": [
+            "CompiledBzlFileGlobal"
+         ],
+         "nativeValueType": {
+            "type": "*RepositoryRule"
+         }
       },
       "ResolvedToolchains": {
          "dependsOn": [
@@ -295,12 +319,16 @@
             "ConfiguredTarget"
          ]
       },
+      "UsedModuleExtension": {
+         "dependsOn": [
+            "UsedModuleExtensions"
+         ]
+      },
       "UsedModuleExtensions": {
          "dependsOn": [
             "CanonicalRepoName",
             "FileReader",
             "ModuleDotBazelContents",
-            "ModuleExtension",
             "ModulesWithMultipleVersionsObject",
             "RootModule"
          ]

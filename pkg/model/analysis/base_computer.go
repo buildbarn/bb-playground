@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"strings"
 
 	"github.com/buildbarn/bb-playground/pkg/evaluation"
 	"github.com/buildbarn/bb-playground/pkg/label"
@@ -21,11 +22,9 @@ import (
 	"github.com/buildbarn/bb-playground/pkg/storage/object"
 	re_filesystem "github.com/buildbarn/bb-remote-execution/pkg/filesystem"
 	bb_path "github.com/buildbarn/bb-storage/pkg/filesystem/path"
-	"github.com/buildbarn/bb-storage/pkg/util"
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
-	"google.golang.org/protobuf/types/known/emptypb"
 
 	"go.starlark.net/starlark"
 )
@@ -83,47 +82,49 @@ func (c *baseComputer) getInlinedTreeOptions() *inlinedtree.Options {
 
 type resolveApparentLabelEnvironment interface {
 	GetCanonicalRepoNameValue(*model_analysis_pb.CanonicalRepoName_Key) model_core.Message[*model_analysis_pb.CanonicalRepoName_Value]
+	GetRootModuleValue(*model_analysis_pb.RootModule_Key) model_core.Message[*model_analysis_pb.RootModule_Value]
 }
 
 func resolveApparentLabel(e resolveApparentLabelEnvironment, fromRepo label.CanonicalRepo, toApparentLabel label.ApparentLabel) (label.CanonicalLabel, error) {
-	toCanonicalLabel, ok := toApparentLabel.AsCanonicalLabel()
-	if ok {
+	if toCanonicalLabel, ok := toApparentLabel.AsCanonicalLabel(); ok {
 		// Label was already canonical. Nothing to do.
 		return toCanonicalLabel, nil
 	}
 
-	// Perform resolution.
-	toApparentRepo, ok := toApparentLabel.GetApparentRepo()
-	if !ok {
-		panic("if AsCanonicalLabel() fails, GetApparentRepo() must succeed")
+	if toApparentRepo, ok := toApparentLabel.GetApparentRepo(); ok {
+		// Label is prefixed with an apparent repo. Resolve the repo.
+		v := e.GetCanonicalRepoNameValue(&model_analysis_pb.CanonicalRepoName_Key{
+			FromCanonicalRepo: fromRepo.String(),
+			ToApparentRepo:    toApparentRepo.String(),
+		})
+		var badLabel label.CanonicalLabel
+		if !v.IsSet() {
+			return badLabel, evaluation.ErrMissingDependency
+		}
+		toCanonicalRepo, err := label.NewCanonicalRepo(v.Message.ToCanonicalRepo)
+		if err != nil {
+			return badLabel, fmt.Errorf("invalid canonical repo name %#v: %w", v.Message.ToCanonicalRepo, err)
+		}
+		return toApparentLabel.WithCanonicalRepo(toCanonicalRepo), nil
 	}
-	v := e.GetCanonicalRepoNameValue(&model_analysis_pb.CanonicalRepoName_Key{
-		FromCanonicalRepo: fromRepo.String(),
-		ToApparentRepo:    toApparentRepo.String(),
-	})
+
+	// Label is prefixed with "@@". Resolve to the root module.
+	v := e.GetRootModuleValue(&model_analysis_pb.RootModule_Key{})
 	var badLabel label.CanonicalLabel
 	if !v.IsSet() {
 		return badLabel, evaluation.ErrMissingDependency
 	}
-	switch resultType := v.Message.Result.(type) {
-	case *model_analysis_pb.CanonicalRepoName_Value_ToCanonicalRepo:
-		toCanonicalRepo, err := label.NewCanonicalRepo(resultType.ToCanonicalRepo)
-		if err != nil {
-			return badLabel, fmt.Errorf("invalid canonical repo name %#v: %w", resultType.ToCanonicalRepo, err)
-		}
-		toCanonicalLabel := toApparentLabel.WithCanonicalRepo(toCanonicalRepo)
-		return toCanonicalLabel, nil
-	case *model_analysis_pb.CanonicalRepoName_Value_Failure:
-		return badLabel, errors.New(resultType.Failure)
-	default:
-		return badLabel, errors.New("invalid result type for canonical repo name resolution")
+	rootModule, err := label.NewModule(v.Message.RootModuleName)
+	if err != nil {
+		return badLabel, fmt.Errorf("invalid root module name %#v: %w", v.Message.RootModuleName, err)
 	}
+	return toApparentLabel.WithCanonicalRepo(rootModule.ToModuleInstance(nil).GetBareCanonicalRepo()), nil
 }
 
 type loadBzlGlobalsEnvironment interface {
 	resolveApparentLabelEnvironment
 	GetBuiltinsModuleNamesValue(key *model_analysis_pb.BuiltinsModuleNames_Key) model_core.Message[*model_analysis_pb.BuiltinsModuleNames_Value]
-	GetCompiledBzlFileDecodedGlobalsValue(key *model_analysis_pb.CompiledBzlFileDecodedGlobals_Key) (starlark.StringDict, error)
+	GetCompiledBzlFileDecodedGlobalsValue(key *model_analysis_pb.CompiledBzlFileDecodedGlobals_Key) (starlark.StringDict, bool)
 }
 
 func (c *baseComputer) loadBzlGlobals(e loadBzlGlobalsEnvironment, canonicalPackage label.CanonicalPackage, loadLabelStr string, builtinsModuleNames []string) (starlark.StringDict, error) {
@@ -140,10 +141,14 @@ func (c *baseComputer) loadBzlGlobals(e loadBzlGlobalsEnvironment, canonicalPack
 	if err != nil {
 		return nil, fmt.Errorf("failed to resolve label %#v in load() statement: %w", apparentLoadLabel.String(), err)
 	}
-	return e.GetCompiledBzlFileDecodedGlobalsValue(&model_analysis_pb.CompiledBzlFileDecodedGlobals_Key{
+	decodedGlobals, ok := e.GetCompiledBzlFileDecodedGlobalsValue(&model_analysis_pb.CompiledBzlFileDecodedGlobals_Key{
 		Label:               canonicalLoadLabel.String(),
 		BuiltinsModuleNames: builtinsModuleNames,
 	})
+	if !ok {
+		return nil, evaluation.ErrMissingDependency
+	}
+	return decodedGlobals, nil
 }
 
 func (c *baseComputer) loadBzlGlobalsInStarlarkThread(e loadBzlGlobalsEnvironment, thread *starlark.Thread, loadLabelStr string, builtinsModuleNames []string) (starlark.StringDict, error) {
@@ -165,7 +170,7 @@ func (c *baseComputer) preloadBzlGlobals(e loadBzlGlobalsEnvironment, canonicalP
 }
 
 type getBzlFileBuiltinsEnvironment interface {
-	GetCompiledBzlFileDecodedGlobalsValue(key *model_analysis_pb.CompiledBzlFileDecodedGlobals_Key) (starlark.StringDict, error)
+	GetCompiledBzlFileDecodedGlobalsValue(key *model_analysis_pb.CompiledBzlFileDecodedGlobals_Key) (starlark.StringDict, bool)
 }
 
 func (c *baseComputer) getBzlFileBuiltins(e getBzlFileBuiltinsEnvironment, builtinsModuleNames []string, baseBuiltins starlark.StringDict, dictName string) (starlark.StringDict, error) {
@@ -173,33 +178,37 @@ func (c *baseComputer) getBzlFileBuiltins(e getBzlFileBuiltinsEnvironment, built
 	for name, value := range baseBuiltins {
 		allBuiltins[name] = value
 	}
+	missingDependencies := false
 	for i, builtinsModuleName := range builtinsModuleNames {
 		exportsFile := fmt.Sprintf("@@%s+//:exports.bzl", builtinsModuleName)
-		globals, err := e.GetCompiledBzlFileDecodedGlobalsValue(&model_analysis_pb.CompiledBzlFileDecodedGlobals_Key{
+		if globals, gotGlobals := e.GetCompiledBzlFileDecodedGlobalsValue(&model_analysis_pb.CompiledBzlFileDecodedGlobals_Key{
 			Label:               exportsFile,
 			BuiltinsModuleNames: builtinsModuleNames[:i],
-		})
-		if err != nil {
-			return nil, err
-		}
-		exportedToplevels, ok := globals[dictName].(starlark.IterableMapping)
-		if !ok {
-			return nil, fmt.Errorf("file %#v does not declare exported_toplevels", exportsFile)
-		}
-		for name, value := range starlark.Entries(exportedToplevels) {
-			nameStr, ok := starlark.AsString(name)
+		}); gotGlobals {
+			exportedToplevels, ok := globals[dictName].(starlark.IterableMapping)
 			if !ok {
-				return nil, fmt.Errorf("file %#v exports builtins with non-string names", exportsFile)
+				return nil, fmt.Errorf("file %#v does not declare exported_toplevels", exportsFile)
 			}
-			allBuiltins[nameStr] = value
+			for name, value := range starlark.Entries(exportedToplevels) {
+				nameStr, ok := starlark.AsString(name)
+				if !ok {
+					return nil, fmt.Errorf("file %#v exports builtins with non-string names", exportsFile)
+				}
+				allBuiltins[strings.TrimPrefix(nameStr, "+")] = value
+			}
+		} else {
+			missingDependencies = true
 		}
+	}
+	if missingDependencies {
+		return nil, evaluation.ErrMissingDependency
 	}
 	return allBuiltins, nil
 }
 
 type starlarkThreadEnvironment interface {
 	loadBzlGlobalsEnvironment
-	GetCompiledBzlFileFunctionsValue(*model_analysis_pb.CompiledBzlFileFunctions_Key) (map[label.StarlarkIdentifier]model_starlark.CallableWithPosition, error)
+	GetCompiledBzlFileFunctionFactoryValue(*model_analysis_pb.CompiledBzlFileFunctionFactory_Key) (*starlark.FunctionFactory, bool)
 }
 
 // trimBuiltinModuleNames truncates the list of built-in module names up
@@ -215,7 +224,7 @@ func trimBuiltinModuleNames(builtinsModuleNames []string, module label.Module) [
 	return builtinsModuleNames[:i]
 }
 
-func (c *baseComputer) newStarlarkThread(e starlarkThreadEnvironment, builtinsModuleNames []string) *starlark.Thread {
+func (c *baseComputer) newStarlarkThread(ctx context.Context, e starlarkThreadEnvironment, builtinsModuleNames []string) *starlark.Thread {
 	thread := &starlark.Thread{
 		// TODO: Provide print method.
 		Print: nil,
@@ -224,6 +233,7 @@ func (c *baseComputer) newStarlarkThread(e starlarkThreadEnvironment, builtinsMo
 		},
 		Steps: 1000,
 	}
+
 	thread.SetLocal(model_starlark.CanonicalRepoResolverKey, func(fromCanonicalRepo label.CanonicalRepo, toApparentRepo label.ApparentRepo) (label.CanonicalRepo, error) {
 		v := e.GetCanonicalRepoNameValue(&model_analysis_pb.CanonicalRepoName_Key{
 			FromCanonicalRepo: fromCanonicalRepo.String(),
@@ -233,32 +243,32 @@ func (c *baseComputer) newStarlarkThread(e starlarkThreadEnvironment, builtinsMo
 		if !v.IsSet() {
 			return badRepo, evaluation.ErrMissingDependency
 		}
-
-		switch resultType := v.Message.Result.(type) {
-		case *model_analysis_pb.CanonicalRepoName_Value_ToCanonicalRepo:
-			return label.NewCanonicalRepo(resultType.ToCanonicalRepo)
-		case *model_analysis_pb.CanonicalRepoName_Value_Failure:
-			return badRepo, errors.New(resultType.Failure)
-		default:
-			return badRepo, errors.New("invalid result type for canonical repo name resolution")
-		}
+		return label.NewCanonicalRepo(v.Message.ToCanonicalRepo)
 	})
-	thread.SetLocal(model_starlark.FunctionResolverKey, func(identifier label.CanonicalStarlarkIdentifier) (model_starlark.CallableWithPosition, error) {
+
+	thread.SetLocal(model_starlark.RootModuleResolverKey, func() (label.Module, error) {
+		v := e.GetRootModuleValue(&model_analysis_pb.RootModule_Key{})
+		var badModule label.Module
+		if !v.IsSet() {
+			return badModule, evaluation.ErrMissingDependency
+		}
+		return label.NewModule(v.Message.RootModuleName)
+	})
+
+	valueDecodingOptions := c.getValueDecodingOptions(ctx, func(canonicalLabel label.CanonicalLabel) (starlark.Value, error) {
+		return model_starlark.NewLabel(canonicalLabel), nil
+	})
+	thread.SetLocal(model_starlark.FunctionFactoryResolverKey, func(filename label.CanonicalLabel) (*starlark.FunctionFactory, *model_starlark.ValueDecodingOptions, error) {
 		// Prevent modules containing builtin Starlark code from
 		// depending on itself.
-		identifierLabel := identifier.GetCanonicalLabel()
-		callables, err := e.GetCompiledBzlFileFunctionsValue(&model_analysis_pb.CompiledBzlFileFunctions_Key{
-			Label:               identifierLabel.String(),
-			BuiltinsModuleNames: trimBuiltinModuleNames(builtinsModuleNames, identifierLabel.GetCanonicalRepo().GetModuleInstance().GetModule()),
+		functionFactory, gotFunctionFactory := e.GetCompiledBzlFileFunctionFactoryValue(&model_analysis_pb.CompiledBzlFileFunctionFactory_Key{
+			Label:               filename.String(),
+			BuiltinsModuleNames: trimBuiltinModuleNames(builtinsModuleNames, filename.GetCanonicalRepo().GetModuleInstance().GetModule()),
 		})
-		if err != nil {
-			return nil, err
+		if !gotFunctionFactory {
+			return nil, nil, evaluation.ErrMissingDependency
 		}
-		callable, ok := callables[identifier.GetStarlarkIdentifier()]
-		if !ok {
-			return nil, fmt.Errorf("function %#v does not exist", identifier.String())
-		}
-		return callable, nil
+		return functionFactory, valueDecodingOptions, nil
 	})
 	return thread
 }
@@ -335,19 +345,7 @@ func (c *baseComputer) ComputeBuildResultValue(ctx context.Context, key *model_a
 		targetCompletion := e.GetTargetCompletionValue(&model_analysis_pb.TargetCompletion_Key{
 			Label: "@@com_github_buildbarn_bb_storage+" + pkg,
 		})
-		if targetCompletion.IsSet() {
-			switch resultType := targetCompletion.Message.Result.(type) {
-			case *model_analysis_pb.TargetCompletion_Value_Success:
-			case *model_analysis_pb.TargetCompletion_Value_Failure:
-				return model_core.NewSimplePatchedMessage[dag.ObjectContentsWalker](&model_analysis_pb.BuildResult_Value{
-					Result: &model_analysis_pb.BuildResult_Value_Failure{
-						Failure: fmt.Sprintf("Target %#v: %s", pkg, resultType.Failure),
-					},
-				}), nil
-			default:
-				return PatchedBuildResultValue{}, errors.New("Target completion value has an unknown result type")
-			}
-		} else {
+		if !targetCompletion.IsSet() {
 			missing = true
 		}
 	}
@@ -411,99 +409,66 @@ func (c *baseComputer) ComputeFilePropertiesValue(ctx context.Context, key *mode
 		return PatchedFilePropertiesValue{}, evaluation.ErrMissingDependency
 	}
 
-	switch repoResult := repoValue.Message.Result.(type) {
-	case *model_analysis_pb.Repo_Value_RootDirectoryReference:
-		if !directoryAccessParametersValue.IsSet() {
-			return PatchedFilePropertiesValue{}, evaluation.ErrMissingDependency
-		}
-		directoryAccessParameters, err := model_filesystem.NewDirectoryAccessParametersFromProto(
-			directoryAccessParametersValue.Message.DirectoryAccessParameters,
-			c.buildSpecificationReference.GetReferenceFormat(),
-		)
-		if err != nil {
-			return model_core.NewSimplePatchedMessage[dag.ObjectContentsWalker](&model_analysis_pb.FileProperties_Value{
-				Result: &model_analysis_pb.FileProperties_Value_Failure{
-					Failure: fmt.Sprintf("invalid directory access parameters: %s", err),
-				},
-			}), nil
-		}
-		directoryReader := model_parser.NewStorageBackedParsedObjectReader(
-			c.objectDownloader,
-			directoryAccessParameters.GetEncoder(),
-			model_parser.NewMessageObjectParser[object.LocalReference, model_filesystem_pb.Directory](),
-		)
-		leavesReader := model_parser.NewStorageBackedParsedObjectReader(
-			c.objectDownloader,
-			directoryAccessParameters.GetEncoder(),
-			model_parser.NewMessageObjectParser[object.LocalReference, model_filesystem_pb.Leaves](),
-		)
-
-		rootDirectoryReferenceIndex, err := model_core.GetIndexFromReferenceMessage(repoResult.RootDirectoryReference, repoValue.OutgoingReferences.GetDegree())
-		if err != nil {
-			return model_core.NewSimplePatchedMessage[dag.ObjectContentsWalker](&model_analysis_pb.FileProperties_Value{
-				Result: &model_analysis_pb.FileProperties_Value_Failure{
-					Failure: fmt.Sprintf("invalid root directory reference: %s", err),
-				},
-			}), nil
-		}
-
-		resolver := model_filesystem.NewDirectoryMerkleTreeFileResolver(
-			ctx,
-			directoryReader,
-			leavesReader,
-			repoValue.OutgoingReferences.GetOutgoingReference(rootDirectoryReferenceIndex),
-		)
-		if err := bb_path.Resolve(
-			bb_path.UNIXFormat.NewParser(key.Path),
-			bb_path.NewLoopDetectingScopeWalker(
-				bb_path.NewRelativeScopeWalker(resolver),
-			),
-		); err != nil {
-			if status.Code(err) == codes.NotFound {
-				return model_core.NewSimplePatchedMessage[dag.ObjectContentsWalker](&model_analysis_pb.FileProperties_Value{
-					Result: &model_analysis_pb.FileProperties_Value_DoesNotExist{
-						DoesNotExist: &emptypb.Empty{},
-					},
-				}), nil
-			}
-			return PatchedFilePropertiesValue{}, fmt.Errorf("failed to resolve %#v: %w", key.Path, err)
-		}
-
-		fileProperties := resolver.GetFileProperties()
-		if !fileProperties.IsSet() {
-			return model_core.NewSimplePatchedMessage[dag.ObjectContentsWalker](&model_analysis_pb.FileProperties_Value{
-				Result: &model_analysis_pb.FileProperties_Value_Failure{
-					Failure: "Path resolves to a directory",
-				},
-			}), nil
-		}
-		patchedFileProperties := model_core.NewPatchedMessageFromExisting(
-			fileProperties,
-			func(index int) dag.ObjectContentsWalker {
-				return dag.ExistingObjectContentsWalker
-			},
-		)
-		return PatchedFilePropertiesValue{
-			Message: &model_analysis_pb.FileProperties_Value{
-				Result: &model_analysis_pb.FileProperties_Value_Exists{
-					Exists: patchedFileProperties.Message,
-				},
-			},
-			Patcher: patchedFileProperties.Patcher,
-		}, nil
-	case *model_analysis_pb.Repo_Value_Failure:
-		return model_core.NewSimplePatchedMessage[dag.ObjectContentsWalker](&model_analysis_pb.FileProperties_Value{
-			Result: &model_analysis_pb.FileProperties_Value_Failure{
-				Failure: repoResult.Failure,
-			},
-		}), nil
-	default:
-		return model_core.NewSimplePatchedMessage[dag.ObjectContentsWalker](&model_analysis_pb.FileProperties_Value{
-			Result: &model_analysis_pb.FileProperties_Value_Failure{
-				Failure: "Repo value has an unknown result type",
-			},
-		}), nil
+	if !directoryAccessParametersValue.IsSet() {
+		return PatchedFilePropertiesValue{}, evaluation.ErrMissingDependency
 	}
+	directoryAccessParameters, err := model_filesystem.NewDirectoryAccessParametersFromProto(
+		directoryAccessParametersValue.Message.DirectoryAccessParameters,
+		c.buildSpecificationReference.GetReferenceFormat(),
+	)
+	if err != nil {
+		return PatchedFilePropertiesValue{}, fmt.Errorf("invalid directory access parameters: %w", err)
+	}
+	directoryReader := model_parser.NewStorageBackedParsedObjectReader(
+		c.objectDownloader,
+		directoryAccessParameters.GetEncoder(),
+		model_parser.NewMessageObjectParser[object.LocalReference, model_filesystem_pb.Directory](),
+	)
+	leavesReader := model_parser.NewStorageBackedParsedObjectReader(
+		c.objectDownloader,
+		directoryAccessParameters.GetEncoder(),
+		model_parser.NewMessageObjectParser[object.LocalReference, model_filesystem_pb.Leaves](),
+	)
+
+	rootDirectoryReferenceIndex, err := model_core.GetIndexFromReferenceMessage(repoValue.Message.RootDirectoryReference, repoValue.OutgoingReferences.GetDegree())
+	if err != nil {
+		return PatchedFilePropertiesValue{}, fmt.Errorf("invalid root directory reference: %w", err)
+	}
+
+	resolver := model_filesystem.NewDirectoryMerkleTreeFileResolver(
+		ctx,
+		directoryReader,
+		leavesReader,
+		repoValue.OutgoingReferences.GetOutgoingReference(rootDirectoryReferenceIndex),
+	)
+	if err := bb_path.Resolve(
+		bb_path.UNIXFormat.NewParser(key.Path),
+		bb_path.NewLoopDetectingScopeWalker(
+			bb_path.NewRelativeScopeWalker(resolver),
+		),
+	); err != nil {
+		if status.Code(err) == codes.NotFound {
+			return model_core.NewSimplePatchedMessage[dag.ObjectContentsWalker](&model_analysis_pb.FileProperties_Value{}), nil
+		}
+		return PatchedFilePropertiesValue{}, fmt.Errorf("failed to resolve %#v: %w", key.Path, err)
+	}
+
+	fileProperties := resolver.GetFileProperties()
+	if !fileProperties.IsSet() {
+		return PatchedFilePropertiesValue{}, errors.New("path resolves to a directory")
+	}
+	patchedFileProperties := model_core.NewPatchedMessageFromExisting(
+		fileProperties,
+		func(index int) dag.ObjectContentsWalker {
+			return dag.ExistingObjectContentsWalker
+		},
+	)
+	return PatchedFilePropertiesValue{
+		Message: &model_analysis_pb.FileProperties_Value{
+			Exists: patchedFileProperties.Message,
+		},
+		Patcher: patchedFileProperties.Patcher,
+	}, nil
 }
 
 func (c *baseComputer) ComputeFileReaderValue(ctx context.Context, key *model_analysis_pb.FileReader_Key, e FileReaderEnvironment) (*model_filesystem.FileReader, error) {
@@ -534,11 +499,7 @@ func (c *baseComputer) ComputeFileReaderValue(ctx context.Context, key *model_an
 func (c *baseComputer) ComputeRepoDefaultAttrsValue(ctx context.Context, key *model_analysis_pb.RepoDefaultAttrs_Key, e RepoDefaultAttrsEnvironment) (PatchedRepoDefaultAttrsValue, error) {
 	canonicalRepo, err := label.NewCanonicalRepo(key.CanonicalRepo)
 	if err != nil {
-		return model_core.NewSimplePatchedMessage[dag.ObjectContentsWalker](&model_analysis_pb.RepoDefaultAttrs_Value{
-			Result: &model_analysis_pb.RepoDefaultAttrs_Value_Failure{
-				Failure: fmt.Sprintf("invalid canonical repo %#v: %s", key.CanonicalRepo, err),
-			},
-		}), nil
+		return PatchedRepoDefaultAttrsValue{}, fmt.Errorf("invalid canonical repo: %w", err)
 	}
 
 	repoFileName := label.MustNewTargetName("REPO.bazel")
@@ -547,88 +508,50 @@ func (c *baseComputer) ComputeRepoDefaultAttrsValue(ctx context.Context, key *mo
 		Path:          repoFileName.String(),
 	})
 
-	fileReader, fileReaderErr := e.GetFileReaderValue(&model_analysis_pb.FileReader_Key{})
-	if fileReaderErr != nil && !errors.Is(fileReaderErr, evaluation.ErrMissingDependency) {
-		return model_core.NewSimplePatchedMessage[dag.ObjectContentsWalker](&model_analysis_pb.RepoDefaultAttrs_Value{
-			Result: &model_analysis_pb.RepoDefaultAttrs_Value_Failure{
-				Failure: fileReaderErr.Error(),
-			},
-		}), nil
-	}
-
-	if !repoFileProperties.IsSet() {
+	fileReader, gotFileReader := e.GetFileReaderValue(&model_analysis_pb.FileReader_Key{})
+	if !repoFileProperties.IsSet() || !gotFileReader {
 		return PatchedRepoDefaultAttrsValue{}, evaluation.ErrMissingDependency
 	}
 
-	switch repoFilePropertiesResult := repoFileProperties.Message.Result.(type) {
-	case *model_analysis_pb.FileProperties_Value_Exists:
-		if fileReaderErr != nil {
-			return PatchedRepoDefaultAttrsValue{}, fileReaderErr
-		}
-
-		// Read the contents of REPO.bazel.
-		referenceFormat := c.buildSpecificationReference.GetReferenceFormat()
-		repoFileContentsEntry, err := model_filesystem.NewFileContentsEntryFromProto(
-			model_core.Message[*model_filesystem_pb.FileContents]{
-				Message:            repoFilePropertiesResult.Exists.GetContents(),
-				OutgoingReferences: repoFileProperties.OutgoingReferences,
-			},
-			referenceFormat,
-		)
-		if err != nil {
-			return model_core.NewSimplePatchedMessage[dag.ObjectContentsWalker](&model_analysis_pb.RepoDefaultAttrs_Value{
-				Result: &model_analysis_pb.RepoDefaultAttrs_Value_Failure{
-					Failure: util.StatusWrap(err, "Invalid file contents").Error(),
-				},
-			}), nil
-		}
-		repoFileData, err := fileReader.FileReadAll(ctx, repoFileContentsEntry, 1<<20)
-		if err != nil {
-			return PatchedRepoDefaultAttrsValue{}, err
-		}
-
-		// Extract the default inheritable attrs from REPO.bazel.
-		defaultAttrs, err := model_starlark.ParseRepoDotBazel(
-			string(repoFileData),
-			canonicalRepo.GetRootPackage().AppendTargetName(repoFileName),
-			c.getInlinedTreeOptions(),
-		)
-		if err != nil {
-			return model_core.NewSimplePatchedMessage[dag.ObjectContentsWalker](&model_analysis_pb.RepoDefaultAttrs_Value{
-				Result: &model_analysis_pb.RepoDefaultAttrs_Value_Failure{
-					Failure: err.Error(),
-				},
-			}), nil
-		}
-
-		return model_core.PatchedMessage[*model_analysis_pb.RepoDefaultAttrs_Value, dag.ObjectContentsWalker]{
-			Message: &model_analysis_pb.RepoDefaultAttrs_Value{
-				Result: &model_analysis_pb.RepoDefaultAttrs_Value_Success{
-					Success: defaultAttrs.Message,
-				},
-			},
-			Patcher: defaultAttrs.Patcher,
-		}, nil
-	case *model_analysis_pb.FileProperties_Value_DoesNotExist:
-		// No REPO.bazel file is present. Return the default.
+	// Read the contents of REPO.bazel.
+	repoFileLabel := canonicalRepo.GetRootPackage().AppendTargetName(repoFileName)
+	if repoFileProperties.Message.Exists == nil {
 		return model_core.NewSimplePatchedMessage[dag.ObjectContentsWalker](&model_analysis_pb.RepoDefaultAttrs_Value{
-			Result: &model_analysis_pb.RepoDefaultAttrs_Value_Success{
-				Success: &model_starlark.DefaultInheritableAttrs,
-			},
-		}), nil
-	case *model_analysis_pb.FileProperties_Value_Failure:
-		return model_core.NewSimplePatchedMessage[dag.ObjectContentsWalker](&model_analysis_pb.RepoDefaultAttrs_Value{
-			Result: &model_analysis_pb.RepoDefaultAttrs_Value_Failure{
-				Failure: repoFilePropertiesResult.Failure,
-			},
-		}), nil
-	default:
-		return model_core.NewSimplePatchedMessage[dag.ObjectContentsWalker](&model_analysis_pb.RepoDefaultAttrs_Value{
-			Result: &model_analysis_pb.RepoDefaultAttrs_Value_Failure{
-				Failure: "File properties value has an unknown result type",
-			},
+			InheritableAttrs: &model_starlark.DefaultInheritableAttrs,
 		}), nil
 	}
+	referenceFormat := c.buildSpecificationReference.GetReferenceFormat()
+	repoFileContentsEntry, err := model_filesystem.NewFileContentsEntryFromProto(
+		model_core.Message[*model_filesystem_pb.FileContents]{
+			Message:            repoFileProperties.Message.Exists.GetContents(),
+			OutgoingReferences: repoFileProperties.OutgoingReferences,
+		},
+		referenceFormat,
+	)
+	if err != nil {
+		return PatchedRepoDefaultAttrsValue{}, fmt.Errorf("invalid contents for file %#v: %w", repoFileLabel.String(), err)
+	}
+	repoFileData, err := fileReader.FileReadAll(ctx, repoFileContentsEntry, 1<<20)
+	if err != nil {
+		return PatchedRepoDefaultAttrsValue{}, err
+	}
+
+	// Extract the default inheritable attrs from REPO.bazel.
+	defaultAttrs, err := model_starlark.ParseRepoDotBazel(
+		string(repoFileData),
+		canonicalRepo.GetRootPackage().AppendTargetName(repoFileName),
+		c.getInlinedTreeOptions(),
+	)
+	if err != nil {
+		return PatchedRepoDefaultAttrsValue{}, fmt.Errorf("failed to parse %#v: %w", repoFileLabel.String(), err)
+	}
+
+	return model_core.PatchedMessage[*model_analysis_pb.RepoDefaultAttrs_Value, dag.ObjectContentsWalker]{
+		Message: &model_analysis_pb.RepoDefaultAttrs_Value{
+			InheritableAttrs: defaultAttrs.Message,
+		},
+		Patcher: defaultAttrs.Patcher,
+	}, nil
 }
 
 func (c *baseComputer) ComputeTargetCompletionValue(ctx context.Context, key *model_analysis_pb.TargetCompletion_Key, e TargetCompletionEnvironment) (PatchedTargetCompletionValue, error) {
@@ -638,21 +561,5 @@ func (c *baseComputer) ComputeTargetCompletionValue(ctx context.Context, key *mo
 	if !configuredTarget.IsSet() {
 		return PatchedTargetCompletionValue{}, evaluation.ErrMissingDependency
 	}
-
-	switch resultType := configuredTarget.Message.Result.(type) {
-	case *model_analysis_pb.ConfiguredTarget_Value_Success_:
-		return model_core.NewSimplePatchedMessage[dag.ObjectContentsWalker](&model_analysis_pb.TargetCompletion_Value{
-			Result: &model_analysis_pb.TargetCompletion_Value_Success{
-				Success: &emptypb.Empty{},
-			},
-		}), nil
-	case *model_analysis_pb.ConfiguredTarget_Value_Failure:
-		return model_core.NewSimplePatchedMessage[dag.ObjectContentsWalker](&model_analysis_pb.TargetCompletion_Value{
-			Result: &model_analysis_pb.TargetCompletion_Value_Failure{
-				Failure: resultType.Failure,
-			},
-		}), nil
-	default:
-		return PatchedTargetCompletionValue{}, errors.New("Configured target value has an unknown result type")
-	}
+	return model_core.NewSimplePatchedMessage[dag.ObjectContentsWalker](&model_analysis_pb.TargetCompletion_Value{}), nil
 }

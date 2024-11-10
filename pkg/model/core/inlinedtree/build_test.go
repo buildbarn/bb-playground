@@ -74,11 +74,8 @@ func TestBuild(t *testing.T) {
 
 		output, err := inlinedtree.Build(
 			inlinedtree.CandidateList[*model_filesystem_pb.Directory, model_core.ReferenceMetadata]{{
-				ExternalMessage: model_core.PatchedMessage[proto.Message, model_core.ReferenceMetadata]{
-					Message: leaves,
-					Patcher: model_core.NewReferenceMessagePatcher[model_core.ReferenceMetadata](),
-				},
-				ParentAppender: parentAppender.Call,
+				ExternalMessage: model_core.NewSimplePatchedMessage[model_core.ReferenceMetadata, proto.Message](leaves),
+				ParentAppender:  parentAppender.Call,
 			}},
 			&inlinedtree.Options{
 				ReferenceFormat:  object.MustNewReferenceFormat(object_pb.ReferenceFormat_SHA256_V1),
@@ -131,11 +128,8 @@ func TestBuild(t *testing.T) {
 
 		output, err := inlinedtree.Build(
 			inlinedtree.CandidateList[*model_filesystem_pb.Directory, model_core.ReferenceMetadata]{{
-				ExternalMessage: model_core.PatchedMessage[proto.Message, model_core.ReferenceMetadata]{
-					Message: leaves,
-					Patcher: model_core.NewReferenceMessagePatcher[model_core.ReferenceMetadata](),
-				},
-				ParentAppender: parentAppender.Call,
+				ExternalMessage: model_core.NewSimplePatchedMessage[model_core.ReferenceMetadata, proto.Message](leaves),
+				ParentAppender:  parentAppender.Call,
 			}},
 			&inlinedtree.Options{
 				ReferenceFormat:  object.MustNewReferenceFormat(object_pb.ReferenceFormat_SHA256_V1),
@@ -193,11 +187,8 @@ func TestBuild(t *testing.T) {
 
 		output, err := inlinedtree.Build(
 			inlinedtree.CandidateList[*model_filesystem_pb.Directory, model_core.ReferenceMetadata]{{
-				ExternalMessage: model_core.PatchedMessage[proto.Message, model_core.ReferenceMetadata]{
-					Message: leaves,
-					Patcher: model_core.NewReferenceMessagePatcher[model_core.ReferenceMetadata](),
-				},
-				ParentAppender: parentAppender.Call,
+				ExternalMessage: model_core.NewSimplePatchedMessage[model_core.ReferenceMetadata, proto.Message](leaves),
+				ParentAppender:  parentAppender.Call,
 			}},
 			&inlinedtree.Options{
 				ReferenceFormat:  object.MustNewReferenceFormat(object_pb.ReferenceFormat_SHA256_V1),

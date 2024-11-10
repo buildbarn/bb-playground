@@ -2,7 +2,6 @@ package analysis
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"maps"
 	"slices"
@@ -19,19 +18,17 @@ import (
 )
 
 type repoMapping interface {
-	toProto(from label.ApparentRepo, others map[label.ApparentRepo]repoMapping) (*model_analysis_pb.ModuleRepoMapping_Value_Success_Mapping, error)
+	toProto(from label.ApparentRepo, others map[label.ApparentRepo]repoMapping) (*model_analysis_pb.ModuleRepoMapping_Value_Mapping, error)
 }
 
 type canonicalRepoMapping struct {
 	canonicalRepo label.CanonicalRepo
 }
 
-func (rm canonicalRepoMapping) toProto(fromApparentRepo label.ApparentRepo, others map[label.ApparentRepo]repoMapping) (*model_analysis_pb.ModuleRepoMapping_Value_Success_Mapping, error) {
-	return &model_analysis_pb.ModuleRepoMapping_Value_Success_Mapping{
+func (rm canonicalRepoMapping) toProto(fromApparentRepo label.ApparentRepo, others map[label.ApparentRepo]repoMapping) (*model_analysis_pb.ModuleRepoMapping_Value_Mapping, error) {
+	return &model_analysis_pb.ModuleRepoMapping_Value_Mapping{
 		FromApparentRepo: fromApparentRepo.String(),
-		Target: &model_analysis_pb.ModuleRepoMapping_Value_Success_Mapping_CanonicalRepo{
-			CanonicalRepo: rm.canonicalRepo.String(),
-		},
+		ToCanonicalRepo:  rm.canonicalRepo.String(),
 	}, nil
 }
 
@@ -41,12 +38,12 @@ type moduleExtensionRepoMapping struct {
 	toApparentRepo   label.ApparentRepo
 }
 
-func (rm moduleExtensionRepoMapping) toProto(fromApparentRepo label.ApparentRepo, others map[label.ApparentRepo]repoMapping) (*model_analysis_pb.ModuleRepoMapping_Value_Success_Mapping, error) {
+func (rm moduleExtensionRepoMapping) toProto(fromApparentRepo label.ApparentRepo, others map[label.ApparentRepo]repoMapping) (*model_analysis_pb.ModuleRepoMapping_Value_Mapping, error) {
 	canonicalExtensionBzlFile, ok := rm.extensionBzlFile.AsCanonicalLabel()
 	if !ok {
 		extensionApparentRepo, ok := rm.extensionBzlFile.GetApparentRepo()
 		if !ok {
-			panic("non-canonical label should have an apparent repo")
+			return nil, fmt.Errorf("extension .bzl file %#v uses @@ to refer to the root module, which is not permitted in this context", rm.extensionBzlFile.String())
 		}
 		extensionRepoMapping, ok := others[extensionApparentRepo]
 		if !ok {
@@ -59,14 +56,13 @@ func (rm moduleExtensionRepoMapping) toProto(fromApparentRepo label.ApparentRepo
 		canonicalExtensionBzlFile = rm.extensionBzlFile.WithCanonicalRepo(extensionCanonicalRepoMapping.canonicalRepo)
 	}
 
-	return &model_analysis_pb.ModuleRepoMapping_Value_Success_Mapping{
+	return &model_analysis_pb.ModuleRepoMapping_Value_Mapping{
 		FromApparentRepo: fromApparentRepo.String(),
-		Target: &model_analysis_pb.ModuleRepoMapping_Value_Success_Mapping_ModuleExtensionRepo_{
-			ModuleExtensionRepo: &model_analysis_pb.ModuleRepoMapping_Value_Success_Mapping_ModuleExtensionRepo{
-				ExtensionIdentifier: canonicalExtensionBzlFile.AppendStarlarkIdentifier(rm.extensionName).String(),
-				ToApparentRepo:      rm.toApparentRepo.String(),
-			},
-		},
+		ToCanonicalRepo: canonicalExtensionBzlFile.
+			AppendStarlarkIdentifier(rm.extensionName).
+			ToModuleExtension().
+			GetCanonicalRepoWithModuleExtension(rm.toApparentRepo).
+			String(),
 	}, nil
 }
 
@@ -166,42 +162,16 @@ func (p repoMappingCapturingModuleExtensionProxy) UseRepo(repos map[label.Appare
 }
 
 func (c *baseComputer) ComputeModuleRepoMappingValue(ctx context.Context, key *model_analysis_pb.ModuleRepoMapping_Key, e ModuleRepoMappingEnvironment) (PatchedModuleRepoMappingValue, error) {
-	rootModuleValue := e.GetRootModuleValue(&model_analysis_pb.RootModule_Key{})
-	if !rootModuleValue.IsSet() {
-		return PatchedModuleRepoMappingValue{}, evaluation.ErrMissingDependency
-	}
-
 	moduleInstance, err := label.NewModuleInstance(key.ModuleInstance)
 	if err != nil {
-		return model_core.NewSimplePatchedMessage[dag.ObjectContentsWalker](&model_analysis_pb.ModuleRepoMapping_Value{
-			Result: &model_analysis_pb.ModuleRepoMapping_Value_Failure{
-				Failure: fmt.Sprintf("Invalid module instance %#v: %s", key.ModuleInstance, err.Error()),
-			},
-		}), nil
+		return PatchedModuleRepoMappingValue{}, fmt.Errorf("invalid module instance %#v: %w", key.ModuleInstance, err)
 	}
 
-	fileReader, err := e.GetFileReaderValue(&model_analysis_pb.FileReader_Key{})
-	if err != nil {
-		if !errors.Is(err, evaluation.ErrMissingDependency) {
-			return model_core.NewSimplePatchedMessage[dag.ObjectContentsWalker](&model_analysis_pb.ModuleRepoMapping_Value{
-				Result: &model_analysis_pb.ModuleRepoMapping_Value_Failure{
-					Failure: err.Error(),
-				},
-			}), nil
-		}
-		return PatchedModuleRepoMappingValue{}, err
-	}
-
-	modulesWithMultipleVersions, err := e.GetModulesWithMultipleVersionsObjectValue(&model_analysis_pb.ModulesWithMultipleVersionsObject_Key{})
-	if err != nil {
-		if !errors.Is(err, evaluation.ErrMissingDependency) {
-			return model_core.NewSimplePatchedMessage[dag.ObjectContentsWalker](&model_analysis_pb.ModuleRepoMapping_Value{
-				Result: &model_analysis_pb.ModuleRepoMapping_Value_Failure{
-					Failure: err.Error(),
-				},
-			}), nil
-		}
-		return PatchedModuleRepoMappingValue{}, err
+	rootModuleValue := e.GetRootModuleValue(&model_analysis_pb.RootModule_Key{})
+	fileReader, gotFileReader := e.GetFileReaderValue(&model_analysis_pb.FileReader_Key{})
+	modulesWithMultipleVersions, gotModulesWithMultipleVersions := e.GetModulesWithMultipleVersionsObjectValue(&model_analysis_pb.ModulesWithMultipleVersionsObject_Key{})
+	if !rootModuleValue.IsSet() || !gotFileReader || !gotModulesWithMultipleVersions {
+		return PatchedModuleRepoMappingValue{}, evaluation.ErrMissingDependency
 	}
 
 	handler := repoMappingCapturingModuleDotBazelHandler{
@@ -213,13 +183,6 @@ func (c *baseComputer) ComputeModuleRepoMappingValue(ctx context.Context, key *m
 		repos: map[label.ApparentRepo]repoMapping{},
 	}
 	if err := c.parseModuleInstanceModuleDotBazel(ctx, moduleInstance, e, fileReader, &handler); err != nil {
-		if !errors.Is(err, evaluation.ErrMissingDependency) {
-			return model_core.NewSimplePatchedMessage[dag.ObjectContentsWalker](&model_analysis_pb.ModuleRepoMapping_Value{
-				Result: &model_analysis_pb.ModuleRepoMapping_Value_Failure{
-					Failure: err.Error(),
-				},
-			}), nil
-		}
 		return PatchedModuleRepoMappingValue{}, err
 	}
 
@@ -233,26 +196,18 @@ func (c *baseComputer) ComputeModuleRepoMappingValue(ctx context.Context, key *m
 		}
 	}
 
-	mappings := make([]*model_analysis_pb.ModuleRepoMapping_Value_Success_Mapping, 0, len(repos))
+	mappings := make([]*model_analysis_pb.ModuleRepoMapping_Value_Mapping, 0, len(repos))
 	for _, apparentRepo := range slices.SortedFunc(
 		maps.Keys(repos),
 		func(a, b label.ApparentRepo) int { return strings.Compare(a.String(), b.String()) },
 	) {
 		mapping, err := repos[apparentRepo].toProto(apparentRepo, repos)
 		if err != nil {
-			return model_core.NewSimplePatchedMessage[dag.ObjectContentsWalker](&model_analysis_pb.ModuleRepoMapping_Value{
-				Result: &model_analysis_pb.ModuleRepoMapping_Value_Failure{
-					Failure: fmt.Sprintf("Failed to create mapping for repo %#v: %s", apparentRepo.String(), err),
-				},
-			}), nil
+			return PatchedModuleRepoMappingValue{}, fmt.Errorf("failed to create mapping for repo %#v: %s", apparentRepo.String(), err)
 		}
 		mappings = append(mappings, mapping)
 	}
 	return model_core.NewSimplePatchedMessage[dag.ObjectContentsWalker](&model_analysis_pb.ModuleRepoMapping_Value{
-		Result: &model_analysis_pb.ModuleRepoMapping_Value_Success_{
-			Success: &model_analysis_pb.ModuleRepoMapping_Value_Success{
-				Mappings: mappings,
-			},
-		},
+		Mappings: mappings,
 	}), nil
 }

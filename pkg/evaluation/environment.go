@@ -8,5 +8,5 @@ import (
 
 type Environment interface {
 	GetMessageValue(key proto.Message) model_core.Message[proto.Message]
-	GetNativeValue(key proto.Message) (any, error)
+	GetNativeValue(key proto.Message) (any, bool)
 }

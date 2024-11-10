@@ -24,41 +24,17 @@ func (c *baseComputer) ComputeConfiguredRuleValue(ctx context.Context, key *mode
 	if !ruleValue.IsSet() {
 		return PatchedConfiguredRuleValue{}, evaluation.ErrMissingDependency
 	}
-	var ruleDefinition model_core.Message[*model_starlark_pb.Rule_Definition]
-	switch resultType := ruleValue.Message.Result.(type) {
-	case *model_analysis_pb.CompiledBzlFileGlobal_Value_Success:
-		v, ok := resultType.Success.Kind.(*model_starlark_pb.Value_Rule)
-		if !ok {
-			return model_core.NewSimplePatchedMessage[dag.ObjectContentsWalker](&model_analysis_pb.ConfiguredRule_Value{
-				Result: &model_analysis_pb.ConfiguredRule_Value_Failure{
-					Failure: fmt.Sprintf("Global value %#v is not a rule", key.Identifier),
-				},
-			}), nil
-		}
-		d, ok := v.Rule.Kind.(*model_starlark_pb.Rule_Definition_)
-		if !ok {
-			return model_core.NewSimplePatchedMessage[dag.ObjectContentsWalker](&model_analysis_pb.ConfiguredRule_Value{
-				Result: &model_analysis_pb.ConfiguredRule_Value_Failure{
-					Failure: fmt.Sprintf("Global value %#v is not a rule definition", key.Identifier),
-				},
-			}), nil
-		}
-		ruleDefinition = model_core.Message[*model_starlark_pb.Rule_Definition]{
-			Message:            d.Definition,
-			OutgoingReferences: ruleValue.OutgoingReferences,
-		}
-	case *model_analysis_pb.CompiledBzlFileGlobal_Value_Failure:
-		return model_core.NewSimplePatchedMessage[dag.ObjectContentsWalker](&model_analysis_pb.ConfiguredRule_Value{
-			Result: &model_analysis_pb.ConfiguredRule_Value_Failure{
-				Failure: resultType.Failure,
-			},
-		}), nil
-	default:
-		return model_core.NewSimplePatchedMessage[dag.ObjectContentsWalker](&model_analysis_pb.ConfiguredRule_Value{
-			Result: &model_analysis_pb.ConfiguredRule_Value_Failure{
-				Failure: fmt.Sprintf("Global value for rule %#v has an unknown result type", key.Identifier),
-			},
-		}), nil
+	v, ok := ruleValue.Message.Global.GetKind().(*model_starlark_pb.Value_Rule)
+	if !ok {
+		return PatchedConfiguredRuleValue{}, errors.New("global value is not a rule")
+	}
+	d, ok := v.Rule.Kind.(*model_starlark_pb.Rule_Definition_)
+	if !ok {
+		return PatchedConfiguredRuleValue{}, errors.New("global value is not a rule definition")
+	}
+	ruleDefinition := model_core.Message[*model_starlark_pb.Rule_Definition]{
+		Message:            d.Definition,
+		OutgoingReferences: ruleValue.OutgoingReferences,
 	}
 
 	missingResolvedToolchains := false
@@ -81,16 +57,7 @@ func (c *baseComputer) ComputeConfiguredRuleValue(ctx context.Context, key *mode
 			panic("TODO: Already evaluate private attributes!")
 		}
 	}
-
-	patcher := model_core.NewReferenceMessagePatcher[dag.ObjectContentsWalker]()
-	return model_core.PatchedMessage[*model_analysis_pb.ConfiguredRule_Value, dag.ObjectContentsWalker]{
-		Message: &model_analysis_pb.ConfiguredRule_Value{
-			Result: &model_analysis_pb.ConfiguredRule_Value_Success_{
-				Success: &model_analysis_pb.ConfiguredRule_Value_Success{},
-			},
-		},
-		Patcher: patcher,
-	}, nil
+	return model_core.NewSimplePatchedMessage[dag.ObjectContentsWalker](&model_analysis_pb.ConfiguredRule_Value{}), nil
 }
 
 type PublicAttr struct {
@@ -99,10 +66,53 @@ type PublicAttr struct {
 	AttrType model_starlark.AttrType
 }
 
+type AttrsDict struct {
+	Public  []PublicAttr
+	Private starlark.StringDict
+}
+
+func (c *baseComputer) decodeAttrsDict(ctx context.Context, encodedAttrs model_core.Message[[]*model_starlark_pb.NamedAttr]) (AttrsDict, error) {
+	var attrsDict AttrsDict
+	for _, namedAttr := range encodedAttrs.Message {
+		if strings.HasPrefix(namedAttr.Name, "_") {
+			// TODO: Deal with private attributes!
+		} else {
+			attrType, err := model_starlark.DecodeAttrType(namedAttr.Attr)
+			if err != nil {
+				return AttrsDict{}, fmt.Errorf("invalid type for attribute %#v: %w", namedAttr.Name, err)
+			}
+
+			var defaultAttr starlark.Value
+			if d := namedAttr.Attr.GetDefault(); d != nil {
+				// TODO: Call into attr type to validate
+				// the value!
+				defaultAttr, err = model_starlark.DecodeValue(
+					model_core.Message[*model_starlark_pb.Value]{
+						Message:            d,
+						OutgoingReferences: encodedAttrs.OutgoingReferences,
+					},
+					/* currentIdentifier = */ nil,
+					c.getValueDecodingOptions(ctx, func(canonicalLabel label.CanonicalLabel) (starlark.Value, error) {
+						panic("TODO")
+					}),
+				)
+				if err != nil {
+					return AttrsDict{}, fmt.Errorf("invalid default value for attribute %#v: %w", namedAttr.Name, err)
+				}
+			}
+			attrsDict.Public = append(attrsDict.Public, PublicAttr{
+				Name:     namedAttr.Name,
+				Default:  defaultAttr,
+				AttrType: attrType,
+			})
+		}
+	}
+	return attrsDict, nil
+}
+
 type ConfiguredRule struct {
 	Implementation starlark.Callable
-	PublicAttrs    []PublicAttr
-	PrivateAttrs   starlark.StringDict
+	Attrs          AttrsDict
 }
 
 func (c *baseComputer) ComputeConfiguredRuleObjectValue(ctx context.Context, key *model_analysis_pb.ConfiguredRuleObject_Key, e ConfiguredRuleObjectEnvironment) (*ConfiguredRule, error) {
@@ -116,78 +126,30 @@ func (c *baseComputer) ComputeConfiguredRuleObjectValue(ctx context.Context, key
 		return nil, evaluation.ErrMissingDependency
 	}
 
-	var ruleDefinition model_core.Message[*model_starlark_pb.Rule_Definition]
-	switch resultType := ruleValue.Message.Result.(type) {
-	case *model_analysis_pb.CompiledBzlFileGlobal_Value_Success:
-		v, ok := resultType.Success.Kind.(*model_starlark_pb.Value_Rule)
-		if !ok {
-			return nil, fmt.Errorf("global value %#v is not a rule", key.Identifier)
-		}
-		d, ok := v.Rule.Kind.(*model_starlark_pb.Rule_Definition_)
-		if !ok {
-			return nil, fmt.Errorf("global value %#v is not a rule definition", key.Identifier)
-		}
-		ruleDefinition = model_core.Message[*model_starlark_pb.Rule_Definition]{
-			Message:            d.Definition,
-			OutgoingReferences: ruleValue.OutgoingReferences,
-		}
-	case *model_analysis_pb.CompiledBzlFileGlobal_Value_Failure:
-		return nil, errors.New(resultType.Failure)
-	default:
-		return nil, fmt.Errorf("global value for rule %#v has an unknown result type", key.Identifier)
+	v, ok := ruleValue.Message.Global.GetKind().(*model_starlark_pb.Value_Rule)
+	if !ok {
+		return nil, errors.New("global value is not a rule")
+	}
+	d, ok := v.Rule.Kind.(*model_starlark_pb.Rule_Definition_)
+	if !ok {
+		return nil, errors.New("global value is not a rule definition")
 	}
 
-	switch resultType := configuredRuleValue.Message.Result.(type) {
-	case *model_analysis_pb.ConfiguredRule_Value_Success_:
-		// TODO: Capture!
-	case *model_analysis_pb.ConfiguredRule_Value_Failure:
-		return nil, errors.New(resultType.Failure)
-	default:
-		return nil, errors.New("configured rule has an unknown result type")
-	}
-
-	implementationIdentifier, err := label.NewCanonicalStarlarkIdentifier(ruleDefinition.Message.Implementation)
+	attrs, err := c.decodeAttrsDict(ctx, model_core.Message[[]*model_starlark_pb.NamedAttr]{
+		Message:            d.Definition.Attrs,
+		OutgoingReferences: ruleValue.OutgoingReferences,
+	})
 	if err != nil {
-		return nil, fmt.Errorf("invalid canonical Starlark identifier %#v: %w", ruleDefinition.Message.Implementation, err)
-	}
-
-	var publicAttrs []PublicAttr
-	for _, namedAttr := range ruleDefinition.Message.Attrs {
-		if !strings.HasPrefix(namedAttr.Name, "_") {
-			attrType, err := model_starlark.DecodeAttrType(namedAttr.Attr)
-			if err != nil {
-				return nil, fmt.Errorf("invalid type for attribute %#v: %w", namedAttr.Name, err)
-			}
-
-			var defaultAttr starlark.Value
-			if d := namedAttr.Attr.GetDefault(); d != nil {
-				// TODO: Call into attr type to validate
-				// the value!
-				defaultAttr, err = model_starlark.DecodeValue(
-					model_core.Message[*model_starlark_pb.Value]{
-						Message:            d,
-						OutgoingReferences: ruleDefinition.OutgoingReferences,
-					},
-					/* currentIdentifier = */ nil,
-					c.getValueDecodingOptions(ctx, func(canonicalLabel label.CanonicalLabel) (starlark.Value, error) {
-						panic("TODO")
-					}),
-				)
-				if err != nil {
-					return nil, fmt.Errorf("invalid default value for attribute %#v: %w", namedAttr.Name, err)
-				}
-			}
-			publicAttrs = append(publicAttrs, PublicAttr{
-				Name:     namedAttr.Name,
-				Default:  defaultAttr,
-				AttrType: attrType,
-			})
-		}
+		return nil, err
 	}
 
 	return &ConfiguredRule{
-		Implementation: model_starlark.NewNamedFunction(implementationIdentifier, nil),
-		// TODO: PrivateAttrs!
-		PublicAttrs: publicAttrs,
+		Implementation: model_starlark.NewNamedFunction(model_starlark.NewProtoNamedFunctionDefinition(
+			model_core.Message[*model_starlark_pb.Function]{
+				Message:            d.Definition.Implementation,
+				OutgoingReferences: ruleValue.OutgoingReferences,
+			},
+		)),
+		Attrs: attrs,
 	}, nil
 }

@@ -101,10 +101,7 @@ func Build[
 	defer candidates.Discard()
 
 	// Start off with an empty output message.
-	output := model_core.PatchedMessage[TParentMessagePtr, TMetadata]{
-		Message: TParentMessagePtr(new(TParentMessage)),
-		Patcher: model_core.NewReferenceMessagePatcher[TMetadata](),
-	}
+	output := model_core.NewSimplePatchedMessage[TMetadata](TParentMessagePtr(new(TParentMessage)))
 	outputSizeBytes := 0
 
 	// For each candidate, compute how much the size of the output

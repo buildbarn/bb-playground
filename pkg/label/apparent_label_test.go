@@ -12,6 +12,8 @@ func TestApparentLabel(t *testing.T) {
 	t.Run("AsCanonicalLabel", func(t *testing.T) {
 		t.Run("Failure", func(t *testing.T) {
 			for _, input := range []string{
+				"@@//:foo",
+				"@@//cmd/hello_world",
 				"@com_github_buildbarn_bb_storage",
 				"@com_github_buildbarn_bb_storage//:foo",
 				"@com_github_buildbarn_bb_storage//cmd/hello_world",
@@ -37,6 +39,8 @@ func TestApparentLabel(t *testing.T) {
 	t.Run("GetApparentRepo", func(t *testing.T) {
 		t.Run("Failure", func(t *testing.T) {
 			for _, input := range []string{
+				"@@//:foo",
+				"@@//cmd/hello_world",
 				"@@com_github_buildbarn_bb_storage+",
 				"@@com_github_buildbarn_bb_storage+//:foo",
 				"@@com_github_buildbarn_bb_storage+//cmd/hello_world",
@@ -67,6 +71,8 @@ func TestApparentLabel(t *testing.T) {
 			"@rules_go//:rules_go":         "@@target+//:rules_go",
 			"@rules_go":                    "@@target+//:rules_go",
 			"@rules_go//:target+":          "@@target+",
+			"@@//:rules_go":                "@@target+//:rules_go",
+			"@@//hello/world":              "@@target+//hello/world",
 		} {
 			require.Equal(t, output, label.MustNewApparentLabel(input).WithCanonicalRepo(toRepo).String())
 		}

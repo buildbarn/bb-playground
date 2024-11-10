@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"strings"
 
 	model_core "github.com/buildbarn/bb-playground/pkg/model/core"
 	"github.com/buildbarn/bb-playground/pkg/storage/dag"
@@ -28,21 +27,26 @@ func getKeyString(key proto.Message) (string, error) {
 }
 
 type keyState struct {
-	key   proto.Message
-	next  *keyState
-	value valueState
+	parent *keyState
+	key    proto.Message
+	next   *keyState
+	value  valueState
+}
+
+func (ks *keyState) getKeyType() string {
+	return string(ks.key.ProtoReflect().Descriptor().FullName().Parent().Name())
 }
 
 type valueState interface {
-	compute(ctx context.Context, c Computer, key proto.Message, e Environment, storeValueChildren ValueChildrenStorer) error
+	compute(ctx context.Context, c Computer, e *fullyComputingEnvironment, storeValueChildren ValueChildrenStorer) error
 }
 
 type messageValueState struct {
 	value model_core.Message[proto.Message]
 }
 
-func (vs *messageValueState) compute(ctx context.Context, c Computer, key proto.Message, e Environment, storeValueChildren ValueChildrenStorer) error {
-	value, err := c.ComputeMessageValue(ctx, key, e)
+func (vs *messageValueState) compute(ctx context.Context, c Computer, e *fullyComputingEnvironment, storeValueChildren ValueChildrenStorer) error {
+	value, err := c.ComputeMessageValue(ctx, e.keyState.key, e)
 	if err != nil {
 		return err
 	}
@@ -65,73 +69,88 @@ func (vs *messageValueState) compute(ctx context.Context, c Computer, key proto.
 
 type nativeValueState struct {
 	value any
-	err   error
+	isSet bool
 }
 
-func (vs *nativeValueState) compute(ctx context.Context, c Computer, key proto.Message, e Environment, storeValueChildren ValueChildrenStorer) error {
-	value, err := c.ComputeNativeValue(ctx, key, e)
-	if errors.Is(err, ErrMissingDependency) {
+func (vs *nativeValueState) compute(ctx context.Context, c Computer, e *fullyComputingEnvironment, storeValueChildren ValueChildrenStorer) error {
+	value, err := c.ComputeNativeValue(ctx, e.keyState.key, e)
+	if err != nil {
 		return err
 	}
-	vs.value, vs.err = value, err
+	vs.value = value
+	vs.isSet = true
 	return nil
 }
 
-type fullyComputingEnvironment struct {
-	keys            map[string]*keyState
-	firstPendingKey *keyState
-	lastPendingKey  **keyState
-	err             error
+type fullyComputingKeyPool struct {
+	keys                   map[string]*keyState
+	firstPendingKey        *keyState
+	lastPendingKey         **keyState
+	firstMissingDependency *keyState
+	err                    error
 }
 
-func (e *fullyComputingEnvironment) setError(err error) {
-	if e.err == nil {
-		e.err = err
+func (p *fullyComputingKeyPool) setError(err error) {
+	if p.err == nil {
+		p.err = err
 	}
 }
 
-func (e *fullyComputingEnvironment) enqueue(ks *keyState) {
-	*e.lastPendingKey = ks
-	e.lastPendingKey = &ks.next
+func (p *fullyComputingKeyPool) enqueue(ks *keyState) {
+	*p.lastPendingKey = ks
+	p.lastPendingKey = &ks.next
+}
+
+type fullyComputingEnvironment struct {
+	pool     *fullyComputingKeyPool
+	keyState *keyState
 }
 
 func (e *fullyComputingEnvironment) GetMessageValue(key proto.Message) model_core.Message[proto.Message] {
+	p := e.pool
 	keyStr, err := getKeyString(key)
 	if err != nil {
-		e.setError(err)
+		p.setError(err)
 		return model_core.Message[proto.Message]{}
 	}
-	ks, ok := e.keys[keyStr]
+	ks, ok := p.keys[keyStr]
 	if !ok {
 		ks = &keyState{
-			key:   key,
-			value: &messageValueState{},
+			parent: e.keyState,
+			key:    key,
+			value:  &messageValueState{},
 		}
-		e.keys[keyStr] = ks
-		e.enqueue(ks)
+		p.keys[keyStr] = ks
+		p.enqueue(ks)
+		p.firstMissingDependency = nil
 	}
 	vs := ks.value.(*messageValueState)
 	return vs.value
 }
 
-func (e *fullyComputingEnvironment) GetNativeValue(key proto.Message) (any, error) {
+func (e *fullyComputingEnvironment) GetNativeValue(key proto.Message) (any, bool) {
+	p := e.pool
 	keyStr, err := getKeyString(key)
 	if err != nil {
-		return nil, err
+		p.setError(err)
+		return nil, false
 	}
-	ks, ok := e.keys[keyStr]
+	ks, ok := p.keys[keyStr]
 	if !ok {
 		ks = &keyState{
-			key: key,
-			value: &nativeValueState{
-				err: ErrMissingDependency,
-			},
+			parent: e.keyState,
+			key:    key,
+			value:  &nativeValueState{},
 		}
-		e.keys[keyStr] = ks
-		e.enqueue(ks)
+		p.keys[keyStr] = ks
+		p.enqueue(ks)
+		p.firstMissingDependency = nil
 	}
 	vs := ks.value.(*nativeValueState)
-	return vs.value, vs.err
+	if !vs.isSet {
+		return nil, false
+	}
+	return vs.value, true
 }
 
 type ValueChildrenStorer func(references []object.LocalReference, objectContentsWalkers []dag.ObjectContentsWalker) error
@@ -146,40 +165,84 @@ func FullyComputeValue(ctx context.Context, c Computer, requestedKey proto.Messa
 		key:   requestedKey,
 		value: requestedValueState,
 	}
-	e := fullyComputingEnvironment{
+	p := fullyComputingKeyPool{
 		keys: map[string]*keyState{
 			requestedKeyStr: requestedKeyState,
 		},
 		firstPendingKey: requestedKeyState,
 		lastPendingKey:  &requestedKeyState.next,
 	}
+	longestKeyType := 0
 	for !requestedValueState.value.IsSet() {
-		ks := e.firstPendingKey
-		e.firstPendingKey = ks.next
+		ks := p.firstPendingKey
+		if ks == p.firstMissingDependency {
+			fmt.Println("Evaluation cycle detected:")
+			for ; ks != nil; ks = ks.next {
+				anyKey, err := anypb.New(ks.key)
+				if err != nil {
+					panic(err)
+				}
+				fmt.Println("  ", protojson.MarshalOptions{}.Format(anyKey))
+			}
+			return model_core.Message[proto.Message]{}, errors.New("evaluation cycle detected")
+		}
+
+		p.firstPendingKey = ks.next
 		ks.next = nil
-		if e.firstPendingKey == nil {
-			e.lastPendingKey = &e.firstPendingKey
+		if p.firstPendingKey == nil {
+			p.lastPendingKey = &p.firstPendingKey
 		}
 
 		// TODO: Add interface for exposing information on
 		// what's going on.
-		anyKey, err := anypb.New(ks.key)
-		if err != nil {
-			panic(err)
+		keyType := ks.getKeyType()
+		if l := len(keyType); longestKeyType < l {
+			longestKeyType = l
 		}
-		fmt.Printf("%s", strings.Replace(protojson.MarshalOptions{}.Format(anyKey), "type.googleapis.com/buildbarn.playground.model.analysis.", "", -1))
+		fmt.Printf("%-*s  %s", longestKeyType, keyType, protojson.MarshalOptions{}.Format(ks.key))
 
-		if err := ks.value.compute(ctx, c, ks.key, &e, storeValueChildren); err != nil {
+		e := fullyComputingEnvironment{
+			pool:     &p,
+			keyState: ks,
+		}
+		err = ks.value.compute(ctx, c, &e, storeValueChildren)
+		e = fullyComputingEnvironment{}
+		if err != nil {
 			if !errors.Is(err, ErrMissingDependency) {
 				fmt.Printf("\n")
-				return model_core.Message[proto.Message]{}, err
+
+				var stack []*keyState
+				for ksIter := ks; ksIter != nil; ksIter = ksIter.parent {
+					stack = append(stack, ksIter)
+				}
+				var stackStr []byte
+				for i := len(stack) - 1; i >= 0; i-- {
+					ksIter := stack[i]
+					stackStr = append(stackStr, "  "...)
+					keyType := ksIter.getKeyType()
+					stackStr = append(stackStr, keyType...)
+					for i := len(keyType); i < longestKeyType+2; i++ {
+						stackStr = append(stackStr, ' ')
+					}
+					var err error
+					stackStr, err = protojson.MarshalOptions{}.MarshalAppend(stackStr, ksIter.key)
+					if err != nil {
+						panic(err)
+					}
+					stackStr = append(stackStr, '\n')
+				}
+				return model_core.Message[proto.Message]{}, fmt.Errorf("Traceback (most recent key last):\n%s%w", string(stackStr), err)
 			}
 			// Value could not be computed, because one of
 			// its dependencies hasn't been computed yet.
-			e.enqueue(ks)
+			p.enqueue(ks)
+			if p.firstMissingDependency == nil {
+				p.firstMissingDependency = ks
+			}
 			fmt.Printf("\r\x1b[K")
 		} else {
 			// Successfully computed value.
+			p.firstMissingDependency = nil
 			fmt.Printf("\n")
 		}
 	}

@@ -2,7 +2,6 @@ package analysis
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"io"
 	"math"
@@ -14,39 +13,22 @@ import (
 	model_analysis_pb "github.com/buildbarn/bb-playground/pkg/proto/model/analysis"
 	"github.com/buildbarn/bb-playground/pkg/storage/dag"
 	"github.com/buildbarn/bb-playground/pkg/storage/object"
-
-	"google.golang.org/protobuf/types/known/emptypb"
 )
 
 func (c *baseComputer) ComputeHttpFileContentsValue(ctx context.Context, key *model_analysis_pb.HttpFileContents_Key, e HttpFileContentsEnvironment) (PatchedHttpFileContentsValue, error) {
-	fileCreationParameters, err := e.GetFileCreationParametersObjectValue(&model_analysis_pb.FileCreationParametersObject_Key{})
-	if err != nil {
-		if !errors.Is(err, evaluation.ErrMissingDependency) {
-			return model_core.NewSimplePatchedMessage[dag.ObjectContentsWalker](&model_analysis_pb.HttpFileContents_Value{
-				Result: &model_analysis_pb.HttpFileContents_Value_Failure{
-					Failure: err.Error(),
-				},
-			}), nil
-		}
-		return PatchedHttpFileContentsValue{}, err
+	fileCreationParameters, gotFileCreationParameters := e.GetFileCreationParametersObjectValue(&model_analysis_pb.FileCreationParametersObject_Key{})
+	if !gotFileCreationParameters {
+		return PatchedHttpFileContentsValue{}, evaluation.ErrMissingDependency
 	}
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, key.Url, nil)
 	if err != nil {
-		return model_core.NewSimplePatchedMessage[dag.ObjectContentsWalker](&model_analysis_pb.HttpFileContents_Value{
-			Result: &model_analysis_pb.HttpFileContents_Value_Failure{
-				Failure: err.Error(),
-			},
-		}), nil
+		return PatchedHttpFileContentsValue{}, err
 	}
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
-		return model_core.NewSimplePatchedMessage[dag.ObjectContentsWalker](&model_analysis_pb.HttpFileContents_Value{
-			Result: &model_analysis_pb.HttpFileContents_Value_Failure{
-				Failure: err.Error(),
-			},
-		}), nil
+		return PatchedHttpFileContentsValue{}, err
 	}
 	defer resp.Body.Close()
 
@@ -55,19 +37,15 @@ func (c *baseComputer) ComputeHttpFileContentsValue(ctx context.Context, key *mo
 		// Download the file to the local system.
 		downloadedFile, err := c.filePool.NewFile()
 		if err != nil {
-			return model_core.NewSimplePatchedMessage[dag.ObjectContentsWalker](&model_analysis_pb.HttpFileContents_Value{
-				Result: &model_analysis_pb.HttpFileContents_Value_Failure{
-					Failure: err.Error(),
-				},
-			}), nil
+			return PatchedHttpFileContentsValue{}, err
 		}
 		if _, err := io.Copy(&sectionWriter{w: downloadedFile}, resp.Body); err != nil {
 			downloadedFile.Close()
-			return model_core.NewSimplePatchedMessage[dag.ObjectContentsWalker](&model_analysis_pb.HttpFileContents_Value{
-				Result: &model_analysis_pb.HttpFileContents_Value_Failure{
-					Failure: err.Error(),
-				},
-			}), nil
+			return PatchedHttpFileContentsValue{}, err
+		}
+
+		if key.Integrity != "" {
+			// TODO: Validate integrity of the downloaded file!
 		}
 
 		// Compute a Merkle tree of the file. Don't keep any
@@ -81,11 +59,7 @@ func (c *baseComputer) ComputeHttpFileContentsValue(ctx context.Context, key *mo
 		)
 		if err != nil {
 			downloadedFile.Close()
-			return model_core.NewSimplePatchedMessage[dag.ObjectContentsWalker](&model_analysis_pb.HttpFileContents_Value{
-				Result: &model_analysis_pb.HttpFileContents_Value_Failure{
-					Failure: err.Error(),
-				},
-			}), nil
+			return PatchedHttpFileContentsValue{}, err
 		}
 
 		if fileMerkleTree.Message == nil {
@@ -93,9 +67,7 @@ func (c *baseComputer) ComputeHttpFileContentsValue(ctx context.Context, key *mo
 			// file immediately.
 			downloadedFile.Close()
 			return model_core.NewSimplePatchedMessage[dag.ObjectContentsWalker](&model_analysis_pb.HttpFileContents_Value{
-				Result: &model_analysis_pb.HttpFileContents_Value_Exists_{
-					Exists: &model_analysis_pb.HttpFileContents_Value_Exists{},
-				},
+				Exists: &model_analysis_pb.HttpFileContents_Value_Exists{},
 			}), nil
 		}
 
@@ -104,10 +76,8 @@ func (c *baseComputer) ComputeHttpFileContentsValue(ctx context.Context, key *mo
 		// completed.
 		return PatchedHttpFileContentsValue{
 			Message: &model_analysis_pb.HttpFileContents_Value{
-				Result: &model_analysis_pb.HttpFileContents_Value_Exists_{
-					Exists: &model_analysis_pb.HttpFileContents_Value_Exists{
-						Contents: fileMerkleTree.Message,
-					},
+				Exists: &model_analysis_pb.HttpFileContents_Value_Exists{
+					Contents: fileMerkleTree.Message,
 				},
 			},
 			Patcher: model_core.MapReferenceMessagePatcherMetadata(
@@ -124,17 +94,9 @@ func (c *baseComputer) ComputeHttpFileContentsValue(ctx context.Context, key *mo
 			),
 		}, nil
 	case http.StatusNotFound:
-		return model_core.NewSimplePatchedMessage[dag.ObjectContentsWalker](&model_analysis_pb.HttpFileContents_Value{
-			Result: &model_analysis_pb.HttpFileContents_Value_DoesNotExist{
-				DoesNotExist: &emptypb.Empty{},
-			},
-		}), nil
+		return model_core.NewSimplePatchedMessage[dag.ObjectContentsWalker](&model_analysis_pb.HttpFileContents_Value{}), nil
 	default:
-		return model_core.NewSimplePatchedMessage[dag.ObjectContentsWalker](&model_analysis_pb.HttpFileContents_Value{
-			Result: &model_analysis_pb.HttpFileContents_Value_Failure{
-				Failure: fmt.Sprintf("Received unexpected HTTP response %#v", resp.Status),
-			},
-		}), nil
+		return PatchedHttpFileContentsValue{}, fmt.Errorf("received unexpected HTTP response %#v", resp.Status)
 	}
 }
 
@@ -147,6 +109,12 @@ type sectionWriter struct {
 
 func (w *sectionWriter) Write(p []byte) (int, error) {
 	n, err := w.w.WriteAt(p, w.offsetBytes)
+	w.offsetBytes += int64(n)
+	return n, err
+}
+
+func (w *sectionWriter) WriteString(s string) (int, error) {
+	n, err := w.w.WriteAt([]byte(s), w.offsetBytes)
 	w.offsetBytes += int64(n)
 	return n, err
 }

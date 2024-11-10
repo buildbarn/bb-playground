@@ -48,7 +48,13 @@ func (r CanonicalRepo) GetRootPackage() CanonicalPackage {
 	return CanonicalPackage{value: "@@" + r.value}
 }
 
-func (r CanonicalRepo) HasModuleExtension() bool {
-	version := r.value[strings.IndexByte(r.value, '+')+1:]
-	return strings.IndexByte(version, '+') >= 0
+func (r CanonicalRepo) GetModuleExtension() (ModuleExtension, ApparentRepo, bool) {
+	repoIndex := strings.LastIndexByte(r.value, '+')
+	moduleExtension := r.value[:repoIndex]
+	if strings.IndexByte(moduleExtension, '+') < 0 {
+		return ModuleExtension{}, ApparentRepo{}, false
+	}
+	return ModuleExtension{value: moduleExtension},
+		ApparentRepo{value: r.value[repoIndex+1:]},
+		true
 }

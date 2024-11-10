@@ -80,9 +80,7 @@ func (b *splitBuilder[TNode, TMetadata]) FinalizeList() (model_core.PatchedMessa
 	if b.firstChildren.IsSet() {
 		return b.firstChildren, nil
 	}
-	return model_core.PatchedMessage[[]TNode, TMetadata]{
-		Patcher: model_core.NewReferenceMessagePatcher[TMetadata](),
-	}, nil
+	return model_core.NewSimplePatchedMessage[TMetadata, []TNode](nil), nil
 }
 
 func (b *splitBuilder[TNode, TMetadata]) FinalizeSingle() (model_core.PatchedMessage[TNode, TMetadata], error) {

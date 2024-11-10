@@ -3,6 +3,7 @@ package label
 import (
 	"errors"
 	"regexp"
+	"strings"
 )
 
 // ModuleExtension is a Starlark identifier that corresponds to the name
@@ -37,6 +38,10 @@ func MustNewModuleExtension(value string) ModuleExtension {
 
 func (me ModuleExtension) String() string {
 	return me.value
+}
+
+func (me ModuleExtension) GetModuleInstance() ModuleInstance {
+	return ModuleInstance{value: me.value[:strings.LastIndexByte(me.value, '+')]}
 }
 
 func (me ModuleExtension) GetCanonicalRepoWithModuleExtension(repo ApparentRepo) CanonicalRepo {

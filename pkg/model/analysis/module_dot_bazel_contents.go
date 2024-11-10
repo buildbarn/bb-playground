@@ -30,21 +30,11 @@ func (c *baseComputer) parseModuleInstanceModuleDotBazel(ctx context.Context, mo
 	if !moduleFileContentsValue.IsSet() {
 		return evaluation.ErrMissingDependency
 	}
-	var moduleFileContents model_core.Message[*model_filesystem_pb.FileContents]
-	switch result := moduleFileContentsValue.Message.Result.(type) {
-	case *model_analysis_pb.ModuleDotBazelContents_Value_Success_:
-		moduleFileContents = model_core.Message[*model_filesystem_pb.FileContents]{
-			Message:            result.Success.Contents,
-			OutgoingReferences: moduleFileContentsValue.OutgoingReferences,
-		}
-	case *model_analysis_pb.ModuleDotBazelContents_Value_Failure:
-		return fmt.Errorf("failed to obtain properties of %#v: %s", moduleFileLabel.String(), result.Failure)
-	default:
-		return errors.New(moduleDotBazelFilename + " contents value has an unknown result type")
-	}
-
 	moduleFileContentsEntry, err := model_filesystem.NewFileContentsEntryFromProto(
-		moduleFileContents,
+		model_core.Message[*model_filesystem_pb.FileContents]{
+			Message:            moduleFileContentsValue.Message.Contents,
+			OutgoingReferences: moduleFileContentsValue.OutgoingReferences,
+		},
 		c.buildSpecificationReference.GetReferenceFormat(),
 	)
 	if err != nil {
@@ -67,8 +57,8 @@ func (c *baseComputer) parseModuleInstanceModuleDotBazel(ctx context.Context, mo
 type visitModuleDotBazelFilesBreadthFirstEnvironment interface {
 	parseActiveModuleDotBazelEnvironment
 
-	GetFileReaderValue(*model_analysis_pb.FileReader_Key) (*model_filesystem.FileReader, error)
-	GetModulesWithMultipleVersionsObjectValue(*model_analysis_pb.ModulesWithMultipleVersionsObject_Key) (map[label.Module]OverrideVersions, error)
+	GetFileReaderValue(*model_analysis_pb.FileReader_Key) (*model_filesystem.FileReader, bool)
+	GetModulesWithMultipleVersionsObjectValue(*model_analysis_pb.ModulesWithMultipleVersionsObject_Key) (map[label.Module]OverrideVersions, bool)
 	GetRootModuleValue(*model_analysis_pb.RootModule_Key) model_core.Message[*model_analysis_pb.RootModule_Value]
 }
 
@@ -112,16 +102,10 @@ func (c *baseComputer) visitModuleDotBazelFilesBreadthFirst(
 	createHandler func(moduleInstance label.ModuleInstance, ignoreDevDependencies bool) pg_starlark.ChildModuleDotBazelHandler,
 ) error {
 	rootModuleValue := e.GetRootModuleValue(&model_analysis_pb.RootModule_Key{})
-	if !rootModuleValue.IsSet() {
+	modulesWithMultipleVersions, gotModulesWithMultipleVersions := e.GetModulesWithMultipleVersionsObjectValue(&model_analysis_pb.ModulesWithMultipleVersionsObject_Key{})
+	fileReader, gotFileReader := e.GetFileReaderValue(&model_analysis_pb.FileReader_Key{})
+	if !rootModuleValue.IsSet() || !gotModulesWithMultipleVersions || !gotFileReader {
 		return evaluation.ErrMissingDependency
-	}
-	modulesWithMultipleVersions, err := e.GetModulesWithMultipleVersionsObjectValue(&model_analysis_pb.ModulesWithMultipleVersionsObject_Key{})
-	if err != nil {
-		return err
-	}
-	fileReader, err := e.GetFileReaderValue(&model_analysis_pb.FileReader_Key{})
-	if err != nil {
-		return err
 	}
 
 	// The root module is the starting point of our traversal.
@@ -171,34 +155,12 @@ func (c *baseComputer) visitModuleDotBazelFilesBreadthFirst(
 func (c *baseComputer) ComputeModuleDotBazelContentsValue(ctx context.Context, key *model_analysis_pb.ModuleDotBazelContents_Key, e ModuleDotBazelContentsEnvironment) (PatchedModuleDotBazelContentsValue, error) {
 	moduleInstance, err := label.NewModuleInstance(key.ModuleInstance)
 	if err != nil {
-		return model_core.NewSimplePatchedMessage[dag.ObjectContentsWalker](&model_analysis_pb.ModuleDotBazelContents_Value{
-			Result: &model_analysis_pb.ModuleDotBazelContents_Value_Failure{
-				Failure: fmt.Sprintf("Invalid module instance: %s", err),
-			},
-		}), nil
+		return PatchedModuleDotBazelContentsValue{}, fmt.Errorf("invalid module instance: %w", err)
 	}
 
 	finalBuildListValue := e.GetModuleFinalBuildListValue(&model_analysis_pb.ModuleFinalBuildList_Key{})
 	if !finalBuildListValue.IsSet() {
 		return PatchedModuleDotBazelContentsValue{}, evaluation.ErrMissingDependency
-	}
-
-	var buildList []*model_analysis_pb.BuildList_Module
-	switch result := finalBuildListValue.Message.Result.(type) {
-	case *model_analysis_pb.ModuleFinalBuildList_Value_Success:
-		buildList = result.Success.Modules
-	case *model_analysis_pb.ModuleFinalBuildList_Value_Failure:
-		return model_core.NewSimplePatchedMessage[dag.ObjectContentsWalker](&model_analysis_pb.ModuleDotBazelContents_Value{
-			Result: &model_analysis_pb.ModuleDotBazelContents_Value_Failure{
-				Failure: result.Failure,
-			},
-		}), nil
-	default:
-		return model_core.NewSimplePatchedMessage[dag.ObjectContentsWalker](&model_analysis_pb.ModuleDotBazelContents_Value{
-			Result: &model_analysis_pb.ModuleDotBazelContents_Value_Failure{
-				Failure: "Final build list value has an unknown result type",
-			},
-		}), nil
 	}
 
 	// See if the module instance is one of the resolved modules
@@ -207,6 +169,7 @@ func (c *baseComputer) ComputeModuleDotBazelContentsValue(ctx context.Context, k
 	// separately instead of the one contained in the module's
 	// source archive. This prevents us from downloading and
 	// extracting modules that are otherwise unused by the build.
+	buildList := finalBuildListValue.Message.BuildList
 	expectedName := moduleInstance.GetModule()
 	expectedNameStr := expectedName.String()
 	expectedVersion, hasVersion := moduleInstance.GetModuleVersion()
@@ -234,115 +197,64 @@ func (c *baseComputer) ComputeModuleDotBazelContentsValue(ctx context.Context, k
 		foundModule := buildList[i]
 		foundVersion, err := label.NewModuleVersion(foundModule.Version)
 		if err != nil {
-			return model_core.NewSimplePatchedMessage[dag.ObjectContentsWalker](&model_analysis_pb.ModuleDotBazelContents_Value{
-				Result: &model_analysis_pb.ModuleDotBazelContents_Value_Failure{
-					Failure: fmt.Sprintf("Invalid version %#v for module %#v: %s", foundModule.Version, foundModule.Name, err),
-				},
-			}), nil
+			return PatchedModuleDotBazelContentsValue{}, fmt.Errorf("invalid version %#v for module %#v: %w", foundModule.Version, foundModule.Name, err)
 		}
 		if !hasVersion || expectedVersion.Compare(foundVersion) == 0 {
 			moduleFileURL, err := getModuleDotBazelURL(foundModule.RegistryUrl, expectedName, foundVersion)
 			if err != nil {
-				return model_core.NewSimplePatchedMessage[dag.ObjectContentsWalker](&model_analysis_pb.ModuleDotBazelContents_Value{
-					Result: &model_analysis_pb.ModuleDotBazelContents_Value_Failure{
-						Failure: fmt.Sprintf("Failed to construct URL for module %s with version %s in registry %#v: %s", foundModule.Name, foundModule.Version, foundModule.RegistryUrl),
-					},
-				}), nil
+				return PatchedModuleDotBazelContentsValue{}, fmt.Errorf("failed to construct URL for module %s with version %s in registry %#v: %s", foundModule.Name, foundModule.Version, foundModule.RegistryUrl)
 			}
 
 			fileContentsValue := e.GetHttpFileContentsValue(&model_analysis_pb.HttpFileContents_Key{Url: moduleFileURL})
 			if !fileContentsValue.IsSet() {
 				return PatchedModuleDotBazelContentsValue{}, evaluation.ErrMissingDependency
 			}
-			switch httpFileContentsResult := fileContentsValue.Message.Result.(type) {
-			case *model_analysis_pb.HttpFileContents_Value_Exists_:
-				fileContents := model_core.NewPatchedMessageFromExisting(
-					model_core.Message[*model_filesystem_pb.FileContents]{
-						Message:            httpFileContentsResult.Exists.Contents,
-						OutgoingReferences: fileContentsValue.OutgoingReferences,
-					},
-					func(index int) dag.ObjectContentsWalker {
-						return dag.ExistingObjectContentsWalker
-					},
-				)
-				return PatchedModuleDotBazelContentsValue{
-					Message: &model_analysis_pb.ModuleDotBazelContents_Value{
-						Result: &model_analysis_pb.ModuleDotBazelContents_Value_Success_{
-							Success: &model_analysis_pb.ModuleDotBazelContents_Value_Success{
-								Contents: fileContents.Message,
-							},
-						},
-					},
-					Patcher: fileContents.Patcher,
-				}, nil
-			case *model_analysis_pb.HttpFileContents_Value_DoesNotExist:
-				return model_core.NewSimplePatchedMessage[dag.ObjectContentsWalker](&model_analysis_pb.ModuleDotBazelContents_Value{
-					Result: &model_analysis_pb.ModuleDotBazelContents_Value_Failure{
-						Failure: fmt.Sprintf("Failed to fetch %#v, as the file does not exist", moduleFileURL),
-					},
-				}), nil
-			case *model_analysis_pb.HttpFileContents_Value_Failure:
-				return model_core.NewSimplePatchedMessage[dag.ObjectContentsWalker](&model_analysis_pb.ModuleDotBazelContents_Value{
-					Result: &model_analysis_pb.ModuleDotBazelContents_Value_Failure{
-						Failure: fmt.Sprintf("Failed to fetch %#v: %s", moduleFileURL, httpFileContentsResult.Failure),
-					},
-				}), nil
-			default:
-				return model_core.NewSimplePatchedMessage[dag.ObjectContentsWalker](&model_analysis_pb.ModuleDotBazelContents_Value{
-					Result: &model_analysis_pb.ModuleDotBazelContents_Value_Failure{
-						Failure: "HTTP file contents value has an unknown result type",
-					},
-				}), nil
+			if fileContentsValue.Message.Exists == nil {
+				return PatchedModuleDotBazelContentsValue{}, fmt.Errorf("file at URL %#v does not exist", moduleFileURL)
 			}
+			fileContents := model_core.NewPatchedMessageFromExisting(
+				model_core.Message[*model_filesystem_pb.FileContents]{
+					Message:            fileContentsValue.Message.Exists.Contents,
+					OutgoingReferences: fileContentsValue.OutgoingReferences,
+				},
+				func(index int) dag.ObjectContentsWalker {
+					return dag.ExistingObjectContentsWalker
+				},
+			)
+			return PatchedModuleDotBazelContentsValue{
+				Message: &model_analysis_pb.ModuleDotBazelContents_Value{
+					Contents: fileContents.Message,
+				},
+				Patcher: fileContents.Patcher,
+			}, nil
 		}
 	}
 
 	// Access the MODULE.bazel file that is part of the module's sources.
+	canonicalRepo := moduleInstance.GetBareCanonicalRepo()
 	filePropertiesValue := e.GetFilePropertiesValue(&model_analysis_pb.FileProperties_Key{
-		CanonicalRepo: moduleInstance.String(),
+		CanonicalRepo: canonicalRepo.String(),
 		Path:          moduleDotBazelFilename,
 	})
 	if !filePropertiesValue.IsSet() {
 		return PatchedModuleDotBazelContentsValue{}, evaluation.ErrMissingDependency
 	}
-	switch filePropertiesResult := filePropertiesValue.Message.Result.(type) {
-	case *model_analysis_pb.FileProperties_Value_Exists:
-		fileContents := model_core.NewPatchedMessageFromExisting(
-			model_core.Message[*model_filesystem_pb.FileContents]{
-				Message:            filePropertiesResult.Exists.Contents,
-				OutgoingReferences: filePropertiesValue.OutgoingReferences,
-			},
-			func(index int) dag.ObjectContentsWalker {
-				return dag.ExistingObjectContentsWalker
-			},
-		)
-		return PatchedModuleDotBazelContentsValue{
-			Message: &model_analysis_pb.ModuleDotBazelContents_Value{
-				Result: &model_analysis_pb.ModuleDotBazelContents_Value_Success_{
-					Success: &model_analysis_pb.ModuleDotBazelContents_Value_Success{
-						Contents: fileContents.Message,
-					},
-				},
-			},
-			Patcher: fileContents.Patcher,
-		}, nil
-	case *model_analysis_pb.FileProperties_Value_DoesNotExist:
-		return model_core.NewSimplePatchedMessage[dag.ObjectContentsWalker](&model_analysis_pb.ModuleDotBazelContents_Value{
-			Result: &model_analysis_pb.ModuleDotBazelContents_Value_Failure{
-				Failure: "File does not exist",
-			},
-		}), nil
-	case *model_analysis_pb.FileProperties_Value_Failure:
-		return model_core.NewSimplePatchedMessage[dag.ObjectContentsWalker](&model_analysis_pb.ModuleDotBazelContents_Value{
-			Result: &model_analysis_pb.ModuleDotBazelContents_Value_Failure{
-				Failure: filePropertiesResult.Failure,
-			},
-		}), nil
-	default:
-		return model_core.NewSimplePatchedMessage[dag.ObjectContentsWalker](&model_analysis_pb.ModuleDotBazelContents_Value{
-			Result: &model_analysis_pb.ModuleDotBazelContents_Value_Failure{
-				Failure: "File properties value has an unknown result type",
-			},
-		}), nil
+	if filePropertiesValue.Message.Exists == nil {
+		return PatchedModuleDotBazelContentsValue{}, fmt.Errorf("file %#v does not exist", canonicalRepo.GetRootPackage().AppendTargetName(moduleDotBazelTargetName))
 	}
+	fileContents := model_core.NewPatchedMessageFromExisting(
+		model_core.Message[*model_filesystem_pb.FileContents]{
+			Message:            filePropertiesValue.Message.Exists.Contents,
+			OutgoingReferences: filePropertiesValue.OutgoingReferences,
+		},
+		func(index int) dag.ObjectContentsWalker {
+			return dag.ExistingObjectContentsWalker
+		},
+	)
+	return PatchedModuleDotBazelContentsValue{
+		Message: &model_analysis_pb.ModuleDotBazelContents_Value{
+			Contents: fileContents.Message,
+		},
+		Patcher: fileContents.Patcher,
+	}, nil
 }

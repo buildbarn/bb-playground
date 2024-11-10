@@ -2,7 +2,6 @@ syntax = "proto3";
 
 package buildbarn.playground.model.analysis;
 
-import "google/protobuf/empty.proto";
 import "pkg/proto/model/build/build.proto";
 import "pkg/proto/model/core/core.proto";
 import "pkg/proto/model/filesystem/filesystem.proto";
@@ -14,14 +13,7 @@ message AllModuleInstances {
   message Key {}
 
   message Value {
-    message Success {
-      repeated string module_instances = 1;
-    }
-
-    oneof result {
-      Success success = 1;
-      string failure = 2;
-    }
+    repeated string module_instances = 1;
   }
 }
 
@@ -44,12 +36,7 @@ message BuiltinsModuleNames {
 message BuildResult {
   message Key {}
 
-  message Value {
-    oneof result {
-      google.protobuf.Empty success = 1;
-      string failure = 2;
-    }
-  }
+  message Value {}
 }
 
 // CanonicalRepoName resolves the canonical name of a repo, given its
@@ -65,13 +52,8 @@ message CanonicalRepoName {
   }
 
   message Value {
-    oneof result {
-      // The resolved canonical name of the repo which is being accessed.
-      string to_canonical_repo = 1;
-
-      // Resolution failed.
-      string failure = 2;
-    }
+    // The resolved canonical name of the repo which is being accessed.
+    string to_canonical_repo = 1;
   }
 }
 
@@ -85,10 +67,7 @@ message CompiledBzlFile {
   }
 
   message Value {
-    oneof result {
-      buildbarn.playground.model.starlark.CompiledProgram compiled_program = 1;
-      string failure = 2;
-    }
+    buildbarn.playground.model.starlark.CompiledProgram compiled_program = 1;
   }
 }
 
@@ -102,7 +81,7 @@ message CompiledBzlFileDecodedGlobals {
   }
 }
 
-message CompiledBzlFileFunctions {
+message CompiledBzlFileFunctionFactory {
   message Key {
     // The label of the .bzl file. The label MUST include a canonical
     // repo name.
@@ -118,10 +97,7 @@ message CompiledBzlFileGlobal {
   }
 
   message Value {
-    oneof result {
-      buildbarn.playground.model.starlark.Value success = 1;
-      string failure = 2;
-    }
+    buildbarn.playground.model.starlark.Value global = 1;
   }
 }
 
@@ -134,45 +110,39 @@ message ConfiguredRule {
   }
 
   message Value {
-    message Success {
-      message ExecGroup {
-        message Toolchain {
-          // Starlark identifier of the toolchain type.
-          string toolchain_type = 1;
+    message ExecGroup {
+      message Toolchain {
+        // Starlark identifier of the toolchain type.
+        string toolchain_type = 1;
 
-          repeated buildbarn.playground.model.starlark.StructField
-              toolchain_info_fields = 2;
-        }
-
-        // The name of the execution group. The empty string is used to
-        // denote the rule's default execution group.
-        string name = 1;
-
-        // Resolved toolchains that are used by actions running in this
-        // execution group.
-        repeated Toolchain Toolchains = 2;
-
-        // TODO: Add the actual execution platform here as well.
+        repeated buildbarn.playground.model.starlark.NamedValue
+            toolchain_info_fields = 2;
       }
 
-      // Execution groups that are declared by the rule, with their
-      // resolved execution platforms and toolchains. Execution groups
-      // are sorted by name.
-      repeated ExecGroup exec_groups = 1;
+      // The name of the execution group. The empty string is used to
+      // denote the rule's default execution group.
+      string name = 1;
 
-      // TODO: Expose the values of private attributes.
+      // Resolved toolchains that are used by actions running in this
+      // execution group.
+      repeated Toolchain Toolchains = 2;
+
+      // TODO: Add the actual execution platform here as well.
     }
 
-    oneof result {
-      Success success = 1;
-      string failure = 2;
-    }
+    // Execution groups that are declared by the rule, with their
+    // resolved execution platforms and toolchains. Execution groups
+    // are sorted by name.
+    repeated ExecGroup exec_groups = 1;
+
+    // TODO: Expose the values of private attributes.
   }
 }
 
 message ConfiguredRuleObject {
   message Key {
-    // The canonical Starlark identifier of the rule whose
+    // The canonical Starlark identifier of the rule whose properties
+    // need to be obtained.
     string identifier = 1;
 
     // TODO: Add a configuration ID field.
@@ -188,17 +158,9 @@ message ConfiguredTarget {
   }
 
   message Value {
-    message Success {
-      // The values of the provider instances that this target produced,
-      // sorted alphabetically by provider identifier.
-      repeated buildbarn.playground.model.starlark.Struct provider_instances =
-          1;
-    }
-
-    oneof result {
-      Success success = 1;
-      string failure = 2;
-    }
+    // The values of the provider instances that this target produced,
+    // sorted alphabetically by provider identifier.
+    repeated buildbarn.playground.model.starlark.Struct provider_instances = 1;
   }
 }
 
@@ -260,16 +222,8 @@ message FileProperties {
   }
 
   message Value {
-    oneof result {
-      // If set, the file exists, and its properties are provided.
-      buildbarn.playground.model.filesystem.FileProperties exists = 1;
-
-      // If set, the file or any of its parent directories does not
-      // exist.
-      google.protobuf.Empty does_not_exist = 2;
-
-      string failure = 3;
-    }
+    // If set, the file exists, and its properties are provided.
+    buildbarn.playground.model.filesystem.FileProperties exists = 1;
   }
 }
 
@@ -297,18 +251,15 @@ message HttpArchiveContents {
     // The format of the archive.
     Format format = 2;
 
-    // TODO: Should we add 'integrity' here as well, or is this
-    // something we want to validate separately?
+    // Optional checksum of the archive to download, provided in the
+    // Subresource Integrity (SRI) format.
+    string integrity = 3;
   }
 
   message Value {
-    oneof result {
-      buildbarn.playground.model.core.Reference exists = 1;
-
-      google.protobuf.Empty does_not_exist = 2;
-
-      string failure = 3;
-    }
+    // If set, the archive was fetched and extracted successfully. If
+    // not set, fetching the file failed with a HTTP 404 status code.
+    buildbarn.playground.model.core.Reference exists = 1;
   }
 }
 
@@ -317,8 +268,9 @@ message HttpFileContents {
     // The URL to fetch.
     string url = 1;
 
-    // TODO: Should we add 'integrity' here as well, or is this
-    // something we want to validate separately?
+    // Optional checksum of the file to download, provided in the
+    // Subresource Integrity (SRI) format.
+    string integrity = 3;
   }
 
   message Value {
@@ -327,15 +279,9 @@ message HttpFileContents {
       buildbarn.playground.model.filesystem.FileContents contents = 1;
     }
 
-    oneof result {
-      // The file was successfully downloaded from the HTTP server.
-      Exists exists = 1;
-
-      // The HTTP server responded with status code 404.
-      google.protobuf.Empty does_not_exist = 2;
-
-      string failure = 3;
-    }
+    // If set, the file was fetched successfully. If not set, fetching
+    // the file failed with a HTTP 404 status code.
+    Exists exists = 1;
   }
 }
 
@@ -346,27 +292,9 @@ message ModuleDotBazelContents {
   }
 
   message Value {
-    message Success {
-      // The contents of the module instance's MODULE.bazel file, if the
-      // file was non-empty.
-      buildbarn.playground.model.filesystem.FileContents contents = 1;
-    }
-
-    oneof result {
-      Success success = 1;
-
-      string failure = 2;
-    }
-  }
-}
-
-message ModuleExtension {
-  message Key {
-    // Starlark identifier of the module extension. Note that even
-    // though the identifier is prefixed with a canonical repo, the
-    // identifier may not be canonical due to indirection in the
-    // Starlark code.
-    string identifier = 1;
+    // The contents of the module instance's MODULE.bazel file, if the
+    // file was non-empty.
+    buildbarn.playground.model.filesystem.FileContents contents = 1;
   }
 }
 
@@ -387,82 +315,92 @@ message ModuleRepoMapping {
   }
 
   message Value {
-    message Success {
-      message Mapping {
-        message ModuleExtensionRepo {
-          // Starlark identifier of the module extension. Note that even
-          // though the identifier is prefixed with a canonical repo,
-          // the identifier may not be canonical due to indirection in
-          // the Starlark code.
-          string extension_identifier = 1;
+    message Mapping {
+      // The name of the apparent repo that is visible from within the
+      // module.
+      string from_apparent_repo = 1;
 
-          // The apparent name of the repo that is provided by the
-          // module extension.
-          string to_apparent_repo = 2;
-        }
-
-        // The name of the apparent repo that is visible from within the
-        // module.
-        string from_apparent_repo = 1;
-
-        oneof target {
-          // The name of the canonical repo to which the apparent repo
-          // maps.
-          string canonical_repo = 2;
-
-          // The name of the canonical repo isn't known just yet,
-          // because the repo is provided by a module extension and
-          // mapped into the module instance by calling use_repo().
-          ModuleExtensionRepo module_extension_repo = 3;
-        }
-      }
-
-      // The list of repos that can be accessed from within this module
-      // instance, sorted alphabetically by apparent repo.
-      repeated Mapping mappings = 1;
+      // The name of the canonical repo to which the apparent repo
+      // maps.
+      string to_canonical_repo = 2;
     }
 
-    oneof result {
-      // Successfully computed the set of repos visible from within the
-      // current module instance.
-      Success success = 1;
-
-      // Failure occurred computing the repos visible from within the
-      // current module instance (e.g., due to being unable to parse
-      // MODULE.bazel).
-      string failure = 2;
-    }
+    // The list of repos that can be accessed from within this module
+    // instance, sorted alphabetically by apparent repo.
+    repeated Mapping mappings = 1;
   }
 }
 
-message BuildList {
-  message Module {
-    // The name of the module.
-    string name = 1;
-
-    // The version of the module.
-    string version = 2;
-
-    // The compatibility level of the module.
-    int32 compatibility_level = 3;
-
-    // The URL of the registry in which the module was found.
-    string registry_url = 4;
+message ModuleExtensionRepo {
+  message Key {
+    string canonical_repo = 1;
   }
 
-  // Modules that were referenced by the main module, or one of
-  // transitive dependencies, sorted by name and version.
-  repeated Module modules = 1;
+  message Value {
+    buildbarn.playground.model.starlark.Repo.Definition definition = 1;
+  }
+}
+
+message ModuleExtensionRepos {
+  message Key {
+    string module_extension = 1;
+  }
+
+  message Value {
+    message RepoList {
+      message Element {
+        message Parent {
+          // Reference to an object of type RepoList that contains
+          // properties of repos in the module extension.
+          buildbarn.playground.model.core.Reference reference = 1;
+
+          // The name of the first repo contained in this B-tree.
+          // This field can be used to efficiently look up repos
+          // contained in the B-tree.
+          string first_name = 2;
+        }
+
+        oneof level {
+          // Properties of a single repo.
+          buildbarn.playground.model.starlark.Repo leaf = 1;
+
+          // More repos are stored in another object.
+          Parent parent = 2;
+        }
+      }
+
+      // B-tree of repos declared by the module extension. Repos are
+      // sorted by name.
+      repeated Element elements = 1;
+    }
+
+    // Successfully executed the module extension's implementation
+    // function, and extracted the repos declared by it.
+    repeated RepoList.Element repos = 1;
+  }
+}
+
+message BuildListModule {
+  // The name of the module.
+  string name = 1;
+
+  // The version of the module.
+  string version = 2;
+
+  // The compatibility level of the module.
+  int32 compatibility_level = 3;
+
+  // The URL of the registry in which the module was found.
+  string registry_url = 4;
 }
 
 message ModuleFinalBuildList {
   message Key {}
 
   message Value {
-    oneof result {
-      BuildList success = 1;
-      string failure = 2;
-    }
+    // Modules that were referenced by the main module, or one of
+    // transitive dependencies, sorted by name and version.
+    repeated BuildListModule build_list = 1;
   }
 }
 
@@ -470,39 +408,29 @@ message ModuleRoughBuildList {
   message Key {}
 
   message Value {
-    oneof result {
-      BuildList success = 1;
-      string failure = 2;
-    }
+    repeated BuildListModule build_list = 1;
   }
 }
 
-message OverridesList {
-  message Module {
-    // Name of the module.
-    string name = 1;
+message OverridesListModule {
+  // Name of the module.
+  string name = 1;
 
-    // If multiple_version_override() is called, a sorted list of
-    // version numbers that are permitted to coexist.
-    repeated string versions = 2;
-  }
-
-  // Alphabetically sorted list of modules for which overrides are
-  // in place. For these modules, computation of the rough build
-  // list may assume that sources can be accessed directly, without
-  // needing to separately load a MODULE.bazel file from Bazel
-  // Central Registry (BCR).
-  repeated Module modules = 1;
+  // If multiple_version_override() is called, a sorted list of
+  // version numbers that are permitted to coexist.
+  repeated string versions = 2;
 }
 
 message ModulesWithMultipleVersions {
   message Key {}
 
   message Value {
-    oneof result {
-      OverridesList success = 1;
-      string failure = 2;
-    }
+    // Alphabetically sorted list of modules for which overrides are
+    // in place. For these modules, computation of the rough build
+    // list may assume that sources can be accessed directly, without
+    // needing to separately load a MODULE.bazel file from Bazel
+    // Central Registry (BCR).
+    repeated OverridesListModule overrides_list = 1;
   }
 }
 
@@ -514,14 +442,12 @@ message ModulesWithOverrides {
   message Key {}
 
   message Value {
-    oneof result {
-      OverridesList success = 1;
-
-      // Failure occurred determining the set of modules for which
-      // (e.g., invalid module name or malformed MODULE.bazel in the
-      // root module).
-      string failure = 2;
-    }
+    // Alphabetically sorted list of modules for which overrides are
+    // in place. For these modules, computation of the rough build
+    // list may assume that sources can be accessed directly, without
+    // needing to separately load a MODULE.bazel file from Bazel
+    // Central Registry (BCR).
+    repeated OverridesListModule overrides_list = 1;
   }
 }
 
@@ -560,15 +486,9 @@ message Package {
       repeated Element elements = 1;
     }
 
-    oneof result {
-      // Successfully processed the package's BUILD.bazel file, and
-      // extracted the targets contained within.
-      TargetList success = 1;
-
-      // Failed to processed the package's BUILD.bazel file or one of
-      // its dependencies.
-      string failure = 2;
-    }
+    // Successfully processed the package's BUILD.bazel file, and
+    // extracted the targets contained within.
+    repeated TargetList.Element targets = 1;
   }
 }
 
@@ -576,60 +496,46 @@ message RegisteredExecutionPlatforms {
   message Key {}
 
   message Value {
-    message Success {
-      message ExecutionPlatform {
-        message Constraint {
-          // The label of the constraint_setting() target.
-          string setting = 1;
+    message ExecutionPlatform {
+      message Constraint {
+        // The label of the constraint_setting() target.
+        string setting = 1;
 
-          // The label of the constraint_value() target.
-          string value = 2;
-        }
-
-        message ExecProperty {
-          // The name of the remote execution property.
-          string name = 1;
-
-          // The value of the remote execution property.
-          string value = 2;
-        }
-
-        // Constraints that apply to the execution platform, such as the
-        // CPU architecture or operating system. Constraints are sorted
-        // alphabetically by setting.
-        repeated Constraint constraints = 1;
-
-        // Properties that need to be sent to the remote execution
-        // system to select appropriate workers. Properties are sorted
-        // alphabetically by name.
-        repeated ExecProperty exec_properties = 2;
-
-        // TODO: Also add flags, required_settings, etc.?
+        // The label of the constraint_value() target.
+        string value = 2;
       }
 
-      // List of platforms that are available for executing commands,
-      // ordered by decreasing preference.
-      repeated ExecutionPlatform execution_platforms = 1;
+      message ExecProperty {
+        // The name of the remote execution property.
+        string name = 1;
+
+        // The value of the remote execution property.
+        string value = 2;
+      }
+
+      // Constraints that apply to the execution platform, such as the
+      // CPU architecture or operating system. Constraints are sorted
+      // alphabetically by setting.
+      repeated Constraint constraints = 1;
+
+      // Properties that need to be sent to the remote execution
+      // system to select appropriate workers. Properties are sorted
+      // alphabetically by name.
+      repeated ExecProperty exec_properties = 2;
+
+      // TODO: Also add flags, required_settings, etc.?
     }
 
-    oneof result {
-      Success success = 1;
-
-      string failure = 2;
-    }
+    // List of platforms that are available for executing commands,
+    // ordered by decreasing preference.
+    repeated ExecutionPlatform execution_platforms = 1;
   }
 }
 
 message RegisteredToolchains {
   message Key {}
 
-  message Value {
-    oneof result {
-      google.protobuf.Empty success = 1;
-
-      string failure = 2;
-    }
-  }
+  message Value {}
 }
 
 message Repo {
@@ -640,14 +546,8 @@ message Repo {
   }
 
   message Value {
-    oneof result {
-      // The repository was obtained successfully. The root directory,
-      // containing the files in the repository is provided.
-      buildbarn.playground.model.core.Reference root_directory_reference = 1;
-
-      // Failed to obtain files belonging to the repository.
-      string failure = 2;
-    }
+    // The root directory containing the files in the repository.
+    buildbarn.playground.model.core.Reference root_directory_reference = 1;
   }
 }
 
@@ -659,14 +559,9 @@ message RepoDefaultAttrs {
   }
 
   message Value {
-    oneof result {
-      // Default values of attributes that need to be attached to all
-      // targets in this repo.
-      buildbarn.playground.model.starlark.InheritableAttrs success = 1;
-
-      // Failed to obtain default values of attributes.
-      string failure = 2;
-    }
+    // Default values of attributes that need to be attached to all
+    // targets in this repo.
+    buildbarn.playground.model.starlark.InheritableAttrs inheritable_attrs = 1;
   }
 }
 
@@ -678,21 +573,13 @@ message ResolvedToolchains {
   }
 
   message Value {
-    message Success {
-      // TODO: Put the name of the selected execution platform in here.
+    // TODO: Put the name of the selected execution platform in here.
 
-      // Identifiers of the resolved toolchains, using the same order as
-      // the toolchain types in the key. Any optional toolchains that
-      // could not be resolved will have their identifier set to the
-      // empty string.
-      repeated string resolved_toolchain_identifiers = 1;
-    }
-
-    oneof result {
-      Success success = 1;
-
-      string failure = 2;
-    }
+    // Identifiers of the resolved toolchains, using the same order as
+    // the toolchain types in the key. Any optional toolchains that
+    // could not be resolved will have their identifier set to the
+    // empty string.
+    repeated string resolved_toolchain_identifiers = 1;
   }
 }
 
@@ -718,11 +605,7 @@ message Target {
   }
 
   message Value {
-    oneof result {
-      buildbarn.playground.model.starlark.TargetDefinition success = 1;
-
-      string failure = 2;
-    }
+    buildbarn.playground.model.starlark.Target.Definition definition = 1;
   }
 }
 
@@ -734,11 +617,69 @@ message TargetCompletion {
     string label = 1;
   }
 
+  message Value {}
+}
+
+message ModuleExtension {
+  message User {
+    // The module instance that uses the module extension.
+    string module_instance = 1;
+
+    // Whether the module instance is the root module.
+    bool is_root = 2;
+
+    // Tag classes for which one or more tags are provided by this
+    // module instance.
+    repeated TagClass tag_classes = 3;
+  }
+
+  message TagClass {
+    // Starlark identifier of the tag class.
+    string name = 1;
+
+    // One or more tags of this class that have been provided.
+    repeated Tag tags = 2;
+  }
+
+  message Tag {
+    // Attributes that are provided to this tag, sorted alphabetically
+    // by name.
+    //
+    // No attempts have been performed to canonicalize the values of
+    // these attributes. For example, this means that labels may be
+    // stored as plain strings that later on need to be resolved to the
+    // proper canonical target.
+    repeated buildbarn.playground.model.starlark.NamedValue attrs = 1;
+
+    // Whether the tag was specified on the result of a use_extension()
+    // call with dev_dependency = True.
+    bool is_dev_dependency = 2;
+  }
+
+  // Canonical Starlark identifier of the module_extension() object.
+  string identifier = 1;
+
+  // Modules instances that use the module extension. The order of this
+  // list is the same as a breadth-first search starting from the root
+  // module.
+  repeated User users = 2;
+}
+
+message RepositoryRuleObject {
+  message Key {
+    // The canonical Starlark identifier of the repository rule whose
+    // properties need to be obtained.
+    string identifier = 1;
+  }
+}
+
+message UsedModuleExtension {
+  message Key {
+    string module_extension = 1;
+  }
+
   message Value {
-    oneof result {
-      google.protobuf.Empty success = 1;
-      string failure = 2;
-    }
+    ModuleExtension module_extension = 1;
   }
 }
 
@@ -746,10 +687,10 @@ message UsedModuleExtensions {
   message Key {}
 
   message Value {
-    oneof result {
-      google.protobuf.Empty success = 1;
-
-      string failure = 2;
-    }
+    // List of module extensions that has one or more users. Module
+    // extensions are sorted by module extension name, which can be
+    // derived from the canonical Starlark identifier of the
+    // module_extension() object.
+    repeated ModuleExtension module_extensions = 1;
   }
 }

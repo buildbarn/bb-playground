@@ -54,8 +54,8 @@ func (t *Transition) EncodeValue(path map[starlark.Value]struct{}, currentIdenti
 	if currentIdentifier == nil || *currentIdentifier != *t.Identifier {
 		// Not the canonical identifier under which this
 		// transition is known. Emit a reference.
-		return model_core.PatchedMessage[*model_starlark_pb.Value, dag.ObjectContentsWalker]{
-			Message: &model_starlark_pb.Value{
+		return model_core.NewSimplePatchedMessage[dag.ObjectContentsWalker](
+			&model_starlark_pb.Value{
 				Kind: &model_starlark_pb.Value_Transition{
 					Transition: &model_starlark_pb.Transition{
 						Kind: &model_starlark_pb.Transition_Reference{
@@ -64,12 +64,11 @@ func (t *Transition) EncodeValue(path map[starlark.Value]struct{}, currentIdenti
 					},
 				},
 			},
-			Patcher: model_core.NewReferenceMessagePatcher[dag.ObjectContentsWalker](),
-		}, false, nil
+		), false, nil
 	}
 
-	return model_core.PatchedMessage[*model_starlark_pb.Value, dag.ObjectContentsWalker]{
-		Message: &model_starlark_pb.Value{
+	return model_core.NewSimplePatchedMessage[dag.ObjectContentsWalker](
+		&model_starlark_pb.Value{
 			Kind: &model_starlark_pb.Value_Transition{
 				Transition: &model_starlark_pb.Transition{
 					Kind: &model_starlark_pb.Transition_Definition_{
@@ -78,6 +77,5 @@ func (t *Transition) EncodeValue(path map[starlark.Value]struct{}, currentIdenti
 				},
 			},
 		},
-		Patcher: model_core.NewReferenceMessagePatcher[dag.ObjectContentsWalker](),
-	}, false, nil
+	), false, nil
 }

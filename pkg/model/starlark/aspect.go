@@ -56,8 +56,8 @@ func (a *Aspect) EncodeValue(path map[starlark.Value]struct{}, currentIdentifier
 	if currentIdentifier == nil || *currentIdentifier != *a.Identifier {
 		// Not the canonical identifier under which this aspect
 		// is known. Emit a reference.
-		return model_core.PatchedMessage[*model_starlark_pb.Value, dag.ObjectContentsWalker]{
-			Message: &model_starlark_pb.Value{
+		return model_core.NewSimplePatchedMessage[dag.ObjectContentsWalker](
+			&model_starlark_pb.Value{
 				Kind: &model_starlark_pb.Value_Aspect{
 					Aspect: &model_starlark_pb.Aspect{
 						Kind: &model_starlark_pb.Aspect_Reference{
@@ -66,13 +66,12 @@ func (a *Aspect) EncodeValue(path map[starlark.Value]struct{}, currentIdentifier
 					},
 				},
 			},
-			Patcher: model_core.NewReferenceMessagePatcher[dag.ObjectContentsWalker](),
-		}, false, nil
+		), false, nil
 	}
 
 	needsCode := false
-	return model_core.PatchedMessage[*model_starlark_pb.Value, dag.ObjectContentsWalker]{
-		Message: &model_starlark_pb.Value{
+	return model_core.NewSimplePatchedMessage[dag.ObjectContentsWalker](
+		&model_starlark_pb.Value{
 			Kind: &model_starlark_pb.Value_Aspect{
 				Aspect: &model_starlark_pb.Aspect{
 					Kind: &model_starlark_pb.Aspect_Definition_{
@@ -81,6 +80,5 @@ func (a *Aspect) EncodeValue(path map[starlark.Value]struct{}, currentIdentifier
 				},
 			},
 		},
-		Patcher: model_core.NewReferenceMessagePatcher[dag.ObjectContentsWalker](),
-	}, needsCode, nil
+	), needsCode, nil
 }

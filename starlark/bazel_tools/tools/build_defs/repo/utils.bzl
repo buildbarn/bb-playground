@@ -4,6 +4,9 @@ def maybe(repo_rule, name, **kwargs):
     # code with bzlmod.
     repo_rule(name = name, **kwargs)
 
+def read_netrc(ctx, filename):
+    pass
+
 def read_user_netrc(ctx):
     pass
 

@@ -39,12 +39,11 @@ func (d *depset) Hash() (uint32, error) {
 func (d *depset) EncodeValue(path map[starlark.Value]struct{}, currentIdentifier *pg_label.CanonicalStarlarkIdentifier, options *ValueEncodingOptions) (model_core.PatchedMessage[*model_starlark_pb.Value, dag.ObjectContentsWalker], bool, error) {
 	// TODO
 	needsCode := false
-	return model_core.PatchedMessage[*model_starlark_pb.Value, dag.ObjectContentsWalker]{
-		Message: &model_starlark_pb.Value{
+	return model_core.NewSimplePatchedMessage[dag.ObjectContentsWalker](
+		&model_starlark_pb.Value{
 			Kind: &model_starlark_pb.Value_Depset{
 				Depset: &model_starlark_pb.Depset{},
 			},
 		},
-		Patcher: model_core.NewReferenceMessagePatcher[dag.ObjectContentsWalker](),
-	}, needsCode, nil
+	), needsCode, nil
 }

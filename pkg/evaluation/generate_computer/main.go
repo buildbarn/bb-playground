@@ -105,7 +105,7 @@ func main() {
 				)
 			} else {
 				fmt.Printf(
-					"\tGet%sValue(key *pb.%s_Key) (%s, error)\n",
+					"\tGet%sValue(key *pb.%s_Key) (%s, bool)\n",
 					dependencyName,
 					dependencyName,
 					nativeValueType.Type,
@@ -138,16 +138,16 @@ func main() {
 			fmt.Printf("}\n")
 		} else {
 			fmt.Printf(
-				"func (e *typedEnvironment) Get%sValue(key *pb.%s_Key) (%s, error) {\n",
+				"func (e *typedEnvironment) Get%sValue(key *pb.%s_Key) (%s, bool) {\n",
 				functionName,
 				functionName,
 				nativeValueType.Type,
 			)
-			fmt.Printf("\tv, err := e.base.GetNativeValue(key)\n")
-			fmt.Printf("\tif err != nil {\n")
-			fmt.Printf("\t\treturn nil, err\n")
+			fmt.Printf("\tv, ok := e.base.GetNativeValue(key)\n")
+			fmt.Printf("\tif !ok {\n")
+			fmt.Printf("\t\treturn nil, false\n")
 			fmt.Printf("\t}\n")
-			fmt.Printf("\t\treturn v.(%s), nil\n", nativeValueType.Type)
+			fmt.Printf("\t\treturn v.(%s), true\n", nativeValueType.Type)
 			fmt.Printf("}\n")
 		}
 	}

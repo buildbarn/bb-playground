@@ -7,13 +7,8 @@ import "pkg/proto/model/core/core.proto";
 
 option go_package = "github.com/buildbarn/bb-playground/pkg/proto/model/starlark";
 
-message Global {
-  string name = 1;
-  Value value = 2;
-}
-
 message CompiledProgram {
-  repeated Global globals = 1;
+  repeated NamedValue globals = 1;
 
   bytes code = 2;
 }
@@ -27,7 +22,7 @@ message Value {
     bytes bytes = 5;
     Depset depset = 6;
     Dict dict = 7;
-    string function = 8;
+    Function function = 8;
     bytes int = 9;
     string label = 10;
     List list = 11;
@@ -45,6 +40,13 @@ message Value {
     Transition transition = 23;
     Tuple tuple = 24;
   }
+}
+
+// NamedValue can be used in places where values need to be associated
+// with names, such as structs.
+message NamedValue {
+  string name = 1;
+  Value value = 2;
 }
 
 message Alias {
@@ -222,6 +224,43 @@ message ExecGroup {
   repeated ToolchainType toolchains = 2;
 }
 
+message Function {
+  // The name of the .bzl file declaring the function.
+  string filename = 1;
+
+  // The line at which the function is declared.
+  int32 line = 2;
+
+  // The column at which the function is declared.
+  int32 column = 3;
+
+  // The name of the function. This may be set to "lambda" for anonymous
+  // functions.
+  string name = 4;
+
+  message Closure {
+    // The index of the function within the compiled bytecode.
+    uint32 index = 1;
+
+    message DefaultParameter {
+      // If set, the parameter is optional, and the default value is
+      // provided.
+      Value value = 1;
+    }
+
+    // Default values of parameters of the function.
+    repeated DefaultParameter default_parameters = 2;
+
+    // If the function is a nested function or lambda, the values of free
+    // variables.
+    repeated Value free_variables = 3;
+  }
+
+  // If set, the function is a nested or anonymous function, meaning it
+  // cannot be decoded by name alone.
+  Closure closure = 5;
+}
+
 message InheritableAttrs {
   // Explanatory warning message associated with the target, indicating
   // the reason its use is deprecated.
@@ -256,15 +295,7 @@ message List {
 }
 
 message ModuleExtension {
-  message Definition {
-    string implementation = 1;
-  }
-
-  oneof kind {
-    string reference = 1;
-
-    Definition definition = 2;
-  }
+  Function implementation = 1;
 }
 
 message PackageGroup {
@@ -315,21 +346,16 @@ message PackageGroup {
 message Provider {
   string provider_identifier = 1;
 
-  string init_function_identifier = 2;
+  Function init_function = 2;
 }
 
 message Struct {
   // The fields contained within the struct.
-  repeated StructField fields = 1;
+  repeated NamedValue fields = 1;
 
   // If set, the struct was created by invoking a provider. The value
   // corresponds to the identifier of the provider.
   string provider_identifier = 2;
-}
-
-message StructField {
-  string key = 1;
-  Value value = 2;
 }
 
 message TagClass {
@@ -367,8 +393,30 @@ message NamedExecGroup {
   ExecGroup exec_group = 2;
 }
 
+message Repo {
+  message Definition {
+    // Identifier of the repository rule used by this target.
+    string repository_rule_identifier = 1;
+
+    // Repository rule specific attributes whose values were provided
+    // explicitly.
+    repeated NamedValue attr_values = 2;
+  }
+
+  // Name of the repo within the module extension.
+  string name = 1;
+
+  Definition definition = 2;
+}
+
 message RepositoryRule {
-  message Definition {}
+  message Definition {
+    // Attributes of the repository rule, sorted by name.
+    repeated NamedAttr attrs = 1;
+
+    // Starlark function that implements this rule.
+    Function implementation = 2;
+  }
 
   oneof kind {
     string reference = 1;
@@ -389,8 +437,8 @@ message Rule {
     // Execution groups of the rule, sorted by name.
     repeated NamedExecGroup exec_groups = 3;
 
-    // Identifier of the Starlark function that implements this rule.
-    string implementation = 4;
+    // Starlark function that implements this rule.
+    Function implementation = 4;
 
     // List of providers that the implementation function must return,
     // sorted by name.
@@ -474,24 +522,24 @@ message Subrule {
   }
 }
 
-message TargetDefinition {
-  oneof kind {
-    // Reference to another target.
-    Alias alias = 1;
-
-    // Group of packages, used to control visibility of targets.
-    PackageGroup package_group = 2;
-
-    // Buildable target backed by a rule.
-    RuleTarget rule_target = 3;
-  }
-}
-
 message Target {
+  message Definition {
+    oneof kind {
+      // Reference to another target.
+      Alias alias = 1;
+
+      // Group of packages, used to control visibility of targets.
+      PackageGroup package_group = 2;
+
+      // Buildable target backed by a rule.
+      RuleTarget rule_target = 3;
+    }
+  }
+
   // Name of the target within the package.
   string name = 1;
 
-  TargetDefinition definition = 2;
+  Definition definition = 2;
 }
 
 message Transition {

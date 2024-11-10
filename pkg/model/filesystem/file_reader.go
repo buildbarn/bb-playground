@@ -87,6 +87,8 @@ func (fr *FileReader) FileOpenRead(ctx context.Context, fileContents FileContent
 		context:              ctx,
 		fileReader:           fr,
 		fileContentsIterator: NewFileContentsIterator(fileContents, offsetBytes),
+		offsetBytes:          offsetBytes,
+		sizeBytes:            fileContents.EndBytes,
 	}
 }
 
@@ -103,11 +105,14 @@ type sequentialFileReader struct {
 	fileReader           *FileReader
 	fileContentsIterator FileContentsIterator
 	chunk                []byte
+	offsetBytes          uint64
+	sizeBytes            uint64
 }
 
 func (r *sequentialFileReader) Read(p []byte) (int, error) {
 	nRead := 0
 	for {
+		// Copy data from a previously read chunk.
 		n := copy(p, r.chunk)
 		p = p[n:]
 		r.chunk = r.chunk[n:]
@@ -116,11 +121,16 @@ func (r *sequentialFileReader) Read(p []byte) (int, error) {
 			return nRead, nil
 		}
 
+		// Read the next chunk if we're not at end of file.
+		if r.offsetBytes >= r.sizeBytes {
+			return nRead, io.EOF
+		}
 		chunk, err := r.fileReader.readNextChunk(r.context, &r.fileContentsIterator)
 		if err != nil {
 			return nRead, err
 		}
 		r.chunk = chunk
+		r.offsetBytes += uint64(len(chunk))
 	}
 }
 
@@ -131,5 +141,14 @@ type randomAccessFileReader struct {
 }
 
 func (r *randomAccessFileReader) ReadAt(p []byte, offsetBytes int64) (int, error) {
+	// Limit the read operation to the size of the file.
+	if uint64(offsetBytes) > r.fileContents.EndBytes {
+		return 0, io.EOF
+	}
+	remainingBytes := r.fileContents.EndBytes - uint64(offsetBytes)
+	if uint64(len(p)) > remainingBytes {
+		p = p[:remainingBytes]
+	}
+
 	return r.fileReader.FileReadAt(r.context, r.fileContents, p, uint64(offsetBytes))
 }

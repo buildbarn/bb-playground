@@ -13,7 +13,7 @@ import (
 
 type subrule struct {
 	LateNamedValue
-	implementation *NamedFunction
+	implementation NamedFunction
 }
 
 var (
@@ -55,8 +55,8 @@ func (sr *subrule) EncodeValue(path map[starlark.Value]struct{}, currentIdentifi
 	if currentIdentifier == nil || *currentIdentifier != *sr.Identifier {
 		// Not the canonical identifier under which this subrule
 		// is known. Emit a reference.
-		return model_core.PatchedMessage[*model_starlark_pb.Value, dag.ObjectContentsWalker]{
-			Message: &model_starlark_pb.Value{
+		return model_core.NewSimplePatchedMessage[dag.ObjectContentsWalker](
+			&model_starlark_pb.Value{
 				Kind: &model_starlark_pb.Value_Subrule{
 					Subrule: &model_starlark_pb.Subrule{
 						Kind: &model_starlark_pb.Subrule_Reference{
@@ -65,12 +65,11 @@ func (sr *subrule) EncodeValue(path map[starlark.Value]struct{}, currentIdentifi
 					},
 				},
 			},
-			Patcher: model_core.NewReferenceMessagePatcher[dag.ObjectContentsWalker](),
-		}, false, nil
+		), false, nil
 	}
 
-	return model_core.PatchedMessage[*model_starlark_pb.Value, dag.ObjectContentsWalker]{
-		Message: &model_starlark_pb.Value{
+	return model_core.NewSimplePatchedMessage[dag.ObjectContentsWalker](
+		&model_starlark_pb.Value{
 			Kind: &model_starlark_pb.Value_Subrule{
 				Subrule: &model_starlark_pb.Subrule{
 					Kind: &model_starlark_pb.Subrule_Definition_{
@@ -79,6 +78,5 @@ func (sr *subrule) EncodeValue(path map[starlark.Value]struct{}, currentIdentifi
 				},
 			},
 		},
-		Patcher: model_core.NewReferenceMessagePatcher[dag.ObjectContentsWalker](),
-	}, false, nil
+	), false, nil
 }

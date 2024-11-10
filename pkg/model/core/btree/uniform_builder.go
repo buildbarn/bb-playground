@@ -131,9 +131,7 @@ func (b *uniformBuilder[TNode, TMetadata]) FinalizeList() (model_core.PatchedMes
 	if b.rootChildren.IsSet() {
 		return b.rootChildren, nil
 	}
-	return model_core.PatchedMessage[[]TNode, TMetadata]{
-		Patcher: model_core.NewReferenceMessagePatcher[TMetadata](),
-	}, nil
+	return model_core.NewSimplePatchedMessage[TMetadata, []TNode](nil), nil
 }
 
 // FinalizeSingle finalizes the B-tree by returning the root node. If

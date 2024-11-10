@@ -176,8 +176,8 @@ func (r *rule) CallInternal(thread *starlark.Thread, args starlark.Tuple, kwargs
 		model_core.PatchedMessage[*model_starlark_pb.Target, dag.ObjectContentsWalker]{
 			Message: &model_starlark_pb.Target{
 				Name: name,
-				Definition: &model_starlark_pb.TargetDefinition{
-					Kind: &model_starlark_pb.TargetDefinition_RuleTarget{
+				Definition: &model_starlark_pb.Target_Definition{
+					Kind: &model_starlark_pb.Target_Definition_RuleTarget{
 						RuleTarget: &model_starlark_pb.RuleTarget{
 							RuleIdentifier: r.Identifier.String(),
 							AttrValues:     attrValues,
@@ -204,18 +204,15 @@ func (r *rule) EncodeValue(path map[starlark.Value]struct{}, currentIdentifier *
 	if currentIdentifier == nil || *currentIdentifier != *r.Identifier {
 		// Not the canonical identifier under which this rule is
 		// known. Emit a reference.
-		return model_core.PatchedMessage[*model_starlark_pb.Value, dag.ObjectContentsWalker]{
-			Message: &model_starlark_pb.Value{
-				Kind: &model_starlark_pb.Value_Rule{
-					Rule: &model_starlark_pb.Rule{
-						Kind: &model_starlark_pb.Rule_Reference{
-							Reference: r.Identifier.String(),
-						},
+		return model_core.NewSimplePatchedMessage[dag.ObjectContentsWalker](&model_starlark_pb.Value{
+			Kind: &model_starlark_pb.Value_Rule{
+				Rule: &model_starlark_pb.Rule{
+					Kind: &model_starlark_pb.Rule_Reference{
+						Reference: r.Identifier.String(),
 					},
 				},
 			},
-			Patcher: model_core.NewReferenceMessagePatcher[dag.ObjectContentsWalker](),
-		}, false, nil
+		}), false, nil
 	}
 
 	definition, needsCode, err := r.definition.Encode(path, options)
@@ -245,7 +242,7 @@ type starlarkRuleDefinition struct {
 	attrs          map[pg_label.StarlarkIdentifier]*Attr
 	cfg            *Transition
 	execGroups     map[string]*ExecGroup
-	implementation *NamedFunction
+	implementation NamedFunction
 	provides       []*Provider
 }
 
@@ -253,7 +250,7 @@ func NewStarlarkRuleDefinition(
 	attrs map[pg_label.StarlarkIdentifier]*Attr,
 	cfg *Transition,
 	execGroups map[string]*ExecGroup,
-	implementation *NamedFunction,
+	implementation NamedFunction,
 	provides []*Provider,
 ) RuleDefinition {
 	return &starlarkRuleDefinition{
@@ -266,6 +263,11 @@ func NewStarlarkRuleDefinition(
 }
 
 func (rd *starlarkRuleDefinition) Encode(path map[starlark.Value]struct{}, options *ValueEncodingOptions) (model_core.PatchedMessage[*model_starlark_pb.Rule_Definition, dag.ObjectContentsWalker], bool, error) {
+	implementation, implementationNeedsCode, err := rd.implementation.Encode(path, options)
+	if err != nil {
+		return model_core.PatchedMessage[*model_starlark_pb.Rule_Definition, dag.ObjectContentsWalker]{}, false, err
+	}
+
 	namedAttrs, namedAttrsNeedCode, err := encodeNamedAttrs(rd.attrs, path, options)
 	if err != nil {
 		return model_core.PatchedMessage[*model_starlark_pb.Rule_Definition, dag.ObjectContentsWalker]{}, false, err
@@ -281,12 +283,12 @@ func (rd *starlarkRuleDefinition) Encode(path map[starlark.Value]struct{}, optio
 
 	return model_core.PatchedMessage[*model_starlark_pb.Rule_Definition, dag.ObjectContentsWalker]{
 		Message: &model_starlark_pb.Rule_Definition{
-			Implementation: rd.implementation.identifier.String(),
+			Implementation: implementation.Message,
 			Attrs:          namedAttrs.Message,
 			ExecGroups:     execGroups,
 		},
 		Patcher: namedAttrs.Patcher,
-	}, namedAttrsNeedCode || rd.implementation.identifier.GetCanonicalLabel() == options.CurrentFilename, nil
+	}, implementationNeedsCode || namedAttrsNeedCode, nil
 }
 
 func (rd *starlarkRuleDefinition) GetAttrsCheap(thread *starlark.Thread) (map[pg_label.StarlarkIdentifier]*Attr, error) {
@@ -294,8 +296,8 @@ func (rd *starlarkRuleDefinition) GetAttrsCheap(thread *starlark.Thread) (map[pg
 }
 
 type protoRuleDefinition struct {
-	message    model_core.Message[*model_starlark_pb.Rule_Definition]
-	attrsCheap atomic.Pointer[map[pg_label.StarlarkIdentifier]*Attr]
+	message         model_core.Message[*model_starlark_pb.Rule_Definition]
+	protoAttrsCache protoAttrsCache
 }
 
 func NewProtoRuleDefinition(message model_core.Message[*model_starlark_pb.Rule_Definition]) RuleDefinition {
@@ -309,37 +311,7 @@ func (rd *protoRuleDefinition) Encode(path map[starlark.Value]struct{}, options 
 }
 
 func (rd *protoRuleDefinition) GetAttrsCheap(thread *starlark.Thread) (map[pg_label.StarlarkIdentifier]*Attr, error) {
-	if attrs := rd.attrsCheap.Load(); attrs != nil {
-		return *attrs, nil
-	}
-
-	attrs := map[pg_label.StarlarkIdentifier]*Attr{}
-	for _, namedAttr := range rd.message.Message.Attrs {
-		name, err := pg_label.NewStarlarkIdentifier(namedAttr.Name)
-		if err != nil {
-			return nil, fmt.Errorf("attribute %#v: %w", namedAttr.Name, err)
-		}
-		if namedAttr.Attr == nil {
-			return nil, fmt.Errorf("attribute %#v: missing message", namedAttr.Name)
-		}
-		attrType, err := DecodeAttrType(namedAttr.Attr)
-		if err != nil {
-			return nil, fmt.Errorf("attribute %#v: %w", namedAttr.Name, err)
-		}
-
-		// Don't bother extracting the actual default value from
-		// the rule. We don't need to know these in order to
-		// determine if a rule is being called properly.
-		var defaultValue starlark.Value
-		if namedAttr.Attr.Default != nil {
-			defaultValue = bogusValue{}
-		}
-
-		attrs[name] = NewAttr(attrType, defaultValue)
-	}
-
-	rd.attrsCheap.Store(&attrs)
-	return attrs, nil
+	return rd.protoAttrsCache.getAttrsCheap(thread, rd.message.Message.Attrs)
 }
 
 type reloadingRuleDefinition struct {
@@ -410,4 +382,42 @@ func (bogusValue) Truth() starlark.Bool {
 
 func (bogusValue) Hash() (uint32, error) {
 	return 0, nil
+}
+
+type protoAttrsCache struct {
+	attrsCheap atomic.Pointer[map[pg_label.StarlarkIdentifier]*Attr]
+}
+
+func (pac *protoAttrsCache) getAttrsCheap(thread *starlark.Thread, namedAttrs []*model_starlark_pb.NamedAttr) (map[pg_label.StarlarkIdentifier]*Attr, error) {
+	if attrs := pac.attrsCheap.Load(); attrs != nil {
+		return *attrs, nil
+	}
+
+	attrs := map[pg_label.StarlarkIdentifier]*Attr{}
+	for _, namedAttr := range namedAttrs {
+		name, err := pg_label.NewStarlarkIdentifier(namedAttr.Name)
+		if err != nil {
+			return nil, fmt.Errorf("attribute %#v: %w", namedAttr.Name, err)
+		}
+		if namedAttr.Attr == nil {
+			return nil, fmt.Errorf("attribute %#v: missing message", namedAttr.Name)
+		}
+		attrType, err := DecodeAttrType(namedAttr.Attr)
+		if err != nil {
+			return nil, fmt.Errorf("attribute %#v: %w", namedAttr.Name, err)
+		}
+
+		// Don't bother extracting the actual default value from
+		// the rule. We don't need to know these in order to
+		// determine if a rule is being called properly.
+		var defaultValue starlark.Value
+		if namedAttr.Attr.Default != nil {
+			defaultValue = bogusValue{}
+		}
+
+		attrs[name] = NewAttr(attrType, defaultValue)
+	}
+
+	pac.attrsCheap.Store(&attrs)
+	return attrs, nil
 }

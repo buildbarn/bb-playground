@@ -23,11 +23,7 @@ import (
 func (c *baseComputer) ComputeConfiguredTargetValue(ctx context.Context, key *model_analysis_pb.ConfiguredTarget_Key, e ConfiguredTargetEnvironment) (PatchedConfiguredTargetValue, error) {
 	targetLabel, err := label.NewCanonicalLabel(key.Label)
 	if err != nil {
-		return model_core.NewSimplePatchedMessage[dag.ObjectContentsWalker](&model_analysis_pb.ConfiguredTarget_Value{
-			Result: &model_analysis_pb.ConfiguredTarget_Value_Failure{
-				Failure: fmt.Sprintf("invalid target label %#v: %s", key.Label, err),
-			},
-		}), nil
+		return PatchedConfiguredTargetValue{}, fmt.Errorf("invalid target label: %w", err)
 	}
 	targetValue := e.GetTargetValue(&model_analysis_pb.Target_Key{
 		Label: targetLabel.String(),
@@ -36,38 +32,17 @@ func (c *baseComputer) ComputeConfiguredTargetValue(ctx context.Context, key *mo
 		return PatchedConfiguredTargetValue{}, evaluation.ErrMissingDependency
 	}
 
-	var targetDefinition model_core.Message[*model_starlark_pb.TargetDefinition]
-	switch resultType := targetValue.Message.Result.(type) {
-	case *model_analysis_pb.Target_Value_Success:
-		targetDefinition = model_core.Message[*model_starlark_pb.TargetDefinition]{
-			Message:            resultType.Success,
-			OutgoingReferences: targetValue.OutgoingReferences,
-		}
-	case *model_analysis_pb.Target_Value_Failure:
-		return model_core.NewSimplePatchedMessage[dag.ObjectContentsWalker](&model_analysis_pb.ConfiguredTarget_Value{
-			Result: &model_analysis_pb.ConfiguredTarget_Value_Failure{
-				Failure: resultType.Failure,
-			},
-		}), nil
-	default:
-		return PatchedConfiguredTargetValue{}, errors.New("package value has an unknown result type")
-	}
-
-	targetKind, ok := targetDefinition.Message.Kind.(*model_starlark_pb.TargetDefinition_RuleTarget)
+	targetKind, ok := targetValue.Message.Definition.GetKind().(*model_starlark_pb.Target_Definition_RuleTarget)
 	if !ok {
-		return model_core.NewSimplePatchedMessage[dag.ObjectContentsWalker](&model_analysis_pb.ConfiguredTarget_Value{
-			Result: &model_analysis_pb.ConfiguredTarget_Value_Failure{
-				Failure: "Only rule targets can be configured",
-			},
-		}), nil
+		return PatchedConfiguredTargetValue{}, errors.New("only rule targets can be configured")
 	}
 	ruleTarget := targetKind.RuleTarget
 
-	configuredRule, err := e.GetConfiguredRuleObjectValue(&model_analysis_pb.ConfiguredRuleObject_Key{
+	configuredRule, gotConfiguredRule := e.GetConfiguredRuleObjectValue(&model_analysis_pb.ConfiguredRuleObject_Key{
 		Identifier: ruleTarget.RuleIdentifier,
 	})
-	if err != nil {
-		return PatchedConfiguredTargetValue{}, err
+	if !gotConfiguredRule {
+		return PatchedConfiguredTargetValue{}, evaluation.ErrMissingDependency
 	}
 
 	allBuiltinsModulesNames := e.GetBuiltinsModuleNamesValue(&model_analysis_pb.BuiltinsModuleNames_Key{})
@@ -78,7 +53,7 @@ func (c *baseComputer) ComputeConfiguredTargetValue(ctx context.Context, key *mo
 	attrs := starlark.StringDict{}
 	attrValues := ruleTarget.AttrValues
 	missingDependencies := false
-	for _, publicAttr := range configuredRule.PublicAttrs {
+	for _, publicAttr := range configuredRule.Attrs.Public {
 		if len(attrValues) > 0 && attrValues[0].Name == publicAttr.Name {
 			var partValues []starlark.Value
 			for selectGroupIndex, selectGroup := range attrValues[0].ValueParts {
@@ -102,30 +77,23 @@ func (c *baseComputer) ComputeConfiguredTargetValue(ctx context.Context, key *mo
 								missingDependencies = true
 								return starlark.None, nil
 							}
-							switch result := referencedTarget.Message.Result.(type) {
-							case *model_analysis_pb.ConfiguredTarget_Value_Success_:
-								providerInstances := make([]model_starlark.ProviderInstance, 0, len(result.Success.ProviderInstances))
-								for _, providerInstance := range result.Success.ProviderInstances {
-									pi, err := model_starlark.DecodeProviderInstance(
-										model_core.Message[*model_starlark_pb.Struct]{
-											Message:            providerInstance,
-											OutgoingReferences: referencedTarget.OutgoingReferences,
-										},
-										c.getValueDecodingOptions(ctx, func(canonicalLabel label.CanonicalLabel) (starlark.Value, error) {
-											return model_starlark.NewLabel(canonicalLabel), nil
-										}),
-									)
-									if err != nil {
-										return nil, err
-									}
-									providerInstances = append(providerInstances, pi)
+							providerInstances := make([]model_starlark.ProviderInstance, 0, len(referencedTarget.Message.ProviderInstances))
+							for _, providerInstance := range referencedTarget.Message.ProviderInstances {
+								pi, err := model_starlark.DecodeProviderInstance(
+									model_core.Message[*model_starlark_pb.Struct]{
+										Message:            providerInstance,
+										OutgoingReferences: referencedTarget.OutgoingReferences,
+									},
+									c.getValueDecodingOptions(ctx, func(canonicalLabel label.CanonicalLabel) (starlark.Value, error) {
+										return model_starlark.NewLabel(canonicalLabel), nil
+									}),
+								)
+								if err != nil {
+									return nil, err
 								}
-								return model_starlark.NewTargetReference(canonicalLabel, providerInstances), nil
-							case *model_analysis_pb.ConfiguredTarget_Value_Failure:
-								return nil, fmt.Errorf("unable to obtain configured target %#v: %s", canonicalLabel.String(), result.Failure)
-							default:
-								return nil, errors.New("configured target value has an unknown result type")
+								providerInstances = append(providerInstances, pi)
 							}
+							return model_starlark.NewTargetReference(canonicalLabel, providerInstances), nil
 						}),
 					)
 					if err != nil {
@@ -137,11 +105,7 @@ func (c *baseComputer) ComputeConfiguredTargetValue(ctx context.Context, key *mo
 				case nil:
 					panic("TODO")
 				default:
-					return model_core.NewSimplePatchedMessage[dag.ObjectContentsWalker](&model_analysis_pb.ConfiguredTarget_Value{
-						Result: &model_analysis_pb.ConfiguredTarget_Value_Failure{
-							Failure: fmt.Sprintf("Invalid type for no-match of group %d of attribute %s", selectGroupIndex, publicAttr.Name),
-						},
-					}), nil
+					return PatchedConfiguredTargetValue{}, fmt.Errorf("invalid type for no-match of group %d of attribute %s", selectGroupIndex, publicAttr.Name)
 				}
 			}
 
@@ -154,21 +118,13 @@ func (c *baseComputer) ComputeConfiguredTargetValue(ctx context.Context, key *mo
 		} else if d := publicAttr.Default; d != nil {
 			attrs[publicAttr.Name] = d
 		} else {
-			return model_core.NewSimplePatchedMessage[dag.ObjectContentsWalker](&model_analysis_pb.ConfiguredTarget_Value{
-				Result: &model_analysis_pb.ConfiguredTarget_Value_Failure{
-					Failure: fmt.Sprintf("Missing value for mandatory attribute %#v", publicAttr.Name),
-				},
-			}), nil
+			return PatchedConfiguredTargetValue{}, fmt.Errorf("missing value for mandatory attribute %#v", publicAttr.Name)
 		}
 	}
 	if len(attrValues) > 0 {
-		return model_core.NewSimplePatchedMessage[dag.ObjectContentsWalker](&model_analysis_pb.ConfiguredTarget_Value{
-			Result: &model_analysis_pb.ConfiguredTarget_Value_Failure{
-				Failure: fmt.Sprintf("Unknown attribute %#v", attrValues[0].Name),
-			},
-		}), nil
+		return PatchedConfiguredTargetValue{}, fmt.Errorf("unknown attribute %#v", attrValues[0].Name)
 	}
-	for name, value := range configuredRule.PrivateAttrs {
+	for name, value := range configuredRule.Attrs.Private {
 		attrs[name] = value
 	}
 
@@ -176,7 +132,7 @@ func (c *baseComputer) ComputeConfiguredTargetValue(ctx context.Context, key *mo
 		return PatchedConfiguredTargetValue{}, evaluation.ErrMissingDependency
 	}
 
-	thread := c.newStarlarkThread(e, allBuiltinsModulesNames.Message.BuiltinsModuleNames)
+	thread := c.newStarlarkThread(ctx, e, allBuiltinsModulesNames.Message.BuiltinsModuleNames)
 	returnValue, err := starlark.Call(
 		thread,
 		configuredRule.Implementation,
@@ -215,11 +171,7 @@ func (c *baseComputer) ComputeConfiguredTargetValue(ctx context.Context, key *mo
 		}
 		providerIdentifier := v.Message.ProviderIdentifier
 		if _, ok := encodedProviderInstances[providerIdentifier]; ok {
-			return model_core.NewSimplePatchedMessage[dag.ObjectContentsWalker](&model_analysis_pb.ConfiguredTarget_Value{
-				Result: &model_analysis_pb.ConfiguredTarget_Value_Failure{
-					Failure: fmt.Sprintf("Implementation function returned multiple structs for provider %#v", providerIdentifier),
-				},
-			}), nil
+			return PatchedConfiguredTargetValue{}, fmt.Errorf("implementation function returned multiple structs for provider %#v", providerIdentifier)
 		}
 		encodedProviderInstances[v.Message.ProviderIdentifier] = v
 	}
@@ -234,11 +186,7 @@ func (c *baseComputer) ComputeConfiguredTargetValue(ctx context.Context, key *mo
 
 	return model_core.PatchedMessage[*model_analysis_pb.ConfiguredTarget_Value, dag.ObjectContentsWalker]{
 		Message: &model_analysis_pb.ConfiguredTarget_Value{
-			Result: &model_analysis_pb.ConfiguredTarget_Value_Success_{
-				Success: &model_analysis_pb.ConfiguredTarget_Value_Success{
-					ProviderInstances: sortedProviderInstances,
-				},
-			},
+			ProviderInstances: sortedProviderInstances,
 		},
 		Patcher: patcher,
 	}, nil

@@ -2,8 +2,6 @@ package filesystem
 
 import (
 	"context"
-	"io"
-	"math"
 	"sync"
 	"sync/atomic"
 
@@ -20,16 +18,34 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
-type CapturableDirectory interface {
-	EnterCapturableDirectory(name path.Component) (CapturableDirectoryCloser, error)
-	OpenRead(name path.Component) (filesystem.FileReader, error)
+// CapturableDirectory is an interface for a directory that can be
+// traversed by CreateFileMerkleTree().
+type CapturableDirectory[TDirectory, TFile model_core.ReferenceMetadata] interface {
+	// Identical to filesystem.Directory.
+	Close() error
 	ReadDir() ([]filesystem.FileInfo, error)
 	Readlink(name path.Component) (path.Parser, error)
+
+	// Enter a directory, so that it may be traversed. The
+	// implementation has the possibility to return an existing
+	// Directory message. This can be of use when computing a Merkle
+	// tree that is based on an existing directory structure that is
+	// altered slightly.
+	EnterCapturableDirectory(name path.Component) (model_core.PatchedMessage[*model_filesystem_pb.Directory, TDirectory], CapturableDirectory[TDirectory, TFile], error)
+
+	// Open a file, so that a Merkle tree of its contents can be
+	// computed. The actual Merkle tree computation is performed by
+	// calling CapturableFile.CreateFileMerkleTree(). That way file
+	// Merkle tree computation can happen in parallel.
+	OpenForFileMerkleTreeCreation(name path.Component) (CapturableFile[TFile], error)
 }
 
-type CapturableDirectoryCloser interface {
-	CapturableDirectory
-	Close() error
+// CapturableFile is called into by CreateFileMerkleTree() to obtain a
+// Merkle tree for a given file. Either one of these methods will be
+// called exactly once.
+type CapturableFile[TFile model_core.ReferenceMetadata] interface {
+	CreateFileMerkleTree(ctx context.Context) (model_core.PatchedMessage[*model_filesystem_pb.FileContents, TFile], error)
+	Discard()
 }
 
 type unfinalizedDirectory[TDirectory, TFile model_core.ReferenceMetadata] struct {
@@ -52,12 +68,11 @@ type directoryMerkleTreeBuilder[TDirectory, TFile model_core.ReferenceMetadata] 
 	concurrency                 *semaphore.Weighted
 	group                       *errgroup.Group
 	directoryInlinedTreeOptions inlinedtree.Options
-	fileParameters              *FileCreationParameters
 	capturer                    DirectoryMerkleTreeCapturer[TDirectory, TFile]
 }
 
 func (b *directoryMerkleTreeBuilder[TDirectory, TFile]) walkDirectory(
-	directory CapturableDirectory,
+	directory CapturableDirectory[TDirectory, TFile],
 	directoryPath *path.Trace,
 	parent *unfinalizedDirectory[TDirectory, TFile],
 	out *model_core.PatchedMessage[*model_filesystem_pb.Directory, TDirectory],
@@ -87,25 +102,25 @@ func (b *directoryMerkleTreeBuilder[TDirectory, TFile]) walkDirectory(
 	}
 
 	ud := unfinalizedDirectory[TDirectory, TFile]{
-		leaves: model_core.PatchedMessage[*model_filesystem_pb.Leaves, TFile]{
-			Message: &model_filesystem_pb.Leaves{
+		leaves: model_core.NewSimplePatchedMessage[TFile](
+			&model_filesystem_pb.Leaves{
 				Files:    make([]*model_filesystem_pb.FileNode, 0, filesCount),
 				Symlinks: make([]*model_filesystem_pb.SymlinkNode, 0, symlinksCount),
 			},
-			Patcher: model_core.NewReferenceMessagePatcher[TFile](),
-		},
+		),
 		directories: make([]unfinalizedDirectoryNode[TDirectory], 0, directoriesCount),
 		parent:      parent,
 		out:         out,
 	}
 	ud.unfinalizedCount.Store(uint32(directoriesCount + filesCount + 1))
 
+	finalized := uint32(1)
 	for _, entry := range entries {
 		name := entry.Name()
 		switch entry.Type() {
 		case filesystem.FileTypeDirectory:
 			childPath := directoryPath.Append(name)
-			child, err := directory.EnterCapturableDirectory(name)
+			childExisting, childDirectory, err := directory.EnterCapturableDirectory(name)
 			if err != nil {
 				return util.StatusWrapf(err, "Failed to open directory %#v", childPath.GetUNIXString())
 			}
@@ -113,18 +128,27 @@ func (b *directoryMerkleTreeBuilder[TDirectory, TFile]) walkDirectory(
 				ud.directories,
 				unfinalizedDirectoryNode[TDirectory]{name: name},
 			)
-			err = b.walkDirectory(
-				child,
-				childPath,
-				&ud,
-				&ud.directories[len(ud.directories)-1].externalMessage,
-			)
-			child.Close()
-			if err != nil {
-				return err
+			if childOut := &ud.directories[len(ud.directories)-1].externalMessage; childExisting.IsSet() {
+				// There is no need to recursively
+				// traverse this directory, as the
+				// directory's contents were computed
+				// previously.
+				*childOut = childExisting
+				finalized++
+			} else {
+				err = b.walkDirectory(
+					childDirectory,
+					childPath,
+					&ud,
+					childOut,
+				)
+				childDirectory.Close()
+				if err != nil {
+					return err
+				}
 			}
 		case filesystem.FileTypeRegularFile:
-			f, err := directory.OpenRead(name)
+			f, err := directory.OpenForFileMerkleTreeCreation(name)
 			if err != nil {
 				return util.StatusWrapf(err, "Failed to open file %#v", directoryPath.Append(name).GetUNIXString())
 			}
@@ -137,19 +161,13 @@ func (b *directoryMerkleTreeBuilder[TDirectory, TFile]) walkDirectory(
 			ud.leaves.Message.Files = append(ud.leaves.Message.Files, fileNode)
 
 			if err := util.AcquireSemaphore(b.context, b.concurrency, 1); err != nil {
-				f.Close()
+				f.Discard()
 				return err
 			}
 			b.group.Go(func() error {
 				defer b.concurrency.Release(1)
 
-				fileContents, err := CreateFileMerkleTree(
-					b.context,
-					b.fileParameters,
-					io.NewSectionReader(f, 0, math.MaxInt64),
-					b.capturer,
-				)
-				f.Close()
+				fileContents, err := f.CreateFileMerkleTree(b.context)
 				if err != nil {
 					return util.StatusWrapf(err, "Failed to create Merkle tree for file %#v", directoryPath.Append(name).GetUNIXString())
 				}
@@ -160,7 +178,7 @@ func (b *directoryMerkleTreeBuilder[TDirectory, TFile]) walkDirectory(
 					ud.leaves.Patcher.Merge(fileContents.Patcher)
 					ud.leavesPatcherLock.Unlock()
 				}
-				return b.maybeFinalizeDirectory(&ud)
+				return b.maybeFinalizeDirectory(&ud, 1)
 			})
 		case filesystem.FileTypeSymlink:
 			targetParser, err := directory.Readlink(name)
@@ -181,11 +199,12 @@ func (b *directoryMerkleTreeBuilder[TDirectory, TFile]) walkDirectory(
 		}
 	}
 
-	return b.maybeFinalizeDirectory(&ud)
+	return b.maybeFinalizeDirectory(&ud, finalized)
 }
 
-func (b *directoryMerkleTreeBuilder[TDirectory, TFile]) maybeFinalizeDirectory(ud *unfinalizedDirectory[TDirectory, TFile]) error {
-	for ; ud.unfinalizedCount.Add(^uint32(0)) == 0; ud = ud.parent {
+func (b *directoryMerkleTreeBuilder[TDirectory, TFile]) maybeFinalizeDirectory(ud *unfinalizedDirectory[TDirectory, TFile], count uint32) error {
+	for ; ud.unfinalizedCount.Add(-count) == 0; ud = ud.parent {
+		count = 1
 		inlineCandidates := make(inlinedtree.CandidateList[*model_filesystem_pb.Directory, TDirectory], 0, 1+len(ud.directories))
 		defer inlineCandidates.Discard()
 
@@ -287,8 +306,7 @@ func CreateDirectoryMerkleTree[TDirectory, TFile model_core.ReferenceMetadata](
 	concurrency *semaphore.Weighted,
 	group *errgroup.Group,
 	directoryParameters *DirectoryCreationParameters,
-	fileParameters *FileCreationParameters,
-	directory CapturableDirectory,
+	directory CapturableDirectory[TDirectory, TFile],
 	capturer DirectoryMerkleTreeCapturer[TDirectory, TFile],
 	out *model_core.PatchedMessage[*model_filesystem_pb.Directory, TDirectory],
 ) error {
@@ -301,8 +319,7 @@ func CreateDirectoryMerkleTree[TDirectory, TFile model_core.ReferenceMetadata](
 			Encoder:          directoryParameters.encoder,
 			MaximumSizeBytes: directoryParameters.directoryMaximumSizeBytes,
 		},
-		fileParameters: fileParameters,
-		capturer:       capturer,
+		capturer: capturer,
 	}
 
 	var parent unfinalizedDirectory[TDirectory, TFile]

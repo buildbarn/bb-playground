@@ -16,6 +16,8 @@
 
 load("@rules_cc//cc/private/toolchain:cc_configure.bzl", _cc_configure = "cc_configure")  # buildifier: disable=bzl-visibility
 load("@rules_cc//cc/toolchains:toolchain_config_utils.bzl", _MSVC_ENVVARS = "MSVC_ENVVARS")
+load("@rules_cc//cc:extensions.bzl", _cc_configure_extension = "cc_configure_extension")
 
 MSVC_ENVVARS = _MSVC_ENVVARS
 cc_configure = _cc_configure
+cc_configure_extension = _cc_configure_extension

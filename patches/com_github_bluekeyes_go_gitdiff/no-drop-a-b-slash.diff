@@ -1,0 +1,36 @@
+diff --git gitdiff/file_header.go gitdiff/file_header.go
+index 7ae4bc9..af529b7 100644
+--- gitdiff/file_header.go
++++ gitdiff/file_header.go
+@@ -66,12 +66,7 @@ func (p *parser) ParseGitFileHeader() (*File, error) {
+ 	if !strings.HasPrefix(p.Line(0), prefix) {
+ 		return nil, nil
+ 	}
+-	header := p.Line(0)[len(prefix):]
+-
+-	defaultName, err := parseGitHeaderName(header)
+-	if err != nil {
+-		return nil, p.Errorf(0, "git file header: %v", err)
+-	}
++	defaultName := ""
+ 
+ 	f := &File{}
+ 	for {
+@@ -300,7 +295,7 @@ func parseGitHeaderData(f *File, line, defaultName string) (end bool, err error)
+ }
+ 
+ func parseGitHeaderOldName(f *File, line, defaultName string) error {
+-	name, _, err := parseName(line, '\t', 1)
++	name, _, err := parseName(line, '\t', 0)
+ 	if err != nil {
+ 		return err
+ 	}
+@@ -312,7 +307,7 @@ func parseGitHeaderOldName(f *File, line, defaultName string) error {
+ }
+ 
+ func parseGitHeaderNewName(f *File, line, defaultName string) error {
+-	name, _, err := parseName(line, '\t', 1)
++	name, _, err := parseName(line, '\t', 0)
+ 	if err != nil {
+ 		return err
+ 	}

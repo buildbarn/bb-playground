@@ -77,3 +77,30 @@ func (tcd *starlarkTagClassDefinition) Encode(path map[starlark.Value]struct{}, 
 		Patcher: encodedAttrs.Patcher,
 	}, needsCode, nil
 }
+
+type protoTagClassDefinition struct {
+	message model_core.Message[*model_starlark_pb.TagClass]
+}
+
+func NewProtoTagClassDefinition(message model_core.Message[*model_starlark_pb.TagClass]) TagClassDefinition {
+	return &protoTagClassDefinition{
+		message: message,
+	}
+}
+
+func (tcd *protoTagClassDefinition) Encode(path map[starlark.Value]struct{}, options *ValueEncodingOptions) (model_core.PatchedMessage[*model_starlark_pb.Value, dag.ObjectContentsWalker], bool, error) {
+	tagClass := model_core.NewPatchedMessageFromExisting(
+		tcd.message,
+		func(index int) dag.ObjectContentsWalker {
+			return dag.ExistingObjectContentsWalker
+		},
+	)
+	return model_core.PatchedMessage[*model_starlark_pb.Value, dag.ObjectContentsWalker]{
+		Message: &model_starlark_pb.Value{
+			Kind: &model_starlark_pb.Value_TagClass{
+				TagClass: tagClass.Message,
+			},
+		},
+		Patcher: tagClass.Patcher,
+	}, false, nil
+}

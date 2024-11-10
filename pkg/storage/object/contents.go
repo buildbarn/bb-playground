@@ -27,10 +27,13 @@ func NewContentsFromProto(reference LocalReference, m *object.Contents) (*Conten
 	if m == nil {
 		return nil, status.Error(codes.InvalidArgument, "No contents message provided")
 	}
+	return NewContentsFromFullData(reference, m.Data)
+}
 
+func NewContentsFromFullData(reference LocalReference, data []byte) (*Contents, error) {
 	c := &Contents{
 		referenceFormat: reference.GetReferenceFormat(),
-		data:            m.Data,
+		data:            data,
 		reference:       reference,
 	}
 
@@ -81,6 +84,10 @@ func (c *Contents) GetOutgoingReferencesList() OutgoingReferencesList {
 		})
 	}
 	return l
+}
+
+func (c *Contents) GetFullData() []byte {
+	return c.data
 }
 
 func (c *Contents) GetPayload() []byte {

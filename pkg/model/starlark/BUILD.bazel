@@ -19,6 +19,7 @@ go_library(
         "package_group.go",
         "parse_repo_dot_bazel.go",
         "provider.go",
+        "repo_registrar.go",
         "repository_rule.go",
         "rule.go",
         "select.go",
