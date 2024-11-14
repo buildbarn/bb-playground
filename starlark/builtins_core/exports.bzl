@@ -106,6 +106,9 @@ def _platform_impl(ctx):
         constraints[setting_label] = value_label
 
     exec_properties = ctx.attr.exec_properties
+    repository_os_arch = ctx.attr.repository_os_arch
+    repository_os_environ = ctx.attr.repository_os_environ
+    repository_os_name = ctx.attr.repository_os_name
 
     # Inherit properties from the parent platform.
     if ctx.attr.parents:
@@ -114,21 +117,88 @@ def _platform_impl(ctx):
         parent = ctx.attr.parents[0][PlatformInfo]
         constraints = parent.constraints | constraints
         exec_properties = parent.exec_properties | exec_properties
+        repository_os_arch = repository_os_arch or parent.repository_os_arch
+        repository_os_environ = repository_os_environ or parent.repository_os_environ
+        repository_os_name = repository_os_name or parent.repository_os_name
 
     return [PlatformInfo(
         constraints = constraints,
         exec_properties = exec_properties,
+        repository_os_arch = repository_os_arch,
+        repository_os_environ = repository_os_environ,
+        repository_os_name = repository_os_name,
     )]
 
 platform = rule(
     implementation = _platform_impl,
     attrs = {
         "constraint_values": attr.label_list(
+            doc = """
+            The combination of constraint choices that this platform
+            comprises. In order for a platform to apply to a given
+            environment, the environment must have at least the values
+            in this list.
+
+            Each constraint_value in this list must be for a different
+            constraint_setting. For example, you cannot define a
+            platform that requires the cpu architecture to be both
+            @platforms//cpu:x86_64 and @platforms//cpu:arm.
+            """,
             providers = [ConstraintValueInfo],
         ),
-        "exec_properties": attr.string_dict(),
+        "exec_properties": attr.string_dict(
+            doc = """
+            A map of strings that affect the way actions are executed
+            remotely. Bazel makes no attempt to interpret this, it is
+            treated as opaque data that's forwarded via the Platform
+            field of the remote execution protocol. This includes any
+            data from the parent platform's exec_properties attributes.
+            If the child and parent platform define the same keys, the
+            child's values are kept. Any keys associated with a value
+            that is an empty string are removed from the dictionary.
+            """,
+        ),
         "parents": attr.label_list(
+            doc = """
+            The label of a platform target that this platform should
+            inherit from. Although the attribute takes a list, there
+            should be no more than one platform present. Any
+            constraint_settings not set directly on this platform will
+            be found in the parent platform. See the section on Platform
+            Inheritance for details.
+            """,
             providers = [PlatformInfo],
+        ),
+        "repository_os_arch": attr.string(
+            doc = """
+            If this platform is used as a platform for executing
+            commands as part of module extensions or repository rules,
+            the name of the architecture to announce via
+            repository_os.arch.
+
+            This attribute should match the value of the "os.arch" Java
+            property converted to lower case (e.g., "aarch64" for ARM64,
+            "amd64" for x86-64, "x86" for x86-32).
+            """,
+        ),
+        "repository_os_environ": attr.string_dict(
+            doc = """
+            If this platform is used as a platform for executing
+            commands as part of module extensions or repository rules,
+            environment variables to announce via repository_os.environ.
+            """,
+        ),
+        "repository_os_name": attr.string(
+            doc = """
+            If this platform is used as a platform for executing
+            commands as part of module extensions or repository rules,
+            the operating system name to announce via
+            repository_os.name.
+
+            This attribute should match the value of the "os.name" Java
+            property converted to lower case (e.g., "linux", "mac os x",
+            "windows 10").
+            """,
         ),
     },
     # platform() cannot contain any exec_groups, as that would cause a

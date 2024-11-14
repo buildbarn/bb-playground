@@ -144,6 +144,11 @@ var commonFlags = []flag{
 		description: "Value to pass as instance_name in the remote execution API.",
 		flagType:    stringFlagType{},
 	},
+	{
+		longName:    "repo_platform",
+		description: "A label of a platform() target that is used to determine the platform that is used to execute repository rules and module extensions. If this argument is not provided, repository rules and module extensions cannot be evaluated.",
+		flagType:    stringFlagType{},
+	},
 }
 
 var commands = map[string]command{

@@ -10,7 +10,7 @@ import (
 )
 
 type TagClass struct {
-	definition TagClassDefinition
+	TagClassDefinition
 }
 
 var (
@@ -20,7 +20,7 @@ var (
 
 func NewTagClass(definition TagClassDefinition) starlark.Value {
 	return &TagClass{
-		definition: definition,
+		TagClassDefinition: definition,
 	}
 }
 
@@ -44,11 +44,22 @@ func (TagClass) Hash() (uint32, error) {
 }
 
 func (tc *TagClass) EncodeValue(path map[starlark.Value]struct{}, currentIdentifier *pg_label.CanonicalStarlarkIdentifier, options *ValueEncodingOptions) (model_core.PatchedMessage[*model_starlark_pb.Value, dag.ObjectContentsWalker], bool, error) {
-	return tc.definition.Encode(path, options)
+	tagClass, needsCode, err := tc.TagClassDefinition.Encode(path, options)
+	if err != nil {
+		return model_core.PatchedMessage[*model_starlark_pb.Value, dag.ObjectContentsWalker]{}, false, err
+	}
+	return model_core.PatchedMessage[*model_starlark_pb.Value, dag.ObjectContentsWalker]{
+		Message: &model_starlark_pb.Value{
+			Kind: &model_starlark_pb.Value_TagClass{
+				TagClass: tagClass.Message,
+			},
+		},
+		Patcher: tagClass.Patcher,
+	}, needsCode, nil
 }
 
 type TagClassDefinition interface {
-	Encode(path map[starlark.Value]struct{}, options *ValueEncodingOptions) (model_core.PatchedMessage[*model_starlark_pb.Value, dag.ObjectContentsWalker], bool, error)
+	Encode(path map[starlark.Value]struct{}, options *ValueEncodingOptions) (model_core.PatchedMessage[*model_starlark_pb.TagClass, dag.ObjectContentsWalker], bool, error)
 }
 
 type starlarkTagClassDefinition struct {
@@ -61,18 +72,14 @@ func NewStarlarkTagClassDefinition(attrs map[pg_label.StarlarkIdentifier]*Attr) 
 	}
 }
 
-func (tcd *starlarkTagClassDefinition) Encode(path map[starlark.Value]struct{}, options *ValueEncodingOptions) (model_core.PatchedMessage[*model_starlark_pb.Value, dag.ObjectContentsWalker], bool, error) {
+func (tcd *starlarkTagClassDefinition) Encode(path map[starlark.Value]struct{}, options *ValueEncodingOptions) (model_core.PatchedMessage[*model_starlark_pb.TagClass, dag.ObjectContentsWalker], bool, error) {
 	encodedAttrs, needsCode, err := encodeNamedAttrs(tcd.attrs, path, options)
 	if err != nil {
-		return model_core.PatchedMessage[*model_starlark_pb.Value, dag.ObjectContentsWalker]{}, false, nil
+		return model_core.PatchedMessage[*model_starlark_pb.TagClass, dag.ObjectContentsWalker]{}, false, nil
 	}
-	return model_core.PatchedMessage[*model_starlark_pb.Value, dag.ObjectContentsWalker]{
-		Message: &model_starlark_pb.Value{
-			Kind: &model_starlark_pb.Value_TagClass{
-				TagClass: &model_starlark_pb.TagClass{
-					Attrs: encodedAttrs.Message,
-				},
-			},
+	return model_core.PatchedMessage[*model_starlark_pb.TagClass, dag.ObjectContentsWalker]{
+		Message: &model_starlark_pb.TagClass{
+			Attrs: encodedAttrs.Message,
 		},
 		Patcher: encodedAttrs.Patcher,
 	}, needsCode, nil
@@ -88,19 +95,11 @@ func NewProtoTagClassDefinition(message model_core.Message[*model_starlark_pb.Ta
 	}
 }
 
-func (tcd *protoTagClassDefinition) Encode(path map[starlark.Value]struct{}, options *ValueEncodingOptions) (model_core.PatchedMessage[*model_starlark_pb.Value, dag.ObjectContentsWalker], bool, error) {
-	tagClass := model_core.NewPatchedMessageFromExisting(
+func (tcd *protoTagClassDefinition) Encode(path map[starlark.Value]struct{}, options *ValueEncodingOptions) (model_core.PatchedMessage[*model_starlark_pb.TagClass, dag.ObjectContentsWalker], bool, error) {
+	return model_core.NewPatchedMessageFromExisting(
 		tcd.message,
 		func(index int) dag.ObjectContentsWalker {
 			return dag.ExistingObjectContentsWalker
 		},
-	)
-	return model_core.PatchedMessage[*model_starlark_pb.Value, dag.ObjectContentsWalker]{
-		Message: &model_starlark_pb.Value{
-			Kind: &model_starlark_pb.Value_TagClass{
-				TagClass: tagClass.Message,
-			},
-		},
-		Patcher: tagClass.Patcher,
-	}, false, nil
+	), false, nil
 }

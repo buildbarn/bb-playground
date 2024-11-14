@@ -82,8 +82,8 @@ func (fr *FileReader) FileReadAt(ctx context.Context, fileContents FileContentsE
 	return nRead, nil
 }
 
-func (fr *FileReader) FileOpenRead(ctx context.Context, fileContents FileContentsEntry, offsetBytes uint64) io.Reader {
-	return &sequentialFileReader{
+func (fr *FileReader) FileOpenRead(ctx context.Context, fileContents FileContentsEntry, offsetBytes uint64) *SequentialFileReader {
+	return &SequentialFileReader{
 		context:              ctx,
 		fileReader:           fr,
 		fileContentsIterator: NewFileContentsIterator(fileContents, offsetBytes),
@@ -100,7 +100,7 @@ func (fr *FileReader) FileOpenReadAt(ctx context.Context, fileContents FileConte
 	}
 }
 
-type sequentialFileReader struct {
+type SequentialFileReader struct {
 	context              context.Context
 	fileReader           *FileReader
 	fileContentsIterator FileContentsIterator
@@ -109,7 +109,7 @@ type sequentialFileReader struct {
 	sizeBytes            uint64
 }
 
-func (r *sequentialFileReader) Read(p []byte) (int, error) {
+func (r *SequentialFileReader) Read(p []byte) (int, error) {
 	nRead := 0
 	for {
 		// Copy data from a previously read chunk.
@@ -132,6 +132,14 @@ func (r *sequentialFileReader) Read(p []byte) (int, error) {
 		r.chunk = chunk
 		r.offsetBytes += uint64(len(chunk))
 	}
+}
+
+func (r *SequentialFileReader) ReadByte() (byte, error) {
+	var b [1]byte
+	if n, err := r.Read(b[:]); n == 0 {
+		return 0, err
+	}
+	return b[0], nil
 }
 
 type randomAccessFileReader struct {

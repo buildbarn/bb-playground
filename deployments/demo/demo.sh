@@ -15,6 +15,7 @@ source "${RUNFILES_DIR:-/dev/null}/$f" 2>/dev/null || \
 set -eu
 
 export STATE_PATH="${HOME}/playground_demo"
+mkdir -p "${STATE_PATH}/playground_builder_cache"
 rm -rf "${STATE_PATH}/playground_builder_filepool"
 mkdir -p "${STATE_PATH}/playground_builder_filepool"
 

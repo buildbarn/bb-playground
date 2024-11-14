@@ -5,7 +5,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"path"
 	"sort"
 
 	"github.com/buildbarn/bb-playground/pkg/evaluation"
@@ -32,7 +31,7 @@ func (c *baseComputer) ComputeCompiledBzlFileValue(ctx context.Context, key *mod
 
 	bzlFileProperties := e.GetFilePropertiesValue(&model_analysis_pb.FileProperties_Key{
 		CanonicalRepo: canonicalRepo.String(),
-		Path:          path.Join(canonicalPackage.GetPackagePath(), canonicalLabel.GetTargetName().String()),
+		Path:          canonicalLabel.GetRepoRelativePath(),
 	})
 	fileReader, gotFileReader := e.GetFileReaderValue(&model_analysis_pb.FileReader_Key{})
 	bzlFileBuiltins, bzlFileBuiltinsErr := c.getBzlFileBuiltins(e, key.BuiltinsModuleNames, model_starlark.BzlFileBuiltins, "exported_toplevels")

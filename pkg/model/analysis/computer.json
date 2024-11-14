@@ -180,6 +180,7 @@
             "CompiledBzlFileDecodedGlobals",
             "CompiledBzlFileFunctionFactory",
             "CompiledBzlFileGlobal",
+            "RegisteredRepoPlatform",
             "RootModule",
             "UsedModuleExtension"
          ]
@@ -256,6 +257,14 @@
             "RootModule"
          ]
       },
+      "RegisteredRepoPlatform": {
+         "dependsOn": [
+            "BuildSpecification",
+            "CanonicalRepoName",
+            "ConfiguredTarget",
+            "RootModule"
+         ]
+      },
       "RegisteredToolchains": {
          "dependsOn": [
             "CanonicalRepoName",
@@ -275,11 +284,13 @@
             "CompiledBzlFileFunctionFactory",
             "DirectoryCreationParametersObject",
             "FileCreationParametersObject",
+            "FileProperties",
             "FileReader",
             "HttpArchiveContents",
             "HttpFileContents",
             "ModuleExtensionRepo",
             "ModuleFinalBuildList",
+            "RegisteredRepoPlatform",
             "RepositoryRuleObject",
             "RootModule"
          ]

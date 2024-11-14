@@ -1,0 +1,17 @@
+load("@rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "search",
+    srcs = ["multi_search_and_replacer.go"],
+    importpath = "github.com/buildbarn/bb-playground/pkg/search",
+    visibility = ["//visibility:public"],
+)
+
+go_test(
+    name = "search_test",
+    srcs = ["multi_search_and_replacer_test.go"],
+    deps = [
+        ":search",
+        "@com_github_stretchr_testify//require",
+    ],
+)

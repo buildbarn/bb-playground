@@ -84,4 +84,13 @@ message BuildSpecification {
   // TODO: This feature is only present to aid development, and should
   // be removed at some point.
   repeated string builtins_module_names = 9;
+
+  // Apparent label of the platform() that should be used for executing
+  // commands as part of module extensions and repository rules. The
+  // label is assumed to be relative to the root package of the root
+  // module.
+  //
+  // If this field is not set, the build will be unable to evaluate
+  // module extensions and repository rules.
+  string repo_platform = 10;
 }

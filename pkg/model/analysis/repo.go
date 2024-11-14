@@ -10,7 +10,6 @@ import (
 	"io"
 	"maps"
 	"net/url"
-	"path"
 	"slices"
 	"sort"
 	"strings"
@@ -27,11 +26,12 @@ import (
 	model_core_pb "github.com/buildbarn/bb-playground/pkg/proto/model/core"
 	model_filesystem_pb "github.com/buildbarn/bb-playground/pkg/proto/model/filesystem"
 	model_starlark_pb "github.com/buildbarn/bb-playground/pkg/proto/model/starlark"
+	"github.com/buildbarn/bb-playground/pkg/search"
 	"github.com/buildbarn/bb-playground/pkg/starlark/unpack"
 	"github.com/buildbarn/bb-playground/pkg/storage/dag"
 	"github.com/buildbarn/bb-playground/pkg/storage/object"
 	"github.com/buildbarn/bb-storage/pkg/filesystem"
-	bb_path "github.com/buildbarn/bb-storage/pkg/filesystem/path"
+	"github.com/buildbarn/bb-storage/pkg/filesystem/path"
 	"github.com/buildbarn/bb-storage/pkg/util"
 
 	"golang.org/x/sync/errgroup"
@@ -58,9 +58,9 @@ type changeTrackingDirectory struct {
 	// requiring it to be recomputed and uploaded once again.
 	currentReference model_core.Message[*model_core_pb.Reference]
 
-	directories map[bb_path.Component]*changeTrackingDirectory
-	files       map[bb_path.Component]*changeTrackingFile
-	symlinks    map[bb_path.Component]string
+	directories map[path.Component]*changeTrackingDirectory
+	files       map[path.Component]*changeTrackingFile
+	symlinks    map[path.Component]string
 }
 
 func (d *changeTrackingDirectory) setContents(contents model_core.Message[*model_filesystem_pb.Directory], options *changeTrackingDirectoryLoadOptions) error {
@@ -87,9 +87,9 @@ func (d *changeTrackingDirectory) setContents(contents model_core.Message[*model
 		return errors.New("unknown leaves contents type")
 	}
 
-	d.files = make(map[bb_path.Component]*changeTrackingFile, len(leaves.Message.Files))
+	d.files = make(map[path.Component]*changeTrackingFile, len(leaves.Message.Files))
 	for _, file := range leaves.Message.Files {
-		name, ok := bb_path.NewComponent(file.Name)
+		name, ok := path.NewComponent(file.Name)
 		if !ok {
 			return fmt.Errorf("file %#v has an invalid name", file.Name)
 		}
@@ -107,18 +107,18 @@ func (d *changeTrackingDirectory) setContents(contents model_core.Message[*model
 			},
 		}
 	}
-	d.symlinks = make(map[bb_path.Component]string, len(leaves.Message.Symlinks))
+	d.symlinks = make(map[path.Component]string, len(leaves.Message.Symlinks))
 	for _, symlink := range leaves.Message.Symlinks {
-		name, ok := bb_path.NewComponent(symlink.Name)
+		name, ok := path.NewComponent(symlink.Name)
 		if !ok {
 			return fmt.Errorf("symbolic link %#v has an invalid name", symlink.Name)
 		}
 		d.symlinks[name] = symlink.Target
 	}
 
-	d.directories = make(map[bb_path.Component]*changeTrackingDirectory, len(contents.Message.Directories))
+	d.directories = make(map[path.Component]*changeTrackingDirectory, len(contents.Message.Directories))
 	for _, directory := range contents.Message.Directories {
-		name, ok := bb_path.NewComponent(directory.Name)
+		name, ok := path.NewComponent(directory.Name)
 		if !ok {
 			return fmt.Errorf("directory %#v has an invalid name", directory.Name)
 		}
@@ -149,9 +149,9 @@ func (d *changeTrackingDirectory) setContents(contents model_core.Message[*model
 	return nil
 }
 
-func (d *changeTrackingDirectory) setFile(name bb_path.Component, f *changeTrackingFile) {
+func (d *changeTrackingDirectory) setFile(name path.Component, f *changeTrackingFile) {
 	if d.files == nil {
-		d.files = map[bb_path.Component]*changeTrackingFile{}
+		d.files = map[path.Component]*changeTrackingFile{}
 	}
 	d.files[name] = f
 }
@@ -239,7 +239,7 @@ type changeTrackingDirectoryResolver struct {
 	currentDirectory *changeTrackingDirectory
 }
 
-func (r *changeTrackingDirectoryResolver) OnDirectory(name bb_path.Component) (bb_path.GotDirectoryOrSymlink, error) {
+func (r *changeTrackingDirectoryResolver) OnDirectory(name path.Component) (path.GotDirectoryOrSymlink, error) {
 	d := r.currentDirectory
 	if err := d.maybeLoadContents(r.loadOptions); err != nil {
 		return nil, err
@@ -247,7 +247,7 @@ func (r *changeTrackingDirectoryResolver) OnDirectory(name bb_path.Component) (b
 
 	if dChild, ok := d.directories[name]; ok {
 		r.currentDirectory = dChild
-		return bb_path.GotDirectory{
+		return path.GotDirectory{
 			Child:        r,
 			IsReversible: true,
 		}, nil
@@ -256,11 +256,11 @@ func (r *changeTrackingDirectoryResolver) OnDirectory(name bb_path.Component) (b
 	return nil, errors.New("directory does not exist")
 }
 
-func (r *changeTrackingDirectoryResolver) OnTerminal(name bb_path.Component) (*bb_path.GotSymlink, error) {
-	return bb_path.OnTerminalViaOnDirectory(r, name)
+func (r *changeTrackingDirectoryResolver) OnTerminal(name path.Component) (*path.GotSymlink, error) {
+	return path.OnTerminalViaOnDirectory(r, name)
 }
 
-func (r *changeTrackingDirectoryResolver) OnUp() (bb_path.ComponentWalker, error) {
+func (r *changeTrackingDirectoryResolver) OnUp() (path.ComponentWalker, error) {
 	return nil, errors.New("path cannot go up")
 }
 
@@ -281,7 +281,7 @@ func (cd *capturableChangeTrackingDirectory) Close() error {
 	return nil
 }
 
-func (cd *capturableChangeTrackingDirectory) EnterCapturableDirectory(name bb_path.Component) (model_core.PatchedMessage[*model_filesystem_pb.Directory, model_core.FileBackedObjectLocation], model_filesystem.CapturableDirectory[model_core.FileBackedObjectLocation, model_core.FileBackedObjectLocation], error) {
+func (cd *capturableChangeTrackingDirectory) EnterCapturableDirectory(name path.Component) (model_core.PatchedMessage[*model_filesystem_pb.Directory, model_core.FileBackedObjectLocation], model_filesystem.CapturableDirectory[model_core.FileBackedObjectLocation, model_core.FileBackedObjectLocation], error) {
 	dChild, ok := cd.directory.directories[name]
 	if !ok {
 		panic("attempted to enter non-existent directory")
@@ -315,7 +315,7 @@ func (cd *capturableChangeTrackingDirectory) EnterCapturableDirectory(name bb_pa
 		nil
 }
 
-func (cd *capturableChangeTrackingDirectory) OpenForFileMerkleTreeCreation(name bb_path.Component) (model_filesystem.CapturableFile[model_core.FileBackedObjectLocation], error) {
+func (cd *capturableChangeTrackingDirectory) OpenForFileMerkleTreeCreation(name path.Component) (model_filesystem.CapturableFile[model_core.FileBackedObjectLocation], error) {
 	file, ok := cd.directory.files[name]
 	if !ok {
 		panic("attempted to enter non-existent file")
@@ -342,12 +342,12 @@ func (cd *capturableChangeTrackingDirectory) ReadDir() ([]filesystem.FileInfo, e
 	return infos, nil
 }
 
-func (cd *capturableChangeTrackingDirectory) Readlink(name bb_path.Component) (bb_path.Parser, error) {
+func (cd *capturableChangeTrackingDirectory) Readlink(name path.Component) (path.Parser, error) {
 	target, ok := cd.directory.symlinks[name]
 	if !ok {
 		panic("attempted to read non-existent symbolic link")
 	}
-	return bb_path.UNIXFormat.NewParser(target), nil
+	return path.UNIXFormat.NewParser(target), nil
 }
 
 type capturableChangeTrackingFile struct {
@@ -362,18 +362,18 @@ func (cf *capturableChangeTrackingFile) CreateFileMerkleTree(ctx context.Context
 func (cf *capturableChangeTrackingFile) Discard() {}
 
 type strippingComponentWalker struct {
-	remainder            bb_path.ComponentWalker
+	remainder            path.ComponentWalker
 	additionalStripCount int
 }
 
-func newStrippingComponentWalker(remainder bb_path.ComponentWalker, stripCount int) bb_path.ComponentWalker {
+func newStrippingComponentWalker(remainder path.ComponentWalker, stripCount int) path.ComponentWalker {
 	return strippingComponentWalker{
 		remainder:            remainder,
 		additionalStripCount: stripCount,
 	}.stripComponent()
 }
 
-func (cw strippingComponentWalker) stripComponent() bb_path.ComponentWalker {
+func (cw strippingComponentWalker) stripComponent() path.ComponentWalker {
 	if cw.additionalStripCount > 0 {
 		return strippingComponentWalker{
 			remainder:            cw.remainder,
@@ -383,18 +383,18 @@ func (cw strippingComponentWalker) stripComponent() bb_path.ComponentWalker {
 	return cw.remainder
 }
 
-func (cw strippingComponentWalker) OnDirectory(name bb_path.Component) (bb_path.GotDirectoryOrSymlink, error) {
-	return bb_path.GotDirectory{
+func (cw strippingComponentWalker) OnDirectory(name path.Component) (path.GotDirectoryOrSymlink, error) {
+	return path.GotDirectory{
 		Child:        cw.stripComponent(),
 		IsReversible: false,
 	}, nil
 }
 
-func (cw strippingComponentWalker) OnTerminal(name bb_path.Component) (*bb_path.GotSymlink, error) {
+func (cw strippingComponentWalker) OnTerminal(name path.Component) (*path.GotSymlink, error) {
 	return nil, nil
 }
 
-func (cw strippingComponentWalker) OnUp() (bb_path.ComponentWalker, error) {
+func (cw strippingComponentWalker) OnUp() (path.ComponentWalker, error) {
 	return cw.stripComponent(), nil
 }
 
@@ -404,14 +404,14 @@ type changeTrackingDirectoryExistingFileResolver struct {
 	file        *changeTrackingFile
 }
 
-func (cw *changeTrackingDirectoryExistingFileResolver) OnDirectory(name bb_path.Component) (bb_path.GotDirectoryOrSymlink, error) {
+func (cw *changeTrackingDirectoryExistingFileResolver) OnDirectory(name path.Component) (path.GotDirectoryOrSymlink, error) {
 	d := cw.stack.Peek()
 	if err := d.maybeLoadContents(cw.loadOptions); err != nil {
 		return nil, err
 	}
 	if dChild, ok := d.directories[name]; ok {
 		cw.stack.Push(dChild)
-		return bb_path.GotDirectory{
+		return path.GotDirectory{
 			Child:        cw,
 			IsReversible: true,
 		}, nil
@@ -419,7 +419,7 @@ func (cw *changeTrackingDirectoryExistingFileResolver) OnDirectory(name bb_path.
 	panic("TODO")
 }
 
-func (cw *changeTrackingDirectoryExistingFileResolver) OnTerminal(name bb_path.Component) (*bb_path.GotSymlink, error) {
+func (cw *changeTrackingDirectoryExistingFileResolver) OnTerminal(name path.Component) (*path.GotSymlink, error) {
 	d := cw.stack.Peek()
 	if err := d.maybeLoadContents(cw.loadOptions); err != nil {
 		return nil, err
@@ -432,7 +432,7 @@ func (cw *changeTrackingDirectoryExistingFileResolver) OnTerminal(name bb_path.C
 	return nil, nil
 }
 
-func (cw *changeTrackingDirectoryExistingFileResolver) OnUp() (bb_path.ComponentWalker, error) {
+func (cw *changeTrackingDirectoryExistingFileResolver) OnUp() (path.ComponentWalker, error) {
 	panic("TODO")
 }
 
@@ -440,10 +440,10 @@ type changeTrackingDirectoryNewFileResolver struct {
 	loadOptions      *changeTrackingDirectoryLoadOptions
 	currentDirectory *changeTrackingDirectory
 
-	name *bb_path.Component
+	name *path.Component
 }
 
-func (r *changeTrackingDirectoryNewFileResolver) OnDirectory(name bb_path.Component) (bb_path.GotDirectoryOrSymlink, error) {
+func (r *changeTrackingDirectoryNewFileResolver) OnDirectory(name path.Component) (path.GotDirectoryOrSymlink, error) {
 	d := r.currentDirectory
 	if err := d.maybeLoadContents(r.loadOptions); err != nil {
 		return nil, err
@@ -451,7 +451,7 @@ func (r *changeTrackingDirectoryNewFileResolver) OnDirectory(name bb_path.Compon
 
 	if dChild, ok := d.directories[name]; ok {
 		r.currentDirectory = dChild
-		return bb_path.GotDirectory{
+		return path.GotDirectory{
 			Child:        r,
 			IsReversible: true,
 		}, nil
@@ -460,7 +460,7 @@ func (r *changeTrackingDirectoryNewFileResolver) OnDirectory(name bb_path.Compon
 	return nil, errors.New("directory does not exist")
 }
 
-func (r *changeTrackingDirectoryNewFileResolver) OnTerminal(name bb_path.Component) (*bb_path.GotSymlink, error) {
+func (r *changeTrackingDirectoryNewFileResolver) OnTerminal(name path.Component) (*path.GotSymlink, error) {
 	d := r.currentDirectory
 	if _, ok := d.directories[name]; ok {
 		return nil, errors.New("path resolves to a directory")
@@ -472,7 +472,7 @@ func (r *changeTrackingDirectoryNewFileResolver) OnTerminal(name bb_path.Compone
 	return nil, nil
 }
 
-func (r *changeTrackingDirectoryNewFileResolver) OnUp() (bb_path.ComponentWalker, error) {
+func (r *changeTrackingDirectoryNewFileResolver) OnUp() (path.ComponentWalker, error) {
 	return nil, errors.New("path cannot go up")
 }
 
@@ -600,9 +600,9 @@ func (c *baseComputer) fetchModuleFromRegistry(ctx context.Context, module *mode
 		loadOptions:      loadOptions,
 		currentDirectory: rootDirectory,
 	}
-	if err := bb_path.Resolve(
-		bb_path.UNIXFormat.NewParser(sourceJSON.StripPrefix),
-		bb_path.NewRelativeScopeWalker(&rootDirectoryResolver),
+	if err := path.Resolve(
+		path.UNIXFormat.NewParser(sourceJSON.StripPrefix),
+		path.NewRelativeScopeWalker(&rootDirectoryResolver),
 	); err != nil {
 		return PatchedRepoValue{}, fmt.Errorf("failed to strip prefix %#v from contents of %#v: %s", sourceJSON.StripPrefix, sourceJSON.URL, err)
 	}
@@ -644,9 +644,9 @@ func (c *baseComputer) fetchModuleFromRegistry(ctx context.Context, module *mode
 					loadOptions: loadOptions,
 					stack:       util.NewNonEmptyStack(rootDirectory),
 				}
-				if err := bb_path.Resolve(
-					bb_path.UNIXFormat.NewParser(file.OldName),
-					bb_path.NewRelativeScopeWalker(
+				if err := path.Resolve(
+					path.UNIXFormat.NewParser(file.OldName),
+					path.NewRelativeScopeWalker(
 						newStrippingComponentWalker(r, sourceJSON.PatchStrip),
 					),
 				); err != nil {
@@ -694,9 +694,9 @@ func (c *baseComputer) fetchModuleFromRegistry(ctx context.Context, module *mode
 				loadOptions:      loadOptions,
 				currentDirectory: rootDirectory,
 			}
-			if err := bb_path.Resolve(
-				bb_path.UNIXFormat.NewParser(file.NewName),
-				bb_path.NewRelativeScopeWalker(
+			if err := path.Resolve(
+				path.UNIXFormat.NewParser(file.NewName),
+				path.NewRelativeScopeWalker(
 					newStrippingComponentWalker(r, sourceJSON.PatchStrip),
 				),
 			); err != nil {
@@ -728,6 +728,22 @@ func (c *baseComputer) fetchModuleFromRegistry(ctx context.Context, module *mode
 	)
 }
 
+// newRepositoryOS creates a repository_os object that can be embedded
+// into module_ctx and repository_ctx objects.
+func newRepositoryOS(repoPlatform *model_analysis_pb.RegisteredRepoPlatform_Value) starlark.Value {
+	environ := starlark.NewDict(len(repoPlatform.RepositoryOsEnviron))
+	for _, entry := range repoPlatform.RepositoryOsEnviron {
+		environ.SetKey(starlark.String(entry.Name), starlark.String(entry.Value))
+	}
+	s := starlarkstruct.FromStringDict(starlarkstruct.Default, starlark.StringDict{
+		"arch":    starlark.String(repoPlatform.RepositoryOsArch),
+		"environ": environ,
+		"name":    starlark.String(repoPlatform.RepositoryOsName),
+	})
+	s.Freeze()
+	return s
+}
+
 func (c *baseComputer) fetchModuleExtensionRepo(ctx context.Context, canonicalRepo label.CanonicalRepo, e RepoEnvironment) (PatchedRepoValue, error) {
 	// Obtain the definition of the declared repo.
 	repoValue := e.GetModuleExtensionRepoValue(&model_analysis_pb.ModuleExtensionRepo_Key{
@@ -736,7 +752,9 @@ func (c *baseComputer) fetchModuleExtensionRepo(ctx context.Context, canonicalRe
 	allBuiltinsModulesNames := e.GetBuiltinsModuleNamesValue(&model_analysis_pb.BuiltinsModuleNames_Key{})
 	directoryCreationParameters, gotDirectoryCreationParameters := e.GetDirectoryCreationParametersObjectValue(&model_analysis_pb.DirectoryCreationParametersObject_Key{})
 	fileCreationParameters, gotFileCreationParameters := e.GetFileCreationParametersObjectValue(&model_analysis_pb.FileCreationParametersObject_Key{})
-	if !repoValue.IsSet() || !allBuiltinsModulesNames.IsSet() || !gotDirectoryCreationParameters || !gotFileCreationParameters {
+	fileReader, gotFileReader := e.GetFileReaderValue(&model_analysis_pb.FileReader_Key{})
+	repoPlatform := e.GetRegisteredRepoPlatformValue(&model_analysis_pb.RegisteredRepoPlatform_Key{})
+	if !repoValue.IsSet() || !allBuiltinsModulesNames.IsSet() || !gotDirectoryCreationParameters || !gotFileCreationParameters || !gotFileReader || !repoPlatform.IsSet() {
 		return PatchedRepoValue{}, evaluation.ErrMissingDependency
 	}
 	repo := repoValue.Message.Definition
@@ -811,15 +829,13 @@ func (c *baseComputer) fetchModuleExtensionRepo(ctx context.Context, canonicalRe
 					"repository_ctx.file",
 					func(thread *starlark.Thread, b *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
 						content := ""
-						executable := false
+						executable := true
 						legacyUTF8 := true
 						var filePath label.CanonicalLabel
 						if err := starlark.UnpackArgs(
 							b.Name(), args, kwargs,
-							// Positional arguments.
 							// TODO: Permit arguments of type path.
 							"path", unpack.Bind(thread, &filePath, model_starlark.NewLabelOrStringUnpackerInto(canonicalRepo.GetRootPackage())),
-							// Keyword arguments.
 							"content?", unpack.Bind(thread, &content, unpack.String),
 							"executable?", unpack.Bind(thread, &executable, unpack.Bool),
 							"legacy_utf8?", unpack.Bind(thread, &legacyUTF8, unpack.Bool),
@@ -829,30 +845,114 @@ func (c *baseComputer) fetchModuleExtensionRepo(ctx context.Context, canonicalRe
 						if filePathRepo := filePath.GetCanonicalRepo(); filePathRepo != canonicalRepo {
 							return nil, fmt.Errorf("path resolves to file in repo %#v, while repo %#v was expected", filePathRepo.String(), canonicalRepo.String())
 						}
-						filePathStr := path.Join(
-							filePath.GetCanonicalPackage().GetPackagePath(),
-							filePath.GetTargetName().String(),
-						)
 
 						r := &changeTrackingDirectoryNewFileResolver{
 							loadOptions:      loadOptions,
 							currentDirectory: rootDirectory,
 						}
-						if err := bb_path.Resolve(
-							bb_path.UNIXFormat.NewParser(filePathStr),
-							bb_path.NewRelativeScopeWalker(r),
+						if err := path.Resolve(
+							path.UNIXFormat.NewParser(filePath.GetRepoRelativePath()),
+							path.NewRelativeScopeWalker(r),
 						); err != nil {
-							return nil, fmt.Errorf("cannot resolve path %#v: %w", filePathStr, err)
+							return nil, fmt.Errorf("cannot resolve %#v: %w", filePath.String(), err)
 						}
 						if r.name == nil {
-							return nil, fmt.Errorf("path %#v does not resolve to a file", filePathStr)
+							return nil, fmt.Errorf("%#v does not resolve to a file", filePath.String())
 						}
 
 						// TODO: Do UTF-8 -> ISO-8859-1
 						// conversion if legacy_utf8=False.
 						patchedFileOffsetBytes := patchedFilesWriter.offsetBytes
 						if _, err := patchedFilesWriter.WriteString(content); err != nil {
-							return nil, fmt.Errorf("failed to write to file at path %#v: %w", filePathStr, err)
+							return nil, fmt.Errorf("failed to write to file at %#v: %w", filePath.String(), err)
+						}
+
+						r.currentDirectory.setFile(*r.name, &changeTrackingFile{
+							isExecutable: executable,
+							contents: patchedFileContents{
+								offsetBytes: patchedFileOffsetBytes,
+								sizeBytes:   patchedFilesWriter.offsetBytes - patchedFileOffsetBytes,
+							},
+						})
+						return starlark.None, nil
+					},
+				),
+				"os": newRepositoryOS(repoPlatform.Message),
+				"template": starlark.NewBuiltin(
+					"repository_ctx.template",
+					func(thread *starlark.Thread, b *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
+						if len(args) > 4 {
+							return nil, fmt.Errorf("%s: got %d positional arguments, want at most 4", b.Name(), len(args))
+						}
+						var filePath label.CanonicalLabel
+						var templatePath label.CanonicalLabel
+						var substitutions map[string]string
+						executable := true
+						var watchTemplate string
+						if err := starlark.UnpackArgs(
+							b.Name(), args, kwargs,
+							// TODO: Permit arguments of type path.
+							"path", unpack.Bind(thread, &filePath, model_starlark.NewLabelOrStringUnpackerInto(canonicalRepo.GetRootPackage())),
+							"template", unpack.Bind(thread, &templatePath, model_starlark.NewLabelOrStringUnpackerInto(canonicalRepo.GetRootPackage())),
+							"substitutions?", unpack.Bind(thread, &substitutions, unpack.Dict(unpack.String, unpack.String)),
+							"executable?", unpack.Bind(thread, &executable, unpack.Bool),
+							"watch_template?", unpack.Bind(thread, &watchTemplate, unpack.String),
+						); err != nil {
+							return nil, err
+						}
+
+						needles := make([][]byte, 0, len(substitutions))
+						replacements := make([][]byte, 0, len(substitutions))
+						for _, needle := range slices.Sorted(maps.Keys(substitutions)) {
+							needles = append(needles, []byte(needle))
+							replacements = append(replacements, []byte(substitutions[needle]))
+						}
+						searchAndReplacer, err := search.NewMultiSearchAndReplacer(needles)
+						if err != nil {
+							return nil, fmt.Errorf("invalid substitution keys: %w", err)
+						}
+
+						// Load the template file.
+						templateProperties := e.GetFilePropertiesValue(&model_analysis_pb.FileProperties_Key{
+							CanonicalRepo: templatePath.GetCanonicalRepo().String(),
+							Path:          templatePath.GetRepoRelativePath(),
+						})
+						if !templateProperties.IsSet() {
+							return nil, evaluation.ErrMissingDependency
+						}
+						if templateProperties.Message.Exists == nil {
+							return nil, fmt.Errorf("template %#v does not exist", templatePath.String())
+						}
+						templateContents, err := model_filesystem.NewFileContentsEntryFromProto(
+							model_core.Message[*model_filesystem_pb.FileContents]{
+								Message:            templateProperties.Message.Exists.Contents,
+								OutgoingReferences: templateProperties.OutgoingReferences,
+							},
+							c.buildSpecificationReference.GetReferenceFormat(),
+						)
+						if err != nil {
+							return nil, fmt.Errorf("invalid file contents for template %#v: %s", templatePath.String(), err)
+						}
+						templateFile := fileReader.FileOpenRead(ctx, templateContents, 0)
+
+						r := &changeTrackingDirectoryNewFileResolver{
+							loadOptions:      loadOptions,
+							currentDirectory: rootDirectory,
+						}
+						if err := path.Resolve(
+							path.UNIXFormat.NewParser(filePath.GetRepoRelativePath()),
+							path.NewRelativeScopeWalker(r),
+						); err != nil {
+							return nil, fmt.Errorf("cannot resolve %#v: %w", filePath.String(), err)
+						}
+						if r.name == nil {
+							return nil, fmt.Errorf("%#v does not resolve to a file", filePath.String())
+						}
+
+						// Perform substitutions.
+						patchedFileOffsetBytes := patchedFilesWriter.offsetBytes
+						if err := searchAndReplacer.SearchAndReplace(patchedFilesWriter, templateFile, replacements); err != nil {
+							return nil, fmt.Errorf("failed to write to file at %#v: %w", filePath.String(), err)
 						}
 
 						r.currentDirectory.setFile(*r.name, &changeTrackingFile{

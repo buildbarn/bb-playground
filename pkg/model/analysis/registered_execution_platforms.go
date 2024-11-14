@@ -22,6 +22,35 @@ import (
 	"go.starlark.net/starlark"
 )
 
+type getPlatformInfoProviderEnvironment interface {
+	GetConfiguredTargetValue(key *model_analysis_pb.ConfiguredTarget_Key) model_core.Message[*model_analysis_pb.ConfiguredTarget_Value]
+}
+
+// getPlatformInfoProvider looks up the PlatformInfo provider that is
+// returned by a platform() target.
+func getPlatformInfoProvider(e getPlatformInfoProviderEnvironment, platformLabel label.CanonicalLabel) (model_core.Message[*model_starlark_pb.Struct], error) {
+	configuredTargetValue := e.GetConfiguredTargetValue(&model_analysis_pb.ConfiguredTarget_Key{
+		Label: platformLabel.String(),
+	})
+	if !configuredTargetValue.IsSet() {
+		return model_core.Message[*model_starlark_pb.Struct]{}, evaluation.ErrMissingDependency
+	}
+
+	const platformInfoProviderIdentifier = "@@builtins_core+//:exports.bzl%PlatformInfo"
+	providerInstances := configuredTargetValue.Message.ProviderInstances
+	providerIndex := sort.Search(
+		len(providerInstances),
+		func(i int) bool { return providerInstances[i].ProviderIdentifier >= platformInfoProviderIdentifier },
+	)
+	if providerIndex >= len(providerInstances) || providerInstances[providerIndex].ProviderIdentifier != platformInfoProviderIdentifier {
+		return model_core.Message[*model_starlark_pb.Struct]{}, fmt.Errorf("target did not yield provider %#v", platformInfoProviderIdentifier)
+	}
+	return model_core.Message[*model_starlark_pb.Struct]{
+		Message:            providerInstances[providerIndex],
+		OutgoingReferences: configuredTargetValue.OutgoingReferences,
+	}, nil
+}
+
 type registeredExecutionPlatformExtractingModuleDotBazelHandler struct {
 	environment           RegisteredExecutionPlatformsEnvironment
 	moduleInstance        label.ModuleInstance
@@ -45,35 +74,18 @@ func (h *registeredExecutionPlatformExtractingModuleDotBazelHandler) RegisterExe
 			if err != nil {
 				return err
 			}
-			configuredTargetValue := h.environment.GetConfiguredTargetValue(&model_analysis_pb.ConfiguredTarget_Key{
-				Label: canonicalPlatformLabel.String(),
-			})
-			if !configuredTargetValue.IsSet() {
-				return evaluation.ErrMissingDependency
-			}
-			// Look up the PlatformInfo provider.
-			const platformInfoProviderIdentifier = "@@builtins_core+//:exports.bzl%PlatformInfo"
-			providerInstances := configuredTargetValue.Message.ProviderInstances
-			providerIndex := sort.Search(
-				len(providerInstances),
-				func(i int) bool { return providerInstances[i].ProviderIdentifier >= platformInfoProviderIdentifier },
-			)
-			if providerIndex >= len(providerInstances) || providerInstances[providerIndex].ProviderIdentifier != platformInfoProviderIdentifier {
-				return fmt.Errorf("target %#v did not yield provider %#v", canonicalPlatformLabel.String(), platformInfoProviderIdentifier)
+			platformInfoProvider, err := getPlatformInfoProvider(h.environment, canonicalPlatformLabel)
+			if err != nil {
+				return fmt.Errorf("failed to obtain PlatformInfo provider for target %#v: %w", canonicalPlatformLabel.String(), err)
 			}
 
 			// Decode it.
 			// TODO: Would there be a way for us to directly
 			// extract the values without decoding to
 			// Starlark types first?
-			strukt, err := model_starlark.DecodeStruct(
-				model_core.Message[*model_starlark_pb.Struct]{
-					Message:            providerInstances[providerIndex],
-					OutgoingReferences: configuredTargetValue.OutgoingReferences,
-				},
-				h.valueDecodingOptions)
+			strukt, err := model_starlark.DecodeStruct(platformInfoProvider, h.valueDecodingOptions)
 			if err != nil {
-				return fmt.Errorf("failed to decode provider %#v of target %#v: %w", platformInfoProviderIdentifier, canonicalPlatformLabel.String(), err)
+				return fmt.Errorf("failed to decode PlatformInfo provider of target %#v: %w", canonicalPlatformLabel.String(), err)
 			}
 			structFields := starlark.StringDict{}
 			strukt.ToStringDict(structFields)
@@ -81,25 +93,25 @@ func (h *registeredExecutionPlatformExtractingModuleDotBazelHandler) RegisterExe
 			// Extract constraints and exec_properties fields.
 			constraintsValue, ok := structFields["constraints"]
 			if !ok {
-				return fmt.Errorf("provider %#v of target %#v does not contain field \"constraints\"", platformInfoProviderIdentifier, canonicalPlatformLabel.String())
+				return fmt.Errorf("PlatformInfo provider of target %#v does not contain field \"constraints\"", canonicalPlatformLabel.String())
 			}
 			var constraints map[label.CanonicalLabel]label.CanonicalLabel
 			if err := unpack.Dict(model_starlark.LabelUnpackerInto, model_starlark.LabelUnpackerInto).UnpackInto(nil, constraintsValue, &constraints); err != nil {
-				return fmt.Errorf("invalid value for field \"constraints\" of provider %#v of target %#v", platformInfoProviderIdentifier, canonicalPlatformLabel.String())
+				return fmt.Errorf("invalid value for field \"constraints\" of PlatformInfo provider of target %#v", canonicalPlatformLabel.String())
 			}
 
 			execPropertiesValue, ok := structFields["exec_properties"]
 			if !ok {
-				return fmt.Errorf("provider %#v of target %#v does not contain field \"exec_properties\"", platformInfoProviderIdentifier, canonicalPlatformLabel.String())
+				return fmt.Errorf("PlatformInfo provider of target %#v does not contain field \"exec_properties\"", canonicalPlatformLabel.String())
 			}
 			var execProperties map[string]string
 			if err := unpack.Dict(unpack.String, unpack.String).UnpackInto(nil, execPropertiesValue, &execProperties); err != nil {
-				return fmt.Errorf("invalid value for field \"exec_properties\" of provider %#v of target %#v", platformInfoProviderIdentifier, canonicalPlatformLabel.String())
+				return fmt.Errorf("invalid value for field \"exec_properties\" of PlatformInfo provider of target %#v", canonicalPlatformLabel.String())
 			}
 
 			executionPlatform := &model_analysis_pb.RegisteredExecutionPlatforms_Value_ExecutionPlatform{
 				Constraints:    make([]*model_analysis_pb.RegisteredExecutionPlatforms_Value_ExecutionPlatform_Constraint, 0, len(constraints)),
-				ExecProperties: make([]*model_analysis_pb.RegisteredExecutionPlatforms_Value_ExecutionPlatform_ExecProperty, 0, len(execProperties)),
+				ExecProperties: make([]*model_analysis_pb.ExecProperty, 0, len(execProperties)),
 			}
 			for _, setting := range slices.SortedFunc(
 				maps.Keys(constraints),
@@ -111,7 +123,7 @@ func (h *registeredExecutionPlatformExtractingModuleDotBazelHandler) RegisterExe
 				})
 			}
 			for _, name := range slices.Sorted(maps.Keys(execProperties)) {
-				executionPlatform.ExecProperties = append(executionPlatform.ExecProperties, &model_analysis_pb.RegisteredExecutionPlatforms_Value_ExecutionPlatform_ExecProperty{
+				executionPlatform.ExecProperties = append(executionPlatform.ExecProperties, &model_analysis_pb.ExecProperty{
 					Name:  name,
 					Value: execProperties[name],
 				})

@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"maps"
-	"path"
 	"slices"
 	"sort"
 
@@ -56,7 +55,7 @@ func (c *baseComputer) ComputePackageValue(ctx context.Context, key *model_analy
 	for _, buildFileName := range buildDotBazelTargetNames {
 		buildFileProperties := e.GetFilePropertiesValue(&model_analysis_pb.FileProperties_Key{
 			CanonicalRepo: canonicalRepo.String(),
-			Path:          path.Join(canonicalPackage.GetPackagePath(), buildFileName.String()),
+			Path:          canonicalPackage.AppendTargetName(buildFileName).GetRepoRelativePath(),
 		})
 		if !buildFileProperties.IsSet() {
 			return PatchedPackageValue{}, evaluation.ErrMissingDependency

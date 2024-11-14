@@ -492,6 +492,14 @@ message Package {
   }
 }
 
+message ExecProperty {
+  // The name of the remote execution property.
+  string name = 1;
+
+  // The value of the remote execution property.
+  string value = 2;
+}
+
 message RegisteredExecutionPlatforms {
   message Key {}
 
@@ -502,14 +510,6 @@ message RegisteredExecutionPlatforms {
         string setting = 1;
 
         // The label of the constraint_value() target.
-        string value = 2;
-      }
-
-      message ExecProperty {
-        // The name of the remote execution property.
-        string name = 1;
-
-        // The value of the remote execution property.
         string value = 2;
       }
 
@@ -529,6 +529,35 @@ message RegisteredExecutionPlatforms {
     // List of platforms that are available for executing commands,
     // ordered by decreasing preference.
     repeated ExecutionPlatform execution_platforms = 1;
+  }
+}
+
+message RegisteredRepoPlatform {
+  message Key {}
+
+  message Value {
+    message EnvironmentVariable {
+      // The name of the environment variable.
+      string name = 1;
+
+      // The value of the environment variable.
+      string value = 2;
+    }
+
+    // Properties that need to be sent to the remote execution
+    // system to select appropriate workers. Properties are sorted
+    // alphabetically by name.
+    repeated ExecProperty exec_properties = 1;
+
+    // The name of the architecture to announce via repository_os.arch.
+    string repository_os_arch = 2;
+
+    // Environment variables to announce via repository_os.environ.
+    repeated EnvironmentVariable repository_os_environ = 3;
+
+    // The name of the operating system to announce via
+    // repository_os.name.
+    string repository_os_name = 4;
   }
 }
 

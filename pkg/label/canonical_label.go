@@ -120,6 +120,30 @@ func (l CanonicalLabel) GetTargetName() TargetName {
 	return TargetName{value: strings.TrimLeft(l.value, "@")}
 }
 
+// GetRepoRelativePath converts a label to a pathname string that is
+// relative to the root of the repo. This can be used in contexts where
+// labels refer to paths of input files.
+func (l CanonicalLabel) GetRepoRelativePath() string {
+	label := l.value[2:]
+	if targetNameOffset := strings.IndexByte(label, ':'); targetNameOffset >= 0 {
+		repoAndPackage := label[:targetNameOffset]
+		targetName := label[targetNameOffset+1:]
+		pkg := repoAndPackage[strings.IndexByte(repoAndPackage, '/')+2:]
+		if len(pkg) == 0 {
+			// @@a//:b -> b.
+			return targetName
+		}
+		// @@a//b/c:d -> b/c/d.
+		return pkg + "/" + targetName
+	}
+	if slashOffset := strings.IndexByte(label, '/'); slashOffset >= 0 {
+		// @@a//b/c -> b/c/c.
+		return label[slashOffset+2:] + "/" + label[strings.LastIndexByte(label, '/')+1:]
+	}
+	// @@a -> a.
+	return label
+}
+
 func (l CanonicalLabel) String() string {
 	return l.value
 }

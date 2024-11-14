@@ -81,4 +81,18 @@ func TestCanonicalLabel(t *testing.T) {
 			assert.Equal(t, output, canonicalLabel.GetTargetName().String())
 		}
 	})
+
+	t.Run("GetRepoRelativePath", func(t *testing.T) {
+		for input, output := range map[string]string{
+			"@@com_github_buildbarn_bb_storage+":                      "com_github_buildbarn_bb_storage+",
+			"@@com_github_buildbarn_bb_storage+//:foo":                "foo",
+			"@@com_github_buildbarn_bb_storage+//cmd":                 "cmd/cmd",
+			"@@com_github_buildbarn_bb_storage+//cmd:bar":             "cmd/bar",
+			"@@com_github_buildbarn_bb_storage+//cmd/hello_world":     "cmd/hello_world/hello_world",
+			"@@com_github_buildbarn_bb_storage+//cmd/hello_world:baz": "cmd/hello_world/baz",
+		} {
+			canonicalLabel := label.MustNewCanonicalLabel(input)
+			assert.Equal(t, output, canonicalLabel.GetRepoRelativePath())
+		}
+	})
 }

@@ -1,6 +1,10 @@
 package starlark
 
 import (
+	"maps"
+	"slices"
+	"strings"
+
 	pg_label "github.com/buildbarn/bb-playground/pkg/label"
 	model_core "github.com/buildbarn/bb-playground/pkg/model/core"
 	model_starlark_pb "github.com/buildbarn/bb-playground/pkg/proto/model/starlark"
@@ -64,16 +68,35 @@ func (med *starlarkModuleExtensionDefinition) EncodeValue(path map[starlark.Valu
 	if err != nil {
 		return model_core.PatchedMessage[*model_starlark_pb.Value, dag.ObjectContentsWalker]{}, false, err
 	}
+	patcher := implementation.Patcher
+
+	tagClasses := make([]*model_starlark_pb.ModuleExtension_NamedTagClass, 0, len(med.tagClasses))
+	for _, name := range slices.SortedFunc(
+		maps.Keys(med.tagClasses),
+		func(a, b pg_label.StarlarkIdentifier) int { return strings.Compare(a.String(), b.String()) },
+	) {
+		encodedTagClass, tagClassNeedsCode, err := med.tagClasses[name].Encode(path, options)
+		if err != nil {
+			return model_core.PatchedMessage[*model_starlark_pb.Value, dag.ObjectContentsWalker]{}, false, err
+		}
+		tagClasses = append(tagClasses, &model_starlark_pb.ModuleExtension_NamedTagClass{
+			Name:     name.String(),
+			TagClass: encodedTagClass.Message,
+		})
+		patcher.Merge(encodedTagClass.Patcher)
+		needsCode = needsCode || tagClassNeedsCode
+	}
 
 	return model_core.PatchedMessage[*model_starlark_pb.Value, dag.ObjectContentsWalker]{
 		Message: &model_starlark_pb.Value{
 			Kind: &model_starlark_pb.Value_ModuleExtension{
 				ModuleExtension: &model_starlark_pb.ModuleExtension{
 					Implementation: implementation.Message,
+					TagClasses:     tagClasses,
 				},
 			},
 		},
-		Patcher: implementation.Patcher,
+		Patcher: patcher,
 	}, needsCode, nil
 }
 

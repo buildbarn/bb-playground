@@ -21,6 +21,8 @@ import (
 	object_grpc "github.com/buildbarn/bb-playground/pkg/storage/object/grpc"
 	object_namespacemapping "github.com/buildbarn/bb-playground/pkg/storage/object/namespacemapping"
 	re_filesystem "github.com/buildbarn/bb-remote-execution/pkg/filesystem"
+	"github.com/buildbarn/bb-storage/pkg/filesystem"
+	"github.com/buildbarn/bb-storage/pkg/filesystem/path"
 	"github.com/buildbarn/bb-storage/pkg/global"
 	bb_grpc "github.com/buildbarn/bb-storage/pkg/grpc"
 	bb_http "github.com/buildbarn/bb-storage/pkg/http"
@@ -65,6 +67,11 @@ func main() {
 			return util.StatusWrap(err, "Failed to create file pool")
 		}
 
+		cacheDirectory, err := filesystem.NewLocalDirectory(path.LocalFormat.NewParser(configuration.CacheDirectoryPath))
+		if err != nil {
+			return util.StatusWrap(err, "Failed to create cache directory")
+		}
+
 		if err := bb_grpc.NewServersFromConfigurationAndServe(
 			configuration.GrpcServers,
 			func(s grpc.ServiceRegistrar) {
@@ -75,7 +82,8 @@ func main() {
 					httpClient: &http.Client{
 						Transport: bb_http.NewMetricsRoundTripper(roundTripper, "Builder"),
 					},
-					filePool: filePool,
+					filePool:       filePool,
+					cacheDirectory: cacheDirectory,
 				})
 			},
 			siblingsGroup,
@@ -94,6 +102,7 @@ type builderServer struct {
 	objectContentsWalkerSemaphore *semaphore.Weighted
 	httpClient                    *http.Client
 	filePool                      re_filesystem.FilePool
+	cacheDirectory                filesystem.Directory
 }
 
 func (s *builderServer) PerformBuild(request *build_pb.PerformBuildRequest, server build_pb.Builder_PerformBuildServer) error {
@@ -124,6 +133,7 @@ func (s *builderServer) PerformBuild(request *build_pb.PerformBuildRequest, serv
 			buildSpecificationEncoder,
 			s.httpClient,
 			s.filePool,
+			s.cacheDirectory,
 		)),
 		&model_analysis_pb.BuildResult_Key{},
 		func(references []object.LocalReference, objectContentsWalkers []dag.ObjectContentsWalker) error {

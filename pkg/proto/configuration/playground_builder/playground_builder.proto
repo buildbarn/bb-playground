@@ -25,4 +25,9 @@ message ApplicationConfiguration {
 
   // Storage space for temporary files (e.g., files downloaded via HTTP).
   buildbarn.configuration.filesystem.FilePoolConfiguration file_pool = 5;
+
+  // Directory where files may be stored for caching purposes.
+  // TODO: This option should be removed once we can properly store tags
+  // in the build cache.
+  string cache_directory_path = 6;
 }

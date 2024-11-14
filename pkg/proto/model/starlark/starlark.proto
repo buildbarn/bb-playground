@@ -295,7 +295,21 @@ message List {
 }
 
 message ModuleExtension {
+  message NamedTagClass {
+    // The name that can be used to declare tags of this class in
+    // MODULE.bazel.
+    string name = 1;
+
+    // The attributes that can be provided to tags of this class.
+    TagClass tag_class = 2;
+  }
+
+  // Starlark function that implements this module extension.
   Function implementation = 1;
+
+  // List of tag classes that are provided by the module extension.
+  // These tag classes may be invoked from within MODULE.bazel.
+  repeated NamedTagClass tag_classes = 2;
 }
 
 message PackageGroup {

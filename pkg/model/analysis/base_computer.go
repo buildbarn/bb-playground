@@ -21,6 +21,7 @@ import (
 	"github.com/buildbarn/bb-playground/pkg/storage/dag"
 	"github.com/buildbarn/bb-playground/pkg/storage/object"
 	re_filesystem "github.com/buildbarn/bb-remote-execution/pkg/filesystem"
+	"github.com/buildbarn/bb-storage/pkg/filesystem"
 	bb_path "github.com/buildbarn/bb-storage/pkg/filesystem/path"
 
 	"google.golang.org/grpc/codes"
@@ -35,6 +36,7 @@ type baseComputer struct {
 	buildSpecificationEncoder   model_encoding.BinaryEncoder
 	httpClient                  *http.Client
 	filePool                    re_filesystem.FilePool
+	cacheDirectory              filesystem.Directory
 }
 
 func NewBaseComputer(
@@ -43,6 +45,7 @@ func NewBaseComputer(
 	buildSpecificationEncoder model_encoding.BinaryEncoder,
 	httpClient *http.Client,
 	filePool re_filesystem.FilePool,
+	cacheDirectory filesystem.Directory,
 ) Computer {
 	return &baseComputer{
 		objectDownloader:            objectDownloader,
@@ -50,6 +53,7 @@ func NewBaseComputer(
 		buildSpecificationEncoder:   buildSpecificationEncoder,
 		httpClient:                  httpClient,
 		filePool:                    filePool,
+		cacheDirectory:              cacheDirectory,
 	}
 }
 
