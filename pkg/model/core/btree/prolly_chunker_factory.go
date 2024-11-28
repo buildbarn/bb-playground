@@ -174,8 +174,5 @@ func (c *prollyChunker[TNode, TMetadata]) PopMultiple(finalize bool) model_core.
 		messages = append(messages, node.Message)
 		patcher.Merge(node.Patcher)
 	}
-	return model_core.PatchedMessage[[]TNode, TMetadata]{
-		Message: messages,
-		Patcher: patcher,
-	}
+	return model_core.NewPatchedMessage(messages, patcher)
 }

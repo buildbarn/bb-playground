@@ -118,13 +118,13 @@ func getDefaultInheritableAttrs(thread *starlark.Thread, b *starlark.Builtin, ar
 		)
 	}
 
-	return model_core.PatchedMessage[*model_starlark_pb.InheritableAttrs, dag.ObjectContentsWalker]{
-		Message: &model_starlark_pb.InheritableAttrs{
+	return model_core.NewPatchedMessage(
+		&model_starlark_pb.InheritableAttrs{
 			Deprecation:     deprecation,
 			PackageMetadata: packageMetadata,
 			Testonly:        testOnly,
 			Visibility:      visibilityPackageGroup.Message,
 		},
-		Patcher: visibilityPackageGroup.Patcher,
-	}, nil
+		visibilityPackageGroup.Patcher,
+	), nil
 }

@@ -66,12 +66,12 @@ func (c *baseComputer) ComputeTargetValue(ctx context.Context, key *model_analys
 					return dag.ExistingObjectContentsWalker
 				},
 			)
-			return model_core.PatchedMessage[*model_analysis_pb.Target_Value, dag.ObjectContentsWalker]{
-				Message: &model_analysis_pb.Target_Value{
+			return model_core.NewPatchedMessage(
+				&model_analysis_pb.Target_Value{
 					Definition: patchedDefinition.Message,
 				},
-				Patcher: patchedDefinition.Patcher,
-			}, nil
+				patchedDefinition.Patcher,
+			), nil
 		case *model_analysis_pb.Package_Value_TargetList_Element_Parent_:
 			panic("TODO: Load target list from storage!")
 		default:

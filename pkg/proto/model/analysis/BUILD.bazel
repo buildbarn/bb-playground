@@ -7,10 +7,13 @@ proto_library(
     srcs = ["analysis.proto"],
     visibility = ["//visibility:public"],
     deps = [
+        "//pkg/proto/model/action:action_proto",
         "//pkg/proto/model/build:build_proto",
         "//pkg/proto/model/core:core_proto",
+        "//pkg/proto/model/encoding:encoding_proto",
         "//pkg/proto/model/filesystem:filesystem_proto",
         "//pkg/proto/model/starlark:starlark_proto",
+        "@protobuf//:duration_proto",
     ],
 )
 
@@ -20,8 +23,10 @@ go_proto_library(
     proto = ":analysis_proto",
     visibility = ["//visibility:public"],
     deps = [
+        "//pkg/proto/model/action",
         "//pkg/proto/model/build",
         "//pkg/proto/model/core",
+        "//pkg/proto/model/encoding",
         "//pkg/proto/model/filesystem",
         "//pkg/proto/model/starlark",
     ],

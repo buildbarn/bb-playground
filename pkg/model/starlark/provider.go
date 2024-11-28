@@ -92,14 +92,14 @@ func (p *Provider) EncodeValue(path map[starlark.Value]struct{}, currentIdentifi
 		needsCode = needsCode || initFunctionNeedsCode
 	}
 
-	return model_core.PatchedMessage[*model_starlark_pb.Value, dag.ObjectContentsWalker]{
-		Message: &model_starlark_pb.Value{
+	return model_core.NewPatchedMessage(
+		&model_starlark_pb.Value{
 			Kind: &model_starlark_pb.Value_Provider{
 				Provider: provider,
 			},
 		},
-		Patcher: patcher,
-	}, needsCode, nil
+		patcher,
+	), needsCode, nil
 }
 
 type ProviderInstance struct {
@@ -131,12 +131,12 @@ func (pi ProviderInstance) EncodeValue(path map[starlark.Value]struct{}, current
 	if err != nil {
 		return model_core.PatchedMessage[*model_starlark_pb.Value, dag.ObjectContentsWalker]{}, false, err
 	}
-	return model_core.PatchedMessage[*model_starlark_pb.Value, dag.ObjectContentsWalker]{
-		Message: &model_starlark_pb.Value{
+	return model_core.NewPatchedMessage(
+		&model_starlark_pb.Value{
 			Kind: &model_starlark_pb.Value_Struct{
 				Struct: encodedStruct.Message,
 			},
 		},
-		Patcher: encodedStruct.Patcher,
-	}, needsCode, nil
+		encodedStruct.Patcher,
+	), needsCode, nil
 }

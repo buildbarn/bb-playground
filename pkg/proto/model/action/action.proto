@@ -1,0 +1,108 @@
+syntax = "proto3";
+
+package buildbarn.playground.model.action;
+
+import "pkg/proto/model/core/core.proto";
+import "pkg/proto/model/filesystem/filesystem.proto";
+
+option go_package = "github.com/buildbarn/bb-playground/pkg/proto/model/action";
+
+message Command {
+  // The arguments of the command.
+  repeated ArgumentList.Element arguments = 1;
+
+  // The environment variables to set when running the program.
+  repeated EnvironmentVariableList.Element environment_variables = 2;
+
+  // Parameters that the client used to create objects containing
+  // Directory and Leaves messages. The worker MUST also use these
+  // parameters when creating output directories.
+  buildbarn.playground.model.filesystem.DirectoryCreationParameters
+      directory_creation_parameters = 3;
+
+  // Parameters that the client used to create objects containing
+  // FileContentsList messages and file chunks. The worker MUST also use
+  // these parameters when creating output files.
+  buildbarn.playground.model.filesystem.FileCreationParameters
+      file_creation_parameters = 4;
+
+  // If set, capture the contents of directories, regular files, and
+  // symbolic links present on the file system matching the provided
+  // pattern after the command finishes executing. Directories that are
+  // matched by the pattern are captured recursively. The contents of
+  // these files are made available through
+  // Result.output_root_reference.
+  PathPattern output_path_pattern = 5;
+
+  // The directory in which the command should be executed, relative to
+  // the input root. The directory MUST exist within the input root.
+  string working_directory = 6;
+}
+
+message PathPattern {
+  message Child {
+    // The name of the directory, regular file, or symbolic link to
+    // search for in the current directory. If a file of a different
+    // type is located (e.g., a domain socket or FIFO), it is ignored.
+    string name = 1;
+
+    // Whether to match the current file or one of its children. This
+    // field MUST be set.
+    PathPattern pattern = 2;
+  }
+
+  message Children {
+    repeated Child child = 1;
+  }
+
+  // If not set, the current path should be matched.
+  //
+  // If set, the current path must be non-existent or a directory. The
+  // matching process will traverse into the directory and attempt to
+  // match any of the children specified.
+  oneof children {
+    // Set if there are too many children to store in the current
+    // object.
+    buildbarn.playground.model.core.Reference children_external = 1;
+
+    // Set if there are only few children to match.
+    Children children_inline = 2;
+  }
+}
+
+message ArgumentList {
+  message Element {
+    oneof level {
+      string leaf = 1;
+      buildbarn.playground.model.core.Reference parent = 2;
+    }
+  }
+
+  repeated Element elements = 1;
+}
+
+message EnvironmentVariableList {
+  message Element {
+    message Leaf {
+      string name = 1;
+      string value = 2;
+    }
+
+    oneof level {
+      Leaf leaf = 1;
+      buildbarn.playground.model.core.Reference parent = 2;
+    }
+  }
+
+  repeated Element elements = 1;
+}
+
+message Result {
+  // If Command.output_path_pattern is set, the contents of files and
+  // directories that were captured.
+  buildbarn.playground.model.core.Reference output_root_reference = 1;
+
+  // TODO: Provide a single stream for stdout/stderr!
+  buildbarn.playground.model.filesystem.FileContents stdout = 2;
+  buildbarn.playground.model.filesystem.FileContents stderr = 3;
+}

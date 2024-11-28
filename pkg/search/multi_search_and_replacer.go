@@ -252,21 +252,34 @@ ProcessCharacter:
 					continue ProcessCharacter
 				}
 				if gStateA == 0 {
-					// Mismatch. Use the fail function to determine the
-					// next state. If we already have a partial match
-					// with a needle, write the part of the needle that
-					// will no longer be considered for replacement.
-					node := s.nodes[state]
-					if state != 0 {
-						if _, err := dst.Write(s.needles[node.needleIndex][:node.needleLength-s.nodes[node.f].needleLength]); err != nil {
+					if state == 0 {
+						// Mismatch while in the
+						// initial state. Echo the
+						// input and continue to the
+						// next character.
+						if _, err := dst.Write([]byte{a}); err != nil {
 							return err
 						}
+						continue ProcessCharacter
 					}
-					state = node.f
-					if _, err := dst.Write([]byte{a}); err != nil {
+
+					// Mismatch while already having a
+					// partial match with a needle.
+					//
+					// Restore the original input by
+					// writing the part of the needle that
+					// will no longer be considered for
+					// replacement.
+					//
+					// Use the fail function to determine
+					// the next state and retry matching.
+					oldNode := s.nodes[state]
+					state = oldNode.f
+					newNode := s.nodes[state]
+					if _, err := dst.Write(s.needles[oldNode.needleIndex][:oldNode.needleLength-newNode.needleLength]); err != nil {
 						return err
 					}
-					continue ProcessCharacter
+					break
 				}
 			}
 		}

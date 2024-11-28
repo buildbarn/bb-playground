@@ -1,5 +1,8 @@
 {
    "functions": {
+      "ActionResult": {
+         "keyContainsReferences": true
+      },
       "BuildResult": {
          "dependsOn": [
             "TargetCompletion"
@@ -14,6 +17,22 @@
       "CanonicalRepoName": {
          "dependsOn": [
             "ModuleRepoMapping"
+         ]
+      },
+      "CommandEncoderObject": {
+         "dependsOn": [
+            "CommandEncoders"
+         ],
+         "nativeValueType": {
+            "imports": {
+               "model_encoding": "github.com/buildbarn/bb-playground/pkg/model/encoding"
+            },
+            "type": "model_encoding.BinaryEncoder"
+         }
+      },
+      "CommandEncoders": {
+         "dependsOn": [
+            "BuildSpecification"
          ]
       },
       "CompiledBzlFile": {
@@ -175,11 +194,15 @@
       },
       "ModuleExtensionRepos": {
          "dependsOn": [
+            "ActionResult",
             "BuiltinsModuleNames",
             "CanonicalRepoName",
+            "CommandEncoderObject",
             "CompiledBzlFileDecodedGlobals",
             "CompiledBzlFileFunctionFactory",
             "CompiledBzlFileGlobal",
+            "DirectoryCreationParameters",
+            "FileCreationParameters",
             "RegisteredRepoPlatform",
             "RootModule",
             "UsedModuleExtension"

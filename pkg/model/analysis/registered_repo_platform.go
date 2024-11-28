@@ -2,16 +2,58 @@ package analysis
 
 import (
 	"context"
+	"encoding/base64"
 	"errors"
 	"fmt"
+	"maps"
+	"slices"
 
 	"github.com/buildbarn/bb-playground/pkg/evaluation"
 	"github.com/buildbarn/bb-playground/pkg/label"
 	model_core "github.com/buildbarn/bb-playground/pkg/model/core"
+	model_parser "github.com/buildbarn/bb-playground/pkg/model/parser"
+	model_starlark "github.com/buildbarn/bb-playground/pkg/model/starlark"
 	model_analysis_pb "github.com/buildbarn/bb-playground/pkg/proto/model/analysis"
 	model_starlark_pb "github.com/buildbarn/bb-playground/pkg/proto/model/starlark"
 	"github.com/buildbarn/bb-playground/pkg/storage/dag"
+	"github.com/buildbarn/bb-playground/pkg/storage/object"
 )
+
+func (c *baseComputer) decodeStringDict(ctx context.Context, d model_core.Message[*model_starlark_pb.Value]) (map[string]string, error) {
+	dict, ok := d.Message.GetKind().(*model_starlark_pb.Value_Dict)
+	if !ok {
+		return nil, errors.New("not a dict")
+	}
+	var iterErr error
+	o := map[string]string{}
+	for entry := range model_starlark.AllDictLeafEntries(
+		ctx,
+		model_parser.NewStorageBackedParsedObjectReader(
+			c.objectDownloader,
+			c.getValueObjectEncoder(),
+			model_parser.NewMessageObjectParser[object.LocalReference, model_starlark_pb.Dict](),
+		),
+		model_core.Message[*model_starlark_pb.Dict]{
+			Message:            dict.Dict,
+			OutgoingReferences: d.OutgoingReferences,
+		},
+		&iterErr,
+	) {
+		key, ok := entry.Message.Key.GetKind().(*model_starlark_pb.Value_Str)
+		if !ok {
+			return nil, errors.New("key is not a string")
+		}
+		value, ok := entry.Message.Value.GetKind().(*model_starlark_pb.Value_Str)
+		if !ok {
+			return nil, errors.New("value is not a string")
+		}
+		o[key.Str] = value.Str
+	}
+	if iterErr != nil {
+		return nil, fmt.Errorf("failed to iterate dict: %w", iterErr)
+	}
+	return o, nil
+}
 
 func (c *baseComputer) ComputeRegisteredRepoPlatformValue(ctx context.Context, key *model_analysis_pb.RegisteredRepoPlatform_Key, e RegisteredRepoPlatformEnvironment) (PatchedRegisteredRepoPlatformValue, error) {
 	// Obtain the label of the repo platform that was provided by
@@ -47,36 +89,77 @@ func (c *baseComputer) ComputeRegisteredRepoPlatformValue(ctx context.Context, k
 	if err != nil {
 		return PatchedRegisteredRepoPlatformValue{}, fmt.Errorf("failed to obtain PlatformInfo of repo platform %#v: %w", repoPlatformLabel.String(), err)
 	}
-	platformInfoFields := make(map[string]*model_starlark_pb.Value, len(platformInfoProvider.Message.Fields))
-	for _, field := range platformInfoProvider.Message.Fields {
-		platformInfoFields[field.Name] = field.Value
-	}
 
 	// Extract fields from the PlatformInfo provider that are needed
 	// when evaluating module extensions and repository rules. We
 	// don't need to extract the constraints, as those are only used
 	// by the toolchain resolution process of regular build rules.
-	//
-	// TODO: Extract exec_properties and repository_os_environ!
-	repositoryOSArch, ok := platformInfoFields["repository_os_arch"].GetKind().(*model_starlark_pb.Value_Str)
-	if !ok {
-		return PatchedRegisteredRepoPlatformValue{}, fmt.Errorf("PlatformInfo of repo platform %#v lacks mandatory field repository_os_arch", repoPlatformLabel.String())
+	var execPKIXPublicKey []byte
+	var repositoryOSArch, repositoryOSName string
+	var repositoryOSEnviron []*model_analysis_pb.RegisteredRepoPlatform_Value_EnvironmentVariable
+	for _, field := range platformInfoProvider.Message.Fields {
+		switch field.Name {
+		case "exec_pkix_public_key":
+			str, ok := field.Value.GetKind().(*model_starlark_pb.Value_Str)
+			if !ok {
+				return PatchedRegisteredRepoPlatformValue{}, fmt.Errorf("exec_pkix_public_key field of PlatformInfo of repo platform %#v is not a string", repoPlatformLabel.String())
+			}
+			execPKIXPublicKey, err = base64.StdEncoding.DecodeString(str.Str)
+			if err != nil {
+				return PatchedRegisteredRepoPlatformValue{}, fmt.Errorf("exec_pkix_public_key field of PlatformInfo of repo platform %#v: %w", repoPlatformLabel.String(), err)
+			}
+		case "repository_os_arch":
+			str, ok := field.Value.GetKind().(*model_starlark_pb.Value_Str)
+			if !ok {
+				return PatchedRegisteredRepoPlatformValue{}, fmt.Errorf("repository_os_arch field of PlatformInfo of repo platform %#v is not a string", repoPlatformLabel.String())
+			}
+			repositoryOSArch = str.Str
+		case "repository_os_environ":
+			p, err := c.decodeStringDict(
+				ctx,
+				model_core.Message[*model_starlark_pb.Value]{
+					Message:            field.Value,
+					OutgoingReferences: platformInfoProvider.OutgoingReferences,
+				},
+			)
+			if err != nil {
+				return PatchedRegisteredRepoPlatformValue{}, fmt.Errorf("repository_os_environ field of PlatformInfo of repo platform %#v: %w", repoPlatformLabel.String(), err)
+			}
+			repositoryOSEnviron = make([]*model_analysis_pb.RegisteredRepoPlatform_Value_EnvironmentVariable, 0, len(p))
+			for _, name := range slices.Sorted(maps.Keys(p)) {
+				repositoryOSEnviron = append(repositoryOSEnviron, &model_analysis_pb.RegisteredRepoPlatform_Value_EnvironmentVariable{
+					Name:  name,
+					Value: p[name],
+				})
+			}
+		case "repository_os_name":
+			str, ok := field.Value.GetKind().(*model_starlark_pb.Value_Str)
+			if !ok {
+				return PatchedRegisteredRepoPlatformValue{}, fmt.Errorf("repository_os_name field of PlatformInfo of repo platform %#v is not a string", repoPlatformLabel.String())
+			}
+			repositoryOSName = str.Str
+		}
 	}
-	if repositoryOSArch.Str == "" {
+
+	if len(execPKIXPublicKey) == 0 {
+		return PatchedRegisteredRepoPlatformValue{}, fmt.Errorf("exec_pkix_public_key field of PlatformInfo of repo platform %#v is not set to a non-empty string", repoPlatformLabel.String())
+	}
+	if repositoryOSArch == "" {
 		return PatchedRegisteredRepoPlatformValue{}, fmt.Errorf("repository_os_arch field of PlatformInfo of repo platform %#v is not set to a non-empty string", repoPlatformLabel.String())
 	}
-	repositoryOSName, ok := platformInfoFields["repository_os_name"].GetKind().(*model_starlark_pb.Value_Str)
-	if !ok {
-		return PatchedRegisteredRepoPlatformValue{}, fmt.Errorf("PlatformInfo of repo platform %#v lacks mandatory field repository_os_name", repoPlatformLabel.String())
+	if repositoryOSEnviron == nil {
+		return PatchedRegisteredRepoPlatformValue{}, fmt.Errorf("PlatformInfo of repo platform %#v does not contain field repository_os_environ", repoPlatformLabel.String())
 	}
-	if repositoryOSName.Str == "" {
+	if repositoryOSName == "" {
 		return PatchedRegisteredRepoPlatformValue{}, fmt.Errorf("repository_os_name field of PlatformInfo of repo platform %#v is not set to a non-empty string", repoPlatformLabel.String())
 	}
 
 	return model_core.NewSimplePatchedMessage[dag.ObjectContentsWalker](
 		&model_analysis_pb.RegisteredRepoPlatform_Value{
-			RepositoryOsArch: repositoryOSArch.Str,
-			RepositoryOsName: repositoryOSName.Str,
+			ExecPkixPublicKey:   execPKIXPublicKey,
+			RepositoryOsArch:    repositoryOSArch,
+			RepositoryOsEnviron: repositoryOSEnviron,
+			RepositoryOsName:    repositoryOSName,
 		},
 	), nil
 }

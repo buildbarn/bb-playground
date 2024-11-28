@@ -12,7 +12,7 @@ bazel_dep(name = "toolchains_llvm", version = "1.0.0")
 
 git_override(
     module_name = "bazel_remote_apis",
-    commit = "de1d77b12feb81f96909f0410991c3c966d9d8e7",
+    commit = "412b880839b3570c2c4336e845f6bd527d348235",
     remote = "https://github.com/bazelbuild/remote-apis.git",
 )
 
@@ -45,11 +45,32 @@ git_override(
 )
 
 go_sdk = use_extension("@rules_go//go:extensions.bzl", "go_sdk")
-go_sdk.download(version = "1.23.0")
+go_sdk.download(
+    patches = ["//:patches/go_sdk/x25519.diff"],
+    version = "1.23.0",
+)
 
 go_deps = use_extension("@gazelle//:extensions.bzl", "go_deps")
 go_deps.from_file(go_mod = "//:go.mod")
-use_repo(go_deps, "cc_mvdan_gofumpt", "com_github_bluekeyes_go_gitdiff", "com_github_buildbarn_go_cdc", "com_github_google_uuid", "com_github_seehuhn_mt19937", "com_github_stretchr_testify", "net_starlark_go", "org_golang_google_genproto_googleapis_rpc", "org_golang_google_grpc", "org_golang_google_protobuf", "org_golang_x_exp", "org_golang_x_sync", "org_golang_x_term", "org_uber_go_mock")
+use_repo(
+    go_deps,
+    "cc_mvdan_gofumpt",
+    "com_github_bluekeyes_go_gitdiff",
+    "com_github_buildbarn_go_cdc",
+    "com_github_google_uuid",
+    "com_github_prometheus_client_golang",
+    "com_github_secure_io_siv_go",
+    "com_github_seehuhn_mt19937",
+    "com_github_stretchr_testify",
+    "net_starlark_go",
+    "org_golang_google_genproto_googleapis_rpc",
+    "org_golang_google_grpc",
+    "org_golang_google_protobuf",
+    "org_golang_x_exp",
+    "org_golang_x_sync",
+    "org_golang_x_term",
+    "org_uber_go_mock",
+)
 
 go_deps_dev = use_extension("@gazelle//:extensions.bzl", "go_deps", dev_dependency = True)
 go_deps_dev.module_override(

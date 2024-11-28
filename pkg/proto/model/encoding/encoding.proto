@@ -22,9 +22,9 @@ message BinaryEncoder {
 
     // Encrypt data using AES, using the Counter (CTR) block cipher mode
     // of operation. The first 128 bits of the SHA-256 hash of the
-    // plaintext are used as the initialization vector, which is
-    // prepended to the output in encrypted form. To reduce information
-    // leakage, input is padded using the PADMÉ algorithm.
+    // plaintext are encrypted and used as the initialization vector,
+    // which is prepended to the output. To reduce information leakage,
+    // input is padded using the PADMÉ algorithm.
     DeterministicEncryptingBinaryEncoder deterministic_encrypting = 2;
   }
 }

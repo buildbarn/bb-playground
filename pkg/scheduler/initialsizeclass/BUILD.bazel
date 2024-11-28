@@ -1,0 +1,37 @@
+load("@rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "initialsizeclass",
+    srcs = [
+        "action_timeout_extractor.go",
+        "analyzer.go",
+        "configuration.go",
+        "fallback_analyzer.go",
+    ],
+    importpath = "github.com/buildbarn/bb-playground/pkg/scheduler/initialsizeclass",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//pkg/proto/configuration/scheduler",
+        "//pkg/proto/remoteexecution",
+        "@com_github_buildbarn_bb_storage//pkg/util",
+        "@org_golang_google_grpc//codes",
+        "@org_golang_google_grpc//status",
+    ],
+)
+
+go_test(
+    name = "initialsizeclass_test",
+    srcs = [
+        "action_timeout_extractor_test.go",
+        "fallback_analyzer_test.go",
+    ],
+    deps = [
+        ":initialsizeclass",
+        "//pkg/proto/remoteexecution",
+        "@com_github_buildbarn_bb_storage//pkg/testutil",
+        "@com_github_stretchr_testify//require",
+        "@org_golang_google_grpc//codes",
+        "@org_golang_google_grpc//status",
+        "@org_golang_google_protobuf//types/known/durationpb",
+    ],
+)

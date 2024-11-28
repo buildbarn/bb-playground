@@ -51,14 +51,14 @@ func (f NamedFunction) EncodeValue(path map[starlark.Value]struct{}, currentIden
 	if err != nil {
 		return model_core.PatchedMessage[*model_starlark_pb.Value, dag.ObjectContentsWalker]{}, false, err
 	}
-	return model_core.PatchedMessage[*model_starlark_pb.Value, dag.ObjectContentsWalker]{
-		Message: &model_starlark_pb.Value{
+	return model_core.NewPatchedMessage(
+		&model_starlark_pb.Value{
 			Kind: &model_starlark_pb.Value_Function{
 				Function: function.Message,
 			},
 		},
-		Patcher: function.Patcher,
-	}, needsCode, nil
+		function.Patcher,
+	), needsCode, nil
 }
 
 type NamedFunctionDefinition interface {
@@ -125,16 +125,16 @@ func (d starlarkNamedFunctionDefinition) Encode(path map[starlark.Value]struct{}
 		}
 	}
 
-	return model_core.PatchedMessage[*model_starlark_pb.Function, dag.ObjectContentsWalker]{
-		Message: &model_starlark_pb.Function{
+	return model_core.NewPatchedMessage(
+		&model_starlark_pb.Function{
 			Filename: filename,
 			Line:     position.Line,
 			Column:   position.Col,
 			Name:     d.Function.Name(),
 			Closure:  closure,
 		},
-		Patcher: patcher,
-	}, needsCode, nil
+		patcher,
+	), needsCode, nil
 }
 
 type FunctionFactoryResolver = func(filename pg_label.CanonicalLabel) (*starlark.FunctionFactory, *ValueDecodingOptions, error)

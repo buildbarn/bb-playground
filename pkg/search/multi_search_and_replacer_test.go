@@ -112,6 +112,22 @@ func TestMultiSearchAndReplacer(t *testing.T) {
 		require.Equal(t, "hehegoodbyelolo", dst.String())
 	})
 
+	t.Run("PartialMatch", func(t *testing.T) {
+		searcher, err := search.NewMultiSearchAndReplacer([][]byte{
+			[]byte("xxxxxxxxxx"),
+			[]byte("banana"),
+		})
+		require.NoError(t, err)
+
+		src := bytes.NewBufferString("xxbananaxx")
+		dst := bytes.NewBuffer(nil)
+		require.NoError(t, searcher.SearchAndReplace(dst, src, [][]byte{
+			[]byte("yyyyyyyyyy"),
+			[]byte("pear"),
+		}))
+		require.Equal(t, "xxpearxx", dst.String())
+	})
+
 	t.Run("PartialMatchAtEnd", func(t *testing.T) {
 		searcher, err := search.NewMultiSearchAndReplacer([][]byte{
 			[]byte("hello"),

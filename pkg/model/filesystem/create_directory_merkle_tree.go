@@ -214,15 +214,15 @@ func (b *directoryMerkleTreeBuilder[TDirectory, TFile]) maybeFinalizeDirectory(u
 		inlineCandidates = append(
 			inlineCandidates,
 			inlinedtree.Candidate[*model_filesystem_pb.Directory, TDirectory]{
-				ExternalMessage: model_core.PatchedMessage[proto.Message, TDirectory]{
-					Message: ud.leaves.Message,
-					Patcher: model_core.MapReferenceMessagePatcherMetadata(
+				ExternalMessage: model_core.NewPatchedMessage[proto.Message](
+					ud.leaves.Message,
+					model_core.MapReferenceMessagePatcherMetadata(
 						ud.leaves.Patcher,
 						func(reference object.LocalReference, metadata TFile) TDirectory {
 							return b.capturer.CaptureFileNode(metadata)
 						},
 					),
-				},
+				),
 				ParentAppender: func(
 					directory model_core.PatchedMessage[*model_filesystem_pb.Directory, TDirectory],
 					externalContents *object.Contents,
@@ -254,10 +254,10 @@ func (b *directoryMerkleTreeBuilder[TDirectory, TFile]) maybeFinalizeDirectory(u
 			inlineCandidates = append(
 				inlineCandidates,
 				inlinedtree.Candidate[*model_filesystem_pb.Directory, TDirectory]{
-					ExternalMessage: model_core.PatchedMessage[proto.Message, TDirectory]{
-						Message: directoryNode.externalMessage.Message,
-						Patcher: directoryNode.externalMessage.Patcher,
-					},
+					ExternalMessage: model_core.NewPatchedMessage[proto.Message](
+						directoryNode.externalMessage.Message,
+						directoryNode.externalMessage.Patcher,
+					),
 					ParentAppender: func(
 						directory model_core.PatchedMessage[*model_filesystem_pb.Directory, TDirectory],
 						externalContents *object.Contents,

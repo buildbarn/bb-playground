@@ -1,0 +1,272 @@
+syntax = "proto3";
+
+package buildbarn.playground.remoteworker;
+
+import "google/protobuf/any.proto";
+import "google/protobuf/duration.proto";
+import "google/protobuf/empty.proto";
+import "google/protobuf/timestamp.proto";
+import "google/rpc/status.proto";
+import "pkg/proto/remoteexecution/remoteexecution.proto";
+
+option go_package = "github.com/buildbarn/bb-playground/pkg/proto/remoteworker";
+
+// Buildbarn's workers connect to the scheduler to receive instructions
+// on what they should be doing. They can either be instructed to be
+// idle or to execute a build action. They can also report their state
+// to the scheduler. The purpose of reporting state is twofold:
+//
+// - Upon completion of a build action, the worker reports the outcome
+//   of the build action, so that it may be communicated back to a
+//   client.
+// - It allows for centralized management/insight in the functioning of
+//   the build cluster.
+//
+// All of this exchange of information takes place through a single type
+// of RPC named Synchronize(), called by the worker against the
+// scheduler. The worker provides information about its identity and its
+// current state. The scheduler responds with instructions on whether to
+// do something different or to continue.
+//
+// Every response contains a timestamp that instructs the worker when to
+// resynchronize. Calls to Synchronize() are guaranteed to be
+// non-blocking when it is executing a build action. They may be
+// blocking in case the worker is idle or reporting the completion of a
+// build action.  In that case the scheduler may decide to let the call
+// hang until more work is available.
+service OperationQueue {
+  rpc Synchronize(SynchronizeRequest) returns (SynchronizeResponse);
+}
+
+message SynchronizeRequest {
+  // Set of key-value properties that uniquely identify (a thread of) a
+  // worker capable of executing actions. These properties are not
+  // intended to describe the execution capabilities of the worker, nor
+  // should individual elements be interpreted by the scheduler.
+  //
+  // These properties are present to permit the scheduler to associate
+  // internal state with a worker. They may also be displayed as part of
+  // logs, dashboards, etc.
+  map<string, string> worker_id = 1;
+
+  message PublicKey {
+    // X25519 public key in PKIX, ASN.1 DER form.
+    bytes pkix_public_key = 1;
+
+    // AES-256 encrypted block of data, where the input consists of all
+    // zeros, and the key is the shared secret of an ephemeral ECDH
+    // public key provided by the scheduler and the worker private key.
+    // This needs to be computed by the worker, so that the scheduler
+    // can verify that the worker is actually in possession of the
+    // private key corresponding to the public key.
+    //
+    // If the worker has just started and the scheduler provided
+    // ephemeral public key is not known, this field may be set to an
+    // empty value. This will cause the scheduler to provide the
+    // ephemeral public key and request that the worker recomputes this
+    // value.
+    bytes verification_zeros = 2;
+  }
+
+  // Non-empty list of public keys that clients can use to obtain a
+  // shared secret for encrypting actions. As these public keys also
+  // identify platform queues, only workers of the same type should
+  // announce the same set of public keys.
+  //
+  // To facilitate key rotation, workers can provide multiple public
+  // keys. Within the scheduler, all public keys will be associated with
+  // the same platform queue. This means that providing multiple keys
+  // cannot be used to associate a worker with multiple platforms.
+  // Public keys MUST be sorted by PublicKey.pkix_public_key.
+  repeated PublicKey public_keys = 2;
+
+  // The size of this worker in terms of CPU count and memory size.
+  uint32 size_class = 3;
+
+  // The kind of activity the worker is currently performing.
+  CurrentState current_state = 4;
+
+  // The worker prefers to be idle. This flag may be set by workers if
+  // they want to terminate gracefully. The scheduler should respond to
+  // such requests without blocking.
+  //
+  // Additionally, workers may set this flag in case they are in a
+  // degraded state (e.g., bb_runner not being up and running). This
+  // allows workers to temporarily suspend until the system recovers.
+  bool prefer_being_idle = 5;
+}
+
+message CurrentState {
+  message Rejected {
+    // The scheduler assigned UUID of the task being rejected.
+    // This UUID MUST match the value obtained through
+    // DesiredState.Executing.task_uuid.
+    string task_uuid = 1;
+
+    // The reason execution of the task was rejected by the worker.
+    google.rpc.Status reason = 2;
+  }
+
+  message Executing {
+    // The scheduler assigned UUID of the task being executed.
+    // This UUID MUST match the value obtained through
+    // DesiredState.Executing.task_uuid.
+    string task_uuid = 1;
+
+    // Event to report to the client, indicating the current state of
+    // execution.
+    buildbarn.playground.remoteexecution.ExecutionEvent event = 2;
+  }
+
+  message Completed {
+    // The scheduler assigned UUID of the task that completed executing.
+    // This UUID MUST match the value obtained through
+    // DesiredState.Executing.task_uuid.
+    string task_uuid = 1;
+
+    // Final event to report to the client, indicating the outcome of
+    // the execution. This field SHOULD NOT be set if execution failed,
+    // and the effective execution timeout is less than the client
+    // provided timeout or the worker does not belong to the largest
+    // size class, as that would allow the scheduler to return an
+    // erroneous failure to the client.
+    buildbarn.playground.remoteexecution.ExecutionEvent event = 2;
+
+    // The amount of time the worker spent executing the action command,
+    // potentially computed using a worker-specific virtual clock.
+    //
+    // The virtual execution duration is only intended to cover the
+    // "execution" of the specified action and not time in queue nor any
+    // overheads before or after execution such as marshalling
+    // inputs/outputs. The server SHOULD avoid including time spent the
+    // client doesn't have control over, and MAY extend or reduce the
+    // execution duration to account for delays or speedups that occur
+    // during execution itself (e.g., lazily loading data from the
+    // storage, live migration of virtual machines, emulation overhead).
+    //
+    // The method of timekeeping used to compute the virtual execution
+    // duration MUST be consistent with what is used to enforce the
+    // action's `execution_timeout`.
+    google.protobuf.Duration virtual_execution_duration = 3;
+
+    enum Result {
+      // The action ran to completion successfully.
+      SUCCEEDED = 0;
+
+      // The action failed, due to its virtual execution duration
+      // reaching the effective execution timeout.
+      TIMED_OUT = 1;
+
+      // The action failed for any reason other than timing out.
+      FAILED = 2;
+    }
+
+    // Whether or not the action executed successfully. This information
+    // can be used by the scheduler to determine whether the action
+    // needs to be rerun on a different size class, and which size class
+    // should be used for future invocations of actions with the same
+    // fingerprint.
+    Result result = 4;
+  }
+
+  oneof worker_state {
+    // The worker is currently idle.
+    google.protobuf.Empty idle = 1;
+
+    // The worker rejected execution of the task, because its action
+    // could not be decrypted, authenticated or parsed. Any other
+    // failures should be reported through 'completed'.
+    Rejected rejected = 2;
+
+    // The worker is currently executing a task.
+    Executing executing = 3;
+
+    // The worker has completed executing a task.
+    Completed completed = 4;
+  }
+}
+
+message SynchronizeResponse {
+  // The timestamp at which the worker is supposed to synchronize again.
+  // The worker is permitted to contact the scheduler earlier if any
+  // notable events occur (e.g., execution of an action completes).
+  //
+  // If the worker does not synchronize with the scheduler at around
+  // this time, the scheduler may assume the worker has gone offline.
+  // To compensate for clock inaccuracies, network latency and transient
+  // network failures, the scheduler should tolerate a certain amount of
+  // skew. Schedulers may vary the interval returned to tune the amount
+  // of load received.
+  google.protobuf.Timestamp next_synchronization_at = 1;
+
+  // The state to which the scheduler desires the worker to transition.
+  // This value must be left unset in case the scheduler desires the
+  // worker to remain in its current state. For example, when it wants
+  // the worker to continue executing the currently running build
+  // action.
+  DesiredState desired_state = 2;
+}
+
+message DesiredState {
+  message VerifyingPublicKeys {
+    // X25519 public key in PKIX, ASN.1 DER form, used by the scheduler
+    // to verify that the worker is in possession of the private keys
+    // belonging to the public keys that it announces.
+    bytes verification_pkix_public_key = 1;
+  }
+
+  message Executing {
+    // Scheduler assigned UUID of the task to execute.
+    string task_uuid = 1;
+
+    // The action message corresponding with the action digest. Although
+    // the worker could also load the action from the Content
+    // Addressable Storage, the scheduler also needs to access this
+    // information. It is passed on to prevent duplicate requests
+    // against storage.
+    buildbarn.playground.remoteexecution.Action action = 2;
+
+    google.protobuf.Duration effective_execution_timeout = 3;
+
+    // The point in time at which the operation associated with this
+    // execution request was created within the scheduler. The worker
+    // can attach this data to ExecutedActionMetadata's
+    // queued_timestamp.
+    google.protobuf.Timestamp queued_timestamp = 4;
+
+    // Auxiliary metadata that the client sent or the scheduler
+    // generated. The worker can attach this data to
+    // ExecutedActionMetadata's auxiliary_metadata.
+    repeated google.protobuf.Any auxiliary_metadata = 5;
+
+    // Trace/Span context data for the trace that started this
+    // execution, formatted as W3C Trace Context headers. This is used
+    // to associate the worker's storage activity back to the trace that
+    // started the action.
+    map<string, string> w3c_trace_context = 6;
+  }
+
+  oneof worker_state {
+    // The worker called Synchronize() with one or more public keys for
+    // which verification_zeros is stale or invalid. In order to
+    // continue synchronizing state, the worker needs to recompute the
+    // values of verification_zeros before calling Synchronize() again.
+    VerifyingPublicKeys verifying_public_keys = 1;
+
+    // The worker is currently not idle. The scheduler desires it to be
+    // idle instead. This could for example occur in case the client
+    // providing the build action disappears.
+    //
+    // It is not needed to forcefully switch the worker to idle when the
+    // worker finishes executing a build action and no additional work
+    // is available. The scheduler can decide to let the Synchronize()
+    // call block until more work is available, switching the worker
+    // directly to the next 'Executing' state.
+    google.protobuf.Empty idle = 2;
+
+    // The worker is currently idle, finished executing a build action,
+    // or is running a build action that should be cancelled. The
+    // scheduler desires it to execute another build action instead.
+    Executing executing = 3;
+  }
+}

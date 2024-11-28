@@ -11,6 +11,7 @@ go_library(
     importpath = "github.com/buildbarn/bb-playground/pkg/evaluation",
     visibility = ["//visibility:public"],
     deps = [
+        "//pkg/encoding/varint",
         "//pkg/model/core",
         "//pkg/storage/dag",
         "//pkg/storage/object",

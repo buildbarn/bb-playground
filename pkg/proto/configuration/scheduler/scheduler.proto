@@ -1,0 +1,65 @@
+syntax = "proto3";
+
+package buildbarn.playground.configuration.scheduler;
+
+import "google/protobuf/duration.proto";
+import "google/protobuf/empty.proto";
+
+option go_package = "github.com/buildbarn/bb-playground/pkg/proto/configuration/scheduler";
+
+message ActionRouterConfiguration {
+  oneof kind {
+    // Let all incoming execution requests use the same method for
+    // extracting platform properties and invocation key, and let them
+    // all use the same initial size class analyzer.
+    SimpleActionRouterConfiguration simple = 1;
+  }
+}
+
+message SimpleActionRouterConfiguration {
+  // The method that is used to extract an invocation key from an
+  // incoming execution requests. The scheduler uses invocation keys to
+  // group queued actions, ensuring that actions are scheduled fairly
+  // with respect to other groups.
+  //
+  // The recommended method is to group actions by the
+  // 'tool_invocation_id' field that is part of the client provided
+  // RequestMetadata. This ensures that every running Bazel build
+  // receives an equal number of workers.
+  //
+  // For more advanced setups it may be advised to write your own
+  // implementation that, for example, extracts usernames from
+  // authentication tokens. This ensures that every user receives an
+  // equal number of workers.
+  //
+  // By leaving this field empty, all actions are grouped together in a
+  // single queue, meaning there is no fairness. When multiple elements
+  // are provided, fairness is provided on multiple levels. For example,
+  // one can enforce fairness at the user level, followed by fairness at
+  // the Bazel invocation ID level.
+  repeated InvocationKeyExtractorConfiguration invocation_key_extractors = 1;
+
+  // The initial size class analyzer that is used. The initial size
+  // class analyzer is responsible for determining the size of the
+  // worker on which an action should run, and what its execution
+  // timeout should be.
+  //
+  // For simpler setups that don't use multiple size classes (i.e., all
+  // workers have the same size), this field is still required, as a
+  // default and maximum execution timeout must be set.
+  InitialSizeClassAnalyzerConfiguration initial_size_class_analyzer = 2;
+}
+
+message InvocationKeyExtractorConfiguration {
+  oneof kind {
+    // Use the publicly displayable part of the authentication metadata
+    // as the invocation key. This causes all actions belonging to the
+    // same user to be grouped together.
+    google.protobuf.Empty authentication_metadata = 1;
+  }
+}
+
+message InitialSizeClassAnalyzerConfiguration {
+  // Maximum permitted execution timeout.
+  google.protobuf.Duration maximum_execution_timeout = 1;
+}

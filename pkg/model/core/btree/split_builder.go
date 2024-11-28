@@ -94,10 +94,7 @@ func (b *splitBuilder[TNode, TMetadata]) FinalizeSingle() (model_core.PatchedMes
 	case 0:
 		return model_core.PatchedMessage[TNode, TMetadata]{}, nil
 	case 1:
-		return model_core.PatchedMessage[TNode, TMetadata]{
-			Message: b.firstChildren.Message[0],
-			Patcher: b.firstChildren.Patcher,
-		}, nil
+		return model_core.NewPatchedMessage(b.firstChildren.Message[0], b.firstChildren.Patcher), nil
 	default:
 		return b.leavesNodeMerger(b.firstChildren)
 	}

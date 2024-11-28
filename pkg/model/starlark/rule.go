@@ -173,8 +173,8 @@ func (r *rule) CallInternal(thread *starlark.Thread, args starlark.Tuple, kwargs
 
 	return starlark.None, targetRegistrar.registerTarget(
 		name,
-		model_core.PatchedMessage[*model_starlark_pb.Target, dag.ObjectContentsWalker]{
-			Message: &model_starlark_pb.Target{
+		model_core.NewPatchedMessage(
+			&model_starlark_pb.Target{
 				Name: name,
 				Definition: &model_starlark_pb.Target_Definition{
 					Kind: &model_starlark_pb.Target_Definition_RuleTarget{
@@ -192,8 +192,8 @@ func (r *rule) CallInternal(thread *starlark.Thread, args starlark.Tuple, kwargs
 					},
 				},
 			},
-			Patcher: patcher,
-		},
+			patcher,
+		),
 	)
 }
 
@@ -219,8 +219,8 @@ func (r *rule) EncodeValue(path map[starlark.Value]struct{}, currentIdentifier *
 	if err != nil {
 		return model_core.PatchedMessage[*model_starlark_pb.Value, dag.ObjectContentsWalker]{}, false, err
 	}
-	return model_core.PatchedMessage[*model_starlark_pb.Value, dag.ObjectContentsWalker]{
-		Message: &model_starlark_pb.Value{
+	return model_core.NewPatchedMessage(
+		&model_starlark_pb.Value{
 			Kind: &model_starlark_pb.Value_Rule{
 				Rule: &model_starlark_pb.Rule{
 					Kind: &model_starlark_pb.Rule_Definition_{
@@ -229,8 +229,8 @@ func (r *rule) EncodeValue(path map[starlark.Value]struct{}, currentIdentifier *
 				},
 			},
 		},
-		Patcher: definition.Patcher,
-	}, needsCode, nil
+		definition.Patcher,
+	), needsCode, nil
 }
 
 type RuleDefinition interface {
@@ -281,14 +281,14 @@ func (rd *starlarkRuleDefinition) Encode(path map[starlark.Value]struct{}, optio
 		})
 	}
 
-	return model_core.PatchedMessage[*model_starlark_pb.Rule_Definition, dag.ObjectContentsWalker]{
-		Message: &model_starlark_pb.Rule_Definition{
+	return model_core.NewPatchedMessage(
+		&model_starlark_pb.Rule_Definition{
 			Implementation: implementation.Message,
 			Attrs:          namedAttrs.Message,
 			ExecGroups:     execGroups,
 		},
-		Patcher: namedAttrs.Patcher,
-	}, implementationNeedsCode || namedAttrsNeedCode, nil
+		namedAttrs.Patcher,
+	), implementationNeedsCode || namedAttrsNeedCode, nil
 }
 
 func (rd *starlarkRuleDefinition) GetAttrsCheap(thread *starlark.Thread) (map[pg_label.StarlarkIdentifier]*Attr, error) {

@@ -1,6 +1,9 @@
 package core
 
 import (
+	model_encoding "github.com/buildbarn/bb-playground/pkg/model/encoding"
+	"github.com/buildbarn/bb-playground/pkg/storage/object"
+
 	"google.golang.org/protobuf/proto"
 )
 
@@ -11,6 +14,16 @@ import (
 type PatchedMessage[TMessage any, TMetadata ReferenceMetadata] struct {
 	Message TMessage
 	Patcher *ReferenceMessagePatcher[TMetadata]
+}
+
+func NewPatchedMessage[TMessage any, TMetadata ReferenceMetadata](
+	message TMessage,
+	patcher *ReferenceMessagePatcher[TMetadata],
+) PatchedMessage[TMessage, TMetadata] {
+	return PatchedMessage[TMessage, TMetadata]{
+		Message: message,
+		Patcher: patcher,
+	}
 }
 
 func NewPatchedMessageFromExisting[TMessage proto.Message, TMetadata ReferenceMetadata](
@@ -61,4 +74,27 @@ func (m PatchedMessage[T, TMetadata]) SortAndSetReferences() (Message[T], []TMet
 		Message:            m.Message,
 		OutgoingReferences: references,
 	}, metadata
+}
+
+// MarshalAndEncodePatchedMessage marshals a Protobuf message, encodes
+// it, and converts it to an object that can eb written to storage.
+func MarshalAndEncodePatchedMessage[TMessage proto.Message, TMetadata ReferenceMetadata](
+	m PatchedMessage[TMessage, TMetadata],
+	referenceFormat object.ReferenceFormat,
+	encoder model_encoding.BinaryEncoder,
+) (*object.Contents, []TMetadata, error) {
+	references, metadata := m.Patcher.SortAndSetReferences()
+	data, err := proto.MarshalOptions{Deterministic: true}.Marshal(m.Message)
+	if err != nil {
+		return nil, nil, err
+	}
+	encodedData, err := encoder.EncodeBinary(data)
+	if err != nil {
+		return nil, nil, err
+	}
+	contents, err := referenceFormat.NewContents(references, encodedData)
+	if err != nil {
+		return nil, nil, err
+	}
+	return contents, metadata, nil
 }

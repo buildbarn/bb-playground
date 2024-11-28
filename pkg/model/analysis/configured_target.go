@@ -184,10 +184,10 @@ func (c *baseComputer) ComputeConfiguredTargetValue(ctx context.Context, key *mo
 		patcher.Merge(providerInstance.Patcher)
 	}
 
-	return model_core.PatchedMessage[*model_analysis_pb.ConfiguredTarget_Value, dag.ObjectContentsWalker]{
-		Message: &model_analysis_pb.ConfiguredTarget_Value{
+	return model_core.NewPatchedMessage(
+		&model_analysis_pb.ConfiguredTarget_Value{
 			ProviderInstances: sortedProviderInstances,
 		},
-		Patcher: patcher,
-	}, nil
+		patcher,
+	), nil
 }

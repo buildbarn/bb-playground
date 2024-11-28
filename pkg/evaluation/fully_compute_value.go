@@ -2,9 +2,12 @@ package evaluation
 
 import (
 	"context"
+	"encoding/hex"
 	"errors"
 	"fmt"
+	"slices"
 
+	"github.com/buildbarn/bb-playground/pkg/encoding/varint"
 	model_core "github.com/buildbarn/bb-playground/pkg/model/core"
 	"github.com/buildbarn/bb-playground/pkg/storage/dag"
 	"github.com/buildbarn/bb-playground/pkg/storage/object"
@@ -14,38 +17,81 @@ import (
 	"google.golang.org/protobuf/types/known/anypb"
 )
 
-func getKeyString(key proto.Message) (string, error) {
-	anyKey, err := anypb.New(key)
+func getKeyString(key model_core.Message[proto.Message]) (string, error) {
+	// Marshal the outgoing references of the key.
+	degree := key.OutgoingReferences.GetDegree()
+	marshaledKey := varint.AppendForward(nil, degree)
+	for i := 0; i < degree; i++ {
+		marshaledKey = append(marshaledKey, key.OutgoingReferences.GetOutgoingReference(i).GetRawReference()...)
+	}
+
+	// Append the message of the key.
+	anyKey, err := anypb.New(key.Message)
 	if err != nil {
 		return "", err
 	}
-	marshaledKey, err := proto.Marshal(anyKey)
+	marshaledKey, err = proto.MarshalOptions{Deterministic: true}.MarshalAppend(marshaledKey, anyKey)
 	if err != nil {
 		return "", err
 	}
 	return string(marshaledKey), nil
 }
 
+func appendFormattedKey(out []byte, key model_core.Message[proto.Message]) []byte {
+	out, _ = protojson.MarshalOptions{}.MarshalAppend(out, key.Message)
+	if degree := key.OutgoingReferences.GetDegree(); degree > 0 {
+		out = append(out, " ["...)
+		for i := 0; i < degree; i++ {
+			if i > 0 {
+				out = append(out, ", "...)
+			}
+			out = hex.AppendEncode(out, key.OutgoingReferences.GetOutgoingReference(i).GetRawReference())
+		}
+		out = append(out, ']')
+	}
+	return out
+}
+
 type keyState struct {
-	parent *keyState
-	key    proto.Message
-	next   *keyState
-	value  valueState
+	parent              *keyState
+	key                 model_core.Message[proto.Message]
+	next                *keyState
+	value               valueState
+	missingDependencies []*keyState
 }
 
 func (ks *keyState) getKeyType() string {
-	return string(ks.key.ProtoReflect().Descriptor().FullName().Parent().Name())
+	return string(ks.key.Message.ProtoReflect().Descriptor().FullName().Parent().Name())
+}
+
+func (ks *keyState) getDependencyCycle(cyclePath *[]*keyState, seen map[*keyState]int) int {
+	pathLength := len(*cyclePath)
+	for _, ksDep := range ks.missingDependencies {
+		*cyclePath = append(*cyclePath, ksDep)
+		if index, ok := seen[ksDep]; ok {
+			return index
+		}
+		seen[ksDep] = pathLength
+
+		if index := ksDep.getDependencyCycle(cyclePath, seen); index >= 0 {
+			return index
+		}
+
+		*cyclePath = (*cyclePath)[:pathLength]
+		delete(seen, ksDep)
+	}
+	return -1
 }
 
 type valueState interface {
-	compute(ctx context.Context, c Computer, e *fullyComputingEnvironment, storeValueChildren ValueChildrenStorer) error
+	compute(ctx context.Context, c Computer, e *fullyComputingEnvironment) error
 }
 
 type messageValueState struct {
 	value model_core.Message[proto.Message]
 }
 
-func (vs *messageValueState) compute(ctx context.Context, c Computer, e *fullyComputingEnvironment, storeValueChildren ValueChildrenStorer) error {
+func (vs *messageValueState) compute(ctx context.Context, c Computer, e *fullyComputingEnvironment) error {
 	value, err := c.ComputeMessageValue(ctx, e.keyState.key, e)
 	if err != nil {
 		return err
@@ -53,9 +99,10 @@ func (vs *messageValueState) compute(ctx context.Context, c Computer, e *fullyCo
 
 	// Value got computed. Write any objects referenced by the
 	// values to storage.
+	p := e.pool
 	references, objectContentsWalkers := value.Patcher.SortAndSetReferences()
 	if len(references) > 0 {
-		if err := storeValueChildren(references, objectContentsWalkers); err != nil {
+		if err := p.storeValueChildren(references, objectContentsWalkers); err != nil {
 			return err
 		}
 	}
@@ -72,7 +119,7 @@ type nativeValueState struct {
 	isSet bool
 }
 
-func (vs *nativeValueState) compute(ctx context.Context, c Computer, e *fullyComputingEnvironment, storeValueChildren ValueChildrenStorer) error {
+func (vs *nativeValueState) compute(ctx context.Context, c Computer, e *fullyComputingEnvironment) error {
 	value, err := c.ComputeNativeValue(ctx, e.keyState.key, e)
 	if err != nil {
 		return err
@@ -83,6 +130,10 @@ func (vs *nativeValueState) compute(ctx context.Context, c Computer, e *fullyCom
 }
 
 type fullyComputingKeyPool struct {
+	// Constant fields.
+	storeValueChildren ValueChildrenStorer
+
+	// Variable fields.
 	keys                   map[string]*keyState
 	firstPendingKey        *keyState
 	lastPendingKey         **keyState
@@ -102,52 +153,66 @@ func (p *fullyComputingKeyPool) enqueue(ks *keyState) {
 }
 
 type fullyComputingEnvironment struct {
-	pool     *fullyComputingKeyPool
-	keyState *keyState
+	pool                *fullyComputingKeyPool
+	keyState            *keyState
+	missingDependencies []*keyState
 }
 
-func (e *fullyComputingEnvironment) GetMessageValue(key proto.Message) model_core.Message[proto.Message] {
+func (e *fullyComputingEnvironment) getKeyState(patchedKey model_core.PatchedMessage[proto.Message, dag.ObjectContentsWalker], vs valueState) *keyState {
+	// If the key contains outgoing references, ensure children are
+	// written, so that they can be reloaded during evaluation.
 	p := e.pool
+	references, objectContentsWalkers := patchedKey.Patcher.SortAndSetReferences()
+	if len(references) > 0 {
+		if err := e.pool.storeValueChildren(references, objectContentsWalkers); err != nil {
+			p.setError(err)
+			return nil
+		}
+	}
+
+	key := model_core.Message[proto.Message]{
+		Message:            patchedKey.Message,
+		OutgoingReferences: references,
+	}
 	keyStr, err := getKeyString(key)
 	if err != nil {
 		p.setError(err)
-		return model_core.Message[proto.Message]{}
+		return nil
 	}
 	ks, ok := p.keys[keyStr]
 	if !ok {
 		ks = &keyState{
 			parent: e.keyState,
 			key:    key,
-			value:  &messageValueState{},
+			value:  vs,
 		}
 		p.keys[keyStr] = ks
 		p.enqueue(ks)
 		p.firstMissingDependency = nil
 	}
+	return ks
+}
+
+func (e *fullyComputingEnvironment) GetMessageValue(patchedKey model_core.PatchedMessage[proto.Message, dag.ObjectContentsWalker]) model_core.Message[proto.Message] {
+	ks := e.getKeyState(patchedKey, &messageValueState{})
+	if ks == nil {
+		return model_core.Message[proto.Message]{}
+	}
 	vs := ks.value.(*messageValueState)
+	if !vs.value.IsSet() {
+		e.missingDependencies = append(e.missingDependencies, ks)
+	}
 	return vs.value
 }
 
-func (e *fullyComputingEnvironment) GetNativeValue(key proto.Message) (any, bool) {
-	p := e.pool
-	keyStr, err := getKeyString(key)
-	if err != nil {
-		p.setError(err)
+func (e *fullyComputingEnvironment) GetNativeValue(patchedKey model_core.PatchedMessage[proto.Message, dag.ObjectContentsWalker]) (any, bool) {
+	ks := e.getKeyState(patchedKey, &nativeValueState{})
+	if ks == nil {
 		return nil, false
-	}
-	ks, ok := p.keys[keyStr]
-	if !ok {
-		ks = &keyState{
-			parent: e.keyState,
-			key:    key,
-			value:  &nativeValueState{},
-		}
-		p.keys[keyStr] = ks
-		p.enqueue(ks)
-		p.firstMissingDependency = nil
 	}
 	vs := ks.value.(*nativeValueState)
 	if !vs.isSet {
+		e.missingDependencies = append(e.missingDependencies, ks)
 		return nil, false
 	}
 	return vs.value, true
@@ -155,7 +220,7 @@ func (e *fullyComputingEnvironment) GetNativeValue(key proto.Message) (any, bool
 
 type ValueChildrenStorer func(references []object.LocalReference, objectContentsWalkers []dag.ObjectContentsWalker) error
 
-func FullyComputeValue(ctx context.Context, c Computer, requestedKey proto.Message, storeValueChildren ValueChildrenStorer) (model_core.Message[proto.Message], error) {
+func FullyComputeValue(ctx context.Context, c Computer, requestedKey model_core.Message[proto.Message], storeValueChildren ValueChildrenStorer) (model_core.Message[proto.Message], error) {
 	requestedKeyStr, err := getKeyString(requestedKey)
 	if err != nil {
 		return model_core.Message[proto.Message]{}, err
@@ -166,6 +231,8 @@ func FullyComputeValue(ctx context.Context, c Computer, requestedKey proto.Messa
 		value: requestedValueState,
 	}
 	p := fullyComputingKeyPool{
+		storeValueChildren: storeValueChildren,
+
 		keys: map[string]*keyState{
 			requestedKeyStr: requestedKeyState,
 		},
@@ -176,15 +243,31 @@ func FullyComputeValue(ctx context.Context, c Computer, requestedKey proto.Messa
 	for !requestedValueState.value.IsSet() {
 		ks := p.firstPendingKey
 		if ks == p.firstMissingDependency {
-			fmt.Println("Evaluation cycle detected:")
-			for ; ks != nil; ks = ks.next {
-				anyKey, err := anypb.New(ks.key)
-				if err != nil {
-					panic(err)
-				}
-				fmt.Println("  ", protojson.MarshalOptions{}.Format(anyKey))
+			var stack []*keyState
+			for ksIter := ks; ksIter != nil; ksIter = ksIter.parent {
+				stack = append(stack, ksIter)
 			}
-			return model_core.Message[proto.Message]{}, errors.New("evaluation cycle detected")
+			slices.Reverse(stack)
+			seen := make(map[*keyState]int, len(stack))
+			for index, ksIter := range stack {
+				seen[ksIter] = index
+			}
+			cycleStart := ks.getDependencyCycle(&stack, seen)
+			var cycleStr []byte
+			for index, ksIter := range stack {
+				if index == cycleStart || index == len(stack)-1 {
+					cycleStr = append(cycleStr, "\n→ "...)
+				} else {
+					cycleStr = append(cycleStr, "\n  "...)
+				}
+				keyType := ksIter.getKeyType()
+				cycleStr = append(cycleStr, keyType...)
+				for i := len(keyType); i < longestKeyType+2; i++ {
+					cycleStr = append(cycleStr, ' ')
+				}
+				cycleStr = appendFormattedKey(cycleStr, ksIter.key)
+			}
+			return model_core.Message[proto.Message]{}, fmt.Errorf("Traceback (most recent key last):%s\nCyclic evaluation dependency detected", string(cycleStr))
 		}
 
 		p.firstPendingKey = ks.next
@@ -199,14 +282,13 @@ func FullyComputeValue(ctx context.Context, c Computer, requestedKey proto.Messa
 		if l := len(keyType); longestKeyType < l {
 			longestKeyType = l
 		}
-		fmt.Printf("%-*s  %s", longestKeyType, keyType, protojson.MarshalOptions{}.Format(ks.key))
+		fmt.Printf("%-*s  %s", longestKeyType, keyType, string(appendFormattedKey(nil, ks.key)))
 
 		e := fullyComputingEnvironment{
 			pool:     &p,
 			keyState: ks,
 		}
-		err = ks.value.compute(ctx, c, &e, storeValueChildren)
-		e = fullyComputingEnvironment{}
+		err = ks.value.compute(ctx, c, &e)
 		if err != nil {
 			if !errors.Is(err, ErrMissingDependency) {
 				fmt.Printf("\n")
@@ -218,30 +300,30 @@ func FullyComputeValue(ctx context.Context, c Computer, requestedKey proto.Messa
 				var stackStr []byte
 				for i := len(stack) - 1; i >= 0; i-- {
 					ksIter := stack[i]
-					stackStr = append(stackStr, "  "...)
+					stackStr = append(stackStr, "\n  "...)
 					keyType := ksIter.getKeyType()
 					stackStr = append(stackStr, keyType...)
 					for i := len(keyType); i < longestKeyType+2; i++ {
 						stackStr = append(stackStr, ' ')
 					}
-					var err error
-					stackStr, err = protojson.MarshalOptions{}.MarshalAppend(stackStr, ksIter.key)
-					if err != nil {
-						panic(err)
-					}
-					stackStr = append(stackStr, '\n')
+					stackStr = appendFormattedKey(stackStr, ksIter.key)
 				}
-				return model_core.Message[proto.Message]{}, fmt.Errorf("Traceback (most recent key last):\n%s%w", string(stackStr), err)
+				return model_core.Message[proto.Message]{}, fmt.Errorf("Traceback (most recent key last):%s\n%w", string(stackStr), err)
 			}
 			// Value could not be computed, because one of
 			// its dependencies hasn't been computed yet.
 			p.enqueue(ks)
+			if len(e.missingDependencies) == 0 {
+				panic("function returned ErrMissingDependency, but no missing dependencies were registered")
+			}
+			ks.missingDependencies = e.missingDependencies
 			if p.firstMissingDependency == nil {
 				p.firstMissingDependency = ks
 			}
 			fmt.Printf("\r\x1b[K")
 		} else {
 			// Successfully computed value.
+			ks.missingDependencies = nil
 			p.firstMissingDependency = nil
 			fmt.Printf("\n")
 		}

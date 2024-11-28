@@ -45,9 +45,7 @@ type ReferenceMessagePatcher[TMetadata ReferenceMetadata] struct {
 // NewReferenceMessagePatcher creates a new ReferenceMessagePatcher that
 // does not contain any Reference messages.
 func NewReferenceMessagePatcher[TMetadata ReferenceMetadata]() *ReferenceMessagePatcher[TMetadata] {
-	return &ReferenceMessagePatcher[TMetadata]{
-		messagesByReference: map[object.LocalReference]referenceMessages[TMetadata]{},
-	}
+	return &ReferenceMessagePatcher[TMetadata]{}
 }
 
 func (p *ReferenceMessagePatcher[TMetadata]) maybeIncreaseHeight(height int) {
@@ -67,6 +65,9 @@ func (p *ReferenceMessagePatcher[TMetadata]) AddReference(reference object.Local
 }
 
 func (p *ReferenceMessagePatcher[TMetadata]) addReferenceMessage(message *core.Reference, reference object.LocalReference, metadata TMetadata) {
+	if p.messagesByReference == nil {
+		p.messagesByReference = map[object.LocalReference]referenceMessages[TMetadata]{}
+	}
 	if existingMessages, ok := p.messagesByReference[reference]; ok {
 		metadata.Discard()
 		p.messagesByReference[reference] = referenceMessages[TMetadata]{

@@ -70,12 +70,12 @@ func (c *baseComputer) ComputeModuleExtensionRepoValue(ctx context.Context, key 
 					return dag.ExistingObjectContentsWalker
 				},
 			)
-			return model_core.PatchedMessage[*model_analysis_pb.ModuleExtensionRepo_Value, dag.ObjectContentsWalker]{
-				Message: &model_analysis_pb.ModuleExtensionRepo_Value{
+			return model_core.NewPatchedMessage(
+				&model_analysis_pb.ModuleExtensionRepo_Value{
 					Definition: patchedDefinition.Message,
 				},
-				Patcher: patchedDefinition.Patcher,
-			}, nil
+				patchedDefinition.Patcher,
+			), nil
 		case *model_analysis_pb.ModuleExtensionRepos_Value_RepoList_Element_Parent_:
 			panic("TODO: Load repo list from storage!")
 		default:

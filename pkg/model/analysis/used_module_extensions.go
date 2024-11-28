@@ -203,10 +203,10 @@ func (c *baseComputer) ComputeUsedModuleExtensionsValue(ctx context.Context, key
 	) {
 		sortedModuleExtensions = append(sortedModuleExtensions, &usedModuleExtensions[name].message)
 	}
-	return model_core.PatchedMessage[*model_analysis_pb.UsedModuleExtensions_Value, dag.ObjectContentsWalker]{
-		Message: &model_analysis_pb.UsedModuleExtensions_Value{
+	return model_core.NewPatchedMessage(
+		&model_analysis_pb.UsedModuleExtensions_Value{
 			ModuleExtensions: sortedModuleExtensions,
 		},
-		Patcher: options.patcher,
-	}, nil
+		options.patcher,
+	), nil
 }

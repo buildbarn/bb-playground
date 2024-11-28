@@ -14,10 +14,16 @@ import (
 	"github.com/buildbarn/bb-playground/pkg/model/core/btree"
 	model_encoding "github.com/buildbarn/bb-playground/pkg/model/encoding"
 	model_starlark "github.com/buildbarn/bb-playground/pkg/model/starlark"
+	model_action_pb "github.com/buildbarn/bb-playground/pkg/proto/model/action"
 	model_analysis_pb "github.com/buildbarn/bb-playground/pkg/proto/model/analysis"
+	model_filesystem_pb "github.com/buildbarn/bb-playground/pkg/proto/model/filesystem"
 	model_starlark_pb "github.com/buildbarn/bb-playground/pkg/proto/model/starlark"
+	"github.com/buildbarn/bb-playground/pkg/starlark/unpack"
 	"github.com/buildbarn/bb-playground/pkg/storage/dag"
 	"github.com/buildbarn/bb-playground/pkg/storage/object"
+	"github.com/buildbarn/bb-storage/pkg/filesystem/path"
+
+	"google.golang.org/protobuf/types/known/durationpb"
 
 	"go.starlark.net/starlark"
 	"go.starlark.net/starlarkstruct"
@@ -120,6 +126,7 @@ func (c *baseComputer) ComputeModuleExtensionReposValue(ctx context.Context, key
 	valueDecodingOptions := c.getValueDecodingOptions(ctx, func(canonicalLabel label.CanonicalLabel) (starlark.Value, error) {
 		return model_starlark.NewLabel(canonicalLabel), nil
 	})
+	tagClassAttrTypes := make([][]model_starlark.AttrType, len(moduleExtensionDefinition.TagClasses))
 	tagClassAttrDefaults := make([][]starlark.Value, len(moduleExtensionDefinition.TagClasses))
 	for _, user := range moduleExtensionUsers {
 		moduleInstance, err := label.NewModuleInstance(user.ModuleInstance)
@@ -155,11 +162,33 @@ func (c *baseComputer) ComputeModuleExtensionReposValue(ctx context.Context, key
 								valueDecodingOptions,
 							)
 							if err != nil {
-								return PatchedModuleExtensionReposValue{}, fmt.Errorf("failed to decode default value of attribute %#v of tag class %#v", attr.Name, tagClass.Name)
+								return PatchedModuleExtensionReposValue{}, fmt.Errorf("failed to decode value of attribute %#v of tag class %#v declared by module instance %#v", attr.Name, tagClass.Name, moduleInstance.String())
 							}
 
-							// TODO: We should canonicalize the value at this point.
-							attrs = append(attrs, value)
+							if len(tagClassAttrTypes[tagClassIndex]) != len(tagClassAttrs) {
+								tagClassAttrTypes[tagClassIndex] = make([]model_starlark.AttrType, len(tagClassAttrs))
+							}
+							attrType := &tagClassAttrTypes[tagClassIndex][attrIndex]
+							if *attrType == nil {
+								// First time we see this tag class be
+								// invoked with a value for this
+								// attribute. Determine the attribute
+								// type, so that the provided value can be
+								// canonicalized.
+								*attrType, err = model_starlark.DecodeAttrType(attr.Attr)
+								if err != nil {
+									return PatchedModuleExtensionReposValue{}, fmt.Errorf("failed to decode type of attribute %#v of tag class %#v", attr.Name, tagClass.Name)
+								}
+							}
+
+							// TODO: We're passing in a nil thread!
+							canonicalValue, err := (*attrType).GetCanonicalizer(
+								moduleInstance.GetBareCanonicalRepo().GetRootPackage(),
+							).Canonicalize(nil, value)
+							if err != nil {
+								return PatchedModuleExtensionReposValue{}, fmt.Errorf("failed to canonicalize value of attribute %#v of tag class %#v declared by module instance %#v", attr.Name, tagClass.Name, moduleInstance.String())
+							}
+							attrs = append(attrs, canonicalValue)
 
 							declaredAttrs = declaredAttrs[1:]
 						} else if encodedDefaultValue := attr.Attr.GetDefault(); encodedDefaultValue != nil {
@@ -203,10 +232,10 @@ func (c *baseComputer) ComputeModuleExtensionReposValue(ctx context.Context, key
 
 				usedTagClasses = usedTagClasses[1:]
 			}
-			if len(usedTagClasses) > 0 {
-				return PatchedModuleExtensionReposValue{}, fmt.Errorf("module instance %#v uses unknown tag class %#v", moduleInstance.String(), usedTagClasses[0].Name)
-			}
 			tagClasses[tagClass.Name] = starlark.NewList(tags)
+		}
+		if len(usedTagClasses) > 0 {
+			return PatchedModuleExtensionReposValue{}, fmt.Errorf("module instance %#v uses unknown tag class %#v", moduleInstance.String(), usedTagClasses[0].Name)
 		}
 
 		modules = append(modules, starlarkstruct.FromStringDict(starlarkstruct.Default, starlark.StringDict{
@@ -226,7 +255,77 @@ func (c *baseComputer) ComputeModuleExtensionReposValue(ctx context.Context, key
 	repoRegistrar := model_starlark.NewRepoRegistrar()
 	thread.SetLocal(model_starlark.RepoRegistrarKey, repoRegistrar)
 
+	var actionEncoder, commandEncoder model_encoding.BinaryEncoder
+	var directoryCreationParameters *model_filesystem_pb.DirectoryCreationParameters
+	var fileCreationParameters *model_filesystem_pb.FileCreationParameters
 	moduleCtx := starlarkstruct.FromStringDict(starlarkstruct.Default, starlark.StringDict{
+		"execute": starlark.NewBuiltin(
+			"module_ctx.execute",
+			func(thread *starlark.Thread, b *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
+				if actionEncoder == nil {
+					var gotCommandEncoder bool
+					commandEncoder, gotCommandEncoder = e.GetCommandEncoderObjectValue(&model_analysis_pb.CommandEncoderObject_Key{})
+					directoryCreationParametersValue := e.GetDirectoryCreationParametersValue(&model_analysis_pb.DirectoryCreationParameters_Key{})
+					fileCreationParametersValue := e.GetFileCreationParametersValue(&model_analysis_pb.FileCreationParameters_Key{})
+					if !gotCommandEncoder || !directoryCreationParametersValue.IsSet() || !fileCreationParametersValue.IsSet() {
+						return nil, evaluation.ErrMissingDependency
+					}
+					directoryCreationParameters = directoryCreationParametersValue.Message.DirectoryCreationParameters
+					fileCreationParameters = fileCreationParametersValue.Message.FileCreationParameters
+				}
+
+				var arguments []string
+				timeout := int64(600)
+				var environment map[string]string
+				quiet := true
+				var workingDirectory path.Parser = &path.EmptyBuilder
+				if err := starlark.UnpackArgs(
+					b.Name(), args, kwargs,
+					"arguments", unpack.Bind(thread, &arguments, unpack.List(unpack.String)),
+					"timeout?", unpack.Bind(thread, &timeout, unpack.Int[int64]()),
+					"environment?", unpack.Bind(thread, &environment, unpack.Dict(unpack.String, unpack.String)),
+					"quiet?", unpack.Bind(thread, &quiet, unpack.Bool),
+					"working_directory?", unpack.Bind(thread, &workingDirectory, unpack.PathParser(path.UNIXFormat)),
+				); err != nil {
+					return nil, err
+				}
+
+				referenceFormat := c.buildSpecificationReference.GetReferenceFormat()
+				commandPatcher := model_core.NewReferenceMessagePatcher[dag.ObjectContentsWalker]()
+				commandContents, commandMetadata, err := model_core.MarshalAndEncodePatchedMessage(
+					model_core.NewPatchedMessage(
+						&model_action_pb.Command{
+							DirectoryCreationParameters: directoryCreationParameters,
+							FileCreationParameters:      fileCreationParameters,
+							WorkingDirectory:            path.EmptyBuilder.GetUNIXString(),
+						},
+						commandPatcher,
+					),
+					referenceFormat,
+					commandEncoder,
+				)
+				if err != nil {
+					return nil, fmt.Errorf("failed to create command: %w", err)
+				}
+
+				keyPatcher := model_core.NewReferenceMessagePatcher[dag.ObjectContentsWalker]()
+				actionResult := e.GetActionResultValue(PatchedActionResultKey{
+					Message: &model_analysis_pb.ActionResult_Key{
+						PlatformPkixPublicKey: repoPlatform.Message.ExecPkixPublicKey,
+						CommandReference: keyPatcher.AddReference(
+							commandContents.GetReference(),
+							dag.NewSimpleObjectContentsWalker(commandContents, commandMetadata),
+						),
+						ExecutionTimeout: &durationpb.Duration{Seconds: timeout},
+					},
+					Patcher: keyPatcher,
+				})
+				if !actionResult.IsSet() {
+					return nil, evaluation.ErrMissingDependency
+				}
+				return nil, errors.New("TODO!")
+			},
+		),
 		"extension_metadata": starlark.NewBuiltin(
 			"module_ctx.extension_metadata",
 			func(thread *starlark.Thread, b *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
@@ -236,6 +335,19 @@ func (c *baseComputer) ComputeModuleExtensionReposValue(ctx context.Context, key
 		),
 		"modules": starlark.NewList(modules),
 		"os":      newRepositoryOS(repoPlatform.Message),
+		"path": starlark.NewBuiltin(
+			"module_ctx.path",
+			func(thread *starlark.Thread, b *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
+				var filePath model_starlark.Path
+				if err := starlark.UnpackArgs(
+					b.Name(), args, kwargs,
+					"path", unpack.Bind(thread, &filePath, model_starlark.NewPathOrLabelOrStringUnpackerInto()),
+				); err != nil {
+					return nil, err
+				}
+				return filePath, nil
+			},
+		),
 	})
 	moduleCtx.Freeze()
 
@@ -276,8 +388,8 @@ func (c *baseComputer) ComputeModuleExtensionReposValue(ctx context.Context, key
 					firstName = firstElement.Parent.FirstName
 				}
 				patcher := model_core.NewReferenceMessagePatcher[dag.ObjectContentsWalker]()
-				return model_core.PatchedMessage[*model_analysis_pb.ModuleExtensionRepos_Value_RepoList_Element, dag.ObjectContentsWalker]{
-					Message: &model_analysis_pb.ModuleExtensionRepos_Value_RepoList_Element{
+				return model_core.NewPatchedMessage(
+					&model_analysis_pb.ModuleExtensionRepos_Value_RepoList_Element{
 						Level: &model_analysis_pb.ModuleExtensionRepos_Value_RepoList_Element_Parent_{
 							Parent: &model_analysis_pb.ModuleExtensionRepos_Value_RepoList_Element_Parent{
 								Reference: patcher.AddReference(contents.GetReference(), dag.NewSimpleObjectContentsWalker(contents, metadata)),
@@ -285,8 +397,8 @@ func (c *baseComputer) ComputeModuleExtensionReposValue(ctx context.Context, key
 							},
 						},
 					},
-					Patcher: patcher,
-				}, nil
+					patcher,
+				), nil
 			},
 		),
 	)
@@ -294,14 +406,14 @@ func (c *baseComputer) ComputeModuleExtensionReposValue(ctx context.Context, key
 	repos := repoRegistrar.GetRepos()
 	for _, name := range slices.Sorted(maps.Keys(repos)) {
 		repo := repos[name]
-		if err := treeBuilder.PushChild(model_core.PatchedMessage[*model_analysis_pb.ModuleExtensionRepos_Value_RepoList_Element, dag.ObjectContentsWalker]{
-			Message: &model_analysis_pb.ModuleExtensionRepos_Value_RepoList_Element{
+		if err := treeBuilder.PushChild(model_core.NewPatchedMessage(
+			&model_analysis_pb.ModuleExtensionRepos_Value_RepoList_Element{
 				Level: &model_analysis_pb.ModuleExtensionRepos_Value_RepoList_Element_Leaf{
 					Leaf: repo.Message,
 				},
 			},
-			Patcher: repo.Patcher,
-		}); err != nil {
+			repo.Patcher,
+		)); err != nil {
 			return PatchedModuleExtensionReposValue{}, err
 		}
 	}

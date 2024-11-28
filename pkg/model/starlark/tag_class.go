@@ -48,14 +48,14 @@ func (tc *TagClass) EncodeValue(path map[starlark.Value]struct{}, currentIdentif
 	if err != nil {
 		return model_core.PatchedMessage[*model_starlark_pb.Value, dag.ObjectContentsWalker]{}, false, err
 	}
-	return model_core.PatchedMessage[*model_starlark_pb.Value, dag.ObjectContentsWalker]{
-		Message: &model_starlark_pb.Value{
+	return model_core.NewPatchedMessage(
+		&model_starlark_pb.Value{
 			Kind: &model_starlark_pb.Value_TagClass{
 				TagClass: tagClass.Message,
 			},
 		},
-		Patcher: tagClass.Patcher,
-	}, needsCode, nil
+		tagClass.Patcher,
+	), needsCode, nil
 }
 
 type TagClassDefinition interface {
@@ -77,12 +77,12 @@ func (tcd *starlarkTagClassDefinition) Encode(path map[starlark.Value]struct{}, 
 	if err != nil {
 		return model_core.PatchedMessage[*model_starlark_pb.TagClass, dag.ObjectContentsWalker]{}, false, nil
 	}
-	return model_core.PatchedMessage[*model_starlark_pb.TagClass, dag.ObjectContentsWalker]{
-		Message: &model_starlark_pb.TagClass{
+	return model_core.NewPatchedMessage(
+		&model_starlark_pb.TagClass{
 			Attrs: encodedAttrs.Message,
 		},
-		Patcher: encodedAttrs.Patcher,
-	}, needsCode, nil
+		encodedAttrs.Patcher,
+	), needsCode, nil
 }
 
 type protoTagClassDefinition struct {

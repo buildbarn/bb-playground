@@ -31,5 +31,7 @@ done
     "$(rlocation com_github_buildbarn_bb_playground/deployments/demo/playground_storage_frontend.jsonnet)" &
 "$(rlocation com_github_buildbarn_bb_playground/cmd/playground_builder/playground_builder_/playground_builder)" \
     "$(rlocation com_github_buildbarn_bb_playground/deployments/demo/playground_builder.jsonnet)" &
+"$(rlocation com_github_buildbarn_bb_playground/cmd/playground_scheduler/playground_scheduler_/playground_scheduler)" \
+    "$(rlocation com_github_buildbarn_bb_playground/deployments/demo/playground_scheduler.jsonnet)" &
 
 wait

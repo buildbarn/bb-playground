@@ -105,7 +105,7 @@ def _platform_impl(ctx):
             ))
         constraints[setting_label] = value_label
 
-    exec_properties = ctx.attr.exec_properties
+    exec_pkix_public_key = ctx.attr.exec_pkix_public_key
     repository_os_arch = ctx.attr.repository_os_arch
     repository_os_environ = ctx.attr.repository_os_environ
     repository_os_name = ctx.attr.repository_os_name
@@ -116,14 +116,14 @@ def _platform_impl(ctx):
             fail("providing multiple parents is not supported")
         parent = ctx.attr.parents[0][PlatformInfo]
         constraints = parent.constraints | constraints
-        exec_properties = parent.exec_properties | exec_properties
+        exec_pkix_public_key = exec_pkix_public_key or parent.exec_pkix_public_key
         repository_os_arch = repository_os_arch or parent.repository_os_arch
         repository_os_environ = repository_os_environ or parent.repository_os_environ
         repository_os_name = repository_os_name or parent.repository_os_name
 
     return [PlatformInfo(
         constraints = constraints,
-        exec_properties = exec_properties,
+        exec_pkix_public_key = exec_pkix_public_key,
         repository_os_arch = repository_os_arch,
         repository_os_environ = repository_os_environ,
         repository_os_name = repository_os_name,
@@ -146,16 +146,12 @@ platform = rule(
             """,
             providers = [ConstraintValueInfo],
         ),
-        "exec_properties": attr.string_dict(
+        "exec_pkix_public_key": attr.string(
             doc = """
-            A map of strings that affect the way actions are executed
-            remotely. Bazel makes no attempt to interpret this, it is
-            treated as opaque data that's forwarded via the Platform
-            field of the remote execution protocol. This includes any
-            data from the parent platform's exec_properties attributes.
-            If the child and parent platform define the same keys, the
-            child's values are kept. Any keys associated with a value
-            that is an empty string are removed from the dictionary.
+            When the platform is used for execution, the X25519 public
+            key in PKIX form that identifies the execution platform. The
+            key needs to be provided in base64 encoded form, without the
+            PEM header/footer.
             """,
         ),
         "parents": attr.label_list(

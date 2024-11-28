@@ -101,10 +101,7 @@ func (n *packageGroupNode) toProto(inlinedTreeOptions *inlinedtree.Options) (mod
 		}
 
 		inlineCandidates = append(inlineCandidates, inlinedtree.Candidate[*model_starlark_pb.PackageGroup_Subpackages, dag.ObjectContentsWalker]{
-			ExternalMessage: model_core.PatchedMessage[proto.Message, dag.ObjectContentsWalker]{
-				Message: &overrides,
-				Patcher: patcher,
-			},
+			ExternalMessage: model_core.NewPatchedMessage[proto.Message](&overrides, patcher),
 			ParentAppender: func(
 				subpackages model_core.PatchedMessage[*model_starlark_pb.PackageGroup_Subpackages, dag.ObjectContentsWalker],
 				externalContents *object.Contents,
@@ -191,11 +188,11 @@ func NewPackageGroupFromVisibility(visibility []pg_label.CanonicalLabel, inlined
 	}
 
 	sort.Strings(includePackageGroups)
-	return model_core.PatchedMessage[*model_starlark_pb.PackageGroup, dag.ObjectContentsWalker]{
-		Message: &model_starlark_pb.PackageGroup{
+	return model_core.NewPatchedMessage(
+		&model_starlark_pb.PackageGroup{
 			Tree:                 treeProto.Message,
 			IncludePackageGroups: slices.Compact(includePackageGroups),
 		},
-		Patcher: treeProto.Patcher,
-	}, nil
+		treeProto.Patcher,
+	), nil
 }

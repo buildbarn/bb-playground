@@ -2,6 +2,9 @@ package main
 
 import (
 	"context"
+	"crypto/ecdh"
+	"crypto/x509"
+	"encoding/pem"
 	"fmt"
 	"math"
 	"net/http"
@@ -10,10 +13,12 @@ import (
 
 	"github.com/buildbarn/bb-playground/pkg/evaluation"
 	model_analysis "github.com/buildbarn/bb-playground/pkg/model/analysis"
+	model_core "github.com/buildbarn/bb-playground/pkg/model/core"
 	"github.com/buildbarn/bb-playground/pkg/model/encoding"
 	build_pb "github.com/buildbarn/bb-playground/pkg/proto/build"
 	"github.com/buildbarn/bb-playground/pkg/proto/configuration/playground_builder"
 	model_analysis_pb "github.com/buildbarn/bb-playground/pkg/proto/model/analysis"
+	remoteexecution_pb "github.com/buildbarn/bb-playground/pkg/proto/remoteexecution"
 	dag_pb "github.com/buildbarn/bb-playground/pkg/proto/storage/dag"
 	object_pb "github.com/buildbarn/bb-playground/pkg/proto/storage/object"
 	"github.com/buildbarn/bb-playground/pkg/storage/dag"
@@ -33,6 +38,7 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/proto"
 )
 
 func main() {
@@ -72,6 +78,34 @@ func main() {
 			return util.StatusWrap(err, "Failed to create cache directory")
 		}
 
+		executionGRPCClient, err := grpcClientFactory.NewClientFromConfiguration(configuration.ExecutionGrpcClient)
+		if err != nil {
+			return util.StatusWrap(err, "Failed to create execution gRPC client")
+		}
+
+		executionClientPrivateKeyBlock, _ := pem.Decode([]byte(configuration.ExecutionClientPrivateKey))
+		if executionClientPrivateKeyBlock == nil {
+			return status.Error(codes.InvalidArgument, "Execution client private key does not contain a PEM block")
+		}
+		if executionClientPrivateKeyBlock.Type != "PRIVATE KEY" {
+			return status.Error(codes.InvalidArgument, "Execution client private key PEM block is not of type PRIVATE KEY")
+		}
+		executionClientPrivateKey, err := x509.ParsePKCS8PrivateKey(executionClientPrivateKeyBlock.Bytes)
+		if err != nil {
+			return util.StatusWrap(err, "Failed to parse execution client private key")
+		}
+		executionClientECDHPrivateKey, ok := executionClientPrivateKey.(*ecdh.PrivateKey)
+		if !ok {
+			return status.Error(codes.InvalidArgument, "Execution client private key is not an ECDH private key")
+		}
+		var executionClientCertificates [][]byte
+		for certificateBlock, remainder := pem.Decode([]byte(configuration.ExecutionClientCertificateChain)); certificateBlock != nil; certificateBlock, remainder = pem.Decode(remainder) {
+			if certificateBlock.Type != "CERTIFICATE" {
+				return status.Error(codes.InvalidArgument, "Execution client certificate PEM block is not of type CERTIFICATE")
+			}
+			executionClientCertificates = append(executionClientCertificates, certificateBlock.Bytes)
+		}
+
 		if err := bb_grpc.NewServersFromConfigurationAndServe(
 			configuration.GrpcServers,
 			func(s grpc.ServiceRegistrar) {
@@ -82,8 +116,11 @@ func main() {
 					httpClient: &http.Client{
 						Transport: bb_http.NewMetricsRoundTripper(roundTripper, "Builder"),
 					},
-					filePool:       filePool,
-					cacheDirectory: cacheDirectory,
+					filePool:                    filePool,
+					cacheDirectory:              cacheDirectory,
+					executionClient:             remoteexecution_pb.NewExecutionClient(executionGRPCClient),
+					executionClientPrivateKey:   executionClientECDHPrivateKey,
+					executionClientCertificates: executionClientCertificates,
 				})
 			},
 			siblingsGroup,
@@ -103,6 +140,9 @@ type builderServer struct {
 	httpClient                    *http.Client
 	filePool                      re_filesystem.FilePool
 	cacheDirectory                filesystem.Directory
+	executionClient               remoteexecution_pb.ExecutionClient
+	executionClientPrivateKey     *ecdh.PrivateKey
+	executionClientCertificates   [][]byte
 }
 
 func (s *builderServer) PerformBuild(request *build_pb.PerformBuildRequest, server build_pb.Builder_PerformBuildServer) error {
@@ -114,7 +154,7 @@ func (s *builderServer) PerformBuild(request *build_pb.PerformBuildRequest, serv
 	}
 	instanceName := namespace.InstanceName
 	objectDownloader := object_namespacemapping.NewNamespaceAddingDownloader(s.objectDownloader, namespace)
-	buildSpecificationReference, err := namespace.NewLocalReference(request.BuildSpecificationReference)
+	buildSpecificationReference, err := namespace.NewGlobalReference(request.BuildSpecificationReference)
 	if err != nil {
 		return util.StatusWrap(err, "Invalid build specification reference")
 	}
@@ -134,8 +174,11 @@ func (s *builderServer) PerformBuild(request *build_pb.PerformBuildRequest, serv
 			s.httpClient,
 			s.filePool,
 			s.cacheDirectory,
+			s.executionClient,
+			s.executionClientPrivateKey,
+			s.executionClientCertificates,
 		)),
-		&model_analysis_pb.BuildResult_Key{},
+		model_core.NewSimpleMessage[proto.Message](&model_analysis_pb.BuildResult_Key{}),
 		func(references []object.LocalReference, objectContentsWalkers []dag.ObjectContentsWalker) error {
 			for i, reference := range references {
 				if err := dag.UploadDAG(

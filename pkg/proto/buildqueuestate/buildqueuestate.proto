@@ -1,0 +1,556 @@
+syntax = "proto3";
+
+package buildbarn.playground.buildqueuestate;
+
+import "google/protobuf/any.proto";
+import "google/protobuf/duration.proto";
+import "google/protobuf/empty.proto";
+import "google/protobuf/timestamp.proto";
+import "google/rpc/status.proto";
+import "pkg/proto/remoteexecution/remoteexecution.proto";
+
+option go_package = "github.com/buildbarn/bb-playground/pkg/proto/buildqueuestate";
+
+// BuildQueueState can be used to inspect the internal state of
+// InMemoryBuildQueue and perform administrative operations against it.
+// It is used by bb_scheduler's web UI.
+service BuildQueueState {
+  // Get information about an operation that is currently known by the
+  // scheduler.
+  rpc GetOperation(GetOperationRequest) returns (GetOperationResponse);
+
+  // List information about all operations that are currently known by
+  // the scheduler.
+  rpc ListOperations(ListOperationsRequest) returns (ListOperationsResponse);
+
+  // Forcefully terminate one or more operations that are either in the
+  // QUEUED or EXECUTING execution stage with a provided gRPC status.
+  rpc KillOperations(KillOperationsRequest) returns (google.protobuf.Empty);
+
+  // List information about all platform queues that are currently
+  // registered by the scheduler.
+  //
+  // Platform queues are responsible for tracking all workers and
+  // operations for a single execution platform. Platform queues are
+  // identified by a set of X25519 public keys owned by the workers.
+  //
+  // TODO: Should this call support pagination, or is the number of
+  // platform queues low enough that it's not needed?
+  rpc ListPlatformQueues(google.protobuf.Empty)
+      returns (ListPlatformQueuesResponse);
+
+  // List information about all client invocations for which one or more
+  // operations exist that are in the QUEUED or EXECUTING execution
+  // stage for a given platform queue.
+  //
+  // TODO: Should this call support pagination, or is the number of
+  // invocations low enough that it's not needed?
+  rpc ListInvocationChildren(ListInvocationChildrenRequest)
+      returns (ListInvocationChildrenResponse);
+
+  // List information about all operations that are in the QUEUED
+  // execution stage for a given client invocation.
+  rpc ListQueuedOperations(ListQueuedOperationsRequest)
+      returns (ListQueuedOperationsResponse);
+
+  // List information about all workers that are requesting tasks from a
+  // given platform queue.
+  rpc ListWorkers(ListWorkersRequest) returns (ListWorkersResponse);
+
+  // Mark workers in a platform queue as about to be terminated. This
+  // causes the workers to no longer receive new tasks after completing
+  // the task they are currently assigned.
+  //
+  // This method blocks until all workers matched by the provided
+  // pattern are idle. Once completed, it is safe to terminate the
+  // matching workers without disrupting execution of tasks.
+  rpc TerminateWorkers(TerminateWorkersRequest) returns (google.protobuf.Empty);
+
+  // List worker ID patterns that are used to prevent workers from
+  // receiving new tasks.
+  rpc ListDrains(ListDrainsRequest) returns (ListDrainsResponse);
+
+  // Add a new worker ID pattern that prevents workers from receiving
+  // new tasks. The difference between AddDrain() and TerminateWorkers()
+  // is that entries created by the former can be removed with
+  // RemoveDrain(). Patterns are also retained, regardless of whether
+  // workers disappear and reappear in the meantime.
+  rpc AddDrain(AddOrRemoveDrainRequest) returns (google.protobuf.Empty);
+
+  // Remove an existent worker ID pattern that prevents workers from
+  // receiving new tasks. This method is the inverse of AddDrain().
+  rpc RemoveDrain(AddOrRemoveDrainRequest) returns (google.protobuf.Empty);
+}
+
+// Message types shared by multiple RPCs.
+
+message PaginationInfo {
+  // The zero-based index of the first element returned by this
+  // function, relative to the full list of data that may be returned by
+  // this method.
+  uint32 start_index = 1;
+
+  // The total number of entries in the full list of data that may be
+  // returned by this method.
+  uint32 total_entries = 2;
+}
+
+message SizeClassQueueName {
+  // X25519 public key in PKIX, ASN.1 DER form that clients can use to
+  // obtain a shared secret for encrypting actions for this platform.
+  //
+  // If workers announce multiple public keys, the scheduler returns the
+  // public key corresponding to PlatformQueueState.pkix_public_keys[0].
+  // As part of requests, clients can use any of the public keys.
+  bytes platform_pkix_public_key = 1;
+
+  // The size of the workers relative to other workers in the same
+  // platform queue.
+  uint32 size_class = 2;
+}
+
+message InvocationName {
+  // The size class queue in which the invocation is placed.
+  SizeClassQueueName size_class_queue_name = 1;
+
+  // Sequence of invocation IDs that is used to identify the invocation.
+  repeated google.protobuf.Any ids = 2;
+}
+
+message OperationState {
+  // The name of the operation. In the case of bb_scheduler, the
+  // operation name will be a UUID.
+  string name = 1;
+
+  // The invocation in which the operation is placed.
+  InvocationName invocation_name = 2;
+
+  // The expected amount of time this operation takes to complete.
+  google.protobuf.Duration expected_duration = 3;
+
+  // The time at which the client enqueued the operation by calling
+  // Execute().
+  google.protobuf.Timestamp queued_timestamp = 4;
+
+  // The Action message that the client instructed the worker to execute.
+  buildbarn.playground.remoteexecution.Action action = 5;
+
+  // When not set, it indicates that one or more Execute() or
+  // WaitExecution() calls are currently taking place for this
+  // operation. The scheduler will continue to maintain this operation.
+  //
+  // When set, it indicates that no Execute() or WaitExecution() calls
+  // are currently taking place for this operation. The client has
+  // abandoned this operation. This timestamp indicates when the
+  // scheduler will remove this operation.
+  //
+  // If this operation is in the EXECUTING execution stage at the time
+  // of removal (and this operation hasn't been in-flight deduplicated
+  // against an operation created by some other client), its worker will
+  // be instructed to stop execution.
+  google.protobuf.Timestamp timeout = 6;
+
+  oneof stage {
+    // The operation is in the QUEUED stage.
+    google.protobuf.Empty queued = 7;
+
+    // The operation is in the EXECUTING stage.
+    // TODO: Would we want this to use type WorkerState, so that we can
+    // get the ID of the worker on which an operation is executing?
+    google.protobuf.Empty executing = 8;
+
+    // The operation is in the COMPLETED stage.
+    google.protobuf.Empty completed = 9;
+  }
+
+  // The priority of the operation, as provided by the client through
+  // ExecutionPolicy.
+  int32 priority = 10;
+}
+
+message SizeClassQueueState {
+  // The size of the workers relative to other workers in the same
+  // platform queue.
+  uint32 size_class = 1;
+
+  // When not set, it indicates that one or more workers exist in the
+  // platform queue.
+  //
+  // When set, it indicates that all workers have disappeared.
+  // Operations scheduled by clients using Execute() are still being
+  // queued, as this may be a transient condition. This timestamp
+  // indicates when the scheduler will remove the platform queue,
+  // thereby causing all Execute() requests for this instance name and
+  // platform properties to fail.
+  google.protobuf.Timestamp timeout = 2;
+
+  // The total number of workers associated with this platform queue.
+  uint32 workers_count = 3;
+
+  // The total number of drains associated with this platform queue that
+  // were created using AddDrain().
+  uint32 drains_count = 4;
+
+  // Information about all operations that are part of this size class
+  // queue, and utilization of workers.
+  InvocationState root_invocation = 5;
+}
+
+message PlatformQueueState {
+  // Non-empty sorted list of X25519 public keys in PKIX, ASN.1 DER form
+  // that clients can use to obtain a shared secret for encrypting
+  // actions.
+  repeated bytes pkix_public_keys = 1;
+
+  // The state of the platform queue per worker size class.
+  repeated SizeClassQueueState size_class_queues = 2;
+}
+
+message InvocationState {
+  // The total number of operations associated with this platform queue
+  // and invocation that are in the QUEUED execution stage.
+  uint32 queued_operations_count = 1;
+
+  // The total number of workers for this size class queue that are
+  // currently executing an operation belonging to this invocation. This
+  // equals the number of operations associated with this platform queue
+  // and invocation that are in the EXECUTING execution stage.
+  uint32 executing_workers_count = 2;
+
+  // The total number of workers for this size class queue that are
+  // currently idle and most recently completed an operation belonging
+  // to this invocation.
+  uint32 idle_workers_count = 3;
+
+  // The total number of workers for this size class queue that are
+  // currently idle and most recently executed an action belonging to
+  // this invocation and synchronizing against the scheduler.
+  //
+  // These are the workers that will most preferably be used to execute
+  // successive operations scheduled as part of this invocation.
+  uint32 idle_synchronizing_workers_count = 4;
+
+  // The total number of client invocations for which one or more
+  // operations in either the QUEUED or EXECUTING execution stage exist,
+  // or for which one or more workers exist that most recently executed
+  // a task belonging to this invocation.
+  uint32 children_count = 5;
+
+  // The total number of client invocations for which one or more
+  // operations in either the QUEUED or EXECUTING execution stage exist.
+  uint32 active_children_count = 6;
+
+  // The total number of client invocations for which one or more
+  // operations in the QUEUED execution stage exist.
+  uint32 queued_children_count = 7;
+}
+
+message InvocationChildState {
+  // An identifier for a set of operations that should be scheduled
+  // collectively and fairly with respect to other sets.
+  //
+  // If the operation was created because the scheduler wanted to test
+  // the execution of an action on a size class for which there is a
+  // high probability of failure, this field contains a
+  // BackgroundLearning message.
+  //
+  // This field may also contain other kinds of messages in case the
+  // scheduler is configured to provide fairness not at the Bazel
+  // invocation ID level, but using some alternative heuristics.
+  google.protobuf.Any id = 1;
+
+  // State of the child invocation.
+  InvocationState state = 2;
+}
+
+message WorkerState {
+  // The labels that uniquely identifies the worker inside this size
+  // class queue.
+  map<string, string> id = 1;
+
+  // When not set, it indicates that the worker is currently calling
+  // Synchronize() to report its current status, potentially blocking on
+  // the scheduler to provide it a new task to execute.
+  //
+  // When set, it indicates that the worker is currently not calling
+  // Synchronize(). This may either be because it's executing a task and
+  // will only report its state periodically, or because the worker has
+  // disappeared. This timestamp indicates when the scheduler will
+  // remove this worker and terminate any operation it is running,
+  // assuming the worker does not call Synchronize() before this time.
+  google.protobuf.Timestamp timeout = 2;
+
+  // The properties of the operation that is currently executed by this
+  // worker. This option is not set when the worker is idle.
+  //
+  // The 'size_class_queue' and 'stage' fields are omitted, as their
+  // values are implied.
+  OperationState current_operation = 3;
+
+  // Set if one or more drains exist whose worker ID patterns match the
+  // ID of the worker. When set, the worker is permitted to complete the
+  // task it is currently execution, but will not receive any further
+  // tasks to execute.
+  bool drained = 4;
+}
+
+message DrainState {
+  // The pattern of matching workers to drain. This pattern matches all
+  // workers for which the worker ID is a superset of the pattern. An
+  // empty worker ID pattern would match all workers.
+  map<string, string> worker_id_pattern = 1;
+
+  // The time at which this drain was created.
+  google.protobuf.Timestamp created_timestamp = 2;
+}
+
+// Request and response messages.
+
+message GetOperationRequest {
+  // The name of the operation for which the state needs to be obtained.
+  string operation_name = 1;
+}
+
+message GetOperationResponse {
+  // The state of the operation that needed to be obtain.
+  //
+  // The 'name' field of the operation is omitted, as its value is
+  // implied.
+  OperationState operation = 1;
+}
+
+message ListOperationsRequest {
+  message StartAfter {
+    // The name of the operation.
+    string operation_name = 1;
+  }
+
+  // The number of operations to be returned. The response may contain
+  // fewer operations, iff fewer than page_size operations exist after
+  // the starting position.
+  uint32 page_size = 1;
+
+  // When not set, return the first operations known by the scheduler.
+  // When set, return the first operations after the provided starting
+  // point.
+  StartAfter start_after = 2;
+
+  // If set, only return operations having an invocation ID that
+  // matches the provided value.
+  google.protobuf.Any filter_invocation_id = 3;
+
+  enum ExecutionStage {
+    // Match any operation, regardless of it's stage.
+    ANY = 0;
+
+    // Currently idle, awaiting a free machine to execute.
+    QUEUED = 1;
+
+    // Currently being executed by a worker.
+    EXECUTING = 2;
+
+    // Finished execution.
+    COMPLETED = 3;
+  }
+
+  // Only return operations whose execution stage matches the provided
+  // value.
+  ExecutionStage filter_stage = 4;
+}
+
+message ListOperationsResponse {
+  // The state of operations known by the scheduler.
+  repeated OperationState operations = 1;
+
+  // The position at which the resulting operations are stored in the
+  // list of all operations.
+  PaginationInfo pagination_info = 2;
+}
+
+message KillOperationsRequest {
+  message Filter {
+    oneof type {
+      // Kill one operation, having a given name.
+      string operation_name = 1;
+
+      // Kill all operations within a given size class queue, only if the
+      // size class queue has zero workers.
+      //
+      // This filter can be used by autoscaler processes to report to
+      // clients that they are attempting to use a size class queue for
+      // which no workers can be created.
+      SizeClassQueueName size_class_queue_without_workers = 2;
+    }
+  }
+
+  // Limit the operations to kill according to a filter.
+  Filter filter = 1;
+
+  // The error to return to clients as part of the ExecuteResponse.
+  google.rpc.Status status = 2;
+}
+
+message ListPlatformQueuesResponse {
+  // The state of all platform queued managed by the scheduler.
+  repeated PlatformQueueState platform_queues = 1;
+}
+
+message ListInvocationChildrenRequest {
+  // The name of the invocation whose children need to be listed.
+  InvocationName invocation_name = 1;
+
+  enum Filter {
+    // Return invocations for which one or more operations that are in
+    // the QUEUED or EXECUTING stages exist, or for which one or more
+    // workers exist that most recently executed a task belonging to
+    // this invocation.
+    //
+    // Invocations are sorted alphabetically by invocation ID.
+    ALL = 0;
+
+    // Return invocations for which one or more operations that are in
+    // the QUEUED or EXECUTING stages exist.
+    //
+    // Invocations are sorted alphabetically by invocation ID.
+    ACTIVE = 1;
+
+    // Return invocations for which one or more operations that are in
+    // the QUEUED stage exist.
+    //
+    // Invocations are sorted by the order in which the scheduler will
+    // prefer scheduling operations from these invocations, in
+    // descending order.
+    QUEUED = 2;
+  }
+
+  // Limit the results according to a filter.
+  Filter filter = 2;
+}
+
+message ListInvocationChildrenResponse {
+  // The state of all invocations known by the scheduler that are
+  // contained within the provided invocation.
+  repeated InvocationChildState children = 1;
+}
+
+message ListQueuedOperationsRequest {
+  message StartAfter {
+    // The priority of the queued operation.
+    int32 priority = 1;
+
+    // The expected amount of time that this operation takes to
+    // complete.
+    google.protobuf.Duration expected_duration = 3;
+
+    // The timestamp at which the operation was queued.
+    google.protobuf.Timestamp queued_timestamp = 2;
+  }
+
+  // The invocation whose list of queued operations needs to be
+  // returned.
+  InvocationName invocation_name = 1;
+
+  // The number of operations to be returned. The response may contain
+  // fewer operations, iff fewer than page_size operations exist after
+  // the starting position.
+  uint32 page_size = 2;
+
+  // When not set, return the first queued operations known by the
+  // scheduler for the provided platform queue and invocation ID. When
+  // set, return the first operations after the provided starting point.
+  StartAfter start_after = 3;
+}
+
+message ListQueuedOperationsResponse {
+  // The state of operations that are in the QUEUED stage that are part
+  // of the provided platform queue and invocation ID.
+  //
+  // The 'size_class_queue' and 'invocation_ids' fields are omitted, as
+  // their values are implied.
+  repeated OperationState queued_operations = 1;
+
+  // The position at which the resulting operations are stored in the
+  // list of all queued operations for the provided platform queue and
+  // invocation ID.
+  PaginationInfo pagination_info = 2;
+}
+
+message ListWorkersRequest {
+  message Filter {
+    oneof type {
+      // List all of the workers in a given size class queue.
+      SizeClassQueueName all = 1;
+
+      // List all of the workers that are executing an operation
+      // belonging to a given invocation, or one of its transitive child
+      // invocations.
+      InvocationName executing = 2;
+
+      // List all of the workers that are idle and are synchronizing
+      // against the scheduler that most recently executed an operation
+      // belonging to a given invocation.
+      InvocationName idle_synchronizing = 3;
+    }
+  }
+
+  message StartAfter {
+    // The labels that uniquely identifies the worker inside this size
+    // class queue.
+    map<string, string> worker_id = 1;
+  }
+
+  // Limit the results according to a filter.
+  Filter filter = 1;
+
+  // The number of workers to be returned. The response may contain
+  // fewer workers, iff fewer than page_size workers exist after the
+  // starting position.
+  uint32 page_size = 3;
+
+  // When not set, return the first workers known by the scheduler for
+  // the provided platform queue. When set, return the first workers
+  // after the provided starting point.
+  StartAfter start_after = 4;
+}
+
+message ListWorkersResponse {
+  // The state of workers that are part of the provided platform queue.
+  repeated WorkerState workers = 1;
+
+  // The position at which the resulting workers are stored in the list
+  // of all workers for the provided platform queue.
+  PaginationInfo pagination_info = 2;
+}
+
+message TerminateWorkersRequest {
+  // The pattern of matching workers to terminate. This pattern matches
+  // all workers for which the worker ID is a superset of the pattern.
+  // An empty worker ID pattern would match all workers.
+  map<string, string> worker_id_pattern = 1;
+}
+
+message ListDrainsRequest {
+  // The platform queue whose list of drains needs to be returned.
+  SizeClassQueueName size_class_queue_name = 1;
+}
+
+message ListDrainsResponse {
+  // The state of drains that are part of the provided platform queue.
+  repeated DrainState drains = 1;
+}
+
+message AddOrRemoveDrainRequest {
+  // The platform queue whose list of drains needs to be altered.
+  SizeClassQueueName size_class_queue_name = 1;
+
+  // The pattern of matching workers for which a drain needs to be added
+  // or removed.
+  map<string, string> worker_id_pattern = 2;
+}
+
+// A special message type that is used as an invocation ID to indicate
+// that an operation was created, because the scheduler wanted to test
+// the execution of an action on a size class for which there is a high
+// probability of failure. Background learning is performed to ensure
+// that execution statistics remain calibrated.
+message BackgroundLearning {}

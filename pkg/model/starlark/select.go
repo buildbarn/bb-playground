@@ -151,10 +151,7 @@ func (s *Select) EncodeGroups(path map[starlark.Value]struct{}, options *ValueEn
 		groups = append(groups, &encodedGroup)
 	}
 
-	return model_core.PatchedMessage[[]*model_starlark_pb.Select_Group, dag.ObjectContentsWalker]{
-		Message: groups,
-		Patcher: patcher,
-	}, needsCode, nil
+	return model_core.NewPatchedMessage(groups, patcher), needsCode, nil
 }
 
 func (s *Select) EncodeValue(path map[starlark.Value]struct{}, currentIdentifier *pg_label.CanonicalStarlarkIdentifier, options *ValueEncodingOptions) (model_core.PatchedMessage[*model_starlark_pb.Value, dag.ObjectContentsWalker], bool, error) {
@@ -171,8 +168,8 @@ func (s *Select) EncodeValue(path map[starlark.Value]struct{}, currentIdentifier
 		concatenationOperator = model_starlark_pb.Select_PLUS
 	}
 
-	return model_core.PatchedMessage[*model_starlark_pb.Value, dag.ObjectContentsWalker]{
-		Message: &model_starlark_pb.Value{
+	return model_core.NewPatchedMessage(
+		&model_starlark_pb.Value{
 			Kind: &model_starlark_pb.Value_Select{
 				Select: &model_starlark_pb.Select{
 					Groups:                groups.Message,
@@ -180,8 +177,8 @@ func (s *Select) EncodeValue(path map[starlark.Value]struct{}, currentIdentifier
 				},
 			},
 		},
-		Patcher: groups.Patcher,
-	}, needsCode, nil
+		groups.Patcher,
+	), needsCode, nil
 }
 
 type selectUnpackerInto struct {

@@ -52,14 +52,13 @@ func (be *deterministicEncryptingBinaryEncoder) EncodeBinary(in []byte) ([]byte,
 	}
 
 	// Pick an initialization vector. Because this has to work
-	// deterministically, hash the input. Prepend it to the output
-	// in encrypted form, so that the hash itself isn't revealed.
-	// That would allow fingerprinting of objects, even if the key
-	// is changed.
+	// deterministically, hash the input. Encrypt it, so that the
+	// hash itself isn't revealed. That would allow fingerprinting
+	// of objects, even if the key is changed.
 	ivHash := sha256.Sum256(in)
-	iv := ivHash[:be.blockSizeBytes]
 	out := make([]byte, be.getEncodedSizeBytes(len(in)))
-	be.blockCipher.Encrypt(out, iv)
+	iv := out[:be.blockSizeBytes]
+	be.blockCipher.Encrypt(iv, ivHash[:be.blockSizeBytes])
 
 	outPayload := out[be.blockSizeBytes:]
 	stream := cipher.NewCTR(be.blockCipher, iv)
@@ -84,14 +83,11 @@ func (be *deterministicEncryptingBinaryEncoder) DecodeBinary(in []byte) ([]byte,
 		)
 	}
 
-	// Reobtain the initialization vector that is used to encrypt
-	// the actual data.
-	iv := make([]byte, be.blockSizeBytes)
-	be.blockCipher.Decrypt(iv, in[:be.blockSizeBytes])
-
+	// Decrypt the data, using the initialization vector that is
+	// stored before it.
 	encryptedData := in[be.blockSizeBytes:]
 	out := make([]byte, len(encryptedData))
-	stream := cipher.NewCTR(be.blockCipher, iv)
+	stream := cipher.NewCTR(be.blockCipher, in[:be.blockSizeBytes])
 	stream.XORKeyStream(out, encryptedData)
 
 	// Remove trailing padding.

@@ -136,7 +136,7 @@ func (c *baseComputer) ComputePackageValue(ctx context.Context, key *model_analy
 		if _, err := program.Init(thread, buildFileBuiltins); err != nil {
 			var evalErr *starlark.EvalError
 			if !errors.Is(err, evaluation.ErrMissingDependency) && errors.As(err, &evalErr) {
-				return PatchedPackageValue{}, fmt.Errorf("%s: %s", evalErr.Backtrace(), evalErr.Msg)
+				return PatchedPackageValue{}, errors.New(evalErr.Backtrace())
 			}
 			return PatchedPackageValue{}, err
 		}
@@ -158,8 +158,8 @@ func (c *baseComputer) ComputePackageValue(ctx context.Context, key *model_analy
 						firstName = firstElement.Parent.FirstName
 					}
 					patcher := model_core.NewReferenceMessagePatcher[dag.ObjectContentsWalker]()
-					return model_core.PatchedMessage[*model_analysis_pb.Package_Value_TargetList_Element, dag.ObjectContentsWalker]{
-						Message: &model_analysis_pb.Package_Value_TargetList_Element{
+					return model_core.NewPatchedMessage(
+						&model_analysis_pb.Package_Value_TargetList_Element{
 							Level: &model_analysis_pb.Package_Value_TargetList_Element_Parent_{
 								Parent: &model_analysis_pb.Package_Value_TargetList_Element_Parent{
 									Reference: patcher.AddReference(contents.GetReference(), dag.NewSimpleObjectContentsWalker(contents, metadata)),
@@ -167,8 +167,8 @@ func (c *baseComputer) ComputePackageValue(ctx context.Context, key *model_analy
 								},
 							},
 						},
-						Patcher: patcher,
-					}, nil
+						patcher,
+					), nil
 				},
 			),
 		)
@@ -176,14 +176,14 @@ func (c *baseComputer) ComputePackageValue(ctx context.Context, key *model_analy
 		targets := targetRegistrar.GetTargets()
 		for _, name := range slices.Sorted(maps.Keys(targets)) {
 			target := targets[name]
-			if err := treeBuilder.PushChild(model_core.PatchedMessage[*model_analysis_pb.Package_Value_TargetList_Element, dag.ObjectContentsWalker]{
-				Message: &model_analysis_pb.Package_Value_TargetList_Element{
+			if err := treeBuilder.PushChild(model_core.NewPatchedMessage(
+				&model_analysis_pb.Package_Value_TargetList_Element{
 					Level: &model_analysis_pb.Package_Value_TargetList_Element_Leaf{
 						Leaf: target.Message,
 					},
 				},
-				Patcher: target.Patcher,
-			}); err != nil {
+				target.Patcher,
+			)); err != nil {
 				return PatchedPackageValue{}, err
 			}
 		}

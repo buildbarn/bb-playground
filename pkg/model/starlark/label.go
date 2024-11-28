@@ -52,6 +52,10 @@ func (l label) Attr(name string) (starlark.Value, error) {
 	switch name {
 	case "name":
 		return starlark.String(l.value.GetTargetName().String()), nil
+	case "package":
+		return starlark.String(l.value.GetCanonicalPackage().GetPackagePath()), nil
+	case "repo_name":
+		return starlark.String(l.value.GetCanonicalPackage().GetCanonicalRepo().String()), nil
 	default:
 		return nil, nil
 	}
@@ -59,6 +63,8 @@ func (l label) Attr(name string) (starlark.Value, error) {
 
 var labelAttrNames = []string{
 	"name",
+	"package",
+	"repo_name",
 }
 
 func (l label) AttrNames() []string {

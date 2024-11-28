@@ -8,10 +8,12 @@ go_library(
     deps = [
         "//pkg/evaluation",
         "//pkg/model/analysis",
+        "//pkg/model/core",
         "//pkg/model/encoding",
         "//pkg/proto/build",
         "//pkg/proto/configuration/playground_builder",
         "//pkg/proto/model/analysis",
+        "//pkg/proto/remoteexecution",
         "//pkg/proto/storage/dag",
         "//pkg/proto/storage/object",
         "//pkg/storage/dag",
@@ -29,6 +31,7 @@ go_library(
         "@org_golang_google_grpc//:grpc",
         "@org_golang_google_grpc//codes",
         "@org_golang_google_grpc//status",
+        "@org_golang_google_protobuf//proto",
         "@org_golang_x_sync//semaphore",
     ],
 )

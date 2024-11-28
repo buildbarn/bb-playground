@@ -3,9 +3,11 @@ sh_binary(
     srcs = ["demo.sh"],
     data = [
         ":playground_builder.jsonnet",
+        ":playground_scheduler.jsonnet",
         ":playground_storage_frontend.jsonnet",
         ":playground_storage_shard.jsonnet",
         "//cmd/playground_builder",
+        "//cmd/playground_scheduler",
         "//cmd/playground_storage_frontend",
         "//cmd/playground_storage_shard",
     ],

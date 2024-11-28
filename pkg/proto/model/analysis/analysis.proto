@@ -2,18 +2,32 @@ syntax = "proto3";
 
 package buildbarn.playground.model.analysis;
 
+import "google/protobuf/duration.proto";
+import "pkg/proto/model/action/action.proto";
 import "pkg/proto/model/build/build.proto";
 import "pkg/proto/model/core/core.proto";
+import "pkg/proto/model/encoding/encoding.proto";
 import "pkg/proto/model/filesystem/filesystem.proto";
 import "pkg/proto/model/starlark/starlark.proto";
 
 option go_package = "github.com/buildbarn/bb-playground/pkg/proto/model/analysis";
 
-message AllModuleInstances {
-  message Key {}
+message ActionResult {
+  message Key {
+    // The X25519 public key that identifies the platform that should be
+    // used to execute the action in PKIX, ASN.1 DER form.
+    bytes platform_pkix_public_key = 1;
+
+    buildbarn.playground.model.core.Reference command_reference = 2;
+
+    buildbarn.playground.model.core.Reference input_root_reference = 3;
+
+    google.protobuf.Duration execution_timeout = 4;
+  }
 
   message Value {
-    repeated string module_instances = 1;
+    // Results of the action that executed on a remote worker.
+    buildbarn.playground.model.action.Result action_result = 1;
   }
 }
 
@@ -54,6 +68,21 @@ message CanonicalRepoName {
   message Value {
     // The resolved canonical name of the repo which is being accessed.
     string to_canonical_repo = 1;
+  }
+}
+
+message CommandEncoderObject {
+  message Key {}
+}
+
+message CommandEncoders {
+  message Key {}
+
+  message Value {
+    // Encoders that should be used when creating Command messages that
+    // are processed by workers.
+    repeated buildbarn.playground.model.encoding.BinaryEncoder
+        command_encoders = 1;
   }
 }
 
@@ -492,14 +521,6 @@ message Package {
   }
 }
 
-message ExecProperty {
-  // The name of the remote execution property.
-  string name = 1;
-
-  // The value of the remote execution property.
-  string value = 2;
-}
-
 message RegisteredExecutionPlatforms {
   message Key {}
 
@@ -518,10 +539,9 @@ message RegisteredExecutionPlatforms {
       // alphabetically by setting.
       repeated Constraint constraints = 1;
 
-      // Properties that need to be sent to the remote execution
-      // system to select appropriate workers. Properties are sorted
-      // alphabetically by name.
-      repeated ExecProperty exec_properties = 2;
+      // The X25519 public key that identifies the platform that should be
+      // used to execute the action in PKIX, ASN.1 DER form.
+      bytes exec_pkix_public_key = 2;
 
       // TODO: Also add flags, required_settings, etc.?
     }
@@ -544,10 +564,9 @@ message RegisteredRepoPlatform {
       string value = 2;
     }
 
-    // Properties that need to be sent to the remote execution
-    // system to select appropriate workers. Properties are sorted
-    // alphabetically by name.
-    repeated ExecProperty exec_properties = 1;
+    // The X25519 public key that identifies the platform that should be
+    // used to execute the action in PKIX, ASN.1 DER form.
+    bytes exec_pkix_public_key = 1;
 
     // The name of the architecture to announce via repository_os.arch.
     string repository_os_arch = 2;

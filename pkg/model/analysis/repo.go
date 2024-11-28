@@ -878,6 +878,19 @@ func (c *baseComputer) fetchModuleExtensionRepo(ctx context.Context, canonicalRe
 					},
 				),
 				"os": newRepositoryOS(repoPlatform.Message),
+				"path": starlark.NewBuiltin(
+					"repository_ctx.path",
+					func(thread *starlark.Thread, b *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
+						var filePath model_starlark.Path
+						if err := starlark.UnpackArgs(
+							b.Name(), args, kwargs,
+							"path", unpack.Bind(thread, &filePath, model_starlark.NewPathOrLabelOrStringUnpackerInto()),
+						); err != nil {
+							return nil, err
+						}
+						return filePath, nil
+					},
+				),
 				"template": starlark.NewBuiltin(
 					"repository_ctx.template",
 					func(thread *starlark.Thread, b *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
@@ -1050,8 +1063,11 @@ func (c *baseComputer) returnRepoMerkleTree(ctx context.Context, rootDirectory *
 
 	// Store the root directory itself. We don't embed it into the
 	// response, as that prevents it from being accessed separately.
-	references, children := rootDirectoryMessage.Patcher.SortAndSetReferences()
-	contents, err := directoryCreationParameters.EncodeDirectory(references, rootDirectoryMessage.Message)
+	contents, children, err := model_core.MarshalAndEncodePatchedMessage(
+		rootDirectoryMessage,
+		c.buildSpecificationReference.GetReferenceFormat(),
+		directoryCreationParameters.GetEncoder(),
+	)
 	if err != nil {
 		return PatchedRepoValue{}, err
 	}

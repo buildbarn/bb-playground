@@ -123,8 +123,8 @@ var BuildFileBuiltins = starlark.StringDict{
 
 			return starlark.None, targetRegistrar.registerTarget(
 				name,
-				model_core.PatchedMessage[*model_starlark_pb.Target, dag.ObjectContentsWalker]{
-					Message: &model_starlark_pb.Target{
+				model_core.NewPatchedMessage(
+					&model_starlark_pb.Target{
 						Name: name,
 						Definition: &model_starlark_pb.Target_Definition{
 							Kind: &model_starlark_pb.Target_Definition_Alias{
@@ -135,8 +135,8 @@ var BuildFileBuiltins = starlark.StringDict{
 							},
 						},
 					},
-					Patcher: patcher,
-				},
+					patcher,
+				),
 			)
 		},
 	),

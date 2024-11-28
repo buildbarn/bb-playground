@@ -1,0 +1,32 @@
+load("@rules_go//go:def.bzl", "go_binary", "go_library")
+
+go_library(
+    name = "playground_scheduler_lib",
+    srcs = ["main.go"],
+    importpath = "github.com/buildbarn/bb-playground/cmd/playground_scheduler",
+    visibility = ["//visibility:private"],
+    deps = [
+        "//pkg/proto/buildqueuestate",
+        "//pkg/proto/configuration/playground_scheduler",
+        "//pkg/proto/remoteexecution",
+        "//pkg/proto/remoteworker",
+        "//pkg/scheduler",
+        "//pkg/scheduler/routing",
+        "@com_github_buildbarn_bb_storage//pkg/clock",
+        "@com_github_buildbarn_bb_storage//pkg/global",
+        "@com_github_buildbarn_bb_storage//pkg/grpc",
+        "@com_github_buildbarn_bb_storage//pkg/program",
+        "@com_github_buildbarn_bb_storage//pkg/random",
+        "@com_github_buildbarn_bb_storage//pkg/util",
+        "@com_github_google_uuid//:uuid",
+        "@org_golang_google_grpc//:grpc",
+        "@org_golang_google_grpc//codes",
+        "@org_golang_google_grpc//status",
+    ],
+)
+
+go_binary(
+    name = "playground_scheduler",
+    embed = [":playground_scheduler_lib"],
+    visibility = ["//visibility:public"],
+)

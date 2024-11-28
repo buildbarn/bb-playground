@@ -4,6 +4,7 @@ package buildbarn.playground.model.build;
 
 import "google/protobuf/duration.proto";
 import "pkg/proto/model/core/core.proto";
+import "pkg/proto/model/encoding/encoding.proto";
 import "pkg/proto/model/filesystem/filesystem.proto";
 
 option go_package = "github.com/buildbarn/bb-playground/pkg/proto/model/build";
@@ -93,4 +94,9 @@ message BuildSpecification {
   // If this field is not set, the build will be unable to evaluate
   // module extensions and repository rules.
   string repo_platform = 10;
+
+  // Encoders that should be used when creating Command messages that
+  // are processed by workers.
+  repeated buildbarn.playground.model.encoding.BinaryEncoder command_encoders =
+      11;
 }

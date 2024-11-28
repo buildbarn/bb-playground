@@ -30,4 +30,17 @@ message ApplicationConfiguration {
   // TODO: This option should be removed once we can properly store tags
   // in the build cache.
   string cache_directory_path = 6;
+
+  // gRPC client that communicates with the scheduler.
+  buildbarn.configuration.grpc.ClientConfiguration execution_grpc_client = 7;
+
+  // X25519 private key used to compute a shared secret for encrypting
+  // actions to submit to the scheduler. The key must be in PKCS #8,
+  // ASN.1 DER form, stored in a PEM block of type "PRIVATE KEY".
+  string execution_client_private_key = 8;
+
+  // Client certificate that needs to be presented to workers to
+  // authenticate, followed by any intermediate certificates.
+  // Certificates must be stored in PEM blocks of type "CERTIFICATE".
+  string execution_client_certificate_chain = 9;
 }

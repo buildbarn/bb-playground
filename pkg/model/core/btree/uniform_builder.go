@@ -62,20 +62,14 @@ func (b *uniformBuilder[TNode, TMetadata]) PushChild(node model_core.PatchedMess
 			// Very first node to be pushed into the tree.
 			// The resulting B-tree may be a list consisting
 			// of a single element.
-			b.rootChildren = model_core.PatchedMessage[[]TNode, TMetadata]{
-				Message: []TNode{node.Message},
-				Patcher: node.Patcher,
-			}
+			b.rootChildren = model_core.NewPatchedMessage([]TNode{node.Message}, node.Patcher)
 			return nil
 		}
 
 		// Second node to be pushed into the tree. Construct a
 		// new chunker and insert both nodes.
 		b.levels = append(b.levels, b.chunkerFactory.NewChunker())
-		if err := b.levels[0].PushSingle(model_core.PatchedMessage[TNode, TMetadata]{
-			Message: b.rootChildren.Message[0],
-			Patcher: b.rootChildren.Patcher,
-		}); err != nil {
+		if err := b.levels[0].PushSingle(model_core.NewPatchedMessage(b.rootChildren.Message[0], b.rootChildren.Patcher)); err != nil {
 			return err
 		}
 		b.rootChildren.Clear()
@@ -144,10 +138,7 @@ func (b *uniformBuilder[TNode, TMetadata]) FinalizeSingle() (model_core.PatchedM
 	case 0:
 		return model_core.PatchedMessage[TNode, TMetadata]{}, nil
 	case 1:
-		return model_core.PatchedMessage[TNode, TMetadata]{
-			Message: b.rootChildren.Message[0],
-			Patcher: b.rootChildren.Patcher,
-		}, nil
+		return model_core.NewPatchedMessage(b.rootChildren.Message[0], b.rootChildren.Patcher), nil
 	default:
 		return b.nodeMerger(b.rootChildren)
 	}

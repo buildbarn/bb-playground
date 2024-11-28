@@ -9,6 +9,15 @@ type Message[T any] struct {
 	OutgoingReferences object.OutgoingReferences
 }
 
+// NewSimpleMessage is a helper function for creating instances of
+// Message for messages that don't contain any references.
+func NewSimpleMessage[TMessage any](v TMessage) Message[TMessage] {
+	return Message[TMessage]{
+		Message:            v,
+		OutgoingReferences: object.OutgoingReferencesList{},
+	}
+}
+
 func (m Message[T]) IsSet() bool {
 	return m.OutgoingReferences != nil
 }

@@ -8,6 +8,7 @@ proto_library(
     visibility = ["//visibility:public"],
     deps = [
         "//pkg/proto/model/core:core_proto",
+        "//pkg/proto/model/encoding:encoding_proto",
         "//pkg/proto/model/filesystem:filesystem_proto",
         "@protobuf//:duration_proto",
     ],
@@ -20,6 +21,7 @@ go_proto_library(
     visibility = ["//visibility:public"],
     deps = [
         "//pkg/proto/model/core",
+        "//pkg/proto/model/encoding",
         "//pkg/proto/model/filesystem",
     ],
 )

@@ -1,0 +1,160 @@
+syntax = "proto3";
+
+package buildbarn.playground.remoteexecution;
+
+import "google/protobuf/duration.proto";
+import "google/rpc/status.proto";
+
+option go_package = "github.com/buildbarn/bb-playground/pkg/proto/remoteexecution";
+
+service Execution {
+  rpc Execute(ExecuteRequest) returns (stream ExecuteResponse);
+  rpc WaitExecution(WaitExecutionRequest) returns (stream ExecuteResponse);
+}
+
+message Action {
+  // The X25519 public key that identifies the platform that should be
+  // used to execute the action in PKIX, ASN.1 DER form.
+  bytes platform_pkix_public_key = 1;
+
+  // ASN.1 DER data of the client certificate that the client needs to
+  // present to the worker to authenticate, followed by any intermediate
+  // certificates. The public key embedded in the client certificate at
+  // index zero must be of type X25519.
+  repeated bytes client_certificate_chain = 2;
+
+  // The 12-byte nonce that was used to compute the ciphertext.
+  //
+  // If deduplication of in-flight operations is desired, the client
+  // SHOULD provide a nonce consisting of all zeros. If no deduplication
+  // is desired, the nonce SHOULD be randomly generated.
+  bytes nonce = 3;
+
+  message AdditionalData {
+    // Fingerprint of the action that the scheduler may use to record
+    // resource usage statistics of the action. The fingerprint is
+    // expected to remain stable if minor changes are made to the action
+    // that are unlikely to affect its resource usage characteristics.
+    bytes stable_fingerprint = 1;
+
+    // A timeout after which the execution should be killed. If the
+    // client specifies a timeout that is longer than the scheduler's or
+    // worker's maximum timeout, the server MUST reject the request.
+    //
+    // The timeout is only intended to cover the "execution" of the
+    // specified action and not time in queue nor any overheads before
+    // or after execution such as marshalling inputs/outputs. The server
+    // SHOULD avoid including time spent the client doesn't have control
+    // over, and MAY extend or reduce the timeout to account for delays
+    // or speedups that occur during execution itself (e.g., lazily
+    // loading data from the Content Addressable Storage, live migration
+    // of virtual machines, emulation overhead).
+    google.protobuf.Duration execution_timeout = 2;
+  }
+
+  // Parameters that describe the action that are provided in plaintext.
+  // These are provided in plaintext, so that they can be used by the
+  // scheduler to make improved scheduling decisions.
+  //
+  // This field also acts as the additional data when computing the
+  // ciphertext.
+  AdditionalData additional_data = 4;
+
+  // Definition of the action to execute that can be used by the worker,
+  // encrypted using AES-GCM-SIV (RFC 8452).
+  //
+  // The key to use is obtained by performing ECDH key derivation
+  // against the X25519 key in the client certificate and the worker's
+  // X25519 key, and XOR'ing the first byte of the shared secret with 1.
+  //
+  // Clients and workers are free to encode actions definitions in any
+  // format of choice. However, if Protobuf messages are used, they
+  // SHOULD be wrapped inside google.protobuf.Any. That way workers are
+  // able to accurately reject actions of the wrong type.
+  bytes ciphertext = 5;
+}
+
+message ExecuteRequest {
+  // The action that the client requests is executed on a worker.
+  Action action = 1;
+
+  // The priority (relative importance) of this action. Generally, a
+  // lower value means that the action should be run sooner than actions
+  // having a greater priority value, but the interpretation of a given
+  // value is server- dependent. A priority of 0 means the *default*
+  // priority. Priorities may be positive or negative, and such actions
+  // should run later or sooner than actions having the default
+  // priority, respectively. The particular semantics of this field is
+  // up to the server. In particular, every server will have their own
+  // supported range of priorities, and will decide how these map into
+  // scheduling policy.
+  int32 priority = 2;
+}
+
+message WaitExecutionRequest {
+  // Name of the operation to which to attach, obtained from an
+  // ExecuteResponse message.
+  string name = 1;
+}
+
+message ExecutionEvent {
+  // The 12-byte nonce that was used to compute the ciphertext, which
+  // SHOULD be randomly generated.
+  bytes nonce = 1;
+
+  // Event reported by the worker during the execution, encrypted using
+  // AES-GCM-SIV (RFC 8452).
+  //
+  // The key to use is obtained by performing ECDH key derivation
+  // against the X25519 key in the client certificate and the worker's
+  // X25519 key, and XOR'ing the first byte of the shared secret with a
+  // value documented at the place of use.
+  //
+  // A SHA-256 hash of Action.ciphertext is used as additional data
+  // during the encryption process, allowing the client to validate that
+  // the returned ciphertext actually corresponds to the current action.
+  bytes ciphertext = 2;
+}
+
+message ExecuteResponse {
+  // Name of the operation to permit re-attaching using WaitExecution().
+  string name = 1;
+
+  message Queued {}
+
+  message Executing {
+    // The most recently execution event reported by the worker. This
+    // field may be unset if the worker has not yet posted any execution
+    // events since execution started, or if a previous ExecuteResponse
+    // message in the current stream has already reported the last
+    // event.
+    //
+    // There is no guarantee that the client receives all execution
+    // events. The scheduler is permitted to discard events to reduce
+    // load and network traffic. Workers should therefore ensure that
+    //
+    // When computing the event's ciphertext, the first byte of the
+    // shared secret is XOR'ed with 2.
+    ExecutionEvent last_event = 1;
+  }
+
+  message Completed {
+    // The execution event reported by the worker upon completion.
+    //
+    // When computing the event's ciphertext, the first byte of the
+    // shared secret is XOR'ed with 3.
+    ExecutionEvent completion_event = 1;
+  }
+
+  oneof stage {
+    // The operation is currently queued inside the scheduler.
+    Queued queued = 2;
+
+    // The operation is currently assigned to a worker and executing.
+    Executing executing = 3;
+
+    // The operation has finished executing on a worker. The scheduler
+    // will terminate the stream afterwards.
+    Completed completed = 4;
+  }
+}

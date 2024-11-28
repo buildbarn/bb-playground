@@ -1,0 +1,32 @@
+load("@rules_go//go:def.bzl", "go_library")
+load("@rules_go//proto:def.bzl", "go_proto_library")
+load("@rules_proto//proto:defs.bzl", "proto_library")
+
+proto_library(
+    name = "remoteexecution_proto",
+    srcs = ["remoteexecution.proto"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "@googleapis//google/rpc:status_proto",
+        "@protobuf//:duration_proto",
+    ],
+)
+
+go_proto_library(
+    name = "remoteexecution_go_proto",
+    compilers = [
+        "@rules_go//proto:go_proto",
+        "@rules_go//proto:go_grpc_v2",
+    ],
+    importpath = "github.com/buildbarn/bb-playground/pkg/proto/remoteexecution",
+    proto = ":remoteexecution_proto",
+    visibility = ["//visibility:public"],
+    deps = ["@org_golang_google_genproto_googleapis_rpc//status"],
+)
+
+go_library(
+    name = "remoteexecution",
+    embed = [":remoteexecution_go_proto"],
+    importpath = "github.com/buildbarn/bb-playground/pkg/proto/remoteexecution",
+    visibility = ["//visibility:public"],
+)

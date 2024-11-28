@@ -1,0 +1,21 @@
+load("@rules_go//go:def.bzl", "go_library")
+
+go_library(
+    name = "routing",
+    srcs = [
+        "action_router.go",
+        "configuration.go",
+        "simple_action_router.go",
+    ],
+    importpath = "github.com/buildbarn/bb-playground/pkg/scheduler/routing",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//pkg/proto/configuration/scheduler",
+        "//pkg/proto/remoteexecution",
+        "//pkg/scheduler/initialsizeclass",
+        "//pkg/scheduler/invocation",
+        "@com_github_buildbarn_bb_storage//pkg/util",
+        "@org_golang_google_grpc//codes",
+        "@org_golang_google_grpc//status",
+    ],
+)

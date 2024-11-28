@@ -87,8 +87,8 @@ func (med *starlarkModuleExtensionDefinition) EncodeValue(path map[starlark.Valu
 		needsCode = needsCode || tagClassNeedsCode
 	}
 
-	return model_core.PatchedMessage[*model_starlark_pb.Value, dag.ObjectContentsWalker]{
-		Message: &model_starlark_pb.Value{
+	return model_core.NewPatchedMessage(
+		&model_starlark_pb.Value{
 			Kind: &model_starlark_pb.Value_ModuleExtension{
 				ModuleExtension: &model_starlark_pb.ModuleExtension{
 					Implementation: implementation.Message,
@@ -96,8 +96,8 @@ func (med *starlarkModuleExtensionDefinition) EncodeValue(path map[starlark.Valu
 				},
 			},
 		},
-		Patcher: patcher,
-	}, needsCode, nil
+		patcher,
+	), needsCode, nil
 }
 
 type protoModuleExtensionDefinition struct {
@@ -117,12 +117,12 @@ func (med *protoModuleExtensionDefinition) EncodeValue(path map[starlark.Value]s
 			return dag.ExistingObjectContentsWalker
 		},
 	)
-	return model_core.PatchedMessage[*model_starlark_pb.Value, dag.ObjectContentsWalker]{
-		Message: &model_starlark_pb.Value{
+	return model_core.NewPatchedMessage(
+		&model_starlark_pb.Value{
 			Kind: &model_starlark_pb.Value_ModuleExtension{
 				ModuleExtension: patchedMessage.Message,
 			},
 		},
-		Patcher: patchedMessage.Patcher,
-	}, false, nil
+		patchedMessage.Patcher,
+	), false, nil
 }

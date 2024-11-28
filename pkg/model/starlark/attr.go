@@ -66,10 +66,7 @@ func (a *Attr) Encode(path map[starlark.Value]struct{}, options *ValueEncodingOp
 	}
 
 	a.attrType.Encode(&attr)
-	return model_core.PatchedMessage[*model_starlark_pb.Attr, dag.ObjectContentsWalker]{
-		Message: &attr,
-		Patcher: patcher,
-	}, needsCode, nil
+	return model_core.NewPatchedMessage(&attr, patcher), needsCode, nil
 }
 
 func (a *Attr) EncodeValue(path map[starlark.Value]struct{}, currentIdentifier *pg_label.CanonicalStarlarkIdentifier, options *ValueEncodingOptions) (model_core.PatchedMessage[*model_starlark_pb.Value, dag.ObjectContentsWalker], bool, error) {
@@ -77,14 +74,14 @@ func (a *Attr) EncodeValue(path map[starlark.Value]struct{}, currentIdentifier *
 	if err != nil {
 		return model_core.PatchedMessage[*model_starlark_pb.Value, dag.ObjectContentsWalker]{}, false, err
 	}
-	return model_core.PatchedMessage[*model_starlark_pb.Value, dag.ObjectContentsWalker]{
-		Message: &model_starlark_pb.Value{
+	return model_core.NewPatchedMessage(
+		&model_starlark_pb.Value{
 			Kind: &model_starlark_pb.Value_Attr{
 				Attr: attr.Message,
 			},
 		},
-		Patcher: attr.Patcher,
-	}, needsCode, nil
+		attr.Patcher,
+	), needsCode, nil
 }
 
 type AttrType interface {
@@ -370,8 +367,5 @@ func encodeNamedAttrs(attrs map[pg_label.StarlarkIdentifier]*Attr, path map[star
 		patcher.Merge(attr.Patcher)
 		needsCode = needsCode || attrNeedsCode
 	}
-	return model_core.PatchedMessage[[]*model_starlark_pb.NamedAttr, dag.ObjectContentsWalker]{
-		Message: encodedAttrs,
-		Patcher: patcher,
-	}, needsCode, nil
+	return model_core.NewPatchedMessage(encodedAttrs, patcher), needsCode, nil
 }

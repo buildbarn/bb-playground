@@ -10,7 +10,6 @@ import (
 	"github.com/buildbarn/bb-playground/pkg/storage/object"
 	"github.com/buildbarn/bb-storage/pkg/util"
 
-	"google.golang.org/grpc/codes"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -218,18 +217,7 @@ func Build[
 		} else {
 			// Store the message separately, and store a
 			// reference in the parent.
-			references, metadata := candidate.ExternalMessage.Patcher.SortAndSetReferences()
-			data, err := marshalOptions.Marshal(candidate.ExternalMessage.Message)
-			if err != nil {
-				output.Discard()
-				return model_core.PatchedMessage[TParentMessagePtr, TMetadata]{}, util.StatusWrapfWithCode(err, codes.InvalidArgument, "Failed to marshal candidate at index %d", i)
-			}
-			encodedData, err := options.Encoder.EncodeBinary(data)
-			if err != nil {
-				output.Discard()
-				return model_core.PatchedMessage[TParentMessagePtr, TMetadata]{}, util.StatusWrapf(err, "Failed to encode candidate at index %d", i)
-			}
-			contents, err := options.ReferenceFormat.NewContents(references, encodedData)
+			contents, metadata, err := model_core.MarshalAndEncodePatchedMessage(candidate.ExternalMessage, options.ReferenceFormat, options.Encoder)
 			if err != nil {
 				output.Discard()
 				return model_core.PatchedMessage[TParentMessagePtr, TMetadata]{}, util.StatusWrapf(err, "Failed to create object contents for candidate at index %d", i)

@@ -152,16 +152,16 @@ func (rr *repositoryRule) CallInternal(thread *starlark.Thread, args starlark.Tu
 
 	return starlark.None, repoRegistrar.registerRepo(
 		name,
-		model_core.PatchedMessage[*model_starlark_pb.Repo, dag.ObjectContentsWalker]{
-			Message: &model_starlark_pb.Repo{
+		model_core.NewPatchedMessage(
+			&model_starlark_pb.Repo{
 				Name: name,
 				Definition: &model_starlark_pb.Repo_Definition{
 					RepositoryRuleIdentifier: rr.Identifier.String(),
 					AttrValues:               attrValues,
 				},
 			},
-			Patcher: patcher,
-		},
+			patcher,
+		),
 	)
 }
 
@@ -189,8 +189,8 @@ func (rr *repositoryRule) EncodeValue(path map[starlark.Value]struct{}, currentI
 	if err != nil {
 		return model_core.PatchedMessage[*model_starlark_pb.Value, dag.ObjectContentsWalker]{}, false, err
 	}
-	return model_core.PatchedMessage[*model_starlark_pb.Value, dag.ObjectContentsWalker]{
-		Message: &model_starlark_pb.Value{
+	return model_core.NewPatchedMessage(
+		&model_starlark_pb.Value{
 			Kind: &model_starlark_pb.Value_RepositoryRule{
 				RepositoryRule: &model_starlark_pb.RepositoryRule{
 					Kind: &model_starlark_pb.RepositoryRule_Definition_{
@@ -199,8 +199,8 @@ func (rr *repositoryRule) EncodeValue(path map[starlark.Value]struct{}, currentI
 				},
 			},
 		},
-		Patcher: definition.Patcher,
-	}, needsCode, nil
+		definition.Patcher,
+	), needsCode, nil
 }
 
 type RepositoryRuleDefinition interface {
@@ -231,13 +231,13 @@ func (rrd *starlarkRepositoryRuleDefinition) Encode(path map[starlark.Value]stru
 		return model_core.PatchedMessage[*model_starlark_pb.RepositoryRule_Definition, dag.ObjectContentsWalker]{}, false, err
 	}
 
-	return model_core.PatchedMessage[*model_starlark_pb.RepositoryRule_Definition, dag.ObjectContentsWalker]{
-		Message: &model_starlark_pb.RepositoryRule_Definition{
+	return model_core.NewPatchedMessage(
+		&model_starlark_pb.RepositoryRule_Definition{
 			Implementation: implementation.Message,
 			Attrs:          namedAttrs.Message,
 		},
-		Patcher: namedAttrs.Patcher,
-	}, implementationNeedsCode || namedAttrsNeedCode, nil
+		namedAttrs.Patcher,
+	), implementationNeedsCode || namedAttrsNeedCode, nil
 }
 
 func (rrd *starlarkRepositoryRuleDefinition) GetAttrsCheap(thread *starlark.Thread) (map[pg_label.StarlarkIdentifier]*Attr, error) {

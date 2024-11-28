@@ -2,6 +2,7 @@ package analysis
 
 import (
 	"context"
+	"crypto/ecdh"
 	"errors"
 	"fmt"
 	"net/http"
@@ -18,6 +19,7 @@ import (
 	model_analysis_pb "github.com/buildbarn/bb-playground/pkg/proto/model/analysis"
 	model_build_pb "github.com/buildbarn/bb-playground/pkg/proto/model/build"
 	model_filesystem_pb "github.com/buildbarn/bb-playground/pkg/proto/model/filesystem"
+	remoteexecution_pb "github.com/buildbarn/bb-playground/pkg/proto/remoteexecution"
 	"github.com/buildbarn/bb-playground/pkg/storage/dag"
 	"github.com/buildbarn/bb-playground/pkg/storage/object"
 	re_filesystem "github.com/buildbarn/bb-remote-execution/pkg/filesystem"
@@ -31,36 +33,50 @@ import (
 )
 
 type baseComputer struct {
-	objectDownloader            object.Downloader[object.LocalReference]
-	buildSpecificationReference object.LocalReference
-	buildSpecificationEncoder   model_encoding.BinaryEncoder
-	httpClient                  *http.Client
-	filePool                    re_filesystem.FilePool
-	cacheDirectory              filesystem.Directory
+	objectDownloader                object.Downloader[object.LocalReference]
+	buildSpecificationReference     object.GlobalReference
+	buildSpecificationEncoder       model_encoding.BinaryEncoder
+	httpClient                      *http.Client
+	filePool                        re_filesystem.FilePool
+	cacheDirectory                  filesystem.Directory
+	executionClient                 remoteexecution_pb.ExecutionClient
+	executionClientPrivateKey       *ecdh.PrivateKey
+	executionClientCertificateChain [][]byte
 }
 
 func NewBaseComputer(
 	objectDownloader object.Downloader[object.LocalReference],
-	buildSpecificationReference object.LocalReference,
+	buildSpecificationReference object.GlobalReference,
 	buildSpecificationEncoder model_encoding.BinaryEncoder,
 	httpClient *http.Client,
 	filePool re_filesystem.FilePool,
 	cacheDirectory filesystem.Directory,
+	executionClient remoteexecution_pb.ExecutionClient,
+	executionClientPrivateKey *ecdh.PrivateKey,
+	executionClientCertificateChain [][]byte,
 ) Computer {
 	return &baseComputer{
-		objectDownloader:            objectDownloader,
-		buildSpecificationReference: buildSpecificationReference,
-		buildSpecificationEncoder:   buildSpecificationEncoder,
-		httpClient:                  httpClient,
-		filePool:                    filePool,
-		cacheDirectory:              cacheDirectory,
+		objectDownloader:                objectDownloader,
+		buildSpecificationReference:     buildSpecificationReference,
+		buildSpecificationEncoder:       buildSpecificationEncoder,
+		httpClient:                      httpClient,
+		filePool:                        filePool,
+		cacheDirectory:                  cacheDirectory,
+		executionClient:                 executionClient,
+		executionClientPrivateKey:       executionClientPrivateKey,
+		executionClientCertificateChain: executionClientCertificateChain,
 	}
+}
+
+func (c *baseComputer) getValueObjectEncoder() model_encoding.BinaryEncoder {
+	// TODO: Use a proper encoder!
+	return model_encoding.NewChainedBinaryEncoder(nil)
 }
 
 func (c *baseComputer) getValueEncodingOptions(currentFilename label.CanonicalLabel) *model_starlark.ValueEncodingOptions {
 	return &model_starlark.ValueEncodingOptions{
 		CurrentFilename:        currentFilename,
-		ObjectEncoder:          model_encoding.NewChainedBinaryEncoder(nil),
+		ObjectEncoder:          c.getValueObjectEncoder(),
 		ObjectReferenceFormat:  c.buildSpecificationReference.GetReferenceFormat(),
 		ObjectMinimumSizeBytes: 32 * 1024,
 		ObjectMaximumSizeBytes: 128 * 1024,
@@ -71,7 +87,7 @@ func (c *baseComputer) getValueDecodingOptions(ctx context.Context, labelCreator
 	return &model_starlark.ValueDecodingOptions{
 		Context:          ctx,
 		ObjectDownloader: c.objectDownloader,
-		ObjectEncoder:    model_encoding.NewChainedBinaryEncoder(nil),
+		ObjectEncoder:    c.getValueObjectEncoder(),
 		LabelCreator:     labelCreator,
 	}
 }
@@ -191,7 +207,7 @@ func (c *baseComputer) getBzlFileBuiltins(e getBzlFileBuiltinsEnvironment, built
 		}); gotGlobals {
 			exportedToplevels, ok := globals[dictName].(starlark.IterableMapping)
 			if !ok {
-				return nil, fmt.Errorf("file %#v does not declare exported_toplevels", exportsFile)
+				return nil, fmt.Errorf("file %#v does not declare %s", exportsFile, dictName)
 			}
 			for name, value := range starlark.Entries(exportedToplevels) {
 				nameStr, ok := starlark.AsString(name)
@@ -365,7 +381,7 @@ func (c *baseComputer) ComputeBuildSpecificationValue(ctx context.Context, key *
 		c.buildSpecificationEncoder,
 		model_parser.NewMessageObjectParser[object.LocalReference, model_build_pb.BuildSpecification](),
 	)
-	buildSpecification, _, err := reader.ReadParsedObject(ctx, c.buildSpecificationReference)
+	buildSpecification, _, err := reader.ReadParsedObject(ctx, c.buildSpecificationReference.LocalReference)
 	if err != nil {
 		return PatchedBuildSpecificationValue{}, err
 	}
@@ -550,12 +566,12 @@ func (c *baseComputer) ComputeRepoDefaultAttrsValue(ctx context.Context, key *mo
 		return PatchedRepoDefaultAttrsValue{}, fmt.Errorf("failed to parse %#v: %w", repoFileLabel.String(), err)
 	}
 
-	return model_core.PatchedMessage[*model_analysis_pb.RepoDefaultAttrs_Value, dag.ObjectContentsWalker]{
-		Message: &model_analysis_pb.RepoDefaultAttrs_Value{
+	return model_core.NewPatchedMessage(
+		&model_analysis_pb.RepoDefaultAttrs_Value{
 			InheritableAttrs: defaultAttrs.Message,
 		},
-		Patcher: defaultAttrs.Patcher,
-	}, nil
+		defaultAttrs.Patcher,
+	), nil
 }
 
 func (c *baseComputer) ComputeTargetCompletionValue(ctx context.Context, key *model_analysis_pb.TargetCompletion_Key, e TargetCompletionEnvironment) (PatchedTargetCompletionValue, error) {

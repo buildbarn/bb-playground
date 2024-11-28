@@ -39,7 +39,6 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/credentials/insecure"
-	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/durationpb"
 	"google.golang.org/protobuf/types/known/emptypb"
 )
@@ -299,6 +298,7 @@ func DoBuild(args *arguments.BuildCommand, workspacePath path.Parser) {
 		IgnoreRootModuleDevDependencies: args.CommonFlags.IgnoreDevDependency,
 		BuiltinsModuleNames:             args.CommonFlags.BuiltinsModule,
 		RepoPlatform:                    args.CommonFlags.RepoPlatform,
+		CommandEncoders:                 defaultEncoders,
 	}
 	switch args.CommonFlags.LockfileMode {
 	case arguments.LockfileMode_Off:
@@ -323,9 +323,11 @@ func DoBuild(args *arguments.BuildCommand, workspacePath path.Parser) {
 	buildSpecificationPatcher := model_core.NewReferenceMessagePatcher[dag.ObjectContentsWalker]()
 
 	for i, moduleName := range moduleNames {
-		moduleRootDirectoryMessage := &moduleRootDirectoryMessages[i]
-		references, children := moduleRootDirectoryMessage.Patcher.SortAndSetReferences()
-		contents, err := directoryParameters.EncodeDirectory(references, moduleRootDirectoryMessage.Message)
+		contents, children, err := model_core.MarshalAndEncodePatchedMessage(
+			moduleRootDirectoryMessages[i],
+			referenceFormat,
+			directoryParameters.GetEncoder(),
+		)
 		if err != nil {
 			logger.Fatalf("Failed to create root directory object for module %#v: %s", moduleName.String(), err)
 		}
@@ -358,16 +360,11 @@ func DoBuild(args *arguments.BuildCommand, workspacePath path.Parser) {
 		logger.Fatal("Failed to create build specification encoder: ", err)
 	}
 
-	buildSpecificationReferences, buildSpecificationWalkers := buildSpecificationPatcher.SortAndSetReferences()
-	buildSpecificationData, err := proto.Marshal(&buildSpecification)
-	if err != nil {
-		logger.Fatal("Failed to marshal build specification: ", err)
-	}
-	encodedBuildSpecification, err := buildSpecificationEncoder.EncodeBinary(buildSpecificationData)
-	if err != nil {
-		logger.Fatal("Failed to encode build specification: ", err)
-	}
-	buildSpecificationObject, err := referenceFormat.NewContents(buildSpecificationReferences, encodedBuildSpecification)
+	buildSpecificationObject, buildSpecificationWalkers, err := model_core.MarshalAndEncodePatchedMessage(
+		model_core.NewPatchedMessage(&buildSpecification, buildSpecificationPatcher),
+		referenceFormat,
+		buildSpecificationEncoder,
+	)
 	if err != nil {
 		logger.Fatal("Failed to create build specification object: ", err)
 	}

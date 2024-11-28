@@ -16,8 +16,35 @@ type computerDefinition struct {
 }
 
 type functionDefinition struct {
-	DependsOn       []string `json:"dependsOn"`
-	NativeValueType *nativeValueTypeDefinition
+	KeyContainsReferences bool
+	DependsOn             []string `json:"dependsOn"`
+	NativeValueType       *nativeValueTypeDefinition
+}
+
+func (fd functionDefinition) getKeyType(functionName string, isPatched bool) string {
+	if !fd.KeyContainsReferences {
+		return fmt.Sprintf("*pb.%s_Key", functionName)
+	} else if isPatched {
+		return fmt.Sprintf("model_core.PatchedMessage[*pb.%s_Key, dag.ObjectContentsWalker]", functionName)
+	} else {
+		return fmt.Sprintf("model_core.Message[*pb.%s_Key]", functionName)
+	}
+}
+
+func (fd functionDefinition) keyToPatchedMessage() string {
+	if fd.KeyContainsReferences {
+		return "model_core.PatchedMessage[proto.Message, dag.ObjectContentsWalker]{Message: key.Message, Patcher: key.Patcher}"
+	} else {
+		return "model_core.NewSimplePatchedMessage[dag.ObjectContentsWalker, proto.Message](key)"
+	}
+}
+
+func (fd functionDefinition) typedKeyToArgument(functionName string) string {
+	if fd.KeyContainsReferences {
+		return fmt.Sprintf("model_core.Message[*pb.%s_Key]{Message: typedKey, OutgoingReferences: key.OutgoingReferences}", functionName)
+	} else {
+		return "typedKey"
+	}
 }
 
 type nativeValueTypeDefinition struct {
@@ -58,7 +85,15 @@ func main() {
 	fmt.Printf(")\n")
 
 	for _, functionName := range slices.Sorted(maps.Keys(computerDefinition.Functions)) {
-		if computerDefinition.Functions[functionName].NativeValueType == nil {
+		functionDefinition := computerDefinition.Functions[functionName]
+		if functionDefinition.KeyContainsReferences {
+			fmt.Printf(
+				"type Patched%sKey = model_core.PatchedMessage[*pb.%s_Key, dag.ObjectContentsWalker]\n",
+				functionName,
+				functionName,
+			)
+		}
+		if functionDefinition.NativeValueType == nil {
 			fmt.Printf(
 				"type Patched%sValue = model_core.PatchedMessage[*pb.%s_Value, dag.ObjectContentsWalker]\n",
 				functionName,
@@ -73,17 +108,17 @@ func main() {
 		functionDefinition := computerDefinition.Functions[functionName]
 		if nativeValueType := functionDefinition.NativeValueType; nativeValueType == nil {
 			fmt.Printf(
-				"\tCompute%sValue(context.Context, *pb.%s_Key, %sEnvironment) (Patched%sValue, error)\n",
+				"\tCompute%sValue(context.Context, %s, %sEnvironment) (Patched%sValue, error)\n",
 				functionName,
-				functionName,
+				functionDefinition.getKeyType(functionName, false),
 				functionName,
 				functionName,
 			)
 		} else {
 			fmt.Printf(
-				"\tCompute%sValue(context.Context, *pb.%s_Key, %sEnvironment) (%s, error)\n",
+				"\tCompute%sValue(context.Context, %s, %sEnvironment) (%s, error)\n",
 				functionName,
-				functionName,
+				functionDefinition.getKeyType(functionName, false),
 				functionName,
 				nativeValueType.Type,
 			)
@@ -98,16 +133,16 @@ func main() {
 			dependencyDefinition := computerDefinition.Functions[dependencyName]
 			if nativeValueType := dependencyDefinition.NativeValueType; nativeValueType == nil {
 				fmt.Printf(
-					"\tGet%sValue(key *pb.%s_Key) model_core.Message[*pb.%s_Value]\n",
+					"\tGet%sValue(key %s) model_core.Message[*pb.%s_Value]\n",
 					dependencyName,
-					dependencyName,
+					dependencyDefinition.getKeyType(dependencyName, true),
 					dependencyName,
 				)
 			} else {
 				fmt.Printf(
-					"\tGet%sValue(key *pb.%s_Key) (%s, bool)\n",
+					"\tGet%sValue(key %s) (%s, bool)\n",
 					dependencyName,
-					dependencyName,
+					dependencyDefinition.getKeyType(dependencyName, true),
 					nativeValueType.Type,
 				)
 			}
@@ -122,12 +157,12 @@ func main() {
 		functionDefinition := computerDefinition.Functions[functionName]
 		if nativeValueType := functionDefinition.NativeValueType; nativeValueType == nil {
 			fmt.Printf(
-				"func (e *typedEnvironment) Get%sValue(key *pb.%s_Key) model_core.Message[*pb.%s_Value] {\n",
+				"func (e *typedEnvironment) Get%sValue(key %s) model_core.Message[*pb.%s_Value] {\n",
 				functionName,
-				functionName,
+				functionDefinition.getKeyType(functionName, true),
 				functionName,
 			)
-			fmt.Printf("\tm := e.base.GetMessageValue(key)\n")
+			fmt.Printf("\tm := e.base.GetMessageValue(%s)\n", functionDefinition.keyToPatchedMessage())
 			fmt.Printf("\tif !m.IsSet() {\n")
 			fmt.Printf("\t\treturn model_core.Message[*pb.%s_Value]{}\n", functionName)
 			fmt.Printf("\t}\n")
@@ -138,12 +173,12 @@ func main() {
 			fmt.Printf("}\n")
 		} else {
 			fmt.Printf(
-				"func (e *typedEnvironment) Get%sValue(key *pb.%s_Key) (%s, bool) {\n",
+				"func (e *typedEnvironment) Get%sValue(key %s) (%s, bool) {\n",
 				functionName,
-				functionName,
+				functionDefinition.getKeyType(functionName, true),
 				nativeValueType.Type,
 			)
-			fmt.Printf("\tv, ok := e.base.GetNativeValue(key)\n")
+			fmt.Printf("\tv, ok := e.base.GetNativeValue(%s)\n", functionDefinition.keyToPatchedMessage())
 			fmt.Printf("\tif !ok {\n")
 			fmt.Printf("\t\treturn nil, false\n")
 			fmt.Printf("\t}\n")
@@ -159,14 +194,14 @@ func main() {
 	fmt.Printf("\treturn &typedComputer{base: base}\n")
 	fmt.Printf("}\n")
 
-	fmt.Printf("func (c *typedComputer) ComputeMessageValue(ctx context.Context, key proto.Message, e evaluation.Environment) (model_core.PatchedMessage[proto.Message, dag.ObjectContentsWalker], error) {\n")
+	fmt.Printf("func (c *typedComputer) ComputeMessageValue(ctx context.Context, key model_core.Message[proto.Message], e evaluation.Environment) (model_core.PatchedMessage[proto.Message, dag.ObjectContentsWalker], error) {\n")
 	fmt.Printf("\ttypedE := typedEnvironment{base: e}\n")
-	fmt.Printf("\tswitch typedKey := key.(type) {\n")
+	fmt.Printf("\tswitch typedKey := key.Message.(type) {\n")
 	for _, functionName := range slices.Sorted(maps.Keys(computerDefinition.Functions)) {
 		functionDefinition := computerDefinition.Functions[functionName]
 		if functionDefinition.NativeValueType == nil {
 			fmt.Printf("\tcase *pb.%s_Key:\n", functionName)
-			fmt.Printf("\t\tm, err := c.base.Compute%sValue(ctx, typedKey, &typedE)\n", functionName)
+			fmt.Printf("\t\tm, err := c.base.Compute%sValue(ctx, %s, &typedE)\n", functionName, functionDefinition.typedKeyToArgument(functionName))
 			fmt.Printf("\t\treturn model_core.PatchedMessage[proto.Message, dag.ObjectContentsWalker]{\n")
 			fmt.Printf("\t\t\tMessage: m.Message,\n")
 			fmt.Printf("\t\t\tPatcher: m.Patcher,\n")
@@ -178,14 +213,14 @@ func main() {
 	fmt.Printf("\t}\n")
 	fmt.Printf("}\n")
 
-	fmt.Printf("func (c *typedComputer) ComputeNativeValue(ctx context.Context, key proto.Message, e evaluation.Environment) (any, error) {\n")
+	fmt.Printf("func (c *typedComputer) ComputeNativeValue(ctx context.Context, key model_core.Message[proto.Message], e evaluation.Environment) (any, error) {\n")
 	fmt.Printf("\ttypedE := typedEnvironment{base: e}\n")
-	fmt.Printf("\tswitch typedKey := key.(type) {\n")
+	fmt.Printf("\tswitch typedKey := key.Message.(type) {\n")
 	for _, functionName := range slices.Sorted(maps.Keys(computerDefinition.Functions)) {
 		functionDefinition := computerDefinition.Functions[functionName]
 		if functionDefinition.NativeValueType != nil {
 			fmt.Printf("\tcase *pb.%s_Key:\n", functionName)
-			fmt.Printf("\t\treturn c.base.Compute%sValue(ctx, typedKey, &typedE)\n", functionName)
+			fmt.Printf("\t\treturn c.base.Compute%sValue(ctx, %s, &typedE)\n", functionName, functionDefinition.typedKeyToArgument(functionName))
 		}
 	}
 	fmt.Printf("\tdefault:\n")

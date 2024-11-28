@@ -257,12 +257,13 @@ func (c *baseComputer) ComputeHttpArchiveContentsValue(ctx context.Context, key 
 		return PatchedHttpArchiveContentsValue{}, fmt.Errorf("file at URL %#v does not exist", key.Url)
 	}
 
+	referenceFormat := c.buildSpecificationReference.GetReferenceFormat()
 	httpFileContentsEntry, err := model_filesystem.NewFileContentsEntryFromProto(
 		model_core.Message[*model_filesystem_pb.FileContents]{
 			Message:            httpFileContentsValue.Message.Exists.Contents,
 			OutgoingReferences: httpFileContentsValue.OutgoingReferences,
 		},
-		c.buildSpecificationReference.GetReferenceFormat(),
+		referenceFormat,
 	)
 	if err != nil {
 		return PatchedHttpArchiveContentsValue{}, fmt.Errorf("invalid file contents: %w", err)
@@ -393,8 +394,11 @@ func (c *baseComputer) ComputeHttpArchiveContentsValue(ctx context.Context, key 
 
 	// Store the root directory itself. We don't embed it into the
 	// response, as that prevents it from being accessed separately.
-	references, children := rootDirectoryMessage.Patcher.SortAndSetReferences()
-	contents, err := directoryCreationParameters.EncodeDirectory(references, rootDirectoryMessage.Message)
+	contents, children, err := model_core.MarshalAndEncodePatchedMessage(
+		rootDirectoryMessage,
+		referenceFormat,
+		directoryCreationParameters.GetEncoder(),
+	)
 	if err != nil {
 		return PatchedHttpArchiveContentsValue{}, err
 	}

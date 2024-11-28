@@ -26,9 +26,9 @@ func TestFullyComputeValue(t *testing.T) {
 		// memoization, this should run in polynomial time.
 		computer := NewMockComputer(ctrl)
 		computer.EXPECT().ComputeMessageValue(gomock.Any(), gomock.Any(), gomock.Any()).
-			DoAndReturn(func(ctx context.Context, key proto.Message, e evaluation.Environment) (model_core.PatchedMessage[proto.Message, dag.ObjectContentsWalker], error) {
+			DoAndReturn(func(ctx context.Context, key model_core.Message[proto.Message], e evaluation.Environment) (model_core.PatchedMessage[proto.Message, dag.ObjectContentsWalker], error) {
 				// Base case: fib(0) and fib(1).
-				k := key.(*wrapperspb.UInt32Value)
+				k := key.Message.(*wrapperspb.UInt32Value)
 				if k.Value <= 1 {
 					return model_core.NewSimplePatchedMessage[dag.ObjectContentsWalker, proto.Message](
 						&wrapperspb.UInt64Value{
@@ -38,12 +38,12 @@ func TestFullyComputeValue(t *testing.T) {
 				}
 
 				// Recursion: fib(n) = fib(n-2) + fib(n-1).
-				v0 := e.GetMessageValue(&wrapperspb.UInt32Value{
+				v0 := e.GetMessageValue(model_core.NewSimplePatchedMessage[dag.ObjectContentsWalker, proto.Message](&wrapperspb.UInt32Value{
 					Value: k.Value - 2,
-				})
-				v1 := e.GetMessageValue(&wrapperspb.UInt32Value{
+				}))
+				v1 := e.GetMessageValue(model_core.NewSimplePatchedMessage[dag.ObjectContentsWalker, proto.Message](&wrapperspb.UInt32Value{
 					Value: k.Value - 1,
-				})
+				}))
 				if !v0.IsSet() || !v1.IsSet() {
 					return model_core.PatchedMessage[proto.Message, dag.ObjectContentsWalker]{}, evaluation.ErrMissingDependency
 				}
@@ -59,9 +59,9 @@ func TestFullyComputeValue(t *testing.T) {
 		m, err := evaluation.FullyComputeValue(
 			ctx,
 			computer,
-			&wrapperspb.UInt32Value{
+			model_core.NewSimpleMessage[proto.Message](&wrapperspb.UInt32Value{
 				Value: 93,
-			},
+			}),
 			valueChildrenStorer.Call,
 		)
 		require.NoError(t, err)
