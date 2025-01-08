@@ -1,0 +1,168 @@
+syntax = "proto3";
+
+package buildbarn.playground.configuration.playground_worker;
+
+import "google/protobuf/duration.proto";
+import "pkg/proto/configuration/filesystem/filesystem.proto";
+import "pkg/proto/configuration/filesystem/virtual/virtual.proto";
+import "pkg/proto/configuration/global/global.proto";
+import "pkg/proto/configuration/grpc/grpc.proto";
+
+option go_package = "github.com/buildbarn/bb-playground/pkg/proto/configuration/playground_worker";
+
+message ApplicationConfiguration {
+  // Common configuration options that apply to all Buildbarn binaries.
+  buildbarn.configuration.global.Configuration global = 1;
+
+  // gRPC client that communicates with the storage frontend.
+  buildbarn.configuration.grpc.ClientConfiguration storage_grpc_client = 2;
+
+  // Endpoint of the scheduler to which to connect.
+  buildbarn.configuration.grpc.ClientConfiguration scheduler_grpc_client = 3;
+
+  // Directories on the system in which builds take place.
+  repeated BuildDirectoryConfiguration build_directories = 4;
+
+  // Location where temporary files that are created by the worker are
+  // stored. Not all configurations of the worker require this to be set.
+  // When left unset, any attempt to allocate temporary files will fail.
+  buildbarn.configuration.filesystem.FilePoolConfiguration file_pool = 5;
+}
+
+message BuildDirectoryConfiguration {
+  // Runners to which to send requests to invoke build action commands.
+  repeated RunnerConfiguration runners = 1;
+
+  // Options for mounting the virtual file system at a given path.
+  buildbarn.configuration.filesystem.virtual.MountConfiguration mount = 2;
+}
+
+message RunnerConfiguration {
+  // GRPC endpoint to which to connect.
+  buildbarn.configuration.grpc.ClientConfiguration endpoint = 1;
+
+  // Number of actions to run concurrently on this runner.
+  uint64 concurrency = 2;
+
+  // X25519 privates key used to compute a shared secret for decrypting
+  // actions to obtained from the scheduler. The public keys associated
+  // with these private keys are used by the scheduler to identify the
+  // platform and route actions.
+  //
+  // Keys must be in PKCS #8, ASN.1 DER form, stored in a PEM block of
+  // type "PRIVATE KEY".
+  repeated string platform_private_keys = 3;
+
+  // Client certificate authorities to consider when authenticating the
+  // client certificate that is provided as part of the action. This
+  // effectively controls which clients are permitted to use this
+  // worker.
+  string client_certificate_authorities = 4;
+
+  // The size of this worker in terms of CPU count and memory size. When
+  // all workers of this platform have the same size, it is sufficient
+  // to leave this field set to zero.
+  uint32 size_class = 5;
+
+  // If set, this worker may assume it is the largest size class for the
+  // current platform. This means that if an action fails (e.g., due to
+  // a non-zero exit code or timeout), a failure result may be sent back
+  // to the client via the scheduler.
+  //
+  // If this option is not set, the action's failure result is scrubbed
+  // from the request sent to the scheduler. This prevents a malicious
+  // scheduler from erroneously reporting that an action failed, without
+  // actually attempting to rerun it on the largest size class.
+  bool is_largest_size_class = 6;
+
+  // POSIX doesn't guarantee that readdir() returns elements in any
+  // particular order. This is a common source of irreproducibility in
+  // builds. Because most file systems behave deterministically, it is
+  // typically hard to discover these problems without using multiple
+  // operating systems or file system types.
+  //
+  // Enabling this option causes the virtual file system to populate
+  // input root directories in random order, making it easier to detect
+  // irreproducible build actions. Disabling this option causes input
+  // root directories to be populated in alphabetic order, which reduces
+  // storage usage for build actions that are known to be
+  // irreproducible.
+  bool shuffle_directory_listings = 7;
+
+  // When set, hide files from directory listings that match a given
+  // regular expression. The presence of hidden files will not cause
+  // ENOTEMPTY to be returned upon directory removal. There are various
+  // use cases for this option:
+  //
+  // - On macOS, this feature can be used to prevent capturing of ._*
+  //   (AppleDouble) files.
+  //
+  // - NFSv4 clients may delay unlink() operations, ensuring that opened
+  //   files remain accessible. To prevent these files from being in the
+  //   way when creating a new file with the same name, clients will
+  //   rename the old file to .nfs*. This is called a "silly rename":
+  //   https://linux-nfs.org/wiki/index.php/Server-side_silly_rename.
+  //   This option can be used to prevent ENOTEMPTY errors when removing
+  //   directories containing one or more silly renamed files.
+  //
+  // Recommended value:
+  // - macOS: ^\._|^\.nfs\.[0-9a-f]{8}\.[0-9a-f]{4}$
+  // - Other platforms: unset
+  string hidden_files_pattern = 8;
+
+  // Because the virtual file system only loads input root contents from
+  // the Content Addressable Storage (CAS) lazily, build actions may
+  // block during execution. To prevent these delays from causing
+  // spurious test timeouts, this implementation is capable of
+  // compensating the execution timeout of actions based on storage
+  // latency observed.
+  //
+  // To prevent build actions from abusing this system (i.e., extending
+  // the execution timeout indefinitely by accessing files that are
+  // known to be slow), this option can be used to specify the maximum
+  // amount of time the build action is permitted to run in excess of
+  // the originally specified execution timeout.
+  //
+  // Recommended value: 3600s
+  google.protobuf.Duration maximum_execution_timeout_compensation = 9;
+
+  // The maximum amount of time to delay uploading of output files that
+  // are still opened for writing after the action completes. This can
+  // occur when the kernel closes file descriptors asynchronously. As
+  // files may still have dirty pages associated with them, uploading
+  // them immediately would cause data to get lost.
+  //
+  // This configuration option puts a bound on the maximum amount of
+  // time the worker is willing to wait for these files to be closed.
+  // This limit exists to ensure that files that are opened indefinitely
+  // don't cause the worker to also remain blocked indefinitely. This
+  // could happen if the build action daemonizes and bb_runner's
+  // clean_process_table option is disabled, or if file descriptor
+  // passing (SCM_RIGHTS) is used to pass file descriptors to processes
+  // outside the control of the worker.
+  //
+  // Recommended value: 60s.
+  google.protobuf.Duration maximum_writable_file_upload_delay = 10;
+
+  // Maximum number of temporary files that may be generated by build
+  // actions during execution.
+  int64 maximum_file_pool_file_count = 11;
+
+  // Maximum total size of all temporary files that may be generated by
+  // build actions during execution.
+  int64 maximum_file_pool_size_bytes = 12;
+
+  // Additional fields that need to be attached to the ID of the worker,
+  // as announced to the scheduler. In addition to the labels specified,
+  // one named "thread" is added automatically in case concurrency > 1.
+  map<string, string> worker_id = 13;
+
+  // Additional environment variables to set inside the runner. These
+  // are overridden by environment variables specified in an action.
+  //
+  // For better hermeticity, is preferable to have the environment
+  // controlled by the build client, such as Bazel's --action_env.
+  // --action_env, however, has limited scope that makes it not useful
+  // in some scenarios: https://github.com/bazelbuild/bazel/issues/3320
+  map<string, string> environment_variables = 14;
+}

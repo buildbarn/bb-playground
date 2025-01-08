@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"strings"
 
 	"github.com/buildbarn/bb-playground/pkg/evaluation"
 	"github.com/buildbarn/bb-playground/pkg/label"
@@ -100,49 +99,55 @@ func (c *baseComputer) getInlinedTreeOptions() *inlinedtree.Options {
 	}
 }
 
-type resolveApparentLabelEnvironment interface {
+type resolveApparentEnvironment interface {
 	GetCanonicalRepoNameValue(*model_analysis_pb.CanonicalRepoName_Key) model_core.Message[*model_analysis_pb.CanonicalRepoName_Value]
 	GetRootModuleValue(*model_analysis_pb.RootModule_Key) model_core.Message[*model_analysis_pb.RootModule_Value]
 }
 
-func resolveApparentLabel(e resolveApparentLabelEnvironment, fromRepo label.CanonicalRepo, toApparentLabel label.ApparentLabel) (label.CanonicalLabel, error) {
-	if toCanonicalLabel, ok := toApparentLabel.AsCanonicalLabel(); ok {
+type canonicalizable[T any] interface {
+	AsCanonical() (T, bool)
+	GetApparentRepo() (label.ApparentRepo, bool)
+	WithCanonicalRepo(canonicalRepo label.CanonicalRepo) T
+}
+
+func resolveApparent[TCanonical any, TApparent canonicalizable[TCanonical]](e resolveApparentEnvironment, fromRepo label.CanonicalRepo, toApparent TApparent) (TCanonical, error) {
+	if toCanonical, ok := toApparent.AsCanonical(); ok {
 		// Label was already canonical. Nothing to do.
-		return toCanonicalLabel, nil
+		return toCanonical, nil
 	}
 
-	if toApparentRepo, ok := toApparentLabel.GetApparentRepo(); ok {
+	if toApparentRepo, ok := toApparent.GetApparentRepo(); ok {
 		// Label is prefixed with an apparent repo. Resolve the repo.
 		v := e.GetCanonicalRepoNameValue(&model_analysis_pb.CanonicalRepoName_Key{
 			FromCanonicalRepo: fromRepo.String(),
 			ToApparentRepo:    toApparentRepo.String(),
 		})
-		var badLabel label.CanonicalLabel
+		var bad TCanonical
 		if !v.IsSet() {
-			return badLabel, evaluation.ErrMissingDependency
+			return bad, evaluation.ErrMissingDependency
 		}
 		toCanonicalRepo, err := label.NewCanonicalRepo(v.Message.ToCanonicalRepo)
 		if err != nil {
-			return badLabel, fmt.Errorf("invalid canonical repo name %#v: %w", v.Message.ToCanonicalRepo, err)
+			return bad, fmt.Errorf("invalid canonical repo name %#v: %w", v.Message.ToCanonicalRepo, err)
 		}
-		return toApparentLabel.WithCanonicalRepo(toCanonicalRepo), nil
+		return toApparent.WithCanonicalRepo(toCanonicalRepo), nil
 	}
 
 	// Label is prefixed with "@@". Resolve to the root module.
 	v := e.GetRootModuleValue(&model_analysis_pb.RootModule_Key{})
-	var badLabel label.CanonicalLabel
+	var bad TCanonical
 	if !v.IsSet() {
-		return badLabel, evaluation.ErrMissingDependency
+		return bad, evaluation.ErrMissingDependency
 	}
 	rootModule, err := label.NewModule(v.Message.RootModuleName)
 	if err != nil {
-		return badLabel, fmt.Errorf("invalid root module name %#v: %w", v.Message.RootModuleName, err)
+		return bad, fmt.Errorf("invalid root module name %#v: %w", v.Message.RootModuleName, err)
 	}
-	return toApparentLabel.WithCanonicalRepo(rootModule.ToModuleInstance(nil).GetBareCanonicalRepo()), nil
+	return toApparent.WithCanonicalRepo(rootModule.ToModuleInstance(nil).GetBareCanonicalRepo()), nil
 }
 
 type loadBzlGlobalsEnvironment interface {
-	resolveApparentLabelEnvironment
+	resolveApparentEnvironment
 	GetBuiltinsModuleNamesValue(key *model_analysis_pb.BuiltinsModuleNames_Key) model_core.Message[*model_analysis_pb.BuiltinsModuleNames_Value]
 	GetCompiledBzlFileDecodedGlobalsValue(key *model_analysis_pb.CompiledBzlFileDecodedGlobals_Key) (starlark.StringDict, bool)
 }
@@ -157,7 +162,7 @@ func (c *baseComputer) loadBzlGlobals(e loadBzlGlobalsEnvironment, canonicalPack
 		return nil, fmt.Errorf("invalid label %#v in load() statement: %w", loadLabelStr, err)
 	}
 	canonicalRepo := canonicalPackage.GetCanonicalRepo()
-	canonicalLoadLabel, err := resolveApparentLabel(e, canonicalRepo, apparentLoadLabel)
+	canonicalLoadLabel, err := resolveApparent(e, canonicalRepo, apparentLoadLabel)
 	if err != nil {
 		return nil, fmt.Errorf("failed to resolve label %#v in load() statement: %w", apparentLoadLabel.String(), err)
 	}
@@ -187,43 +192,6 @@ func (c *baseComputer) preloadBzlGlobals(e loadBzlGlobalsEnvironment, canonicalP
 		}
 	}
 	return
-}
-
-type getBzlFileBuiltinsEnvironment interface {
-	GetCompiledBzlFileDecodedGlobalsValue(key *model_analysis_pb.CompiledBzlFileDecodedGlobals_Key) (starlark.StringDict, bool)
-}
-
-func (c *baseComputer) getBzlFileBuiltins(e getBzlFileBuiltinsEnvironment, builtinsModuleNames []string, baseBuiltins starlark.StringDict, dictName string) (starlark.StringDict, error) {
-	allBuiltins := starlark.StringDict{}
-	for name, value := range baseBuiltins {
-		allBuiltins[name] = value
-	}
-	missingDependencies := false
-	for i, builtinsModuleName := range builtinsModuleNames {
-		exportsFile := fmt.Sprintf("@@%s+//:exports.bzl", builtinsModuleName)
-		if globals, gotGlobals := e.GetCompiledBzlFileDecodedGlobalsValue(&model_analysis_pb.CompiledBzlFileDecodedGlobals_Key{
-			Label:               exportsFile,
-			BuiltinsModuleNames: builtinsModuleNames[:i],
-		}); gotGlobals {
-			exportedToplevels, ok := globals[dictName].(starlark.IterableMapping)
-			if !ok {
-				return nil, fmt.Errorf("file %#v does not declare %s", exportsFile, dictName)
-			}
-			for name, value := range starlark.Entries(exportedToplevels) {
-				nameStr, ok := starlark.AsString(name)
-				if !ok {
-					return nil, fmt.Errorf("file %#v exports builtins with non-string names", exportsFile)
-				}
-				allBuiltins[strings.TrimPrefix(nameStr, "+")] = value
-			}
-		} else {
-			missingDependencies = true
-		}
-	}
-	if missingDependencies {
-		return nil, evaluation.ErrMissingDependency
-	}
-	return allBuiltins, nil
 }
 
 type starlarkThreadEnvironment interface {

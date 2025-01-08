@@ -7,7 +7,7 @@ import (
 )
 
 // CanonicalLabel is a label string that is prefixed with a canonical
-// repo name. This type can be used to refer to targets in an
+// repo name. This type can be used to refer to a single target in an
 // unambiguous way.
 type CanonicalLabel struct {
 	value string
@@ -46,11 +46,11 @@ var validCanonicalLabelRegexp = regexp.MustCompile("^" + validCanonicalLabelPatt
 
 var invalidCanonicalLabelPattern = errors.New("canonical label must match " + validCanonicalLabelPattern)
 
-// removeTargetNameIfRedundant checks whether the target name contained
-// in a label is identical to the last component of the repo name
-// (@foo//:foo) or package path (@foo//bar:bar). If so, the target name
-// is removed.
-func removeTargetNameIfRedundant(label string) string {
+// removeLabelTargetNameIfRedundant checks whether the target name
+// contained in a label is identical to the last component of the repo
+// name (@foo//:foo) or package path (@foo//bar:bar). If so, the target
+// name is removed.
+func removeLabelTargetNameIfRedundant(label string) string {
 	if targetNameOffset := strings.IndexByte(label, ':'); targetNameOffset >= 0 {
 		targetName := label[targetNameOffset+1:]
 		canonicalPackage := label[:targetNameOffset]
@@ -78,7 +78,7 @@ func NewCanonicalLabel(value string) (CanonicalLabel, error) {
 }
 
 func newValidCanonicalLabel(value string) CanonicalLabel {
-	return CanonicalLabel{value: removeTargetNameIfRedundant(value)}
+	return CanonicalLabel{value: removeLabelTargetNameIfRedundant(value)}
 }
 
 func MustNewCanonicalLabel(value string) CanonicalLabel {

@@ -282,7 +282,7 @@ func FullyComputeValue(ctx context.Context, c Computer, requestedKey model_core.
 		if l := len(keyType); longestKeyType < l {
 			longestKeyType = l
 		}
-		fmt.Printf("%-*s  %s", longestKeyType, keyType, string(appendFormattedKey(nil, ks.key)))
+		fmt.Printf("\x1b[?7l%-*s  %s\x1b[?7h", longestKeyType, keyType, string(appendFormattedKey(nil, ks.key)))
 
 		e := fullyComputingEnvironment{
 			pool:     &p,

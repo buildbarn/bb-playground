@@ -6,6 +6,7 @@ go_library(
         "any.go",
         "apparent_label.go",
         "apparent_repo.go",
+        "apparent_target_pattern.go",
         "bind.go",
         "bool.go",
         "canonicalize.go",

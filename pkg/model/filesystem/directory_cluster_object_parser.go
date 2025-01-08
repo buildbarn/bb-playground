@@ -23,9 +23,8 @@ type DirectoryCluster []Directory
 
 // Directory contained in a DirectoryCluster.
 type Directory struct {
-	Directories      []DirectoryNode
-	Leaves           model_core.Message[*model_filesystem_pb.Leaves]
-	LeavesReferences object.OutgoingReferencesList
+	Directories []DirectoryNode
+	Leaves      model_core.Message[*model_filesystem_pb.Leaves]
 }
 
 // DirectoryInfo holds all of the properties of a directory that could

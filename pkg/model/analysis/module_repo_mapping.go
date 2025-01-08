@@ -39,7 +39,7 @@ type moduleExtensionRepoMapping struct {
 }
 
 func (rm moduleExtensionRepoMapping) toProto(fromApparentRepo label.ApparentRepo, others map[label.ApparentRepo]repoMapping) (*model_analysis_pb.ModuleRepoMapping_Value_Mapping, error) {
-	canonicalExtensionBzlFile, ok := rm.extensionBzlFile.AsCanonicalLabel()
+	canonicalExtensionBzlFile, ok := rm.extensionBzlFile.AsCanonical()
 	if !ok {
 		extensionApparentRepo, ok := rm.extensionBzlFile.GetApparentRepo()
 		if !ok {
@@ -106,11 +106,11 @@ func (h *repoMappingCapturingModuleDotBazelHandler) Module(name label.Module, ve
 	})
 }
 
-func (repoMappingCapturingModuleDotBazelHandler) RegisterExecutionPlatforms(platformLabels []label.ApparentLabel, devDependency bool) error {
+func (repoMappingCapturingModuleDotBazelHandler) RegisterExecutionPlatforms(platformTargetPatterns []label.ApparentTargetPattern, devDependency bool) error {
 	return nil
 }
 
-func (repoMappingCapturingModuleDotBazelHandler) RegisterToolchains(toolchainLabels []label.ApparentLabel, devDependency bool) error {
+func (repoMappingCapturingModuleDotBazelHandler) RegisterToolchains(toolchainTargetPatterns []label.ApparentTargetPattern, devDependency bool) error {
 	return nil
 }
 

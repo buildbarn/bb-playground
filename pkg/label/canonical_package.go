@@ -14,20 +14,25 @@ type CanonicalPackage struct {
 }
 
 const (
-	validCanonicalPackagePattern        = `@@` + validCanonicalRepoPattern + `(//` + validNonEmptyPackageNamePattern + `)?`
-	validApparentOrAbsoluteLabelPattern = `(` + validApparentLabelPattern + `|` + validAbsoluteLabelPattern + `)`
-	validRelativeTargetNameLabelPattern = `((` + validNonEmptyPackageNamePattern + `)?:)?` + validTargetNamePattern
+	validCanonicalPackagePattern                = `@@` + validCanonicalRepoPattern + `(//` + validNonEmptyPackageNamePattern + `)?`
+	validApparentOrAbsoluteLabelPattern         = `(` + validApparentLabelPattern + `|` + validAbsoluteLabelPattern + `)`
+	validRelativeTargetNameLabelPattern         = `((` + validNonEmptyPackageNamePattern + `)?:)?` + validTargetNamePattern
+	validApparentOrAbsoluteTargetPatternPattern = `(` + validApparentTargetPatternPattern + `|` + validAbsoluteTargetPatternPattern + `)`
+	validRelativeTargetNameTargetPatternPattern = `(` + validRelativeTargetNameLabelPattern + `|` + validRelativeRecursiveTargetPatternPattern + `)`
 )
 
 var (
-	validCanonicalPackageRegexp        = regexp.MustCompile("^" + validCanonicalPackagePattern + "$")
-	validApparentOrAbsoluteLabelRegexp = regexp.MustCompile("^" + validApparentOrAbsoluteLabelPattern + "$")
-	validRelativeTargetNameLabelRegexp = regexp.MustCompile("^" + validRelativeTargetNameLabelPattern + "$")
+	validCanonicalPackageRegexp                = regexp.MustCompile("^" + validCanonicalPackagePattern + "$")
+	validApparentOrAbsoluteLabelRegexp         = regexp.MustCompile("^" + validApparentOrAbsoluteLabelPattern + "$")
+	validRelativeTargetNameLabelRegexp         = regexp.MustCompile("^" + validRelativeTargetNameLabelPattern + "$")
+	validApparentOrAbsoluteTargetPatternRegexp = regexp.MustCompile("^" + validApparentOrAbsoluteTargetPatternPattern + "$")
+	validRelativeTargetNameTargetPatternRegexp = regexp.MustCompile("^" + validRelativeTargetNameTargetPatternPattern + "$")
 )
 
 var (
 	invalidCanonicalPackagePattern = errors.New("canonical package name must match " + validCanonicalPackagePattern)
 	invalidLabelPattern            = errors.New("label must match (" + validApparentOrAbsoluteLabelPattern + "|" + validRelativeTargetNameLabelPattern + ")")
+	invalidTargetPatternPattern    = errors.New("target pattern must match (" + validApparentOrAbsoluteTargetPatternPattern + "|" + validRelativeTargetNameTargetPatternPattern + ")")
 )
 
 func NewCanonicalPackage(value string) (CanonicalPackage, error) {
@@ -60,6 +65,51 @@ func (p CanonicalPackage) GetPackagePath() string {
 	return ""
 }
 
+func (p CanonicalPackage) concatenateApparentOrAbsolute(value string) string {
+	switch value[0] {
+	case '@':
+		// Provided label is already apparent.
+		return value
+	case '/':
+		// Provided label is absolute.
+		repo := p.value
+		if offset := strings.IndexByte(repo, '/'); offset >= 0 {
+			repo = repo[:offset]
+		}
+		return repo + value
+	default:
+		panic("pattern matched labels that were not apparent or absolute")
+	}
+}
+
+func (p CanonicalPackage) concatenateRelative(value string, forceHasPackage bool) string {
+	midfix := ""
+	if forceHasPackage || strings.IndexByte(value, ':') >= 0 {
+		// Provided label is relative.
+		if strings.IndexByte(p.value, '/') < 0 {
+			midfix = "//"
+		} else if value[0] != ':' {
+			midfix = "/"
+		}
+	} else {
+		// Provided label is a bare target name. Bazel allows
+		// those to refer to targets inside the longest matching
+		// subpackage (e.g., "a/b/c" maps to either "a/b/c:c",
+		// "a/b:c", "a:b/c", or ":a/b/c").
+		//
+		// We don't support this scheme, as it significantly
+		// complicates the resolution process. We always
+		// interpret such labels as refering to targets in the
+		// current package (i.e., always "a/b/c" maps to
+		// ":a/b/c").
+		midfix = ":"
+		if strings.IndexByte(p.value, '/') < 0 {
+			midfix = "//:"
+		}
+	}
+	return p.value + midfix + value
+}
+
 // AppendLabel appends a provided label value to a canonical package
 // name. The resulting label is apparent, because the provided label
 // value may be prefixed with an apparent repo. It is the caller's
@@ -72,51 +122,11 @@ func (p CanonicalPackage) AppendLabel(value string) (ApparentLabel, error) {
 	// be a bare target name, because apparent repo names need to be
 	// followed by two slashes.
 	if validApparentOrAbsoluteLabelRegexp.MatchString(value) {
-		switch value[0] {
-		case '@':
-			// Provided label is already apparent.
-			return newValidApparentLabel(value), nil
-		case '/':
-			// Provided label is absolute.
-			repo := p.value
-			if offset := strings.IndexByte(repo, '/'); offset >= 0 {
-				repo = repo[:offset]
-			}
-			return newValidApparentLabel(repo + value), nil
-		default:
-			panic("pattern matched labels that were not apparent or absolute")
-		}
+		return newValidApparentLabel(p.concatenateApparentOrAbsolute(value)), nil
 	}
-
 	if validRelativeTargetNameLabelRegexp.MatchString(value) {
-		midfix := ""
-		if strings.IndexByte(value, ':') < 0 {
-			// Provided label is a bare target name. Bazel
-			// allows those to refer to targets inside
-			// the longest matching subpackage (e.g.,
-			// "a/b/c" maps to either "a/b/c:c", "a/b:c",
-			// "a:b/c", or ":a/b/c").
-			//
-			// We don't support this scheme, as it
-			// significantly complicates the resolution
-			// process. We always interpret such labels as
-			// refering to targets in the current package
-			// (i.e., always "a/b/c" maps to ":a/b/c").
-			midfix = ":"
-			if strings.IndexByte(p.value, '/') < 0 {
-				midfix = "//:"
-			}
-		} else {
-			// Provided label is relative.
-			if strings.IndexByte(p.value, '/') < 0 {
-				midfix = "//"
-			} else if value[0] != ':' {
-				midfix = "/"
-			}
-		}
-		return newValidApparentLabel(p.value + midfix + value), nil
+		return newValidApparentLabel(p.concatenateRelative(value, false)), nil
 	}
-
 	return ApparentLabel{}, invalidLabelPattern
 }
 
@@ -128,6 +138,25 @@ func (p CanonicalPackage) AppendTargetName(targetName TargetName) CanonicalLabel
 		midfix = "//:"
 	}
 	return newValidCanonicalLabel(p.value + midfix + targetName.value)
+}
+
+// AppendTargetPattern appends a provided target pattern value to a
+// canonical package name. The resulting target pattern is apparent,
+// because the provided label value may be prefixed with an apparent
+// repo. It is the caller's responsibility to resolve the apparent repo
+// to a canonical one.
+func (p CanonicalPackage) AppendTargetPattern(value string) (ApparentTargetPattern, error) {
+	if validApparentOrAbsoluteTargetPatternRegexp.MatchString(value) {
+		return newValidApparentTargetPattern(p.concatenateApparentOrAbsolute(value)), nil
+	}
+	if validRelativeTargetNameTargetPatternRegexp.MatchString(value) {
+		// Even though "a/b/c" should be interpreted as a target
+		// name (":a/b/c"), "a/b/..." should be interpreted as a
+		// wildcard package match.
+		forceHasPackage := value == "..." || strings.HasSuffix(value, "/...")
+		return newValidApparentTargetPattern(p.concatenateRelative(value, forceHasPackage)), nil
+	}
+	return ApparentTargetPattern{}, invalidTargetPatternPattern
 }
 
 func (p CanonicalPackage) String() string {

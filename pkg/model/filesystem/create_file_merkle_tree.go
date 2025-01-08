@@ -3,11 +3,14 @@ package filesystem
 import (
 	"context"
 	"io"
+	"math"
 
 	model_core "github.com/buildbarn/bb-playground/pkg/model/core"
 	"github.com/buildbarn/bb-playground/pkg/model/core/btree"
 	model_filesystem_pb "github.com/buildbarn/bb-playground/pkg/proto/model/filesystem"
+	"github.com/buildbarn/bb-playground/pkg/storage/dag"
 	"github.com/buildbarn/bb-playground/pkg/storage/object"
+	"github.com/buildbarn/bb-storage/pkg/filesystem"
 	"github.com/buildbarn/bb-storage/pkg/util"
 	cdc "github.com/buildbarn/go-cdc"
 )
@@ -89,4 +92,46 @@ func CreateFileMerkleTree[T model_core.ReferenceMetadata](ctx context.Context, p
 			return model_core.PatchedMessage[*model_filesystem_pb.FileContents, T]{}, err
 		}
 	}
+}
+
+// CreateChunkDiscardingFileMerkleTree is a helper function for creating
+// a Merkle tree of a file and immediately constructing an
+// ObjectContentsWalker for it. This function takes ownership of the
+// file that is provided. Its contents may be re-read when the
+// ObjectContentsWalker is accessed, and it will be released when no
+// more ObjectContentsWalkers for the file exist.
+func CreateChunkDiscardingFileMerkleTree(ctx context.Context, parameters *FileCreationParameters, f filesystem.FileReader) (model_core.PatchedMessage[*model_filesystem_pb.FileContents, dag.ObjectContentsWalker], error) {
+	fileContents, err := CreateFileMerkleTree(
+		ctx,
+		parameters,
+		io.NewSectionReader(f, 0, math.MaxInt64),
+		ChunkDiscardingFileMerkleTreeCapturer,
+	)
+	if err != nil {
+		f.Close()
+		return model_core.PatchedMessage[*model_filesystem_pb.FileContents, dag.ObjectContentsWalker]{}, err
+	}
+
+	if !fileContents.IsSet() {
+		// File is empty. Close the file immediately, so that it
+		// doesn't leak.
+		f.Close()
+		return model_core.PatchedMessage[*model_filesystem_pb.FileContents, dag.ObjectContentsWalker]{}, err
+	}
+
+	return model_core.PatchedMessage[*model_filesystem_pb.FileContents, dag.ObjectContentsWalker]{
+		Message: fileContents.Message,
+		Patcher: model_core.MapReferenceMessagePatcherMetadata(
+			fileContents.Patcher,
+			func(reference object.LocalReference, metadata CapturedObject) dag.ObjectContentsWalker {
+				return NewCapturedFileWalker(
+					parameters,
+					f,
+					reference,
+					fileContents.Message.TotalSizeBytes,
+					&metadata,
+				)
+			},
+		),
+	}, nil
 }

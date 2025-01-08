@@ -8,6 +8,7 @@ import (
 	"log"
 	"math/big"
 	"os"
+	"time"
 )
 
 func main() {
@@ -56,10 +57,13 @@ func main() {
 		log.Fatal("Invalid CA private key: ", err)
 	}
 
+	now := time.Now()
 	certificate, err := x509.CreateCertificate(
 		rand.Reader,
 		/* template = */ &x509.Certificate{
 			SerialNumber: big.NewInt(1),
+			NotBefore:    now,
+			NotAfter:     now.Add(365 * 24 * time.Hour),
 		},
 		caCertificate,
 		privateKey.Public(),

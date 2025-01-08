@@ -1,6 +1,9 @@
 {
    "functions": {
       "ActionResult": {
+         "dependsOn": [
+            "CommandEncoders"
+         ],
          "keyContainsReferences": true
       },
       "BuildResult": {
@@ -16,6 +19,7 @@
       },
       "CanonicalRepoName": {
          "dependsOn": [
+            "ModuleExtensionRepoNames",
             "ModuleRepoMapping"
          ]
       },
@@ -184,10 +188,16 @@
          "dependsOn": [
             "FileProperties",
             "HttpFileContents",
-            "ModuleFinalBuildList"
+            "ModuleFinalBuildList",
+            "ModulesWithOverrides"
          ]
       },
       "ModuleExtensionRepo": {
+         "dependsOn": [
+            "ModuleExtensionRepos"
+         ]
+      },
+      "ModuleExtensionRepoNames": {
          "dependsOn": [
             "ModuleExtensionRepos"
          ]
@@ -202,9 +212,15 @@
             "CompiledBzlFileFunctionFactory",
             "CompiledBzlFileGlobal",
             "DirectoryCreationParameters",
+            "DirectoryCreationParametersObject",
             "FileCreationParameters",
+            "FileCreationParametersObject",
+            "FileReader",
+            "HttpFileContents",
             "RegisteredRepoPlatform",
+            "Repo",
             "RootModule",
+            "StableInputRootPathObject",
             "UsedModuleExtension"
          ]
       },
@@ -228,9 +244,9 @@
       },
       "ModuleRoughBuildList": {
          "dependsOn": [
-            "FileProperties",
             "FileReader",
             "HttpFileContents",
+            "ModuleDotBazelContents",
             "ModuleRegistryUrls",
             "ModulesWithOverrides",
             "RootModule"
@@ -295,17 +311,22 @@
             "FileReader",
             "ModuleDotBazelContents",
             "ModulesWithMultipleVersionsObject",
-            "RootModule"
+            "RootModule",
+            "TargetPatternExpansion"
          ]
       },
       "Repo": {
          "dependsOn": [
+            "ActionResult",
             "BuildSpecification",
             "BuiltinsModuleNames",
             "CanonicalRepoName",
+            "CommandEncoderObject",
             "CompiledBzlFileDecodedGlobals",
             "CompiledBzlFileFunctionFactory",
+            "DirectoryCreationParameters",
             "DirectoryCreationParametersObject",
+            "FileCreationParameters",
             "FileCreationParametersObject",
             "FileProperties",
             "FileReader",
@@ -314,8 +335,10 @@
             "ModuleExtensionRepo",
             "ModuleFinalBuildList",
             "RegisteredRepoPlatform",
+            "Repo",
             "RepositoryRuleObject",
-            "RootModule"
+            "RootModule",
+            "StableInputRootPathObject"
          ]
       },
       "RepoDefaultAttrs": {
@@ -343,6 +366,28 @@
             "BuildSpecification"
          ]
       },
+      "StableInputRootPath": {
+         "dependsOn": [
+            "ActionResult",
+            "CommandEncoderObject",
+            "DirectoryCreationParameters",
+            "DirectoryCreationParametersObject",
+            "FileCreationParameters",
+            "FileReader",
+            "RegisteredRepoPlatform"
+         ]
+      },
+      "StableInputRootPathObject": {
+         "dependsOn": [
+            "StableInputRootPath"
+         ],
+         "nativeValueType": {
+            "imports": {
+               "model_starlark": "github.com/buildbarn/bb-playground/pkg/model/starlark"
+            },
+            "type": "*model_starlark.Path"
+         }
+      },
       "Target": {
          "dependsOn": [
             "Package"
@@ -351,6 +396,11 @@
       "TargetCompletion": {
          "dependsOn": [
             "ConfiguredTarget"
+         ]
+      },
+      "TargetPatternExpansion": {
+         "dependsOn": [
+            "Package"
          ]
       },
       "UsedModuleExtension": {

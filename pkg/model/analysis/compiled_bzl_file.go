@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"sort"
+	"strings"
 
 	"github.com/buildbarn/bb-playground/pkg/evaluation"
 	"github.com/buildbarn/bb-playground/pkg/label"
@@ -18,6 +19,7 @@ import (
 	"github.com/buildbarn/bb-playground/pkg/storage/dag"
 
 	"go.starlark.net/starlark"
+	"go.starlark.net/starlarkstruct"
 	"go.starlark.net/syntax"
 )
 
@@ -34,12 +36,12 @@ func (c *baseComputer) ComputeCompiledBzlFileValue(ctx context.Context, key *mod
 		Path:          canonicalLabel.GetRepoRelativePath(),
 	})
 	fileReader, gotFileReader := e.GetFileReaderValue(&model_analysis_pb.FileReader_Key{})
-	bzlFileBuiltins, bzlFileBuiltinsErr := c.getBzlFileBuiltins(e, key.BuiltinsModuleNames, model_starlark.BzlFileBuiltins, "exported_toplevels")
+	bzlFileBuiltins, bzlFileBuiltinsErr := c.getBzlFileBuiltins(e, key.BuiltinsModuleNames)
 	if !bzlFileProperties.IsSet() || !gotFileReader {
 		return PatchedCompiledBzlFileValue{}, evaluation.ErrMissingDependency
 	}
 	if bzlFileBuiltinsErr != nil {
-		return PatchedCompiledBzlFileValue{}, err
+		return PatchedCompiledBzlFileValue{}, bzlFileBuiltinsErr
 	}
 
 	if bzlFileProperties.Message.Exists == nil {
@@ -133,7 +135,7 @@ func (c *baseComputer) ComputeCompiledBzlFileFunctionFactoryValue(ctx context.Co
 		Label:               canonicalLabel.String(),
 		BuiltinsModuleNames: key.BuiltinsModuleNames,
 	})
-	bzlFileBuiltins, bzlFileBuiltinsErr := c.getBzlFileBuiltins(e, key.BuiltinsModuleNames, model_starlark.BzlFileBuiltins, "exported_toplevels")
+	bzlFileBuiltins, bzlFileBuiltinsErr := c.getBzlFileBuiltins(e, key.BuiltinsModuleNames)
 	if !compiledBzlFile.IsSet() {
 		return nil, evaluation.ErrMissingDependency
 	}
@@ -201,4 +203,125 @@ func (c *baseComputer) ComputeCompiledBzlFileGlobalValue(ctx context.Context, ke
 		}, nil
 	}
 	return PatchedCompiledBzlFileGlobalValue{}, errors.New("global does not exist")
+}
+
+var exportsBzlTargetName = label.MustNewTargetName("exports.bzl")
+
+type getBzlFileBuiltinsEnvironment interface {
+	GetCompiledBzlFileDecodedGlobalsValue(key *model_analysis_pb.CompiledBzlFileDecodedGlobals_Key) (starlark.StringDict, bool)
+}
+
+func (c *baseComputer) getBzlFileBuiltins(e getBzlFileBuiltinsEnvironment, builtinsModuleNames []string) (starlark.StringDict, error) {
+	allToplevels := starlark.StringDict{}
+	for name, value := range model_starlark.BzlFileBuiltins {
+		allToplevels[name] = value
+	}
+	newNative := starlark.StringDict{}
+
+	gotAllGlobals := true
+	for i, builtinsModuleNameStr := range builtinsModuleNames {
+		builtinsModuleName, err := label.NewModule(builtinsModuleNameStr)
+		if err != nil {
+			return nil, fmt.Errorf("invalid module name %#v: %w", builtinsModuleNameStr, err)
+		}
+		exportsFile := builtinsModuleName.
+			ToModuleInstance(nil).
+			GetBareCanonicalRepo().
+			GetRootPackage().
+			AppendTargetName(exportsBzlTargetName).
+			String()
+		globals, gotGlobals := e.GetCompiledBzlFileDecodedGlobalsValue(&model_analysis_pb.CompiledBzlFileDecodedGlobals_Key{
+			Label:               exportsFile,
+			BuiltinsModuleNames: builtinsModuleNames[:i],
+		})
+		gotAllGlobals = gotAllGlobals && gotGlobals
+		if gotAllGlobals {
+			exportedToplevels, ok := globals["exported_toplevels"].(starlark.IterableMapping)
+			if !ok {
+				return nil, fmt.Errorf("file %#v does not declare \"exported_toplevels\"", exportsFile)
+			}
+			for name, value := range starlark.Entries(exportedToplevels) {
+				nameStr, ok := starlark.AsString(name)
+				if !ok {
+					return nil, fmt.Errorf("file %#v exports builtins with non-string names", exportsFile)
+				}
+				allToplevels[strings.TrimPrefix(nameStr, "+")] = value
+			}
+
+			exportedRules, ok := globals["exported_rules"].(starlark.IterableMapping)
+			if !ok {
+				return nil, fmt.Errorf("file %#v does not declare \"exported_rules\"", exportsFile)
+			}
+			for name, value := range starlark.Entries(exportedRules) {
+				nameStr, ok := starlark.AsString(name)
+				if !ok {
+					return nil, fmt.Errorf("file %#v exports builtins with non-string names", exportsFile)
+				}
+				newNative[strings.TrimPrefix(nameStr, "+")] = value
+			}
+		}
+	}
+	if !gotAllGlobals {
+		return nil, evaluation.ErrMissingDependency
+	}
+
+	// Expose all rules via native.${name}().
+	existingNativeStruct, ok := allToplevels["native"].(*starlarkstruct.Struct)
+	if !ok {
+		return nil, errors.New("exported builtins do not declare \"native\"")
+	}
+	existingNative := starlark.StringDict{}
+	existingNativeStruct.ToStringDict(existingNative)
+	for name, value := range existingNative {
+		if _, ok := newNative[name]; !ok {
+			newNative[name] = value
+		}
+	}
+	allToplevels["native"] = starlarkstruct.FromStringDict(starlarkstruct.Default, newNative)
+
+	return allToplevels, nil
+}
+
+func (c *baseComputer) getBuildFileBuiltins(e getBzlFileBuiltinsEnvironment, builtinsModuleNames []string) (starlark.StringDict, error) {
+	allRules := starlark.StringDict{}
+	for name, value := range model_starlark.BuildFileBuiltins {
+		allRules[name] = value
+	}
+
+	gotAllGlobals := true
+	for i, builtinsModuleNameStr := range builtinsModuleNames {
+		builtinsModuleName, err := label.NewModule(builtinsModuleNameStr)
+		if err != nil {
+			return nil, fmt.Errorf("invalid module name %#v: %w", builtinsModuleNameStr, err)
+		}
+		exportsFile := builtinsModuleName.
+			ToModuleInstance(nil).
+			GetBareCanonicalRepo().
+			GetRootPackage().
+			AppendTargetName(exportsBzlTargetName).
+			String()
+		globals, gotGlobals := e.GetCompiledBzlFileDecodedGlobalsValue(&model_analysis_pb.CompiledBzlFileDecodedGlobals_Key{
+			Label:               exportsFile,
+			BuiltinsModuleNames: builtinsModuleNames[:i],
+		})
+		gotAllGlobals = gotAllGlobals && gotGlobals
+		if gotAllGlobals {
+			exportedRules, ok := globals["exported_rules"].(starlark.IterableMapping)
+			if !ok {
+				return nil, fmt.Errorf("file %#v does not declare \"exported_rules\"", exportsFile)
+			}
+			for name, value := range starlark.Entries(exportedRules) {
+				nameStr, ok := starlark.AsString(name)
+				if !ok {
+					return nil, fmt.Errorf("file %#v exports builtins with non-string names", exportsFile)
+				}
+				allRules[strings.TrimPrefix(nameStr, "+")] = value
+			}
+		}
+	}
+	if !gotAllGlobals {
+		return nil, evaluation.ErrMissingDependency
+	}
+
+	return allRules, nil
 }

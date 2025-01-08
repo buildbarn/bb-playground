@@ -3,7 +3,6 @@ syntax = "proto3";
 package buildbarn.playground.remoteexecution;
 
 import "google/protobuf/duration.proto";
-import "google/rpc/status.proto";
 
 option go_package = "github.com/buildbarn/bb-playground/pkg/proto/remoteexecution";
 

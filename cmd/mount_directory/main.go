@@ -129,13 +129,16 @@ func main() {
 			return util.StatusWrap(err, "Failed to fetch contents of root directory")
 		}
 
-		fileFactory := model_filesystem_virtual.NewObjectBackedFileFactory(
-			rootHandleAllocator.New(),
-			model_filesystem.NewFileReader(
-				fileContentsListReader,
-				fileChunkReader,
+		fileFactory := model_filesystem_virtual.NewResolvableHandleAllocatingFileFactory(
+			model_filesystem_virtual.NewObjectBackedFileFactory(
+				context.Background(),
+				model_filesystem.NewFileReader(
+					fileContentsListReader,
+					fileChunkReader,
+				),
+				util.DefaultErrorLogger,
 			),
-			util.DefaultErrorLogger,
+			rootHandleAllocator.New(),
 		)
 		directoryFactory := model_filesystem_virtual.NewObjectBackedDirectoryFactory(
 			rootHandleAllocator.New(),

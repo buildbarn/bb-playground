@@ -93,7 +93,11 @@ func (c *baseComputer) decodeAttrsDict(ctx context.Context, encodedAttrs model_c
 					},
 					/* currentIdentifier = */ nil,
 					c.getValueDecodingOptions(ctx, func(canonicalLabel label.CanonicalLabel) (starlark.Value, error) {
-						panic("TODO")
+						// TODO: We should probably not even attempt to
+						// decode defaults for label values, as we don't
+						// want to compute ConfiguredTargets
+						// unconditionally.
+						return starlark.None, nil
 					}),
 				)
 				if err != nil {

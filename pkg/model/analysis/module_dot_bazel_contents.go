@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"sort"
+	"strings"
 
 	"github.com/buildbarn/bb-playground/pkg/evaluation"
 	"github.com/buildbarn/bb-playground/pkg/label"
@@ -158,9 +159,47 @@ func (c *baseComputer) ComputeModuleDotBazelContentsValue(ctx context.Context, k
 		return PatchedModuleDotBazelContentsValue{}, fmt.Errorf("invalid module instance: %w", err)
 	}
 
-	finalBuildListValue := e.GetModuleFinalBuildListValue(&model_analysis_pb.ModuleFinalBuildList_Key{})
-	if !finalBuildListValue.IsSet() {
+	canonicalRepo := moduleInstance.GetBareCanonicalRepo()
+	expectedName := moduleInstance.GetModule()
+	expectedNameStr := expectedName.String()
+	expectedVersion, hasVersion := moduleInstance.GetModuleVersion()
+
+	// Check to see if there is an override for this module, and if it has been loaded.
+	moduleOverrides := e.GetModulesWithOverridesValue(&model_analysis_pb.ModulesWithOverrides_Key{})
+	if !moduleOverrides.IsSet() {
 		return PatchedModuleDotBazelContentsValue{}, evaluation.ErrMissingDependency
+	}
+
+	overrideList := moduleOverrides.Message.OverridesList
+	if _, found := sort.Find(
+		len(overrideList),
+		func(i int) int {
+			return strings.Compare(expectedNameStr, overrideList[i].Name)
+		},
+	); found { // Override found.
+		// Access the MODULE.bazel file that is part of the module's sources.
+		filePropertiesValue := e.GetFilePropertiesValue(&model_analysis_pb.FileProperties_Key{
+			CanonicalRepo: canonicalRepo.String(),
+			Path:          moduleDotBazelFilename,
+		})
+		if !filePropertiesValue.IsSet() {
+			return PatchedModuleDotBazelContentsValue{}, evaluation.ErrMissingDependency
+		}
+		fileContents := model_core.NewPatchedMessageFromExisting(
+			model_core.Message[*model_filesystem_pb.FileContents]{
+				Message:            filePropertiesValue.Message.Exists.Contents,
+				OutgoingReferences: filePropertiesValue.OutgoingReferences,
+			},
+			func(index int) dag.ObjectContentsWalker {
+				return dag.ExistingObjectContentsWalker
+			},
+		)
+		return PatchedModuleDotBazelContentsValue{
+			Message: &model_analysis_pb.ModuleDotBazelContents_Value{
+				Contents: fileContents.Message,
+			},
+			Patcher: fileContents.Patcher,
+		}, nil
 	}
 
 	// See if the module instance is one of the resolved modules
@@ -169,10 +208,12 @@ func (c *baseComputer) ComputeModuleDotBazelContentsValue(ctx context.Context, k
 	// separately instead of the one contained in the module's
 	// source archive. This prevents us from downloading and
 	// extracting modules that are otherwise unused by the build.
+	finalBuildListValue := e.GetModuleFinalBuildListValue(&model_analysis_pb.ModuleFinalBuildList_Key{})
+	if !finalBuildListValue.IsSet() {
+		return PatchedModuleDotBazelContentsValue{}, evaluation.ErrMissingDependency
+	}
+
 	buildList := finalBuildListValue.Message.BuildList
-	expectedName := moduleInstance.GetModule()
-	expectedNameStr := expectedName.String()
-	expectedVersion, hasVersion := moduleInstance.GetModuleVersion()
 	if i := sort.Search(
 		len(buildList),
 		func(i int) bool {
@@ -205,7 +246,7 @@ func (c *baseComputer) ComputeModuleDotBazelContentsValue(ctx context.Context, k
 				return PatchedModuleDotBazelContentsValue{}, fmt.Errorf("failed to construct URL for module %s with version %s in registry %#v: %s", foundModule.Name, foundModule.Version, foundModule.RegistryUrl)
 			}
 
-			fileContentsValue := e.GetHttpFileContentsValue(&model_analysis_pb.HttpFileContents_Key{Url: moduleFileURL})
+			fileContentsValue := e.GetHttpFileContentsValue(&model_analysis_pb.HttpFileContents_Key{Urls: []string{moduleFileURL}})
 			if !fileContentsValue.IsSet() {
 				return PatchedModuleDotBazelContentsValue{}, evaluation.ErrMissingDependency
 			}
@@ -230,31 +271,5 @@ func (c *baseComputer) ComputeModuleDotBazelContentsValue(ctx context.Context, k
 		}
 	}
 
-	// Access the MODULE.bazel file that is part of the module's sources.
-	canonicalRepo := moduleInstance.GetBareCanonicalRepo()
-	filePropertiesValue := e.GetFilePropertiesValue(&model_analysis_pb.FileProperties_Key{
-		CanonicalRepo: canonicalRepo.String(),
-		Path:          moduleDotBazelFilename,
-	})
-	if !filePropertiesValue.IsSet() {
-		return PatchedModuleDotBazelContentsValue{}, evaluation.ErrMissingDependency
-	}
-	if filePropertiesValue.Message.Exists == nil {
-		return PatchedModuleDotBazelContentsValue{}, fmt.Errorf("file %#v does not exist", canonicalRepo.GetRootPackage().AppendTargetName(moduleDotBazelTargetName))
-	}
-	fileContents := model_core.NewPatchedMessageFromExisting(
-		model_core.Message[*model_filesystem_pb.FileContents]{
-			Message:            filePropertiesValue.Message.Exists.Contents,
-			OutgoingReferences: filePropertiesValue.OutgoingReferences,
-		},
-		func(index int) dag.ObjectContentsWalker {
-			return dag.ExistingObjectContentsWalker
-		},
-	)
-	return PatchedModuleDotBazelContentsValue{
-		Message: &model_analysis_pb.ModuleDotBazelContents_Value{
-			Contents: fileContents.Message,
-		},
-		Patcher: fileContents.Patcher,
-	}, nil
+	return PatchedModuleDotBazelContentsValue{}, errors.New("unknown module")
 }

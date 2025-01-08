@@ -79,7 +79,7 @@ func (c *baseComputer) ComputeRegisteredRepoPlatformValue(ctx context.Context, k
 	if err != nil {
 		return PatchedRegisteredRepoPlatformValue{}, fmt.Errorf("invalid repo platform label %#v: %w", repoPlatformStr, err)
 	}
-	repoPlatformLabel, err := resolveApparentLabel(e, rootRepo, apparentRepoPlatformLabel)
+	repoPlatformLabel, err := resolveApparent(e, rootRepo, apparentRepoPlatformLabel)
 	if err != nil {
 		return PatchedRegisteredRepoPlatformValue{}, fmt.Errorf("failed to resolve repo platform label %#v: %w", apparentRepoPlatformLabel.String(), err)
 	}

@@ -37,15 +37,7 @@ func (h *LocalPathExtractingModuleDotBazelHandler) GetRootModuleName() (label.Mo
 	return *h.rootModuleName, nil
 }
 
-func (LocalPathExtractingModuleDotBazelHandler) ArchiveOverride(moduleName label.Module, urls []*url.URL, integrity string, stripPrefix path.Parser, patchOptions *pg_starlark.PatchOptions) error {
-	return nil
-}
-
 func (LocalPathExtractingModuleDotBazelHandler) BazelDep(name label.Module, version *label.ModuleVersion, maxCompatibilityLevel int, repoName label.ApparentRepo, devDependency bool) error {
-	return nil
-}
-
-func (LocalPathExtractingModuleDotBazelHandler) GitOverride(moduleName label.Module, remote *url.URL, commit string, patchOptions *pg_starlark.PatchOptions, initSubmodules bool, stripPrefix path.Parser) error {
 	return nil
 }
 
@@ -69,11 +61,15 @@ func (LocalPathExtractingModuleDotBazelHandler) MultipleVersionOverride(moduleNa
 	return nil
 }
 
-func (LocalPathExtractingModuleDotBazelHandler) RegisterExecutionPlatforms(platformLabels []label.ApparentLabel, devDependency bool) error {
+func (LocalPathExtractingModuleDotBazelHandler) RegisterExecutionPlatforms(platformTargetPatterns []label.ApparentTargetPattern, devDependency bool) error {
 	return nil
 }
 
-func (LocalPathExtractingModuleDotBazelHandler) RegisterToolchains(toolchainLabels []label.ApparentLabel, devDependency bool) error {
+func (LocalPathExtractingModuleDotBazelHandler) RegisterToolchains(toolchainTargetPatterns []label.ApparentTargetPattern, devDependency bool) error {
+	return nil
+}
+
+func (LocalPathExtractingModuleDotBazelHandler) RepositoryRuleOverride(moduleName label.Module, repositoryRuleIdentifier label.CanonicalStarlarkIdentifier, attrs map[string]starlark.Value) error {
 	return nil
 }
 

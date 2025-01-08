@@ -47,7 +47,6 @@ func (p *usedModuleExtensionProxy) Tag(className string, attrs map[string]starla
 			Name: className,
 		}
 		meu.tagClasses[className] = tagClass
-		meu.message.TagClasses = append(meu.message.TagClasses, tagClass)
 	}
 
 	encodedAttrs := make([]*model_starlark_pb.NamedValue, 0, len(attrs))
@@ -96,11 +95,11 @@ func (usedModuleExtensionExtractingModuleDotBazelHandler) Module(name label.Modu
 	return nil
 }
 
-func (usedModuleExtensionExtractingModuleDotBazelHandler) RegisterExecutionPlatforms(platformLabels []label.ApparentLabel, devDependency bool) error {
+func (usedModuleExtensionExtractingModuleDotBazelHandler) RegisterExecutionPlatforms(platformTargetPatterns []label.ApparentTargetPattern, devDependency bool) error {
 	return nil
 }
 
-func (usedModuleExtensionExtractingModuleDotBazelHandler) RegisterToolchains(toolchainLabels []label.ApparentLabel, devDependency bool) error {
+func (usedModuleExtensionExtractingModuleDotBazelHandler) RegisterToolchains(toolchainTargetPatterns []label.ApparentTargetPattern, devDependency bool) error {
 	return nil
 }
 
@@ -112,7 +111,7 @@ func (h *usedModuleExtensionExtractingModuleDotBazelHandler) UseExtension(extens
 	// Look up the module extension properties, so that we obtain
 	// the canonical identifier of the Starlark module_extension
 	// declaration.
-	canonicalExtensionBzlFile, err := resolveApparentLabel(h.options.environment, h.moduleInstance.GetBareCanonicalRepo(), extensionBzlFile)
+	canonicalExtensionBzlFile, err := resolveApparent(h.options.environment, h.moduleInstance.GetBareCanonicalRepo(), extensionBzlFile)
 	if err != nil {
 		return nil, err
 	}
@@ -194,6 +193,16 @@ func (c *baseComputer) ComputeUsedModuleExtensionsValue(ctx context.Context, key
 		return h
 	}); err != nil {
 		return PatchedUsedModuleExtensionsValue{}, err
+	}
+
+	// Sort and populate tag classes of each module extension user.
+	for _, ume := range usedModuleExtensions {
+		for _, meu := range ume.users {
+			meu.message.TagClasses = make([]*model_analysis_pb.ModuleExtension_TagClass, 0, len(meu.tagClasses))
+			for _, name := range slices.Sorted(maps.Keys(meu.tagClasses)) {
+				meu.message.TagClasses = append(meu.message.TagClasses, meu.tagClasses[name])
+			}
+		}
 	}
 
 	sortedModuleExtensions := make([]*model_analysis_pb.ModuleExtension, 0, len(usedModuleExtensions))

@@ -4,6 +4,8 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -19,10 +21,13 @@ import (
 	"github.com/buildbarn/bb-playground/pkg/evaluation"
 	"github.com/buildbarn/bb-playground/pkg/label"
 	model_core "github.com/buildbarn/bb-playground/pkg/model/core"
+	"github.com/buildbarn/bb-playground/pkg/model/core/btree"
+	model_encoding "github.com/buildbarn/bb-playground/pkg/model/encoding"
 	model_filesystem "github.com/buildbarn/bb-playground/pkg/model/filesystem"
 	model_parser "github.com/buildbarn/bb-playground/pkg/model/parser"
 	model_starlark "github.com/buildbarn/bb-playground/pkg/model/starlark"
 	model_analysis_pb "github.com/buildbarn/bb-playground/pkg/proto/model/analysis"
+	model_command_pb "github.com/buildbarn/bb-playground/pkg/proto/model/command"
 	model_core_pb "github.com/buildbarn/bb-playground/pkg/proto/model/core"
 	model_filesystem_pb "github.com/buildbarn/bb-playground/pkg/proto/model/filesystem"
 	model_starlark_pb "github.com/buildbarn/bb-playground/pkg/proto/model/starlark"
@@ -36,6 +41,7 @@ import (
 
 	"golang.org/x/sync/errgroup"
 	"golang.org/x/sync/semaphore"
+	"google.golang.org/protobuf/types/known/durationpb"
 
 	"go.starlark.net/starlark"
 	"go.starlark.net/starlarkstruct"
@@ -147,6 +153,24 @@ func (d *changeTrackingDirectory) setContents(contents model_core.Message[*model
 		}
 	}
 	return nil
+}
+
+func (d *changeTrackingDirectory) getOrCreateDirectory(name path.Component) (*changeTrackingDirectory, error) {
+	dChild, ok := d.directories[name]
+	if !ok {
+		if _, ok := d.files[name]; ok {
+			return nil, errors.New("a file with this name already exists")
+		}
+		if _, ok := d.symlinks[name]; ok {
+			return nil, errors.New("a symbolic link with this name already exists")
+		}
+		if d.directories == nil {
+			d.directories = map[path.Component]*changeTrackingDirectory{}
+		}
+		dChild = &changeTrackingDirectory{}
+		d.directories[name] = dChild
+	}
+	return dChild, nil
 }
 
 func (d *changeTrackingDirectory) setFile(name path.Component, f *changeTrackingFile) {
@@ -437,31 +461,45 @@ func (cw *changeTrackingDirectoryExistingFileResolver) OnUp() (path.ComponentWal
 }
 
 type changeTrackingDirectoryNewFileResolver struct {
-	loadOptions      *changeTrackingDirectoryLoadOptions
-	currentDirectory *changeTrackingDirectory
+	loadOptions *changeTrackingDirectoryLoadOptions
 
-	name *path.Component
+	stack util.NonEmptyStack[*changeTrackingDirectory]
+	name  *path.Component
+}
+
+func (r *changeTrackingDirectoryNewFileResolver) OnAbsolute() (path.ComponentWalker, error) {
+	r.stack.PopAll()
+	return r, nil
+}
+
+func (r *changeTrackingDirectoryNewFileResolver) OnRelative() (path.ComponentWalker, error) {
+	return r, nil
+}
+
+func (r *changeTrackingDirectoryNewFileResolver) OnDriveLetter(driveLetter rune) (path.ComponentWalker, error) {
+	return nil, errors.New("drive letters are not supported")
 }
 
 func (r *changeTrackingDirectoryNewFileResolver) OnDirectory(name path.Component) (path.GotDirectoryOrSymlink, error) {
-	d := r.currentDirectory
+	d := r.stack.Peek()
 	if err := d.maybeLoadContents(r.loadOptions); err != nil {
 		return nil, err
 	}
 
-	if dChild, ok := d.directories[name]; ok {
-		r.currentDirectory = dChild
-		return path.GotDirectory{
-			Child:        r,
-			IsReversible: true,
-		}, nil
+	dChild, err := d.getOrCreateDirectory(name)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create directory %#v: %w", name.String(), err)
 	}
 
-	return nil, errors.New("directory does not exist")
+	r.stack.Push(dChild)
+	return path.GotDirectory{
+		Child:        r,
+		IsReversible: true,
+	}, nil
 }
 
 func (r *changeTrackingDirectoryNewFileResolver) OnTerminal(name path.Component) (*path.GotSymlink, error) {
-	d := r.currentDirectory
+	d := r.stack.Peek()
 	if _, ok := d.directories[name]; ok {
 		return nil, errors.New("path resolves to a directory")
 	}
@@ -473,7 +511,10 @@ func (r *changeTrackingDirectoryNewFileResolver) OnTerminal(name path.Component)
 }
 
 func (r *changeTrackingDirectoryNewFileResolver) OnUp() (path.ComponentWalker, error) {
-	return nil, errors.New("path cannot go up")
+	if _, ok := r.stack.PopSingle(); !ok {
+		return nil, errors.New("path resolves to a location above the root directory")
+	}
+	return r, nil
 }
 
 func (c *baseComputer) fetchModuleFromRegistry(ctx context.Context, module *model_analysis_pb.BuildListModule, e RepoEnvironment) (PatchedRepoValue, error) {
@@ -495,7 +536,7 @@ func (c *baseComputer) fetchModuleFromRegistry(ctx context.Context, module *mode
 		return PatchedRepoValue{}, fmt.Errorf("failed to construct URL for module %s with version %s in registry %#v: %w", module.Name, module.Version, module.RegistryUrl, err)
 	}
 
-	sourceJSONContentsValue := e.GetHttpFileContentsValue(&model_analysis_pb.HttpFileContents_Key{Url: sourceJSONURL})
+	sourceJSONContentsValue := e.GetHttpFileContentsValue(&model_analysis_pb.HttpFileContents_Key{Urls: []string{sourceJSONURL}})
 	if !sourceJSONContentsValue.IsSet() {
 		return PatchedRepoValue{}, evaluation.ErrMissingDependency
 	}
@@ -534,7 +575,7 @@ func (c *baseComputer) fetchModuleFromRegistry(ctx context.Context, module *mode
 	// Download source archive and all patches that need to be applied.
 	missingDependencies := false
 	archiveContentsValue := e.GetHttpArchiveContentsValue(&model_analysis_pb.HttpArchiveContents_Key{
-		Url:       sourceJSON.URL,
+		Urls:      []string{sourceJSON.URL},
 		Integrity: sourceJSON.Integrity,
 		Format:    archiveFormat,
 	})
@@ -557,7 +598,7 @@ func (c *baseComputer) fetchModuleFromRegistry(ctx context.Context, module *mode
 			return PatchedRepoValue{}, fmt.Errorf("failed to construct URL for patch %s of module %s with version %s in registry %#v: %s", filename, module.Name, module.Version, module.RegistryUrl, err)
 		}
 		patchContentsValue := e.GetHttpFileContentsValue(&model_analysis_pb.HttpFileContents_Key{
-			Url:       patchURL,
+			Urls:      []string{patchURL},
 			Integrity: sourceJSON.Patches[filename],
 		})
 		if !patchContentsValue.IsSet() {
@@ -613,7 +654,7 @@ func (c *baseComputer) fetchModuleFromRegistry(ctx context.Context, module *mode
 		return PatchedRepoValue{}, err
 	}
 	defer patchedFiles.Close()
-	patchedFilesWriter := &sectionWriter{w: patchedFiles}
+	patchedFilesWriter := model_filesystem.NewSectionWriter(patchedFiles)
 
 	// TODO: Apply patches!
 	for patchIndex, patchContentsValue := range patchContentsValues {
@@ -685,14 +726,14 @@ func (c *baseComputer) fetchModuleFromRegistry(ctx context.Context, module *mode
 				}
 			}
 
-			patchedFileOffsetBytes := patchedFilesWriter.offsetBytes
+			patchedFileOffsetBytes := patchedFilesWriter.GetOffsetBytes()
 			if err := diff.ReplaceTextFragments(patchedFilesWriter, srcReplace, file.TextFragments, fragmentsOffsetsBytes); err != nil {
 				return PatchedRepoValue{}, fmt.Errorf("failed to replace text fragments for patch %#v to %#v: %w", patchFilenames[patchIndex], file.OldName, err)
 			}
 
 			r := &changeTrackingDirectoryNewFileResolver{
-				loadOptions:      loadOptions,
-				currentDirectory: rootDirectory,
+				loadOptions: loadOptions,
+				stack:       util.NewNonEmptyStack(rootDirectory),
 			}
 			if err := path.Resolve(
 				path.UNIXFormat.NewParser(file.NewName),
@@ -709,11 +750,11 @@ func (c *baseComputer) fetchModuleFromRegistry(ctx context.Context, module *mode
 			if file.NewMode != 0 {
 				isExecutable = file.NewMode&0o111 != 0
 			}
-			r.currentDirectory.setFile(*r.name, &changeTrackingFile{
+			r.stack.Peek().setFile(*r.name, &changeTrackingFile{
 				isExecutable: isExecutable,
 				contents: patchedFileContents{
 					offsetBytes: patchedFileOffsetBytes,
-					sizeBytes:   patchedFilesWriter.offsetBytes - patchedFileOffsetBytes,
+					sizeBytes:   patchedFilesWriter.GetOffsetBytes() - patchedFileOffsetBytes,
 				},
 			})
 		}
@@ -744,17 +785,601 @@ func newRepositoryOS(repoPlatform *model_analysis_pb.RegisteredRepoPlatform_Valu
 	return s
 }
 
+type moduleOrRepositoryContextEnvironment interface {
+	GetActionResultValue(model_core.PatchedMessage[*model_analysis_pb.ActionResult_Key, dag.ObjectContentsWalker]) model_core.Message[*model_analysis_pb.ActionResult_Value]
+	GetCommandEncoderObjectValue(*model_analysis_pb.CommandEncoderObject_Key) (model_encoding.BinaryEncoder, bool)
+	GetDirectoryCreationParametersObjectValue(*model_analysis_pb.DirectoryCreationParametersObject_Key) (*model_filesystem.DirectoryCreationParameters, bool)
+	GetDirectoryCreationParametersValue(*model_analysis_pb.DirectoryCreationParameters_Key) model_core.Message[*model_analysis_pb.DirectoryCreationParameters_Value]
+	GetFileCreationParametersObjectValue(*model_analysis_pb.FileCreationParametersObject_Key) (*model_filesystem.FileCreationParameters, bool)
+	GetFileCreationParametersValue(*model_analysis_pb.FileCreationParameters_Key) model_core.Message[*model_analysis_pb.FileCreationParameters_Value]
+	GetFileReaderValue(*model_analysis_pb.FileReader_Key) (*model_filesystem.FileReader, bool)
+	GetHttpFileContentsValue(*model_analysis_pb.HttpFileContents_Key) model_core.Message[*model_analysis_pb.HttpFileContents_Value]
+	GetRegisteredRepoPlatformValue(*model_analysis_pb.RegisteredRepoPlatform_Key) model_core.Message[*model_analysis_pb.RegisteredRepoPlatform_Value]
+	GetRepoValue(*model_analysis_pb.Repo_Key) model_core.Message[*model_analysis_pb.Repo_Value]
+	GetStableInputRootPathObjectValue(*model_analysis_pb.StableInputRootPathObject_Key) (*model_starlark.Path, bool)
+}
+
+type moduleOrRepositoryContext struct {
+	computer               *baseComputer
+	context                context.Context
+	environment            moduleOrRepositoryContextEnvironment
+	subdirectoryComponents []path.Component
+
+	commandEncoder                     model_encoding.BinaryEncoder
+	defaultWorkingDirectoryBuilder     *path.Builder
+	directoryCreationParameters        *model_filesystem.DirectoryCreationParameters
+	directoryCreationParametersMessage *model_filesystem_pb.DirectoryCreationParameters
+	directoryLoadOptions               *changeTrackingDirectoryLoadOptions
+	fileCreationParameters             *model_filesystem.FileCreationParameters
+	fileCreationParametersMessage      *model_filesystem_pb.FileCreationParameters
+	fileReader                         *model_filesystem.FileReader
+	pathUnpackerInto                   unpack.UnpackerInto[*model_starlark.Path]
+	repoPlatform                       model_core.Message[*model_analysis_pb.RegisteredRepoPlatform_Value]
+	virtualRootScopeWalkerFactory      *path.VirtualRootScopeWalkerFactory
+
+	inputRootDirectory *changeTrackingDirectory
+	patchedFiles       filesystem.FileReader
+	patchedFilesWriter *model_filesystem.SectionWriter
+}
+
+func (c *baseComputer) newModuleOrRepositoryContext(ctx context.Context, e moduleOrRepositoryContextEnvironment, subdirectoryComponents []path.Component) (*moduleOrRepositoryContext, error) {
+	inputRootDirectory := &changeTrackingDirectory{}
+	currentDirectory := inputRootDirectory
+	for _, component := range subdirectoryComponents {
+		subdirectory := &changeTrackingDirectory{}
+		currentDirectory.directories = map[path.Component]*changeTrackingDirectory{
+			component: subdirectory,
+		}
+		currentDirectory = subdirectory
+	}
+	return &moduleOrRepositoryContext{
+		computer:               c,
+		context:                ctx,
+		environment:            e,
+		subdirectoryComponents: subdirectoryComponents,
+
+		inputRootDirectory: inputRootDirectory,
+	}, nil
+}
+
+func (mrc *moduleOrRepositoryContext) release() {
+	if mrc.patchedFiles != nil {
+		mrc.patchedFiles.Close()
+	}
+}
+
+func (mrc *moduleOrRepositoryContext) maybeGetDirectoryCreationParameters() {
+	if mrc.directoryCreationParameters == nil {
+		if v, ok := mrc.environment.GetDirectoryCreationParametersObjectValue(&model_analysis_pb.DirectoryCreationParametersObject_Key{}); ok {
+			directoryReader := model_parser.NewStorageBackedParsedObjectReader(
+				mrc.computer.objectDownloader,
+				v.GetEncoder(),
+				model_parser.NewMessageObjectParser[object.LocalReference, model_filesystem_pb.Directory](),
+			)
+			leavesReader := model_parser.NewStorageBackedParsedObjectReader(
+				mrc.computer.objectDownloader,
+				v.GetEncoder(),
+				model_parser.NewMessageObjectParser[object.LocalReference, model_filesystem_pb.Leaves](),
+			)
+
+			mrc.directoryCreationParameters = v
+			mrc.directoryLoadOptions = &changeTrackingDirectoryLoadOptions{
+				context:         mrc.context,
+				directoryReader: directoryReader,
+				leavesReader:    leavesReader,
+			}
+		}
+	}
+}
+
+func (mrc *moduleOrRepositoryContext) maybeGetFileCreationParameters() {
+	if mrc.fileCreationParameters == nil {
+		if v, ok := mrc.environment.GetFileCreationParametersObjectValue(&model_analysis_pb.FileCreationParametersObject_Key{}); ok {
+			mrc.fileCreationParameters = v
+		}
+	}
+}
+
+func (mrc *moduleOrRepositoryContext) maybeGetFileReader() {
+	if mrc.fileReader == nil {
+		if v, ok := mrc.environment.GetFileReaderValue(&model_analysis_pb.FileReader_Key{}); ok {
+			mrc.fileReader = v
+		}
+	}
+}
+
+func (mrc *moduleOrRepositoryContext) maybeInitializePatchedFiles() error {
+	if mrc.patchedFiles == nil {
+		patchedFiles, err := mrc.computer.filePool.NewFile()
+		if err != nil {
+			return err
+		}
+		mrc.patchedFiles = patchedFiles
+		mrc.patchedFilesWriter = model_filesystem.NewSectionWriter(patchedFiles)
+	}
+	return nil
+}
+
+func (mrc *moduleOrRepositoryContext) maybeGetStableInputRootPath() error {
+	if mrc.defaultWorkingDirectoryBuilder == nil {
+		stableInputRootPath, ok := mrc.environment.GetStableInputRootPathObjectValue(&model_analysis_pb.StableInputRootPathObject_Key{})
+		if !ok {
+			return evaluation.ErrMissingDependency
+		}
+
+		defaultWorkingDirectoryPath := stableInputRootPath
+		for _, component := range mrc.subdirectoryComponents {
+			defaultWorkingDirectoryPath = defaultWorkingDirectoryPath.Append(component)
+		}
+		defaultWorkingDirectoryBuilder, scopeWalker := path.EmptyBuilder.Join(path.VoidScopeWalker)
+		if err := path.Resolve(defaultWorkingDirectoryPath, scopeWalker); err != nil {
+			return fmt.Errorf("failed to resolve default working directory path: %w", err)
+		}
+
+		virtualRootScopeWalkerFactory, err := path.NewVirtualRootScopeWalkerFactory(stableInputRootPath, nil)
+		if err != nil {
+			return err
+		}
+
+		mrc.defaultWorkingDirectoryBuilder = defaultWorkingDirectoryBuilder
+		mrc.pathUnpackerInto = model_starlark.NewPathOrLabelOrStringUnpackerInto(
+			func(canonicalRepo label.CanonicalRepo) (*model_starlark.Path, error) {
+				// If ctx.path() is called with a label, that
+				// should force a download of the referenced
+				// repository.
+				mrc.maybeGetDirectoryCreationParameters()
+				if mrc.directoryLoadOptions == nil {
+					return nil, evaluation.ErrMissingDependency
+				}
+				if err := mrc.inputRootDirectory.maybeLoadContents(mrc.directoryLoadOptions); err != nil {
+					return nil, fmt.Errorf("failed to load contents of input root directory")
+				}
+
+				externalDirectoryName := path.MustNewComponent("external")
+				externalDirectory, err := mrc.inputRootDirectory.getOrCreateDirectory(externalDirectoryName)
+				if err != nil {
+					return nil, fmt.Errorf("Failed to create directory %#v: %w", externalDirectoryName.String(), err)
+				}
+				if err := externalDirectory.maybeLoadContents(mrc.directoryLoadOptions); err != nil {
+					return nil, fmt.Errorf("failed to load contents of %#v directory: %w", err)
+				}
+
+				canonicalRepoComponent := path.MustNewComponent(canonicalRepo.String())
+				if _, ok := externalDirectory.directories[canonicalRepoComponent]; !ok {
+					repo := mrc.environment.GetRepoValue(&model_analysis_pb.Repo_Key{
+						CanonicalRepo: canonicalRepo.String(),
+					})
+					if !repo.IsSet() {
+						return nil, evaluation.ErrMissingDependency
+					}
+					repoDirectory, err := externalDirectory.getOrCreateDirectory(canonicalRepoComponent)
+					if err != nil {
+						return nil, fmt.Errorf("failed to create directory for repo: %w", err)
+					}
+					repoDirectory.currentReference = model_core.Message[*model_core_pb.Reference]{
+						Message:            repo.Message.RootDirectoryReference,
+						OutgoingReferences: repo.OutgoingReferences,
+					}
+				}
+
+				return stableInputRootPath.Append(externalDirectoryName).Append(canonicalRepoComponent), nil
+			},
+			defaultWorkingDirectoryPath,
+		)
+		mrc.virtualRootScopeWalkerFactory = virtualRootScopeWalkerFactory
+	}
+	return nil
+}
+
+func (mrc *moduleOrRepositoryContext) doDownload(thread *starlark.Thread, b *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
+	mrc.maybeGetDirectoryCreationParameters()
+	if err := mrc.maybeGetStableInputRootPath(); err != nil {
+		return nil, err
+	}
+	if mrc.directoryLoadOptions == nil {
+		return nil, evaluation.ErrMissingDependency
+	}
+
+	if len(args) > 8 {
+		return nil, fmt.Errorf("%s: got %d positional arguments, want at most 8", b.Name(), len(args))
+	}
+	var urls []string
+	var output *model_starlark.Path
+	sha256 := ""
+	executable := false
+	allowFail := false
+	canonicalID := ""
+	var auth map[string]map[string]string
+	var headers map[string]string
+	integrity := ""
+	block := true
+	if err := starlark.UnpackArgs(
+		b.Name(), args, kwargs,
+		"url", unpack.Bind(thread, &urls, unpack.Or([]unpack.UnpackerInto[[]string]{
+			unpack.List(unpack.Stringer(unpack.URL)),
+			unpack.Singleton(unpack.Stringer(unpack.URL)),
+		})),
+		"output?", unpack.Bind(thread, &output, mrc.pathUnpackerInto),
+		"sha256?", unpack.Bind(thread, &sha256, unpack.String),
+		"executable?", unpack.Bind(thread, &executable, unpack.Bool),
+		"allow_fail?", unpack.Bind(thread, &allowFail, unpack.Bool),
+		"canonical_id?", unpack.Bind(thread, &canonicalID, unpack.String),
+		"auth?", unpack.Bind(thread, &auth, unpack.Dict(unpack.Stringer(unpack.URL), unpack.Dict(unpack.String, unpack.String))),
+		"headers?", unpack.Bind(thread, &headers, unpack.Dict(unpack.String, unpack.String)),
+		"integrity?", unpack.Bind(thread, &integrity, unpack.String),
+		"block?", unpack.Bind(thread, &block, unpack.Bool),
+	); err != nil {
+		return nil, err
+	}
+
+	if integrity == "" && sha256 != "" {
+		sha256Bytes, err := hex.DecodeString(sha256)
+		if err != nil {
+			return nil, fmt.Errorf("invalid sha256: %w", err)
+		}
+		integrity = "sha256-" + base64.StdEncoding.EncodeToString(sha256Bytes)
+	}
+
+	fileContentsValue := mrc.environment.GetHttpFileContentsValue(&model_analysis_pb.HttpFileContents_Key{
+		Urls:      urls,
+		Integrity: integrity,
+		AllowFail: allowFail,
+		// TODO: Set auth and headers!
+	})
+	if !block {
+		return nil, errors.New("non-blocking downloads are not implemented yet")
+	}
+
+	if !fileContentsValue.IsSet() {
+		return nil, evaluation.ErrMissingDependency
+	}
+	if fileContentsValue.Message.Exists == nil {
+		// File does not exist, or allow_fail was set and an
+		// error occurred.
+		return starlarkstruct.FromStringDict(starlarkstruct.Default, starlark.StringDict{
+			"success": starlark.Bool(false),
+		}), nil
+	}
+
+	// Insert the downloaded file into the file system.
+	r := &changeTrackingDirectoryNewFileResolver{
+		loadOptions: mrc.directoryLoadOptions,
+		stack:       util.NewNonEmptyStack(mrc.inputRootDirectory),
+	}
+	if err := path.Resolve(output, mrc.virtualRootScopeWalkerFactory.New(r)); err != nil {
+		return nil, fmt.Errorf("cannot resolve %#v: %w", output.String(), err)
+	}
+	if r.name == nil {
+		return nil, fmt.Errorf("%#v does not resolve to a file", output.String())
+	}
+
+	r.stack.Peek().setFile(*r.name, &changeTrackingFile{
+		isExecutable: executable,
+		contents: unmodifiedFileContents{
+			contents: model_core.Message[*model_filesystem_pb.FileContents]{
+				Message:            fileContentsValue.Message.Exists.Contents,
+				OutgoingReferences: fileContentsValue.OutgoingReferences,
+			},
+		},
+	})
+
+	return starlarkstruct.FromStringDict(starlarkstruct.Default, starlark.StringDict{
+		"success": starlark.Bool(true),
+		// TODO: Add "sha256" and "integrity" fields.
+	}), nil
+}
+
+func (moduleOrRepositoryContext) doDownloadAndExtract(thread *starlark.Thread, b *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
+	return nil, errors.New("TODO: Implement!")
+}
+
+func (mrc *moduleOrRepositoryContext) doExecute(thread *starlark.Thread, b *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
+	if mrc.commandEncoder == nil {
+		if v, ok := mrc.environment.GetCommandEncoderObjectValue(&model_analysis_pb.CommandEncoderObject_Key{}); ok {
+			mrc.commandEncoder = v
+		}
+	}
+	mrc.maybeGetDirectoryCreationParameters()
+	if mrc.directoryCreationParametersMessage == nil {
+		if v := mrc.environment.GetDirectoryCreationParametersValue(&model_analysis_pb.DirectoryCreationParameters_Key{}); v.IsSet() {
+			mrc.directoryCreationParametersMessage = v.Message.DirectoryCreationParameters
+		}
+	}
+	mrc.maybeGetFileCreationParameters()
+	if mrc.fileCreationParametersMessage == nil {
+		if v := mrc.environment.GetFileCreationParametersValue(&model_analysis_pb.FileCreationParameters_Key{}); v.IsSet() {
+			mrc.fileCreationParametersMessage = v.Message.FileCreationParameters
+		}
+	}
+	mrc.maybeGetFileReader()
+	if !mrc.repoPlatform.IsSet() {
+		mrc.repoPlatform = mrc.environment.GetRegisteredRepoPlatformValue(&model_analysis_pb.RegisteredRepoPlatform_Key{})
+	}
+	stableInputRootPathError := mrc.maybeGetStableInputRootPath()
+	if mrc.commandEncoder == nil ||
+		mrc.directoryCreationParameters == nil ||
+		mrc.directoryCreationParametersMessage == nil ||
+		mrc.fileCreationParameters == nil ||
+		mrc.fileCreationParametersMessage == nil ||
+		mrc.fileReader == nil ||
+		!mrc.repoPlatform.IsSet() {
+		return nil, evaluation.ErrMissingDependency
+	}
+	if stableInputRootPathError != nil {
+		return nil, stableInputRootPathError
+	}
+
+	var arguments []string
+	timeout := int64(600)
+	environment := map[string]string{}
+	quiet := true
+	var workingDirectory path.Parser = &path.EmptyBuilder
+	if err := starlark.UnpackArgs(
+		b.Name(), args, kwargs,
+		"arguments", unpack.Bind(thread, &arguments, unpack.List(unpack.String)),
+		"timeout?", unpack.Bind(thread, &timeout, unpack.Int[int64]()),
+		"environment?", unpack.Bind(thread, &environment, unpack.Dict(unpack.String, unpack.String)),
+		"quiet?", unpack.Bind(thread, &quiet, unpack.Bool),
+		"working_directory?", unpack.Bind(thread, &workingDirectory, unpack.PathParser(path.UNIXFormat)),
+	); err != nil {
+		return nil, err
+	}
+
+	// Inherit environment variables from
+	// the repo platform.
+	for _, environmentVariable := range mrc.repoPlatform.Message.RepositoryOsEnviron {
+		if _, ok := environment[environmentVariable.Name]; !ok {
+			environment[environmentVariable.Name] = environmentVariable.Value
+		}
+	}
+
+	// Convert arguments and environment
+	// variables to B-trees, so that they can
+	// be attached to the Command message.
+	referenceFormat := mrc.computer.buildSpecificationReference.GetReferenceFormat()
+	argumentsBuilder := btree.NewSplitProllyBuilder(
+		1<<16,
+		1<<18,
+		btree.NewObjectCreatingNodeMerger(
+			mrc.commandEncoder,
+			referenceFormat,
+			/* parentNodeComputer = */ func(contents *object.Contents, childNodes []*model_command_pb.ArgumentList_Element, outgoingReferences object.OutgoingReferences, metadata []dag.ObjectContentsWalker) (model_core.PatchedMessage[*model_command_pb.ArgumentList_Element, dag.ObjectContentsWalker], error) {
+				patcher := model_core.NewReferenceMessagePatcher[dag.ObjectContentsWalker]()
+				return model_core.NewPatchedMessage(
+					&model_command_pb.ArgumentList_Element{
+						Level: &model_command_pb.ArgumentList_Element_Parent{
+							Parent: patcher.AddReference(contents.GetReference(), dag.NewSimpleObjectContentsWalker(contents, metadata)),
+						},
+					},
+					patcher,
+				), nil
+			},
+		),
+	)
+	for _, argument := range arguments {
+		if err := argumentsBuilder.PushChild(
+			model_core.NewSimplePatchedMessage[dag.ObjectContentsWalker](&model_command_pb.ArgumentList_Element{
+				Level: &model_command_pb.ArgumentList_Element_Leaf{
+					Leaf: argument,
+				},
+			}),
+		); err != nil {
+			return nil, err
+		}
+	}
+	argumentList, err := argumentsBuilder.FinalizeList()
+	if err != nil {
+		return nil, err
+	}
+
+	environmentVariableList, err := mrc.computer.convertDictToEnvironmentVariableList(environment, mrc.commandEncoder)
+	if err != nil {
+		return nil, err
+	}
+
+	workingDirectoryBuilder, scopeWalker := mrc.defaultWorkingDirectoryBuilder.Join(path.NewRelativeScopeWalker(path.VoidComponentWalker))
+	if err := path.Resolve(workingDirectory, scopeWalker); err != nil {
+		return nil, fmt.Errorf("failed to resolve working directory: %w", err)
+	}
+
+	commandPatcher := argumentList.Patcher
+	commandPatcher.Merge(environmentVariableList.Patcher)
+	commandContents, commandMetadata, err := model_core.MarshalAndEncodePatchedMessage(
+		model_core.NewPatchedMessage(
+			&model_command_pb.Command{
+				Arguments:                   argumentList.Message,
+				EnvironmentVariables:        environmentVariableList.Message,
+				DirectoryCreationParameters: mrc.directoryCreationParametersMessage,
+				FileCreationParameters:      mrc.fileCreationParametersMessage,
+				WorkingDirectory:            workingDirectoryBuilder.GetUNIXString(),
+				NeedsStableInputRootPath:    true,
+			},
+			commandPatcher,
+		),
+		referenceFormat,
+		mrc.commandEncoder,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create command: %w", err)
+	}
+
+	inputRootReference, err := mrc.computer.createMerkleTreeFromChangeTrackingDirectory(mrc.context, mrc.inputRootDirectory, mrc.directoryCreationParameters, mrc.fileCreationParameters, mrc.patchedFiles)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create Merkle tree of root directory: %w", err)
+	}
+
+	// Execute the command.
+	keyPatcher := inputRootReference.Patcher
+	actionResult := mrc.environment.GetActionResultValue(PatchedActionResultKey{
+		Message: &model_analysis_pb.ActionResult_Key{
+			PlatformPkixPublicKey: mrc.repoPlatform.Message.ExecPkixPublicKey,
+			CommandReference: keyPatcher.AddReference(
+				commandContents.GetReference(),
+				dag.NewSimpleObjectContentsWalker(commandContents, commandMetadata),
+			),
+			InputRootReference: inputRootReference.Message,
+			ExecutionTimeout:   &durationpb.Duration{Seconds: timeout},
+		},
+		Patcher: keyPatcher,
+	})
+	if !actionResult.IsSet() {
+		return nil, evaluation.ErrMissingDependency
+	}
+
+	// Extract standard output and standard
+	// error from the results.
+	outputs, err := mrc.computer.getOutputsFromActionResult(mrc.context, actionResult, mrc.directoryCreationParameters.DirectoryAccessParameters)
+	if err != nil {
+		return nil, fmt.Errorf("failed to obtain outputs from action result: %w", err)
+	}
+
+	stdoutEntry, err := model_filesystem.NewFileContentsEntryFromProto(
+		model_core.Message[*model_filesystem_pb.FileContents]{
+			Message:            outputs.Message.Stdout,
+			OutgoingReferences: outputs.OutgoingReferences,
+		},
+		referenceFormat,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("invalid standard output entry: %w", err)
+	}
+	stdout, err := mrc.fileReader.FileReadAll(mrc.context, stdoutEntry, 1<<20)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read standard output: %w", err)
+	}
+
+	stderrEntry, err := model_filesystem.NewFileContentsEntryFromProto(
+		model_core.Message[*model_filesystem_pb.FileContents]{
+			Message:            outputs.Message.Stderr,
+			OutgoingReferences: outputs.OutgoingReferences,
+		},
+		referenceFormat,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("invalid standard error entry: %w", err)
+	}
+	stderr, err := mrc.fileReader.FileReadAll(mrc.context, stderrEntry, 1<<20)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read standard error: %w", err)
+	}
+
+	return starlarkstruct.FromStringDict(starlarkstruct.Default, starlark.StringDict{
+		"return_code": starlark.MakeInt64(actionResult.Message.ExitCode),
+		"stderr":      starlark.String(stderr),
+		"stdout":      starlark.String(stdout),
+	}), nil
+}
+
+func (moduleOrRepositoryContext) doExtract(thread *starlark.Thread, b *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
+	return nil, errors.New("TODO: Implement!")
+}
+
+func (mrc *moduleOrRepositoryContext) doFile(thread *starlark.Thread, b *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
+	mrc.maybeGetDirectoryCreationParameters()
+	stableInputRootPathError := mrc.maybeGetStableInputRootPath()
+	if mrc.directoryCreationParameters == nil {
+		return nil, evaluation.ErrMissingDependency
+	}
+	if stableInputRootPathError != nil {
+		return nil, stableInputRootPathError
+	}
+
+	var filePath *model_starlark.Path
+	content := ""
+	executable := true
+	legacyUTF8 := true
+	if err := starlark.UnpackArgs(
+		b.Name(), args, kwargs,
+		"path", unpack.Bind(thread, &filePath, mrc.pathUnpackerInto),
+		"content?", unpack.Bind(thread, &content, unpack.String),
+		"executable?", unpack.Bind(thread, &executable, unpack.Bool),
+		"legacy_utf8?", unpack.Bind(thread, &legacyUTF8, unpack.Bool),
+	); err != nil {
+		return nil, err
+	}
+
+	r := &changeTrackingDirectoryNewFileResolver{
+		loadOptions: mrc.directoryLoadOptions,
+		stack:       util.NewNonEmptyStack(mrc.inputRootDirectory),
+	}
+	if err := path.Resolve(filePath, mrc.virtualRootScopeWalkerFactory.New(r)); err != nil {
+		return nil, fmt.Errorf("cannot resolve %#v: %w", filePath.String(), err)
+	}
+	if r.name == nil {
+		return nil, fmt.Errorf("%#v does not resolve to a file", filePath.String())
+	}
+
+	if err := mrc.maybeInitializePatchedFiles(); err != nil {
+		return nil, err
+	}
+
+	// TODO: Do UTF-8 -> ISO-8859-1
+	// conversion if legacy_utf8=False.
+	patchedFileOffsetBytes := mrc.patchedFilesWriter.GetOffsetBytes()
+	if _, err := mrc.patchedFilesWriter.WriteString(content); err != nil {
+		return nil, fmt.Errorf("failed to write to file at %#v: %w", filePath.String(), err)
+	}
+
+	r.stack.Peek().setFile(*r.name, &changeTrackingFile{
+		isExecutable: executable,
+		contents: patchedFileContents{
+			offsetBytes: patchedFileOffsetBytes,
+			sizeBytes:   mrc.patchedFilesWriter.GetOffsetBytes() - patchedFileOffsetBytes,
+		},
+	})
+	return starlark.None, nil
+}
+
+func (moduleOrRepositoryContext) doGetenv(thread *starlark.Thread, b *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
+	return nil, errors.New("TODO: Implement!")
+}
+
+func (mrc *moduleOrRepositoryContext) doPath(thread *starlark.Thread, b *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
+	if err := mrc.maybeGetStableInputRootPath(); err != nil {
+		return nil, err
+	}
+
+	var filePath *model_starlark.Path
+	if err := starlark.UnpackArgs(
+		b.Name(), args, kwargs,
+		"path", unpack.Bind(thread, &filePath, mrc.pathUnpackerInto),
+	); err != nil {
+		return nil, err
+	}
+	return filePath, nil
+}
+
+func (moduleOrRepositoryContext) doRead(thread *starlark.Thread, b *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
+	return nil, errors.New("TODO: Implement!")
+}
+
+func (moduleOrRepositoryContext) doReportProgress(thread *starlark.Thread, b *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
+	var status string
+	if err := starlark.UnpackArgs(
+		b.Name(), args, kwargs,
+		"status", unpack.Bind(thread, &status, unpack.String),
+	); err != nil {
+		return nil, err
+	}
+	return starlark.None, nil
+}
+
+func (moduleOrRepositoryContext) doWatch(thread *starlark.Thread, b *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
+	return nil, errors.New("TODO: Implement!")
+}
+
+func (moduleOrRepositoryContext) doWhich(thread *starlark.Thread, b *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
+	return nil, errors.New("TODO: Implement!")
+}
+
 func (c *baseComputer) fetchModuleExtensionRepo(ctx context.Context, canonicalRepo label.CanonicalRepo, e RepoEnvironment) (PatchedRepoValue, error) {
 	// Obtain the definition of the declared repo.
 	repoValue := e.GetModuleExtensionRepoValue(&model_analysis_pb.ModuleExtensionRepo_Key{
 		CanonicalRepo: canonicalRepo.String(),
 	})
 	allBuiltinsModulesNames := e.GetBuiltinsModuleNamesValue(&model_analysis_pb.BuiltinsModuleNames_Key{})
-	directoryCreationParameters, gotDirectoryCreationParameters := e.GetDirectoryCreationParametersObjectValue(&model_analysis_pb.DirectoryCreationParametersObject_Key{})
-	fileCreationParameters, gotFileCreationParameters := e.GetFileCreationParametersObjectValue(&model_analysis_pb.FileCreationParametersObject_Key{})
-	fileReader, gotFileReader := e.GetFileReaderValue(&model_analysis_pb.FileReader_Key{})
 	repoPlatform := e.GetRegisteredRepoPlatformValue(&model_analysis_pb.RegisteredRepoPlatform_Key{})
-	if !repoValue.IsSet() || !allBuiltinsModulesNames.IsSet() || !gotDirectoryCreationParameters || !gotFileCreationParameters || !gotFileReader || !repoPlatform.IsSet() {
+	if !repoValue.IsSet() || !allBuiltinsModulesNames.IsSet() || !repoPlatform.IsSet() {
 		return PatchedRepoValue{}, evaluation.ErrMissingDependency
 	}
 	repo := repoValue.Message.Definition
@@ -781,7 +1406,7 @@ func (c *baseComputer) fetchModuleExtensionRepo(ctx context.Context, canonicalRe
 				},
 				/* currentIdentifier = */ nil,
 				c.getValueDecodingOptions(ctx, func(canonicalLabel label.CanonicalLabel) (starlark.Value, error) {
-					panic("TODO")
+					return model_starlark.NewLabel(canonicalLabel), nil
 				}),
 			)
 			if err != nil {
@@ -802,184 +1427,145 @@ func (c *baseComputer) fetchModuleExtensionRepo(ctx context.Context, canonicalRe
 		attrs[name] = value
 	}
 
-	rootDirectory := &changeTrackingDirectory{}
-	loadOptions := &changeTrackingDirectoryLoadOptions{
-		context: ctx,
-		// TODO: Add directoryReader and leavesReader to support
-		// repository_ctx.execute.
-	}
+	// Invoke the implementation function.
+	thread := c.newStarlarkThread(ctx, e, allBuiltinsModulesNames.Message.BuiltinsModuleNames)
 
-	patchedFiles, err := c.filePool.NewFile()
+	subdirectoryComponents := []path.Component{
+		path.MustNewComponent("external"),
+		path.MustNewComponent(canonicalRepo.String()),
+	}
+	repositoryContext, err := c.newModuleOrRepositoryContext(ctx, e, subdirectoryComponents)
 	if err != nil {
 		return PatchedRepoValue{}, err
 	}
-	defer patchedFiles.Close()
-	patchedFilesWriter := &sectionWriter{w: patchedFiles}
+	defer repositoryContext.release()
 
-	// Invoke the implementation function.
-	thread := c.newStarlarkThread(ctx, e, allBuiltinsModulesNames.Message.BuiltinsModuleNames)
+	// These are needed at the end to create the directory Merkle tree.
+	repositoryContext.maybeGetDirectoryCreationParameters()
+	repositoryContext.maybeGetFileCreationParameters()
+
+	repositoryCtx := starlarkstruct.FromStringDict(starlarkstruct.Default, starlark.StringDict{
+		// Fields shared with module_ctx.
+		"download":             starlark.NewBuiltin("repository_ctx.download", repositoryContext.doDownload),
+		"download_and_extract": starlark.NewBuiltin("repository_ctx.download_and_extract", repositoryContext.doDownloadAndExtract),
+		"execute":              starlark.NewBuiltin("repository_ctx.execute", repositoryContext.doExecute),
+		"extract":              starlark.NewBuiltin("repository_ctx.extract", repositoryContext.doExtract),
+		"file":                 starlark.NewBuiltin("repository_ctx.file", repositoryContext.doFile),
+		"getenv":               starlark.NewBuiltin("repository_ctx.getenv", repositoryContext.doGetenv),
+		"os":                   newRepositoryOS(repoPlatform.Message),
+		"path":                 starlark.NewBuiltin("repository_ctx.path", repositoryContext.doPath),
+		"read":                 starlark.NewBuiltin("repository_ctx.read", repositoryContext.doRead),
+		"report_progress":      starlark.NewBuiltin("repository_ctx.report_progress", repositoryContext.doReportProgress),
+		"watch":                starlark.NewBuiltin("repository_ctx.watch", repositoryContext.doWatch),
+		"which":                starlark.NewBuiltin("repository_ctx.which", repositoryContext.doWatch),
+
+		// Fields specific to repository_ctx.
+		"attr": starlarkstruct.FromStringDict(starlarkstruct.Default, attrs),
+		"name": starlark.String(canonicalRepo.String()),
+		"template": starlark.NewBuiltin(
+			"repository_ctx.template",
+			func(thread *starlark.Thread, b *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
+				repositoryContext.maybeGetDirectoryCreationParameters()
+				repositoryContext.maybeGetFileReader()
+				stableInputRootPathError := repositoryContext.maybeGetStableInputRootPath()
+				if repositoryContext.directoryCreationParameters == nil || repositoryContext.fileReader == nil {
+					return nil, evaluation.ErrMissingDependency
+				}
+				if stableInputRootPathError != nil {
+					return nil, stableInputRootPathError
+				}
+
+				if len(args) > 4 {
+					return nil, fmt.Errorf("%s: got %d positional arguments, want at most 4", b.Name(), len(args))
+				}
+				var filePath *model_starlark.Path
+				var templatePath label.CanonicalLabel
+				var substitutions map[string]string
+				executable := true
+				var watchTemplate string
+				if err := starlark.UnpackArgs(
+					b.Name(), args, kwargs,
+					"path", unpack.Bind(thread, &filePath, repositoryContext.pathUnpackerInto),
+					"template", unpack.Bind(thread, &templatePath, model_starlark.NewLabelOrStringUnpackerInto(canonicalRepo.GetRootPackage())),
+					"substitutions?", unpack.Bind(thread, &substitutions, unpack.Dict(unpack.String, unpack.String)),
+					"executable?", unpack.Bind(thread, &executable, unpack.Bool),
+					"watch_template?", unpack.Bind(thread, &watchTemplate, unpack.String),
+				); err != nil {
+					return nil, err
+				}
+
+				needles := make([][]byte, 0, len(substitutions))
+				replacements := make([][]byte, 0, len(substitutions))
+				for _, needle := range slices.Sorted(maps.Keys(substitutions)) {
+					needles = append(needles, []byte(needle))
+					replacements = append(replacements, []byte(substitutions[needle]))
+				}
+				searchAndReplacer, err := search.NewMultiSearchAndReplacer(needles)
+				if err != nil {
+					return nil, fmt.Errorf("invalid substitution keys: %w", err)
+				}
+
+				// Load the template file.
+				templateProperties := e.GetFilePropertiesValue(&model_analysis_pb.FileProperties_Key{
+					CanonicalRepo: templatePath.GetCanonicalRepo().String(),
+					Path:          templatePath.GetRepoRelativePath(),
+				})
+				if !templateProperties.IsSet() {
+					return nil, evaluation.ErrMissingDependency
+				}
+				if templateProperties.Message.Exists == nil {
+					return nil, fmt.Errorf("template %#v does not exist", templatePath.String())
+				}
+				templateContents, err := model_filesystem.NewFileContentsEntryFromProto(
+					model_core.Message[*model_filesystem_pb.FileContents]{
+						Message:            templateProperties.Message.Exists.Contents,
+						OutgoingReferences: templateProperties.OutgoingReferences,
+					},
+					c.buildSpecificationReference.GetReferenceFormat(),
+				)
+				if err != nil {
+					return nil, fmt.Errorf("invalid file contents for template %#v: %s", templatePath.String(), err)
+				}
+				templateFile := repositoryContext.fileReader.FileOpenRead(repositoryContext.context, templateContents, 0)
+
+				r := &changeTrackingDirectoryNewFileResolver{
+					loadOptions: repositoryContext.directoryLoadOptions,
+					stack:       util.NewNonEmptyStack(repositoryContext.inputRootDirectory),
+				}
+				if err := path.Resolve(filePath, repositoryContext.virtualRootScopeWalkerFactory.New(r)); err != nil {
+					return nil, fmt.Errorf("cannot resolve %#v: %w", filePath.String(), err)
+				}
+				if r.name == nil {
+					return nil, fmt.Errorf("%#v does not resolve to a file", filePath.String())
+				}
+
+				if err := repositoryContext.maybeInitializePatchedFiles(); err != nil {
+					return nil, err
+				}
+
+				// Perform substitutions.
+				patchedFileOffsetBytes := repositoryContext.patchedFilesWriter.GetOffsetBytes()
+				if err := searchAndReplacer.SearchAndReplace(repositoryContext.patchedFilesWriter, templateFile, replacements); err != nil {
+					return nil, fmt.Errorf("failed to write to file at %#v: %w", filePath.String(), err)
+				}
+
+				r.stack.Peek().setFile(*r.name, &changeTrackingFile{
+					isExecutable: executable,
+					contents: patchedFileContents{
+						offsetBytes: patchedFileOffsetBytes,
+						sizeBytes:   repositoryContext.patchedFilesWriter.GetOffsetBytes() - patchedFileOffsetBytes,
+					},
+				})
+				return starlark.None, nil
+			},
+		),
+	})
+	repositoryCtx.Freeze()
 
 	_, err = starlark.Call(
 		thread,
 		repositoryRule.Implementation,
-		/* args = */ starlark.Tuple{
-			starlarkstruct.FromStringDict(starlarkstruct.Default, starlark.StringDict{
-				"attr": starlarkstruct.FromStringDict(starlarkstruct.Default, attrs),
-				"file": starlark.NewBuiltin(
-					"repository_ctx.file",
-					func(thread *starlark.Thread, b *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
-						content := ""
-						executable := true
-						legacyUTF8 := true
-						var filePath label.CanonicalLabel
-						if err := starlark.UnpackArgs(
-							b.Name(), args, kwargs,
-							// TODO: Permit arguments of type path.
-							"path", unpack.Bind(thread, &filePath, model_starlark.NewLabelOrStringUnpackerInto(canonicalRepo.GetRootPackage())),
-							"content?", unpack.Bind(thread, &content, unpack.String),
-							"executable?", unpack.Bind(thread, &executable, unpack.Bool),
-							"legacy_utf8?", unpack.Bind(thread, &legacyUTF8, unpack.Bool),
-						); err != nil {
-							return nil, err
-						}
-						if filePathRepo := filePath.GetCanonicalRepo(); filePathRepo != canonicalRepo {
-							return nil, fmt.Errorf("path resolves to file in repo %#v, while repo %#v was expected", filePathRepo.String(), canonicalRepo.String())
-						}
-
-						r := &changeTrackingDirectoryNewFileResolver{
-							loadOptions:      loadOptions,
-							currentDirectory: rootDirectory,
-						}
-						if err := path.Resolve(
-							path.UNIXFormat.NewParser(filePath.GetRepoRelativePath()),
-							path.NewRelativeScopeWalker(r),
-						); err != nil {
-							return nil, fmt.Errorf("cannot resolve %#v: %w", filePath.String(), err)
-						}
-						if r.name == nil {
-							return nil, fmt.Errorf("%#v does not resolve to a file", filePath.String())
-						}
-
-						// TODO: Do UTF-8 -> ISO-8859-1
-						// conversion if legacy_utf8=False.
-						patchedFileOffsetBytes := patchedFilesWriter.offsetBytes
-						if _, err := patchedFilesWriter.WriteString(content); err != nil {
-							return nil, fmt.Errorf("failed to write to file at %#v: %w", filePath.String(), err)
-						}
-
-						r.currentDirectory.setFile(*r.name, &changeTrackingFile{
-							isExecutable: executable,
-							contents: patchedFileContents{
-								offsetBytes: patchedFileOffsetBytes,
-								sizeBytes:   patchedFilesWriter.offsetBytes - patchedFileOffsetBytes,
-							},
-						})
-						return starlark.None, nil
-					},
-				),
-				"os": newRepositoryOS(repoPlatform.Message),
-				"path": starlark.NewBuiltin(
-					"repository_ctx.path",
-					func(thread *starlark.Thread, b *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
-						var filePath model_starlark.Path
-						if err := starlark.UnpackArgs(
-							b.Name(), args, kwargs,
-							"path", unpack.Bind(thread, &filePath, model_starlark.NewPathOrLabelOrStringUnpackerInto()),
-						); err != nil {
-							return nil, err
-						}
-						return filePath, nil
-					},
-				),
-				"template": starlark.NewBuiltin(
-					"repository_ctx.template",
-					func(thread *starlark.Thread, b *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
-						if len(args) > 4 {
-							return nil, fmt.Errorf("%s: got %d positional arguments, want at most 4", b.Name(), len(args))
-						}
-						var filePath label.CanonicalLabel
-						var templatePath label.CanonicalLabel
-						var substitutions map[string]string
-						executable := true
-						var watchTemplate string
-						if err := starlark.UnpackArgs(
-							b.Name(), args, kwargs,
-							// TODO: Permit arguments of type path.
-							"path", unpack.Bind(thread, &filePath, model_starlark.NewLabelOrStringUnpackerInto(canonicalRepo.GetRootPackage())),
-							"template", unpack.Bind(thread, &templatePath, model_starlark.NewLabelOrStringUnpackerInto(canonicalRepo.GetRootPackage())),
-							"substitutions?", unpack.Bind(thread, &substitutions, unpack.Dict(unpack.String, unpack.String)),
-							"executable?", unpack.Bind(thread, &executable, unpack.Bool),
-							"watch_template?", unpack.Bind(thread, &watchTemplate, unpack.String),
-						); err != nil {
-							return nil, err
-						}
-
-						needles := make([][]byte, 0, len(substitutions))
-						replacements := make([][]byte, 0, len(substitutions))
-						for _, needle := range slices.Sorted(maps.Keys(substitutions)) {
-							needles = append(needles, []byte(needle))
-							replacements = append(replacements, []byte(substitutions[needle]))
-						}
-						searchAndReplacer, err := search.NewMultiSearchAndReplacer(needles)
-						if err != nil {
-							return nil, fmt.Errorf("invalid substitution keys: %w", err)
-						}
-
-						// Load the template file.
-						templateProperties := e.GetFilePropertiesValue(&model_analysis_pb.FileProperties_Key{
-							CanonicalRepo: templatePath.GetCanonicalRepo().String(),
-							Path:          templatePath.GetRepoRelativePath(),
-						})
-						if !templateProperties.IsSet() {
-							return nil, evaluation.ErrMissingDependency
-						}
-						if templateProperties.Message.Exists == nil {
-							return nil, fmt.Errorf("template %#v does not exist", templatePath.String())
-						}
-						templateContents, err := model_filesystem.NewFileContentsEntryFromProto(
-							model_core.Message[*model_filesystem_pb.FileContents]{
-								Message:            templateProperties.Message.Exists.Contents,
-								OutgoingReferences: templateProperties.OutgoingReferences,
-							},
-							c.buildSpecificationReference.GetReferenceFormat(),
-						)
-						if err != nil {
-							return nil, fmt.Errorf("invalid file contents for template %#v: %s", templatePath.String(), err)
-						}
-						templateFile := fileReader.FileOpenRead(ctx, templateContents, 0)
-
-						r := &changeTrackingDirectoryNewFileResolver{
-							loadOptions:      loadOptions,
-							currentDirectory: rootDirectory,
-						}
-						if err := path.Resolve(
-							path.UNIXFormat.NewParser(filePath.GetRepoRelativePath()),
-							path.NewRelativeScopeWalker(r),
-						); err != nil {
-							return nil, fmt.Errorf("cannot resolve %#v: %w", filePath.String(), err)
-						}
-						if r.name == nil {
-							return nil, fmt.Errorf("%#v does not resolve to a file", filePath.String())
-						}
-
-						// Perform substitutions.
-						patchedFileOffsetBytes := patchedFilesWriter.offsetBytes
-						if err := searchAndReplacer.SearchAndReplace(patchedFilesWriter, templateFile, replacements); err != nil {
-							return nil, fmt.Errorf("failed to write to file at %#v: %w", filePath.String(), err)
-						}
-
-						r.currentDirectory.setFile(*r.name, &changeTrackingFile{
-							isExecutable: executable,
-							contents: patchedFileContents{
-								offsetBytes: patchedFileOffsetBytes,
-								sizeBytes:   patchedFilesWriter.offsetBytes - patchedFileOffsetBytes,
-							},
-						})
-						return starlark.None, nil
-					},
-				),
-			}),
-		},
+		/* args = */ starlark.Tuple{repositoryCtx},
 		/* kwargs = */ nil,
 	)
 	if err != nil {
@@ -990,38 +1576,45 @@ func (c *baseComputer) fetchModuleExtensionRepo(ctx context.Context, canonicalRe
 		return PatchedRepoValue{}, err
 	}
 
+	// Capture the resulting external/${repo} directory.
+	repoDirectory := repositoryContext.inputRootDirectory
+	for _, component := range subdirectoryComponents {
+		childDirectory, ok := repoDirectory.directories[component]
+		if !ok {
+			return PatchedRepoValue{}, errors.New("repository rule removed its own repository directory")
+		}
+		repoDirectory = childDirectory
+	}
+
+	if repositoryContext.directoryCreationParameters == nil || repositoryContext.fileCreationParameters == nil {
+		return PatchedRepoValue{}, evaluation.ErrMissingDependency
+	}
 	return c.returnRepoMerkleTree(
 		ctx,
-		rootDirectory,
-		directoryCreationParameters,
-		fileCreationParameters,
-		patchedFiles,
+		repoDirectory,
+		repositoryContext.directoryCreationParameters,
+		repositoryContext.fileCreationParameters,
+		repositoryContext.patchedFiles,
 	)
 }
 
-func (c *baseComputer) returnRepoMerkleTree(ctx context.Context, rootDirectory *changeTrackingDirectory, directoryCreationParameters *model_filesystem.DirectoryCreationParameters, fileCreationParameters *model_filesystem.FileCreationParameters, patchedFiles io.ReaderAt) (PatchedRepoValue, error) {
+func (c *baseComputer) createMerkleTreeFromChangeTrackingDirectory(ctx context.Context, rootDirectory *changeTrackingDirectory, directoryCreationParameters *model_filesystem.DirectoryCreationParameters, fileCreationParameters *model_filesystem.FileCreationParameters, patchedFiles io.ReaderAt) (model_core.PatchedMessage[*model_core_pb.Reference, dag.ObjectContentsWalker], error) {
 	if r := rootDirectory.currentReference; r.IsSet() {
 		// Directory remained completely unmodified. Simply
 		// return the original directory.
-		rootDirectoryReference := model_core.NewPatchedMessageFromExisting(
+		return model_core.NewPatchedMessageFromExisting(
 			r,
 			func(index int) dag.ObjectContentsWalker {
 				return dag.ExistingObjectContentsWalker
 			},
-		)
-		return PatchedRepoValue{
-			Message: &model_analysis_pb.Repo_Value{
-				RootDirectoryReference: rootDirectoryReference.Message,
-			},
-			Patcher: rootDirectoryReference.Patcher,
-		}, nil
+		), nil
 	}
 
 	// We had to strip a path prefix or apply one or more patches.
 	// This means we need to create a new Merkle tree.
 	merkleTreeNodes, err := c.filePool.NewFile()
 	if err != nil {
-		return PatchedRepoValue{}, err
+		return model_core.PatchedMessage[*model_core_pb.Reference, dag.ObjectContentsWalker]{}, err
 	}
 	defer func() {
 		if merkleTreeNodes != nil {
@@ -1036,7 +1629,7 @@ func (c *baseComputer) returnRepoMerkleTree(ctx context.Context, rootDirectory *
 		directoryCreationParameters.GetEncoder(),
 		model_parser.NewMessageObjectParser[object.LocalReference, model_filesystem_pb.Directory](),
 	)
-	fileWritingMerkleTreeCapturer := model_core.NewFileWritingMerkleTreeCapturer(&sectionWriter{w: merkleTreeNodes})
+	fileWritingMerkleTreeCapturer := model_core.NewFileWritingMerkleTreeCapturer(model_filesystem.NewSectionWriter(merkleTreeNodes))
 	group.Go(func() error {
 		return model_filesystem.CreateDirectoryMerkleTree(
 			groupCtx,
@@ -1058,7 +1651,7 @@ func (c *baseComputer) returnRepoMerkleTree(ctx context.Context, rootDirectory *
 		)
 	})
 	if err := group.Wait(); err != nil {
-		return PatchedRepoValue{}, err
+		return model_core.PatchedMessage[*model_core_pb.Reference, dag.ObjectContentsWalker]{}, err
 	}
 
 	// Store the root directory itself. We don't embed it into the
@@ -1069,14 +1662,14 @@ func (c *baseComputer) returnRepoMerkleTree(ctx context.Context, rootDirectory *
 		directoryCreationParameters.GetEncoder(),
 	)
 	if err != nil {
-		return PatchedRepoValue{}, err
+		return model_core.PatchedMessage[*model_core_pb.Reference, dag.ObjectContentsWalker]{}, err
 	}
 	capturedRootDirectory := fileWritingMerkleTreeCapturer.CaptureObject(contents, children)
 
 	// Finalize writing of Merkle tree nodes to disk, and provide
 	// read access to the nodes, so that they can be uploaded.
 	if err := fileWritingMerkleTreeCapturer.Flush(); err != nil {
-		return PatchedRepoValue{}, err
+		return model_core.PatchedMessage[*model_core_pb.Reference, dag.ObjectContentsWalker]{}, err
 	}
 	objectContentsWalkerFactory := model_core.NewFileReadingObjectContentsWalkerFactory(merkleTreeNodes)
 	defer objectContentsWalkerFactory.Release()
@@ -1084,14 +1677,25 @@ func (c *baseComputer) returnRepoMerkleTree(ctx context.Context, rootDirectory *
 
 	patcher := model_core.NewReferenceMessagePatcher[dag.ObjectContentsWalker]()
 	rootReference := contents.GetReference()
+	return model_core.NewPatchedMessage(
+		patcher.AddReference(
+			rootReference,
+			objectContentsWalkerFactory.CreateObjectContentsWalker(rootReference, capturedRootDirectory),
+		),
+		patcher,
+	), nil
+}
+
+func (c *baseComputer) returnRepoMerkleTree(ctx context.Context, rootDirectory *changeTrackingDirectory, directoryCreationParameters *model_filesystem.DirectoryCreationParameters, fileCreationParameters *model_filesystem.FileCreationParameters, patchedFiles io.ReaderAt) (PatchedRepoValue, error) {
+	rootDirectoryReference, err := c.createMerkleTreeFromChangeTrackingDirectory(ctx, rootDirectory, directoryCreationParameters, fileCreationParameters, patchedFiles)
+	if err != nil {
+		return PatchedRepoValue{}, err
+	}
 	return PatchedRepoValue{
 		Message: &model_analysis_pb.Repo_Value{
-			RootDirectoryReference: patcher.AddReference(
-				rootReference,
-				objectContentsWalkerFactory.CreateObjectContentsWalker(rootReference, capturedRootDirectory),
-			),
+			RootDirectoryReference: rootDirectoryReference.Message,
 		},
-		Patcher: patcher,
+		Patcher: rootDirectoryReference.Patcher,
 	}, nil
 }
 

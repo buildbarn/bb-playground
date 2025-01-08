@@ -109,9 +109,13 @@ func (ui *labelOrStringUnpackerInto) UnpackInto(thread *starlark.Thread, v starl
 		if err != nil {
 			return err
 		}
-		if canonicalLabel, ok := apparentLabel.AsCanonicalLabel(); ok {
+		if canonicalLabel, ok := apparentLabel.AsCanonical(); ok {
 			*dst = canonicalLabel
 			return nil
+		}
+
+		if thread == nil {
+			return errors.New("labels without a canonical repo cannot be resolved within this context")
 		}
 
 		if apparentRepo, ok := apparentLabel.GetApparentRepo(); ok {

@@ -6,7 +6,6 @@ import (
 	"crypto/x509"
 	"encoding/pem"
 	"fmt"
-	"math"
 	"net/http"
 	"os"
 	"runtime"
@@ -192,10 +191,7 @@ func (s *builderServer) PerformBuild(request *build_pb.PerformBuildRequest, serv
 					s.objectContentsWalkerSemaphore,
 					// Assume everything we attempt
 					// to upload is memory backed.
-					object.NewLimit(&object_pb.Limit{
-						Count:     math.MaxUint32,
-						SizeBytes: math.MaxUint64,
-					}),
+					object.Unlimited,
 				); err != nil {
 					return fmt.Errorf("failed to store DAG with reference %s: %w", reference.String(), err)
 				}

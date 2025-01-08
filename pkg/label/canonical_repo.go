@@ -58,3 +58,12 @@ func (r CanonicalRepo) GetModuleExtension() (ModuleExtension, ApparentRepo, bool
 		ApparentRepo{value: r.value[repoIndex+1:]},
 		true
 }
+
+func (r CanonicalRepo) applyToLabelOrTargetPattern(value string) string {
+	if offset := strings.IndexByte(value, '/'); offset > 0 {
+		// Translate "@from//x/y:z" to "@@to//x/y:z".
+		return "@@" + r.value + value[offset:]
+	}
+	// Translate "@from" to "@@to//:from".
+	return "@@" + r.value + "//:" + strings.TrimLeft(value, "@")
+}

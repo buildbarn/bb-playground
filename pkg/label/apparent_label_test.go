@@ -9,7 +9,7 @@ import (
 )
 
 func TestApparentLabel(t *testing.T) {
-	t.Run("AsCanonicalLabel", func(t *testing.T) {
+	t.Run("AsCanonical", func(t *testing.T) {
 		t.Run("Failure", func(t *testing.T) {
 			for _, input := range []string{
 				"@@//:foo",
@@ -18,7 +18,7 @@ func TestApparentLabel(t *testing.T) {
 				"@com_github_buildbarn_bb_storage//:foo",
 				"@com_github_buildbarn_bb_storage//cmd/hello_world",
 			} {
-				_, ok := label.MustNewApparentLabel(input).AsCanonicalLabel()
+				_, ok := label.MustNewApparentLabel(input).AsCanonical()
 				require.False(t, ok)
 			}
 		})
@@ -29,7 +29,7 @@ func TestApparentLabel(t *testing.T) {
 				"@@com_github_buildbarn_bb_storage+//:foo",
 				"@@com_github_buildbarn_bb_storage+//cmd/hello_world",
 			} {
-				canonicalLabel, ok := label.MustNewApparentLabel(input).AsCanonicalLabel()
+				canonicalLabel, ok := label.MustNewApparentLabel(input).AsCanonical()
 				require.True(t, ok)
 				assert.Equal(t, input, canonicalLabel.String())
 			}

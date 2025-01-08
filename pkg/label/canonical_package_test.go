@@ -140,4 +140,52 @@ func TestCanonicalPackage(t *testing.T) {
 				String(),
 		)
 	})
+
+	t.Run("AppendTargetPattern", func(t *testing.T) {
+		base := label.MustNewCanonicalPackage("@@example+//foo")
+		for input, output := range map[string]string{
+			"//foo/bar:wiz":         "@@example+//foo/bar:wiz",
+			"//foo/bar":             "@@example+//foo/bar",
+			"//foo/bar:bar":         "@@example+//foo/bar",
+			"//foo/bar:all":         "@@example+//foo/bar:all",
+			"//foo/...":             "@@example+//foo/...",
+			"//foo/...:all":         "@@example+//foo/...",
+			"//foo/...:*":           "@@example+//foo/...:*",
+			"//foo/...:all-targets": "@@example+//foo/...:*",
+			"//...":                 "@@example+//...",
+			"//:all":                "@@example+//:all",
+			":foo":                  "@@example+//foo",
+			"bar:wiz":               "@@example+//foo/bar:wiz",
+			// According to the Bazel documentation, "bar/wiz"
+			// may also expand to @example+//foo/bar/wiz or
+			// @example+//foo/bar:wiz, depending on whether
+			// those packages exist.
+			//
+			// This is something we likely do not want to
+			// support, as such relative patterns do not have
+			// an absolute representation.
+			"bar/wiz":     "@@example+//foo:bar/wiz",
+			"bar:all":     "@@example+//foo/bar:all",
+			":all":        "@@example+//foo:all",
+			"...:all":     "@@example+//foo/...",
+			"...":         "@@example+//foo/...",
+			"bar/...":     "@@example+//foo/bar/...",
+			"bar/...:all": "@@example+//foo/bar/...",
+
+			"//all:all":     "@@example+//all:all",
+			"//all":         "@@example+//all",
+			"@@foo+":        "@@foo+",
+			"@@foo+//:foo+": "@@foo+",
+			"@@foo+//:bar":  "@@foo+//:bar",
+			"@foo":          "@foo",
+			"@foo//:foo":    "@foo",
+			"@foo//:bar":    "@foo//:bar",
+			"@all//:all":    "@all//:all",
+			"@@//...":       "@@//...",
+		} {
+			newLabel, err := base.AppendTargetPattern(input)
+			require.NoError(t, err)
+			assert.Equal(t, output, newLabel.String())
+		}
+	})
 }

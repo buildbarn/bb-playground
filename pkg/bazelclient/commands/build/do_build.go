@@ -417,6 +417,7 @@ func DoBuild(args *arguments.BuildCommand, workspacePath path.Parser) {
 		}
 	}
 
+	logger.Info("Performing build")
 	stream, err := builderClient.PerformBuild(context.Background(), &build_pb.PerformBuildRequest{
 		InvocationId:   invocationID.String(),
 		BuildRequestId: buildRequestID.String(),

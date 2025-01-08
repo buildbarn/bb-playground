@@ -46,11 +46,11 @@ func (h *bazelDepCapturingModuleDotBazelHandler) Module(name label.Module, versi
 	return nil
 }
 
-func (bazelDepCapturingModuleDotBazelHandler) RegisterExecutionPlatforms(platformLabels []label.ApparentLabel, devDependency bool) error {
+func (bazelDepCapturingModuleDotBazelHandler) RegisterExecutionPlatforms(platformTargetPatterns []label.ApparentTargetPattern, devDependency bool) error {
 	return nil
 }
 
-func (bazelDepCapturingModuleDotBazelHandler) RegisterToolchains(toolchainLabels []label.ApparentLabel, devDependency bool) error {
+func (bazelDepCapturingModuleDotBazelHandler) RegisterToolchains(toolchainTargetPatterns []label.ApparentTargetPattern, devDependency bool) error {
 	return nil
 }
 
@@ -183,21 +183,16 @@ ProcessModule:
 			} else {
 				moduleInstance = module.name.ToModuleInstance(nil)
 			}
-			moduleRepo := moduleInstance.GetBareCanonicalRepo()
-			moduleFileProperties := e.GetFilePropertiesValue(&model_analysis_pb.FileProperties_Key{
-				CanonicalRepo: moduleRepo.String(),
-				Path:          moduleDotBazelFilename,
+			moduleFileContentsValue := e.GetModuleDotBazelContentsValue(&model_analysis_pb.ModuleDotBazelContents_Key{
+				ModuleInstance: moduleInstance.String(),
 			})
-			if !moduleFileProperties.IsSet() {
+			if !moduleFileContentsValue.IsSet() {
 				missingDependencies = true
 				continue ProcessModule
 			}
-			if moduleFileProperties.Message.Exists == nil {
-				return PatchedModuleRoughBuildListValue{}, fmt.Errorf("file %#v does not exist", moduleRepo.GetRootPackage().AppendTargetName(moduleDotBazelTargetName).String())
-			}
 			moduleFileContents = model_core.Message[*model_filesystem_pb.FileContents]{
-				Message:            moduleFileProperties.Message.Exists.Contents,
-				OutgoingReferences: moduleFileProperties.OutgoingReferences,
+				Message:            moduleFileContentsValue.Message.Contents,
+				OutgoingReferences: moduleFileContentsValue.OutgoingReferences,
 			}
 		} else {
 			// No override exists. Download the MODULE.bazel
@@ -210,7 +205,7 @@ ProcessModule:
 				if err != nil {
 					return PatchedModuleRoughBuildListValue{}, fmt.Errorf("failed to construct URL for module %s with version %s in registry %#v: %w", module.name, module.version, registryURL, err)
 				}
-				httpFileContents := e.GetHttpFileContentsValue(&model_analysis_pb.HttpFileContents_Key{Url: moduleFileURL})
+				httpFileContents := e.GetHttpFileContentsValue(&model_analysis_pb.HttpFileContents_Key{Urls: []string{moduleFileURL}})
 				if !httpFileContents.IsSet() {
 					missingDependencies = true
 					continue ProcessModule

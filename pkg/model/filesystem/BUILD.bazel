@@ -18,6 +18,7 @@ go_library(
         "file_creation_parameters.go",
         "file_merkle_tree_capturer.go",
         "file_reader.go",
+        "section_writer.go",
     ],
     importpath = "github.com/buildbarn/bb-playground/pkg/model/filesystem",
     visibility = ["//visibility:public"],

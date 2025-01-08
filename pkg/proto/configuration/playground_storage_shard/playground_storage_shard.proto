@@ -4,7 +4,6 @@ package buildbarn.playground.configuration.playground_storage_shard;
 
 import "pkg/proto/configuration/global/global.proto";
 import "pkg/proto/configuration/grpc/grpc.proto";
-import "pkg/proto/storage/object/object.proto";
 
 option go_package = "github.com/buildbarn/bb-playground/pkg/proto/configuration/playground_storage_shard";
 

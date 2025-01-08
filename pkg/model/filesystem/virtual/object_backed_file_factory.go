@@ -1,114 +1,63 @@
 package virtual
 
 import (
-	"bytes"
 	"context"
-	"io"
 
-	"github.com/buildbarn/bb-playground/pkg/encoding/varint"
 	model_filesystem "github.com/buildbarn/bb-playground/pkg/model/filesystem"
-	object_pb "github.com/buildbarn/bb-playground/pkg/proto/storage/object"
-	"github.com/buildbarn/bb-playground/pkg/storage/object"
 	"github.com/buildbarn/bb-remote-execution/pkg/filesystem/virtual"
 	"github.com/buildbarn/bb-storage/pkg/filesystem"
 	"github.com/buildbarn/bb-storage/pkg/util"
 )
 
-type ObjectBackedFileFactory struct {
-	handleAllocator virtual.ResolvableHandleAllocator
-	fileReader      *model_filesystem.FileReader
-	errorLogger     util.ErrorLogger
+type objectBackedFileFactory struct {
+	context     context.Context
+	fileReader  *model_filesystem.FileReader
+	errorLogger util.ErrorLogger
 }
 
-func NewObjectBackedFileFactory(handleAllocation virtual.ResolvableHandleAllocation, fileReader *model_filesystem.FileReader, errorLogger util.ErrorLogger) *ObjectBackedFileFactory {
-	ff := &ObjectBackedFileFactory{
+func NewObjectBackedFileFactory(ctx context.Context, fileReader *model_filesystem.FileReader, errorLogger util.ErrorLogger) FileFactory {
+	return &objectBackedFileFactory{
+		context:     ctx,
 		fileReader:  fileReader,
 		errorLogger: errorLogger,
 	}
-	ff.handleAllocator = handleAllocation.AsResolvableAllocator(ff.resolveHandle)
-	return ff
 }
 
-func (ff *ObjectBackedFileFactory) resolveHandle(r io.ByteReader) (virtual.DirectoryChild, virtual.Status) {
-	referenceFormatValue, err := varint.ReadForward[object_pb.ReferenceFormat_Value](r)
-	if err != nil {
-		return virtual.DirectoryChild{}, virtual.StatusErrBadHandle
+func (ff *objectBackedFileFactory) LookupFile(fileContents model_filesystem.FileContentsEntry, isExecutable bool) virtual.LinkableLeaf {
+	return &objectBackedFile{
+		factory:      ff,
+		fileContents: fileContents,
+		isExecutable: isExecutable,
 	}
-	referenceFormat, err := object.NewReferenceFormat(referenceFormatValue)
-	if err != nil {
-		return virtual.DirectoryChild{}, virtual.StatusErrBadHandle
-	}
-	referenceSizeBytes := referenceFormat.GetReferenceSizeBytes()
-	rawReference := make([]byte, 0, referenceSizeBytes)
-	for i := 0; i < referenceSizeBytes; i++ {
-		b, err := r.ReadByte()
-		if err != nil {
-			return virtual.DirectoryChild{}, virtual.StatusErrBadHandle
-		}
-		rawReference = append(rawReference, b)
-	}
-	reference, err := referenceFormat.NewLocalReference(rawReference)
-	if err != nil {
-		return virtual.DirectoryChild{}, virtual.StatusErrBadHandle
-	}
-
-	endBytes, err := varint.ReadForward[uint64](r)
-	if err != nil {
-		return virtual.DirectoryChild{}, virtual.StatusErrBadHandle
-	}
-
-	b, err := r.ReadByte()
-	if err != nil {
-		return virtual.DirectoryChild{}, virtual.StatusErrBadHandle
-	}
-	isExecutable := b != 0x00
-
-	return virtual.DirectoryChild{}.FromLeaf(
-		ff.LookupFile(
-			model_filesystem.FileContentsEntry{
-				EndBytes:  endBytes,
-				Reference: reference,
-			},
-			isExecutable,
-		),
-	), virtual.StatusOK
-}
-
-func (ff *ObjectBackedFileFactory) LookupFile(fileContents model_filesystem.FileContentsEntry, isExecutable bool) virtual.Leaf {
-	handle := varint.AppendForward(nil, fileContents.Reference.GetReferenceFormat().ToProto())
-	handle = append(handle, fileContents.Reference.GetRawReference()...)
-	handle = varint.AppendForward(handle, fileContents.EndBytes)
-	if isExecutable {
-		handle = append(handle, 0x01)
-	} else {
-		handle = append(handle, 0x00)
-	}
-	return ff.handleAllocator.New(bytes.NewBuffer(handle)).
-		AsLeaf(&objectBackedFile{
-			factory:      ff,
-			fileContents: fileContents,
-			isExecutable: isExecutable,
-		})
 }
 
 type objectBackedFile struct {
-	factory      *ObjectBackedFileFactory
+	factory      *objectBackedFileFactory
 	fileContents model_filesystem.FileContentsEntry
 	isExecutable bool
 }
 
-func (f *objectBackedFile) VirtualAllocate(off, size uint64) virtual.Status {
+func (objectBackedFile) Link() virtual.Status {
+	// As this file is stateless, we don't need to do any explicit
+	// bookkeeping for hardlinks.
+	return virtual.StatusOK
+}
+
+func (objectBackedFile) Unlink() {
+}
+
+func (objectBackedFile) VirtualAllocate(off, size uint64) virtual.Status {
 	return virtual.StatusErrWrongType
 }
 
-func (f *objectBackedFile) VirtualClose(shareAccess virtual.ShareMask) {}
+func (objectBackedFile) VirtualClose(shareAccess virtual.ShareMask) {}
 
 func (f *objectBackedFile) VirtualGetAttributes(ctx context.Context, requested virtual.AttributesMask, attributes *virtual.Attributes) {
 	attributes.SetChangeID(0)
 	attributes.SetFileType(filesystem.FileTypeRegularFile)
 	permissions := virtual.PermissionsRead
 	if f.isExecutable {
-		permissions |= virtual.PermissionsWrite
+		permissions |= virtual.PermissionsExecute
 	}
 	attributes.SetPermissions(permissions)
 	attributes.SetSizeBytes(f.fileContents.EndBytes)
@@ -118,15 +67,14 @@ func (f *objectBackedFile) VirtualOpenSelf(ctx context.Context, shareAccess virt
 	if shareAccess&^virtual.ShareMaskRead != 0 || options.Truncate {
 		return virtual.StatusErrAccess
 	}
-	f.VirtualGetAttributes(ctx, requested, attributes)
+	f.VirtualGetAttributes(f.factory.context, requested, attributes)
 	return virtual.StatusOK
 }
 
 func (f *objectBackedFile) VirtualRead(buf []byte, offsetBytes uint64) (int, bool, virtual.Status) {
 	buf, eof := virtual.BoundReadToFileSize(buf, offsetBytes, f.fileContents.EndBytes)
 	ff := f.factory
-	// TODO: Extend VirtualRead() to have a context.
-	nRead, err := ff.fileReader.FileReadAt(context.Background(), f.fileContents, buf, offsetBytes)
+	nRead, err := ff.fileReader.FileReadAt(ff.context, f.fileContents, buf, offsetBytes)
 	if err != nil {
 		ff.errorLogger.Log(err)
 		return nRead, false, virtual.StatusErrIO
@@ -162,11 +110,11 @@ func (f *objectBackedFile) VirtualSetAttributes(ctx context.Context, in *virtual
 	if _, ok := in.GetSizeBytes(); ok {
 		return virtual.StatusErrAccess
 	}
-	f.VirtualGetAttributes(ctx, requested, out)
+	f.VirtualGetAttributes(f.factory.context, requested, out)
 	return virtual.StatusOK
 }
 
-func (f *objectBackedFile) VirtualWrite(buf []byte, offset uint64) (int, virtual.Status) {
+func (objectBackedFile) VirtualWrite(buf []byte, offset uint64) (int, virtual.Status) {
 	panic("request to write to read-only file should have been intercepted")
 }
 

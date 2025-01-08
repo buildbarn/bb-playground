@@ -482,12 +482,25 @@ message RuleTarget {
   // Rule specific attributes whose values were provided explicitly.
   repeated AttrValue attr_values = 2;
 
+  // A list of constraint_values that must be present in the execution
+  // platform for this target. This is in addition to any constraints
+  // already set by the rule type. Constraints are used to restrict the
+  // list of available execution platforms.
+  repeated string exec_compatible_with = 3;
+
   // Tags that were attached to the target, sorted alphabetically.
-  repeated string tags = 3;
+  repeated string tags = 4;
+
+  // A list of constraint_values that must be present in the target
+  // platform for this target to be considered compatible. This is in
+  // addition to any constraints already set by the rule type. If the
+  // target platform does not satisfy all listed constraints then the
+  // target is considered incompatible.
+  repeated string target_compatible_with = 5;
 
   // Attributes on rule targets that are inherited from calls to repo()
   // in REPO.bazel and package() in BUILD.bazel.
-  InheritableAttrs inheritable_attrs = 4;
+  InheritableAttrs inheritable_attrs = 6;
 }
 
 message Select {

@@ -5,10 +5,12 @@ go_library(
     srcs = [
         "apparent_label.go",
         "apparent_repo.go",
+        "apparent_target_pattern.go",
         "canonical_label.go",
         "canonical_package.go",
         "canonical_repo.go",
         "canonical_starlark_identifier.go",
+        "canonical_target_pattern.go",
         "module.go",
         "module_extension.go",
         "module_instance.go",
@@ -28,6 +30,7 @@ go_test(
         "canonical_package_test.go",
         "canonical_repo_test.go",
         "canonical_starlark_identifier_test.go",
+        "canonical_target_pattern_test.go",
         "module_version_test.go",
     ],
     deps = [

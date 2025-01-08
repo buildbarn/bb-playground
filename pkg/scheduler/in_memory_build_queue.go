@@ -229,10 +229,10 @@ type InMemoryBuildQueueConfiguration struct {
 type InMemoryBuildQueue struct {
 	clock                               clock.Clock
 	uuidGenerator                       util.UUIDGenerator
+	randomNumberGenerator               random.SingleThreadedGenerator
 	configuration                       *InMemoryBuildQueueConfiguration
 	platformQueueAbsenceHardFailureTime time.Time
 	actionRouter                        routing.ActionRouter
-	randomNumberGenerator               random.SingleThreadedGenerator
 
 	lock           sync.Mutex
 	platformQueues map[string]*platformQueue
@@ -267,7 +267,7 @@ type InMemoryBuildQueue struct {
 // NewInMemoryBuildQueue creates a new InMemoryBuildQueue that is in the
 // initial state. It does not have any queues, workers or queued
 // execution requests. All of these are created by sending it RPCs.
-func NewInMemoryBuildQueue(clock clock.Clock, uuidGenerator util.UUIDGenerator, configuration *InMemoryBuildQueueConfiguration, actionRouter routing.ActionRouter) *InMemoryBuildQueue {
+func NewInMemoryBuildQueue(clock clock.Clock, uuidGenerator util.UUIDGenerator, randomNumberGenerator random.SingleThreadedGenerator, configuration *InMemoryBuildQueueConfiguration, actionRouter routing.ActionRouter) *InMemoryBuildQueue {
 	inMemoryBuildQueuePrometheusMetrics.Do(func() {
 		prometheus.MustRegister(inMemoryBuildQueueInFlightDeduplicationsTotal)
 
@@ -291,6 +291,7 @@ func NewInMemoryBuildQueue(clock clock.Clock, uuidGenerator util.UUIDGenerator, 
 
 	return &InMemoryBuildQueue{
 		clock:                               clock,
+		randomNumberGenerator:               randomNumberGenerator,
 		uuidGenerator:                       uuidGenerator,
 		configuration:                       configuration,
 		platformQueueAbsenceHardFailureTime: clock.Now().Add(configuration.PlatformQueueWithNoWorkersTimeout),
@@ -564,7 +565,7 @@ func (bq *InMemoryBuildQueue) Synchronize(ctx context.Context, request *remotewo
 	for _, publicKey := range request.PublicKeys {
 		if foundPQ, ok := bq.platformQueues[string(publicKey.PkixPublicKey)]; ok {
 			if pq == nil {
-				foundPQ = pq
+				pq = foundPQ
 				firstPublicKey = publicKey.PkixPublicKey
 			} else if foundPQ != pq {
 				return nil, status.Errorf(
@@ -585,7 +586,13 @@ func (bq *InMemoryBuildQueue) Synchronize(ctx context.Context, request *remotewo
 	// These need to be provided, so that the scheduler can validate
 	// that the worker is actually in possession of the private keys
 	// belonging to the public keys that it announces.
-	var newPublicKeys []int
+	type newPublicKey struct {
+		pkixPublicKey     []byte
+		verificationZeros [aes.BlockSize]byte
+		insertionIndex    int
+	}
+	var newPublicKeys []newPublicKey
+	insertionIndex := 0
 	for index, publicKey := range request.PublicKeys {
 		verificationZerosMatches := false
 		if len(publicKey.VerificationZeros) == aes.BlockSize {
@@ -594,24 +601,28 @@ func (bq *InMemoryBuildQueue) Synchronize(ctx context.Context, request *remotewo
 			// If so, we can use a cached copy of the
 			// verification zeros.
 			cmp := 1
-			for len(existingPublicKeys) > 0 {
-				cmp = bytes.Compare(publicKey.PkixPublicKey, existingPublicKeys[0].verificationZeros[:])
+			for insertionIndex < len(existingPublicKeys) {
+				cmp = bytes.Compare(publicKey.PkixPublicKey, existingPublicKeys[insertionIndex].verificationZeros[:])
 				if cmp >= 0 {
 					break
 				}
-				existingPublicKeys = existingPublicKeys[1:]
+				insertionIndex++
 			}
 			var expectedVerificationZeros [aes.BlockSize]byte
 			if cmp == 0 {
-				expectedVerificationZeros = existingPublicKeys[0].verificationZeros
-				existingPublicKeys = existingPublicKeys[1:]
+				expectedVerificationZeros = existingPublicKeys[insertionIndex].verificationZeros
+				insertionIndex++
 			} else {
-				newPublicKeys = append(newPublicKeys, index)
 				var err error
 				expectedVerificationZeros, err = bq.computeVerificationZeros(publicKey.PkixPublicKey)
 				if err != nil {
 					return nil, util.StatusWrapfWithCode(err, codes.InvalidArgument, "Failed to compute verification zeros for PKIX public key at index %d", index)
 				}
+				newPublicKeys = append(newPublicKeys, newPublicKey{
+					pkixPublicKey:     publicKey.PkixPublicKey,
+					verificationZeros: expectedVerificationZeros,
+					insertionIndex:    insertionIndex,
+				})
 			}
 			verificationZerosMatches = subtle.ConstantTimeCompare(publicKey.VerificationZeros, expectedVerificationZeros[:]) == 1
 		}
@@ -632,7 +643,6 @@ func (bq *InMemoryBuildQueue) Synchronize(ctx context.Context, request *remotewo
 		// before. Create a new platform queue containing a
 		// single size class queue.
 		pq = newPlatformQueue(nil, 0, 0)
-		scq = pq.addSizeClassQueue(bq, request.SizeClass, true)
 	} else if index := sort.Search(
 		len(pq.sizeClasses),
 		func(i int) bool { return pq.sizeClasses[i] >= request.SizeClass },
@@ -646,12 +656,10 @@ func (bq *InMemoryBuildQueue) Synchronize(ctx context.Context, request *remotewo
 		}
 	} else {
 		// Worker for this type of public key has been observed
-		// before, but not for this size class. Create a new
-		// size class queue.
-		//
-		// Only allow this to take place if the platform
-		// queue is predeclared, as the build results
-		// are non-deterministic otherwise.
+		// before, but not for this size class. Only allow
+		// multiple size classes to be created if the platform
+		// queue is predeclared, as the build results are
+		// non-deterministic otherwise.
 		if maximumSizeClassQueue := pq.sizeClassQueues[len(pq.sizeClassQueues)-1]; maximumSizeClassQueue.mayBeRemoved {
 			return nil, status.Error(codes.InvalidArgument, "Cannot add multiple size classes to a platform queue that is not predeclared")
 		} else if maximumSizeClass := pq.sizeClasses[len(pq.sizeClasses)-1]; request.SizeClass > maximumSizeClass {
@@ -659,11 +667,34 @@ func (bq *InMemoryBuildQueue) Synchronize(ctx context.Context, request *remotewo
 		} else if maximumSizeClass > 0 && request.SizeClass < 1 {
 			return nil, status.Error(codes.InvalidArgument, "Worker did not provide a size class, even though this platform queue uses them")
 		}
-		scq = pq.addSizeClassQueue(bq, request.SizeClass, true)
 	}
 
 	if len(newPublicKeys) > 0 {
-		panic("TODO: Add new public keys to platform queue!")
+		// Add one or more new public keys to the platform.
+		// Because we want public keys to be sorted, the code
+		// above computed the indices at which the public keys
+		// need to be inserted.
+		mergedPublicKeys := make([]platformQueuePublicKey, 0, len(pq.publicKeys)+len(newPublicKeys))
+		previousInsertionIndex := 0
+		for _, newPublicKey := range newPublicKeys {
+			mergedPublicKeys = append(mergedPublicKeys, existingPublicKeys[previousInsertionIndex:newPublicKey.insertionIndex]...)
+			previousInsertionIndex = newPublicKey.insertionIndex
+			mergedPublicKeys = append(mergedPublicKeys, platformQueuePublicKey{
+				pkixPublicKey:     newPublicKey.pkixPublicKey,
+				verificationZeros: newPublicKey.verificationZeros,
+			})
+			bq.platformQueues[string(newPublicKey.pkixPublicKey)] = pq
+		}
+		mergedPublicKeys = append(mergedPublicKeys, existingPublicKeys[previousInsertionIndex:]...)
+		pq.publicKeys = mergedPublicKeys
+
+		// TODO: Add a per worker bitmap that stores which
+		// workers announce which public keys, and grow those
+		// here.
+	}
+
+	if scq == nil {
+		scq = pq.addSizeClassQueue(bq, request.SizeClass, true)
 	}
 
 	w, ok := scq.workers[workerKey]
@@ -712,7 +743,7 @@ func (bq *InMemoryBuildQueue) Synchronize(ctx context.Context, request *remotewo
 		if reason == nil {
 			return nil, status.Error(codes.InvalidArgument, "Provided rejection reason is not an error")
 		}
-		w.currentTask.fail(bq, "RejectedByWorker", reason, true)
+		w.currentTask.fail(bq, "RejectedByWorker", util.StatusWrap(reason, "Action rejected by worker"), true)
 	case *remoteworker_pb.CurrentState_Executing_:
 		if !w.isRunningCorrectTask(workerState.Executing.TaskUuid) {
 			// Don't block when obtaining a task, so that we
@@ -2111,7 +2142,6 @@ func (o *operation) waitExecution(bq *InMemoryBuildQueue, out remoteexecution_pb
 		done := false
 		if t.initialSizeClassLearner == nil {
 			if err := t.failureErr; err != nil {
-				bq.leave()
 				return err
 			}
 			response.Stage = &remoteexecution_pb.ExecuteResponse_Completed_{

@@ -18,6 +18,8 @@ export STATE_PATH="${HOME}/playground_demo"
 mkdir -p "${STATE_PATH}/playground_builder_cache"
 rm -rf "${STATE_PATH}/playground_builder_filepool"
 mkdir -p "${STATE_PATH}/playground_builder_filepool"
+umount "${STATE_PATH}/playground_worker_mount" || true
+mkdir -p "${STATE_PATH}/playground_worker_mount" || true
 
 for replica in a b; do
   for shard in 0 1 2 3; do
@@ -33,5 +35,9 @@ done
     "$(rlocation com_github_buildbarn_bb_playground/deployments/demo/playground_builder.jsonnet)" &
 "$(rlocation com_github_buildbarn_bb_playground/cmd/playground_scheduler/playground_scheduler_/playground_scheduler)" \
     "$(rlocation com_github_buildbarn_bb_playground/deployments/demo/playground_scheduler.jsonnet)" &
+"$(rlocation com_github_buildbarn_bb_playground/cmd/playground_worker/playground_worker_/playground_worker)" \
+    "$(rlocation com_github_buildbarn_bb_playground/deployments/demo/playground_worker.jsonnet)" &
+"$(rlocation com_github_buildbarn_bb_remote_execution/cmd/bb_runner/bb_runner_/bb_runner)" \
+    "$(rlocation com_github_buildbarn_bb_playground/deployments/demo/bb_runner.jsonnet)" &
 
 wait

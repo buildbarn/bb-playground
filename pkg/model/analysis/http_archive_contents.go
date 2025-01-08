@@ -77,8 +77,8 @@ func (d *archiveDirectory) resolveNewFile(filePath string) (*archiveDirectory, p
 	return dChild, *r.TerminalName, nil
 }
 
-func (d *archiveDirectory) addFile(name path.Component, extractedFilesWriter *sectionWriter, f io.Reader, isExecutable bool) error {
-	fileOffsetBytes := extractedFilesWriter.offsetBytes
+func (d *archiveDirectory) addFile(name path.Component, extractedFilesWriter *model_filesystem.SectionWriter, f io.Reader, isExecutable bool) error {
+	fileOffsetBytes := extractedFilesWriter.GetOffsetBytes()
 	fileSizeBytes, err := io.Copy(extractedFilesWriter, f)
 	if err != nil {
 		return err
@@ -247,14 +247,14 @@ func (c *baseComputer) ComputeHttpArchiveContentsValue(ctx context.Context, key 
 	directoryCreationParameters, gotDirectoryCreationParameters := e.GetDirectoryCreationParametersObjectValue(&model_analysis_pb.DirectoryCreationParametersObject_Key{})
 	fileCreationParameters, gotFileCreationParameters := e.GetFileCreationParametersObjectValue(&model_analysis_pb.FileCreationParametersObject_Key{})
 	httpFileContentsValue := e.GetHttpFileContentsValue(&model_analysis_pb.HttpFileContents_Key{
-		Url:       key.Url,
+		Urls:      key.Urls,
 		Integrity: key.Integrity,
 	})
 	if !gotFileReader || !gotDirectoryCreationParameters || !gotFileCreationParameters || !httpFileContentsValue.IsSet() {
 		return PatchedHttpArchiveContentsValue{}, evaluation.ErrMissingDependency
 	}
 	if httpFileContentsValue.Message.Exists == nil {
-		return PatchedHttpArchiveContentsValue{}, fmt.Errorf("file at URL %#v does not exist", key.Url)
+		return PatchedHttpArchiveContentsValue{}, fmt.Errorf("file at URLs %#v does not exist", key.Urls)
 	}
 
 	referenceFormat := c.buildSpecificationReference.GetReferenceFormat()
@@ -275,7 +275,7 @@ func (c *baseComputer) ComputeHttpArchiveContentsValue(ctx context.Context, key 
 		return PatchedHttpArchiveContentsValue{}, err
 	}
 	defer extractedFiles.Close()
-	extractedFilesWriter := &sectionWriter{w: extractedFiles}
+	extractedFilesWriter := model_filesystem.NewSectionWriter(extractedFiles)
 
 	var rootDirectory archiveDirectory
 
@@ -369,7 +369,7 @@ func (c *baseComputer) ComputeHttpArchiveContentsValue(ctx context.Context, key 
 
 	group, groupCtx := errgroup.WithContext(ctx)
 	var rootDirectoryMessage model_core.PatchedMessage[*model_filesystem_pb.Directory, model_core.FileBackedObjectLocation]
-	fileWritingMerkleTreeCapturer := model_core.NewFileWritingMerkleTreeCapturer(&sectionWriter{w: merkleTreeNodes})
+	fileWritingMerkleTreeCapturer := model_core.NewFileWritingMerkleTreeCapturer(model_filesystem.NewSectionWriter(merkleTreeNodes))
 	group.Go(func() error {
 		return model_filesystem.CreateDirectoryMerkleTree(
 			groupCtx,

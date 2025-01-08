@@ -6,8 +6,13 @@ import (
 	"strings"
 )
 
-const validApparentLabelPattern = `@(` + validApparentRepoPattern + `|@` + validCanonicalRepoPattern + `)` + validMaybeAbsoluteLabelPattern +
-	`|@@` + validAbsoluteLabelPattern
+const (
+	validApparentOrCanonicalRepoPattern = `@(` + validApparentRepoPattern + `|@` + validCanonicalRepoPattern + `)`
+	validApparentLabelPattern           = `(` +
+		validApparentOrCanonicalRepoPattern + validMaybeAbsoluteLabelPattern + `|` +
+		`@@` + validAbsoluteLabelPattern +
+		`)`
+)
 
 var validApparentLabelRegexp = regexp.MustCompile("^" + validApparentLabelPattern + "$")
 
@@ -15,13 +20,13 @@ var invalidApparentLabelPattern = errors.New("apparent label must match " + vali
 
 // ApparentLabel is a label string that is prefixed with either a
 // canonical or apparent repo name. This type can be used to refer to
-// targets within the context of a given repository.
+// a single target within the context of a given repository.
 type ApparentLabel struct {
 	value string
 }
 
 func newValidApparentLabel(value string) ApparentLabel {
-	return ApparentLabel{value: removeTargetNameIfRedundant(value)}
+	return ApparentLabel{value: removeLabelTargetNameIfRedundant(value)}
 }
 
 func NewApparentLabel(value string) (ApparentLabel, error) {
@@ -43,19 +48,21 @@ func (l ApparentLabel) String() string {
 	return l.value
 }
 
-// AsCanonicalLabel upgrades an existing ApparentLabel to a
-// CanonicalLabel if it prefixed with a canonical repo name.
-func (l ApparentLabel) AsCanonicalLabel() (CanonicalLabel, bool) {
-	if len(l.value) > 2 && l.value[1] == '@' && l.value[2] != '/' {
+func hasCanonicalRepo(value string) bool {
+	return len(value) > 2 && value[1] == '@' && value[2] != '/'
+}
+
+// AsCanonical upgrades an existing ApparentLabel to a CanonicalLabel if
+// it prefixed with a canonical repo name.
+func (l ApparentLabel) AsCanonical() (CanonicalLabel, bool) {
+	if hasCanonicalRepo(l.value) {
 		return CanonicalLabel{value: l.value}, true
 	}
 	return CanonicalLabel{}, false
 }
 
-// GetApparentRepo returns the apparent repo name of the label, if the
-// label is not prefixed with a canonical repo name.
-func (l ApparentLabel) GetApparentRepo() (ApparentRepo, bool) {
-	repo := l.value[1:]
+func getApparentRepo(value string) (ApparentRepo, bool) {
+	repo := value[1:]
 	if repo[0] == '@' {
 		return ApparentRepo{}, false
 	}
@@ -65,13 +72,14 @@ func (l ApparentLabel) GetApparentRepo() (ApparentRepo, bool) {
 	return ApparentRepo{value: repo}, true
 }
 
+// GetApparentRepo returns the apparent repo name of the label, if the
+// label is not prefixed with a canonical repo name.
+func (l ApparentLabel) GetApparentRepo() (ApparentRepo, bool) {
+	return getApparentRepo(l.value)
+}
+
 // WithCanonicalRepo replaces the repo name of the label with a
 // provided canonical repo name.
 func (l ApparentLabel) WithCanonicalRepo(canonicalRepo CanonicalRepo) CanonicalLabel {
-	if offset := strings.IndexByte(l.value, '/'); offset > 0 {
-		// Translate "@from//x/y:z" to "@@to//x/y:z".
-		return newValidCanonicalLabel("@@" + canonicalRepo.value + l.value[offset:])
-	}
-	// Translate "@from" to "@@to//:from".
-	return newValidCanonicalLabel("@@" + canonicalRepo.value + "//:" + strings.TrimLeft(l.value, "@"))
+	return newValidCanonicalLabel(canonicalRepo.applyToLabelOrTargetPattern(l.value))
 }

@@ -1,8 +1,11 @@
+AnalysisFailureInfo = provider()
+AnalysisTestResultInfo = provider()
 CcInfo = provider()
 CcLauncherInfo = provider()
 CcNativeLibraryInfo = provider()
 CcToolchainConfigInfo = provider()
 CcToolchainInfo = provider()
+ConfigSettingInfo = provider()
 ConstraintValueInfo = provider()
 ConstraintSettingInfo = provider()
 DebugPackageInfo = provider()
@@ -17,6 +20,21 @@ RunEnvironmentInfo = provider()
 StaticallyLinkedMarkerProvider = provider()
 TemplateVariableInfo = provider()
 ToolchainInfo = provider()
+ToolchainTypeInfo = provider()
+
+def _config_setting_impl(ctx):
+    fail("TODO: Implement")
+
+config_setting = rule(
+    implementation = _config_setting_impl,
+    attrs = {
+        "constraint_values": attr.label_list(providers = [ConstraintValueInfo]),
+        "define_values": attr.string_dict(),
+        "flag_values": attr.label_keyed_string_dict(),
+        "values": attr.string_dict(),
+    },
+    provides = [ConfigSettingInfo],
+)
 
 def _constraint_setting_impl(ctx):
     return [ConstraintSettingInfo(
@@ -208,6 +226,29 @@ def _toolchain_impl(ctx):
 
 toolchain = rule(
     implementation = _toolchain_impl,
+    attrs = {
+        "target_settings": attr.label_list(
+            providers = [ConfigSettingInfo],
+        ),
+        "toolchain": attr.label(
+            mandatory = True,
+            providers = [ToolchainInfo],
+        ),
+        "toolchain_type": attr.label(
+            mandatory = True,
+            providers = [ToolchainTypeInfo],
+        ),
+    },
+)
+
+def _toolchain_type_impl(ctx):
+    return [ToolchainTypeInfo(
+        type_label = ctx.label,
+    )]
+
+toolchain_type = rule(
+    implementation = _toolchain_type_impl,
+    provides = [ToolchainTypeInfo],
 )
 
 def proto_common_incompatible_enable_proto_toolchain_resolution():
@@ -226,6 +267,8 @@ def builtins_internal_java_common_internal_do_not_use_incompatible_disable_non_e
     return "TODO"
 
 exported_rules = {
+    "alias": native.alias,
+    "config_setting": config_setting,
     "constraint_setting": constraint_setting,
     "constraint_value": constraint_value,
     "filegroup": filegroup,
@@ -233,8 +276,11 @@ exported_rules = {
     "licenses": licenses,
     "platform": platform,
     "toolchain": toolchain,
+    "toolchain_type": toolchain_type,
 }
 exported_toplevels = {
+    "AnalysisFailureInfo": AnalysisFailureInfo,
+    "AnalysisTestResultInfo": AnalysisTestResultInfo,
     "DefaultInfo": DefaultInfo,
     "OutputGroupInfo": OutputGroupInfo,
     "RunEnvironmentInfo": RunEnvironmentInfo,

@@ -25,7 +25,7 @@ func NewCanonicalStarlarkIdentifier(value string) (CanonicalStarlarkIdentifier, 
 
 	identifierOffset := strings.LastIndexByte(value, '%')
 	return CanonicalStarlarkIdentifier{
-		value: removeTargetNameIfRedundant(value[:identifierOffset]) + value[identifierOffset:],
+		value: removeLabelTargetNameIfRedundant(value[:identifierOffset]) + value[identifierOffset:],
 	}, nil
 }
 

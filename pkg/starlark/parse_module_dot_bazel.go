@@ -53,8 +53,7 @@ type PatchOptions struct {
 type RootModuleDotBazelHandler interface {
 	ChildModuleDotBazelHandler
 
-	ArchiveOverride(moduleName label.Module, urls []*url.URL, integrity string, stripPrefix path.Parser, patchOptions *PatchOptions) error
-	GitOverride(moduleName label.Module, remote *url.URL, commit string, patchOptions *PatchOptions, initSubmodules bool, stripPrefix path.Parser) error
+	RepositoryRuleOverride(moduleName label.Module, repositoryRuleIdentifier label.CanonicalStarlarkIdentifier, attrs map[string]starlark.Value) error
 	LocalPathOverride(moduleName label.Module, path path.Parser) error
 	MultipleVersionOverride(moduleName label.Module, versions []label.ModuleVersion, registry *url.URL) error
 	SingleVersionOverride(moduleName label.Module, version *label.ModuleVersion, registry *url.URL, patchOptions *PatchOptions) error
@@ -66,8 +65,8 @@ type RootModuleDotBazelHandler interface {
 type ChildModuleDotBazelHandler interface {
 	BazelDep(name label.Module, version *label.ModuleVersion, maxCompatibilityLevel int, repoName label.ApparentRepo, devDependency bool) error
 	Module(name label.Module, version *label.ModuleVersion, compatibilityLevel int, repoName label.ApparentRepo, bazelCompatibility []string) error
-	RegisterExecutionPlatforms(platformLabels []label.ApparentLabel, devDependency bool) error
-	RegisterToolchains(toolchainLabels []label.ApparentLabel, devDependency bool) error
+	RegisterExecutionPlatforms(platformTargetPatterns []label.ApparentTargetPattern, devDependency bool) error
+	RegisterToolchains(toolchainTargetPatterns []label.ApparentTargetPattern, devDependency bool) error
 	UseExtension(extensionBzlFile label.ApparentLabel, extensionName label.StarlarkIdentifier, devDependency, isolate bool) (ModuleExtensionProxy, error)
 	UseRepoRule(repoRuleBzlFile label.ApparentLabel, repoRuleName string) (RepoRuleProxy, error)
 }
@@ -85,19 +84,15 @@ func NewOverrideIgnoringRootModuleDotBazelHandler(base ChildModuleDotBazelHandle
 	}
 }
 
-func (overrideIgnoringRootModuleDotBazelHandler) ArchiveOverride(moduleName label.Module, urls []*url.URL, integrity string, stripPrefix path.Parser, patchOptions *PatchOptions) error {
-	return nil
-}
-
-func (overrideIgnoringRootModuleDotBazelHandler) GitOverride(moduleName label.Module, remote *url.URL, commit string, patchOptions *PatchOptions, initSubmodules bool, stripPrefix path.Parser) error {
-	return nil
-}
-
 func (overrideIgnoringRootModuleDotBazelHandler) LocalPathOverride(moduleName label.Module, path path.Parser) error {
 	return nil
 }
 
 func (overrideIgnoringRootModuleDotBazelHandler) MultipleVersionOverride(moduleName label.Module, versions []label.ModuleVersion, registry *url.URL) error {
+	return nil
+}
+
+func (overrideIgnoringRootModuleDotBazelHandler) RepositoryRuleOverride(moduleName label.Module, repositoryRuleIdentifier label.CanonicalStarlarkIdentifier, attrs map[string]starlark.Value) error {
 	return nil
 }
 
@@ -153,6 +148,35 @@ func (v *moduleExtensionProxyValue) AttrNames() []string {
 // Parse a MODULE.bazel file, and call into ModuleDotBazelHandler for
 // every observed declaration.
 func ParseModuleDotBazel(contents string, filename label.CanonicalLabel, localPathFormat path.Format, handler RootModuleDotBazelHandler) error {
+	repositoryRuleOverrideFunc := func(targetIdentifier string) func(thread *starlark.Thread, b *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
+		return func(thread *starlark.Thread, b *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
+			if len(args) > 0 {
+				return nil, fmt.Errorf("%s: got %d positional arguments, want 0", b.Name(), len(args))
+			}
+
+			var moduleName *label.Module
+			attrs := map[string]starlark.Value{}
+			for _, kwarg := range kwargs {
+				switch key := string(kwarg[0].(starlark.String)); key {
+				case "module_name":
+					if err := unpack.Pointer(unpack.Module).UnpackInto(thread, kwarg[1], &moduleName); err != nil {
+						return nil, fmt.Errorf("%s: for parameter %s: %w", b.Name(), key, err)
+					}
+				default:
+					attrs[key] = kwarg[1]
+				}
+			}
+			if moduleName == nil {
+				return nil, fmt.Errorf("%s: missing module_name argument", b.Name())
+			}
+			return starlark.None, handler.RepositoryRuleOverride(
+				*moduleName,
+				label.MustNewCanonicalStarlarkIdentifier(targetIdentifier),
+				attrs,
+			)
+		}
+	}
+
 	_, err := starlark.ExecFile(
 		&starlark.Thread{
 			Name: "main",
@@ -164,32 +188,7 @@ func ParseModuleDotBazel(contents string, filename label.CanonicalLabel, localPa
 		filename.String(),
 		contents,
 		starlark.StringDict{
-			"archive_override": starlark.NewBuiltin("archive_override", func(thread *starlark.Thread, b *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
-				var moduleName label.Module
-				var urls []*url.URL
-				integrity := ""
-				var stripPrefix path.Parser = &path.EmptyBuilder
-				var patchOptions PatchOptions
-				if err := starlark.UnpackArgs(
-					b.Name(), args, kwargs,
-					"module_name", unpack.Bind(thread, &moduleName, unpack.Module),
-					"urls", unpack.Bind(thread, &urls, unpack.List(unpack.URL)),
-					"integrity?", unpack.Bind(thread, &integrity, unpack.String),
-					"strip_prefix?", unpack.Bind(thread, &stripPrefix, unpack.PathParser(path.UNIXFormat)),
-					"patches?", unpack.Bind(thread, &patchOptions.Patches, unpack.List(unpack.ApparentLabel)),
-					"patch_cmds?", unpack.Bind(thread, &patchOptions.PatchCmds, unpack.List(unpack.String)),
-					"patch_strip?", unpack.Bind(thread, &patchOptions.PatchStrip, unpack.Int[int]()),
-				); err != nil {
-					return nil, err
-				}
-				return starlark.None, handler.ArchiveOverride(
-					moduleName,
-					urls,
-					integrity,
-					stripPrefix,
-					&patchOptions,
-				)
-			}),
+			"archive_override": starlark.NewBuiltin("archive_override", repositoryRuleOverrideFunc("@@bazel_tools+//tools/build_defs/repo:http.bzl%http_archive")),
 			"bazel_dep": starlark.NewBuiltin("bazel_dep", func(thread *starlark.Thread, b *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
 				var name label.Module
 				var version *label.ModuleVersion
@@ -218,35 +217,7 @@ func ParseModuleDotBazel(contents string, filename label.CanonicalLabel, localPa
 					devDependency,
 				)
 			}),
-			"git_override": starlark.NewBuiltin("git_override", func(thread *starlark.Thread, b *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
-				var moduleName label.Module
-				var remote *url.URL
-				commit := ""
-				var patchOptions PatchOptions
-				initSubmodules := false
-				var stripPrefix path.Parser = &path.EmptyBuilder
-				if err := starlark.UnpackArgs(
-					b.Name(), args, kwargs,
-					"module_name", unpack.Bind(thread, &moduleName, unpack.Module),
-					"remote", unpack.Bind(thread, &remote, unpack.URL),
-					"commit?", unpack.Bind(thread, &commit, unpack.String),
-					"patches?", unpack.Bind(thread, &patchOptions.Patches, unpack.List(unpack.ApparentLabel)),
-					"patch_cmds?", unpack.Bind(thread, &patchOptions.PatchCmds, unpack.List(unpack.String)),
-					"patch_strip?", unpack.Bind(thread, &patchOptions.PatchStrip, unpack.Int[int]()),
-					"init_submodules?", unpack.Bind(thread, &initSubmodules, unpack.Bool),
-					"strip_prefix?", unpack.Bind(thread, &stripPrefix, unpack.PathParser(path.UNIXFormat)),
-				); err != nil {
-					return nil, err
-				}
-				return starlark.None, handler.GitOverride(
-					moduleName,
-					remote,
-					commit,
-					&patchOptions,
-					initSubmodules,
-					stripPrefix,
-				)
-			}),
+			"git_override": starlark.NewBuiltin("git_override", repositoryRuleOverrideFunc("@@bazel_tools+//tools/build_defs/repo:git.bzl%git_repository")),
 			"include": starlark.NewBuiltin("include", func(thread *starlark.Thread, b *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
 				return nil, errors.New("include() is not permitted, as it prevents modules from being reused")
 			}),
@@ -322,8 +293,8 @@ func ParseModuleDotBazel(contents string, filename label.CanonicalLabel, localPa
 				)
 			}),
 			"register_execution_platforms": starlark.NewBuiltin("register_execution_platforms", func(thread *starlark.Thread, b *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
-				var platformLabels []label.ApparentLabel
-				if err := unpack.List(unpack.ApparentLabel).UnpackInto(thread, args, &platformLabels); err != nil {
+				var platformTargetPatterns []label.ApparentTargetPattern
+				if err := unpack.List(unpack.ApparentTargetPattern).UnpackInto(thread, args, &platformTargetPatterns); err != nil {
 					return nil, err
 				}
 				devDependency := false
@@ -334,13 +305,13 @@ func ParseModuleDotBazel(contents string, filename label.CanonicalLabel, localPa
 					return nil, err
 				}
 				return starlark.None, handler.RegisterExecutionPlatforms(
-					platformLabels,
+					platformTargetPatterns,
 					devDependency,
 				)
 			}),
 			"register_toolchains": starlark.NewBuiltin("register_toolchains", func(thread *starlark.Thread, b *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
-				var toolchainLabels []label.ApparentLabel
-				if err := unpack.List(unpack.ApparentLabel).UnpackInto(thread, args, &toolchainLabels); err != nil {
+				var toolchainTargetPatterns []label.ApparentTargetPattern
+				if err := unpack.List(unpack.ApparentTargetPattern).UnpackInto(thread, args, &toolchainTargetPatterns); err != nil {
 					return nil, err
 				}
 				devDependency := false
@@ -351,7 +322,7 @@ func ParseModuleDotBazel(contents string, filename label.CanonicalLabel, localPa
 					return nil, err
 				}
 				return starlark.None, handler.RegisterToolchains(
-					toolchainLabels,
+					toolchainTargetPatterns,
 					devDependency,
 				)
 			}),

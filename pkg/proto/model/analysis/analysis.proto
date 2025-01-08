@@ -3,7 +3,6 @@ syntax = "proto3";
 package buildbarn.playground.model.analysis;
 
 import "google/protobuf/duration.proto";
-import "pkg/proto/model/action/action.proto";
 import "pkg/proto/model/build/build.proto";
 import "pkg/proto/model/core/core.proto";
 import "pkg/proto/model/encoding/encoding.proto";
@@ -23,11 +22,15 @@ message ActionResult {
     buildbarn.playground.model.core.Reference input_root_reference = 3;
 
     google.protobuf.Duration execution_timeout = 4;
+
+    // Fail if the action terminates with a non-zero exit code.
+    bool exit_code_must_be_zero = 5;
   }
 
   message Value {
-    // Results of the action that executed on a remote worker.
-    buildbarn.playground.model.action.Result action_result = 1;
+    int64 exit_code = 1;
+
+    buildbarn.playground.model.core.Reference outputs_reference = 2;
   }
 }
 
@@ -59,6 +62,9 @@ message CanonicalRepoName {
   message Key {
     // The canonical name of the repo from which the apparent repo is
     // being accessed.
+    //
+    // TODO: Should this be reduced to only take a module instance or
+    // module extension?
     string from_canonical_repo = 1;
 
     // The apparent name of the repo which is being accessed.
@@ -274,8 +280,8 @@ message HttpArchiveContents {
       ZIP = 2;
     }
 
-    // The URL to fetch.
-    string url = 1;
+    // The URLs to fetch.
+    repeated string urls = 1;
 
     // The format of the archive.
     Format format = 2;
@@ -294,12 +300,16 @@ message HttpArchiveContents {
 
 message HttpFileContents {
   message Key {
-    // The URL to fetch.
-    string url = 1;
+    // The URLs to fetch.
+    repeated string urls = 1;
 
     // Optional checksum of the file to download, provided in the
     // Subresource Integrity (SRI) format.
-    string integrity = 3;
+    string integrity = 2;
+
+    // If not set, let the function fail if the server returns a HTTP
+    // status code other than 200 and 404.
+    bool allow_fail = 3;
   }
 
   message Value {
@@ -309,7 +319,7 @@ message HttpFileContents {
     }
 
     // If set, the file was fetched successfully. If not set, fetching
-    // the file failed with a HTTP 404 status code.
+    // the file failed with a non-200 HTTP status code.
     Exists exists = 1;
   }
 }
@@ -367,6 +377,19 @@ message ModuleExtensionRepo {
 
   message Value {
     buildbarn.playground.model.starlark.Repo.Definition definition = 1;
+  }
+}
+
+message ModuleExtensionRepoNames {
+  message Key {
+    // Name of the module extension for which the names of the repos it
+    // declares should be computed.
+    string module_extension = 1;
+  }
+
+  message Value {
+    // Names of repos declared by the module extensions, sorted by name.
+    repeated string repo_names = 1;
   }
 }
 
@@ -646,6 +669,25 @@ message RootModule {
   }
 }
 
+message StableInputRootPath {
+  message Key {}
+
+  message Value {
+    // The path at which workers belonging to the registered repo
+    // platform expose input roots.
+    //
+    // Repository rules and module extensions often make assumptions
+    // about the absolute locations at which repositories are created.
+    // Functions like module_ctx.path() and repository_ctx.path() should
+    // return absolute paths that are representative of w
+    string input_root_path = 1;
+  }
+}
+
+message StableInputRootPathObject {
+  message Key {}
+}
+
 message Target {
   message Key {
     // The label of the target whose properties to obtain.
@@ -666,6 +708,42 @@ message TargetCompletion {
   }
 
   message Value {}
+}
+
+message TargetPatternExpansion {
+  message Key {
+    // The target pattern that needs to be expanded to a set of targets.
+    // The target pattern MUST include a canonical repo name.
+    string target_pattern = 1;
+  }
+
+  message Value {
+    message TargetLabelList {
+      message Element {
+        message Parent {
+          // Reference to an object of type TargetLabelList that
+          // contains a list of labels of targets matched by the
+          // target pattern.
+          buildbarn.playground.model.core.Reference reference = 1;
+        }
+
+        oneof level {
+          // Label of a single target matched by the target pattern.
+          string leaf = 1;
+
+          // More labels of targets are stored in another object.
+          Parent parent = 2;
+        }
+      }
+
+      // B-tree of labels of targets matched by the target pattern.
+      repeated Element elements = 1;
+    }
+
+    // Successfully processed the target pattern, and extracted the
+    // labels of targets matched by the target pattern.
+    repeated TargetLabelList.Element target_labels = 1;
+  }
 }
 
 message ModuleExtension {

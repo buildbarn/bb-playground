@@ -90,7 +90,9 @@ func (r *rule) CallInternal(thread *starlark.Thread, args starlark.Tuple, kwargs
 		func(a, b pg_label.StarlarkIdentifier) int { return strings.Compare(a.String(), b.String()) },
 	) {
 		switch nameStr := name.String(); nameStr {
-		case "deprecation", "name", "package_metadata", "tags", "testonly", "visibility":
+		case "deprecation", "exec_compatible_with", "name",
+			"package_metadata", "tags", "target_compatible_with",
+			"testonly", "visibility":
 			return nil, fmt.Errorf("rule uses attribute with reserved name %#v", nameStr)
 		}
 		if name.IsPublic() {
@@ -117,10 +119,12 @@ func (r *rule) CallInternal(thread *starlark.Thread, args starlark.Tuple, kwargs
 
 	defaultInheritableAttrs := targetRegistrar.defaultInheritableAttrs.Message
 
-	deprecation := defaultInheritableAttrs.Deprecation
 	var name string
+	deprecation := defaultInheritableAttrs.Deprecation
+	var execCompatibleWith []string
 	packageMetadata := defaultInheritableAttrs.PackageMetadata
 	var tags []string
+	var targetCompatibleWith []string
 	testOnly := defaultInheritableAttrs.Testonly
 	var visibility []pg_label.CanonicalLabel
 	labelStringListUnpackerInto := unpack.List(unpack.Stringer(NewLabelOrStringUnpackerInto(currentPackage)))
@@ -128,8 +132,10 @@ func (r *rule) CallInternal(thread *starlark.Thread, args starlark.Tuple, kwargs
 		unpackers,
 		"name", unpack.Bind(thread, &name, unpack.Stringer(unpack.TargetName)),
 		"deprecation?", unpack.Bind(thread, &deprecation, unpack.String),
+		"exec_compatible_with?", unpack.Bind(thread, &execCompatibleWith, labelStringListUnpackerInto),
 		"package_metadata?", unpack.Bind(thread, &packageMetadata, labelStringListUnpackerInto),
 		"tags?", unpack.Bind(thread, &tags, unpack.List(unpack.String)),
+		"target_compatible_with?", unpack.Bind(thread, &targetCompatibleWith, labelStringListUnpackerInto),
 		"testonly?", unpack.Bind(thread, &testOnly, unpack.Bool),
 		"visibility?", unpack.Bind(thread, &visibility, unpack.List(NewLabelOrStringUnpackerInto(currentPackage))),
 	)
@@ -163,7 +169,9 @@ func (r *rule) CallInternal(thread *starlark.Thread, args starlark.Tuple, kwargs
 		}
 	}
 
+	sort.Strings(execCompatibleWith)
 	sort.Strings(tags)
+	sort.Strings(targetCompatibleWith)
 
 	visibilityPackageGroup, err := targetRegistrar.getVisibilityPackageGroup(visibility)
 	if err != nil {
@@ -179,9 +187,11 @@ func (r *rule) CallInternal(thread *starlark.Thread, args starlark.Tuple, kwargs
 				Definition: &model_starlark_pb.Target_Definition{
 					Kind: &model_starlark_pb.Target_Definition_RuleTarget{
 						RuleTarget: &model_starlark_pb.RuleTarget{
-							RuleIdentifier: r.Identifier.String(),
-							AttrValues:     attrValues,
-							Tags:           slices.Compact(tags),
+							RuleIdentifier:       r.Identifier.String(),
+							AttrValues:           attrValues,
+							ExecCompatibleWith:   execCompatibleWith,
+							Tags:                 slices.Compact(tags),
+							TargetCompatibleWith: targetCompatibleWith,
 							InheritableAttrs: &model_starlark_pb.InheritableAttrs{
 								Deprecation:     deprecation,
 								PackageMetadata: packageMetadata,

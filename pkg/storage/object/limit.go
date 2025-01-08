@@ -1,12 +1,20 @@
 package object
 
 import (
+	"math"
+
 	"github.com/buildbarn/bb-playground/pkg/proto/storage/object"
 )
 
 type Limit struct {
 	count     uint32
 	sizeBytes uint64
+}
+
+// Unlimited concurrency when attempting to traverse a graph of objects.
+var Unlimited = Limit{
+	count:     math.MaxUint32,
+	sizeBytes: math.MaxUint64,
 }
 
 func NewLimit(m *object.Limit) Limit {

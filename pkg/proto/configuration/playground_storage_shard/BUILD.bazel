@@ -7,7 +7,6 @@ proto_library(
     srcs = ["playground_storage_shard.proto"],
     visibility = ["//visibility:public"],
     deps = [
-        "//pkg/proto/storage/object:object_proto",
         "@com_github_buildbarn_bb_storage//pkg/proto/configuration/global:global_proto",
         "@com_github_buildbarn_bb_storage//pkg/proto/configuration/grpc:grpc_proto",
     ],
@@ -19,7 +18,6 @@ go_proto_library(
     proto = ":playground_storage_shard_proto",
     visibility = ["//visibility:public"],
     deps = [
-        "//pkg/proto/storage/object",
         "@com_github_buildbarn_bb_storage//pkg/proto/configuration/global",
         "@com_github_buildbarn_bb_storage//pkg/proto/configuration/grpc",
     ],

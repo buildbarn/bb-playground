@@ -6,5 +6,5 @@ import (
 )
 
 type FileFactory interface {
-	LookupFile(fileContents model_filesystem.FileContentsEntry, isExecutable bool) virtual.Leaf
+	LookupFile(fileContents model_filesystem.FileContentsEntry, isExecutable bool) virtual.LinkableLeaf
 }

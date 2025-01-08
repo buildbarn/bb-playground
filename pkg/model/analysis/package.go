@@ -47,7 +47,7 @@ func (c *baseComputer) ComputePackageValue(ctx context.Context, key *model_analy
 	}
 
 	builtinsModuleNames := allBuiltinsModulesNames.Message.BuiltinsModuleNames
-	buildFileBuiltins, err := c.getBzlFileBuiltins(e, builtinsModuleNames, model_starlark.BuildFileBuiltins, "exported_rules")
+	buildFileBuiltins, err := c.getBuildFileBuiltins(e, builtinsModuleNames)
 	if err != nil {
 		return PatchedPackageValue{}, err
 	}

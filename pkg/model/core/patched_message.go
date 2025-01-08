@@ -77,7 +77,7 @@ func (m PatchedMessage[T, TMetadata]) SortAndSetReferences() (Message[T], []TMet
 }
 
 // MarshalAndEncodePatchedMessage marshals a Protobuf message, encodes
-// it, and converts it to an object that can eb written to storage.
+// it, and converts it to an object that can be written to storage.
 func MarshalAndEncodePatchedMessage[TMessage proto.Message, TMetadata ReferenceMetadata](
 	m PatchedMessage[TMessage, TMetadata],
 	referenceFormat object.ReferenceFormat,

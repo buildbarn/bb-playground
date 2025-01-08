@@ -18,13 +18,13 @@ git_override(
 
 git_override(
     module_name = "com_github_buildbarn_bb_remote_execution",
-    commit = "bf32d1897971edde42a59636c8103b09a72196ae",
+    commit = "b7b3bc45a017562064b0cd60ea65ae7ddb4be28a",
     remote = "https://github.com/buildbarn/bb-remote-execution.git",
 )
 
 git_override(
     module_name = "com_github_buildbarn_bb_storage",
-    commit = "256ec6c483a05f1aeefff6fc57a2044f746c5a08",
+    commit = "078d9d76e0f03cf20480f5e9afa76484f2701a30",
     remote = "https://github.com/buildbarn/bb-storage.git",
 )
 
@@ -78,6 +78,10 @@ go_deps_dev.module_override(
         "//:patches/com_github_bluekeyes_go_gitdiff/no-drop-a-b-slash.diff",
     ],
     path = "github.com/bluekeyes/go-gitdiff",
+)
+go_deps_dev.module_override(
+    patches = ["@com_github_buildbarn_bb_storage//:patches/org_golang_x_sys/o-search.diff"],
+    path = "golang.org/x/sys",
 )
 go_deps_dev.module_override(
     patches = [

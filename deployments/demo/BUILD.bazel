@@ -2,14 +2,18 @@ sh_binary(
     name = "demo",
     srcs = ["demo.sh"],
     data = [
+        ":bb_runner.jsonnet",
         ":playground_builder.jsonnet",
         ":playground_scheduler.jsonnet",
         ":playground_storage_frontend.jsonnet",
         ":playground_storage_shard.jsonnet",
+        ":playground_worker.jsonnet",
         "//cmd/playground_builder",
         "//cmd/playground_scheduler",
         "//cmd/playground_storage_frontend",
         "//cmd/playground_storage_shard",
+        "//cmd/playground_worker",
+        "@com_github_buildbarn_bb_remote_execution//cmd/bb_runner",
     ],
     deps = ["@bazel_tools//tools/bash/runfiles"],
 )

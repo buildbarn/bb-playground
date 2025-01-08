@@ -14,6 +14,46 @@ import (
 	"github.com/buildbarn/bb-playground/pkg/storage/dag"
 )
 
+func (c *baseComputer) lookupTargetDefinitionInTargetList(targetList model_core.Message[[]*model_analysis_pb.Package_Value_TargetList_Element], targetName label.TargetName) (model_core.Message[*model_starlark_pb.Target_Definition], error) {
+	targetNameStr := targetName.String()
+	for {
+		index := uint(sort.Search(
+			len(targetList.Message),
+			func(i int) bool {
+				switch level := targetList.Message[i].Level.(type) {
+				case *model_analysis_pb.Package_Value_TargetList_Element_Leaf:
+					return targetNameStr < level.Leaf.Name
+				case *model_analysis_pb.Package_Value_TargetList_Element_Parent_:
+					return targetNameStr < level.Parent.FirstName
+				default:
+					return false
+				}
+			},
+		) - 1)
+		if index >= uint(len(targetList.Message)) {
+			return model_core.Message[*model_starlark_pb.Target_Definition]{}, nil
+		}
+		switch level := targetList.Message[index].Level.(type) {
+		case *model_analysis_pb.Package_Value_TargetList_Element_Leaf:
+			if level.Leaf.Name != targetNameStr {
+				return model_core.Message[*model_starlark_pb.Target_Definition]{}, nil
+			}
+			definition := level.Leaf.Definition
+			if definition == nil {
+				return model_core.Message[*model_starlark_pb.Target_Definition]{}, errors.New("target does not have a definition")
+			}
+			return model_core.Message[*model_starlark_pb.Target_Definition]{
+				Message:            definition,
+				OutgoingReferences: targetList.OutgoingReferences,
+			}, nil
+		case *model_analysis_pb.Package_Value_TargetList_Element_Parent_:
+			panic("TODO: Load target list from storage!")
+		default:
+			return model_core.Message[*model_starlark_pb.Target_Definition]{}, errors.New("target list has an unknown level type")
+		}
+	}
+}
+
 func (c *baseComputer) ComputeTargetValue(ctx context.Context, key *model_analysis_pb.Target_Key, e TargetEnvironment) (PatchedTargetValue, error) {
 	targetLabel, err := label.NewCanonicalLabel(key.Label)
 	if err != nil {
@@ -26,56 +66,30 @@ func (c *baseComputer) ComputeTargetValue(ctx context.Context, key *model_analys
 		return PatchedTargetValue{}, evaluation.ErrMissingDependency
 	}
 
-	targetName := targetLabel.GetTargetName().String()
-	targetList := model_core.Message[[]*model_analysis_pb.Package_Value_TargetList_Element]{
-		Message:            packageValue.Message.Targets,
-		OutgoingReferences: packageValue.OutgoingReferences,
+	definition, err := c.lookupTargetDefinitionInTargetList(
+		model_core.Message[[]*model_analysis_pb.Package_Value_TargetList_Element]{
+			Message:            packageValue.Message.Targets,
+			OutgoingReferences: packageValue.OutgoingReferences,
+		},
+		targetLabel.GetTargetName(),
+	)
+	if err != nil {
+		return PatchedTargetValue{}, err
 	}
-	for {
-		index := uint(sort.Search(
-			len(targetList.Message),
-			func(i int) bool {
-				switch level := targetList.Message[i].Level.(type) {
-				case *model_analysis_pb.Package_Value_TargetList_Element_Leaf:
-					return targetName < level.Leaf.Name
-				case *model_analysis_pb.Package_Value_TargetList_Element_Parent_:
-					return targetName < level.Parent.FirstName
-				default:
-					return false
-				}
-			},
-		) - 1)
-		if index >= uint(len(targetList.Message)) {
-			return PatchedTargetValue{}, errors.New("target does not exist")
-		}
-		switch level := targetList.Message[index].Level.(type) {
-		case *model_analysis_pb.Package_Value_TargetList_Element_Leaf:
-			if level.Leaf.Name != targetName {
-				return PatchedTargetValue{}, errors.New("target does not exist")
-			}
-			definition := level.Leaf.Definition
-			if definition == nil {
-				return PatchedTargetValue{}, errors.New("target does not have a definition")
-			}
-			patchedDefinition := model_core.NewPatchedMessageFromExisting(
-				model_core.Message[*model_starlark_pb.Target_Definition]{
-					Message:            definition,
-					OutgoingReferences: targetList.OutgoingReferences,
-				},
-				func(index int) dag.ObjectContentsWalker {
-					return dag.ExistingObjectContentsWalker
-				},
-			)
-			return model_core.NewPatchedMessage(
-				&model_analysis_pb.Target_Value{
-					Definition: patchedDefinition.Message,
-				},
-				patchedDefinition.Patcher,
-			), nil
-		case *model_analysis_pb.Package_Value_TargetList_Element_Parent_:
-			panic("TODO: Load target list from storage!")
-		default:
-			return PatchedTargetValue{}, errors.New("target list has an unknown level type")
-		}
+	if !definition.IsSet() {
+		return PatchedTargetValue{}, errors.New("target does not exist")
 	}
+
+	patchedDefinition := model_core.NewPatchedMessageFromExisting(
+		definition,
+		func(index int) dag.ObjectContentsWalker {
+			return dag.ExistingObjectContentsWalker
+		},
+	)
+	return model_core.NewPatchedMessage(
+		&model_analysis_pb.Target_Value{
+			Definition: patchedDefinition.Message,
+		},
+		patchedDefinition.Patcher,
+	), nil
 }

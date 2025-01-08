@@ -20,66 +20,28 @@ func TestParseModuleDotBazel(t *testing.T) {
 	t.Run("AllDirectives", func(t *testing.T) {
 		handler := NewMockRootModuleDotBazelHandler(ctrl)
 
-		url1, err := url.Parse("https://example.com/url1")
-		require.NoError(t, err)
-		url2, err := url.Parse("https://example.com/url2")
-		require.NoError(t, err)
 		gomock.InOrder(
-			handler.EXPECT().ArchiveOverride(
+			handler.EXPECT().RepositoryRuleOverride(
 				/* moduleName = */ label.MustNewModule("my_module_name"),
-				/* urls = */ []*url.URL{
-					url1,
-					url2,
+				/* repositoryRuleIdentifier */ label.MustNewCanonicalStarlarkIdentifier("@@bazel_tools+//tools/build_defs/repo:http.bzl%http_archive"),
+				/* attrs */ map[string]starlark.Value{
+					"urls": starlark.NewList([]starlark.Value{
+						starlark.String("https://example.com/url1"),
+						starlark.String("https://example.com/url2"),
+					}),
+					"integrity":    starlark.String("sha384-oqVuAfXRKap7fdgcCY5uykM6+R9GqQ8K/uxy9rx7HNQlGYl1kPzQho1wx4JwY8wC"),
+					"strip_prefix": starlark.String("some/prefix"),
+					"patches": starlark.NewList([]starlark.Value{
+						starlark.String("//:patches/foo1.diff"),
+						starlark.String("//:patches/foo2.diff"),
+					}),
+					"patch_cmds": starlark.NewList([]starlark.Value{
+						starlark.String("ls -l"),
+						starlark.String("rm -rf /"),
+					}),
+					"patch_strip": starlark.MakeInt(3),
 				},
-				/* integrity = */ "",
-				/* stripPrefix = */ gomock.Any(),
-				/* patchOptions = */ &pg_starlark.PatchOptions{},
-			).Do(func(moduleName label.Module, urls []*url.URL, integrity string, stripPrefix path.Parser, patchOptions *pg_starlark.PatchOptions) {
-				stripPrefixBuilder, scopeWalker := path.EmptyBuilder.Join(path.VoidScopeWalker)
-				require.NoError(t, path.Resolve(stripPrefix, scopeWalker))
-				require.Equal(t, ".", stripPrefixBuilder.GetUNIXString())
-			}),
-			handler.EXPECT().ArchiveOverride(
-				/* moduleName = */ label.MustNewModule("my_module_name"),
-				/* urls = */ []*url.URL{
-					url1,
-					url2,
-				},
-				/* integrity = */ "",
-				/* stripPrefix = */ gomock.Any(),
-				/* patchOptions = */ &pg_starlark.PatchOptions{
-					Patches:   []label.ApparentLabel{},
-					PatchCmds: []string{},
-				},
-			).Do(func(moduleName label.Module, urls []*url.URL, integrity string, stripPrefix path.Parser, patchOptions *pg_starlark.PatchOptions) {
-				stripPrefixBuilder, scopeWalker := path.EmptyBuilder.Join(path.VoidScopeWalker)
-				require.NoError(t, path.Resolve(stripPrefix, scopeWalker))
-				require.Equal(t, ".", stripPrefixBuilder.GetUNIXString())
-			}),
-			handler.EXPECT().ArchiveOverride(
-				/* moduleName = */ label.MustNewModule("my_module_name"),
-				/* urls = */ []*url.URL{
-					url1,
-					url2,
-				},
-				/* integrity = */ "sha384-oqVuAfXRKap7fdgcCY5uykM6+R9GqQ8K/uxy9rx7HNQlGYl1kPzQho1wx4JwY8wC",
-				/* stripPrefix = */ gomock.Any(),
-				/* patchOptions = */ &pg_starlark.PatchOptions{
-					Patches: []label.ApparentLabel{
-						label.MustNewApparentLabel("@@my_module_name+//:patches/foo1.diff"),
-						label.MustNewApparentLabel("@@my_module_name+//:patches/foo2.diff"),
-					},
-					PatchCmds: []string{
-						"ls -l",
-						"rm -rf /",
-					},
-					PatchStrip: 3,
-				},
-			).Do(func(moduleName label.Module, urls []*url.URL, integrity string, stripPrefix path.Parser, patchOptions *pg_starlark.PatchOptions) {
-				stripPrefixBuilder, scopeWalker := path.EmptyBuilder.Join(path.VoidScopeWalker)
-				require.NoError(t, path.Resolve(stripPrefix, scopeWalker))
-				require.Equal(t, "some/prefix", stripPrefixBuilder.GetUNIXString())
-			}),
+			),
 		)
 
 		version1 := label.MustNewModuleVersion("1.2.3")
@@ -100,58 +62,28 @@ func TestParseModuleDotBazel(t *testing.T) {
 			),
 		)
 
-		remote, err := url.Parse("https://github.com/my-project/my-project.git")
-		require.NoError(t, err)
+		// remote, err := url.Parse("https://github.com/my-project/my-project.git")
+		// require.NoError(t, err)
 		gomock.InOrder(
-			handler.EXPECT().GitOverride(
+			handler.EXPECT().RepositoryRuleOverride(
 				/* moduleName = */ label.MustNewModule("my_module_name"),
-				/* remote = */ remote,
-				/* commit = */ "",
-				/* patchOptions = */ &pg_starlark.PatchOptions{},
-				/* initSubmodules = */ false,
-				/* stripPrefix = */ gomock.Any(),
-			).Do(func(moduleName label.Module, remote *url.URL, commit string, patchOptions *pg_starlark.PatchOptions, initSubmodules bool, stripPrefix path.Parser) {
-				stripPrefixBuilder, scopeWalker := path.EmptyBuilder.Join(path.VoidScopeWalker)
-				require.NoError(t, path.Resolve(stripPrefix, scopeWalker))
-				require.Equal(t, ".", stripPrefixBuilder.GetUNIXString())
-			}),
-			handler.EXPECT().GitOverride(
-				/* moduleName = */ label.MustNewModule("my_module_name"),
-				/* remote = */ remote,
-				/* commit = */ "",
-				/* patchOptions = */ &pg_starlark.PatchOptions{
-					Patches:   []label.ApparentLabel{},
-					PatchCmds: []string{},
+				/* repositoryRuleIdentifier */ label.MustNewCanonicalStarlarkIdentifier("@@bazel_tools+//tools/build_defs/repo:git.bzl%git_repository"),
+				/* attrs */ map[string]starlark.Value{
+					"remote": starlark.String("https://github.com/my-project/my-project.git"),
+					"commit": starlark.String("1368bebd5776a80ea3161a07dafe8beb7c8c144c"),
+					"patches": starlark.NewList([]starlark.Value{
+						starlark.String("//:patches/foo1.diff"),
+						starlark.String("//:patches/foo2.diff"),
+					}),
+					"patch_cmds": starlark.NewList([]starlark.Value{
+						starlark.String("ls -l"),
+						starlark.String("rm -rf /"),
+					}),
+					"patch_strip":     starlark.MakeInt(3),
+					"init_submodules": starlark.True,
+					"strip_prefix":    starlark.String("some/prefix"),
 				},
-				/* initSubmodules = */ false,
-				/* stripPrefix = */ gomock.Any(),
-			).Do(func(moduleName label.Module, remote *url.URL, commit string, patchOptions *pg_starlark.PatchOptions, initSubmodules bool, stripPrefix path.Parser) {
-				stripPrefixBuilder, scopeWalker := path.EmptyBuilder.Join(path.VoidScopeWalker)
-				require.NoError(t, path.Resolve(stripPrefix, scopeWalker))
-				require.Equal(t, ".", stripPrefixBuilder.GetUNIXString())
-			}),
-			handler.EXPECT().GitOverride(
-				/* moduleName = */ label.MustNewModule("my_module_name"),
-				/* remote = */ remote,
-				/* commit = */ "1368bebd5776a80ea3161a07dafe8beb7c8c144c",
-				/* patchOptions = */ &pg_starlark.PatchOptions{
-					Patches: []label.ApparentLabel{
-						label.MustNewApparentLabel("@@my_module_name+//:patches/foo1.diff"),
-						label.MustNewApparentLabel("@@my_module_name+//:patches/foo2.diff"),
-					},
-					PatchCmds: []string{
-						"ls -l",
-						"rm -rf /",
-					},
-					PatchStrip: 3,
-				},
-				/* initSubmodules = */ true,
-				/* stripPrefix = */ gomock.Any(),
-			).Do(func(moduleName label.Module, remote *url.URL, commit string, patchOptions *pg_starlark.PatchOptions, initSubmodules bool, stripPrefix path.Parser) {
-				stripPrefixBuilder, scopeWalker := path.EmptyBuilder.Join(path.VoidScopeWalker)
-				require.NoError(t, path.Resolve(stripPrefix, scopeWalker))
-				require.Equal(t, "some/prefix", stripPrefixBuilder.GetUNIXString())
-			}),
+			),
 		)
 
 		handler.EXPECT().LocalPathOverride(
@@ -207,13 +139,13 @@ func TestParseModuleDotBazel(t *testing.T) {
 
 		gomock.InOrder(
 			handler.EXPECT().RegisterExecutionPlatforms(
-				/* platformLabels = */ gomock.Len(0),
+				/* platformTargetPatterns = */ gomock.Len(0),
 				/* devDependency = */ false,
 			).Times(2),
 			handler.EXPECT().RegisterExecutionPlatforms(
-				/* platformLabels = */ []label.ApparentLabel{
-					label.MustNewApparentLabel("@@my_module_name+//:default_host_platform"),
-					label.MustNewApparentLabel("@@my_module_name+//:remote_linux_platform"),
+				/* platformTargetPatterns = */ []label.ApparentTargetPattern{
+					label.MustNewApparentTargetPattern("@@my_module_name+//:default_host_platform"),
+					label.MustNewApparentTargetPattern("@@my_module_name+//:remote_linux_platform"),
 				},
 				/* devDependency = */ true,
 			),
@@ -221,13 +153,13 @@ func TestParseModuleDotBazel(t *testing.T) {
 
 		gomock.InOrder(
 			handler.EXPECT().RegisterToolchains(
-				/* toolchainLabels = */ gomock.Len(0),
+				/* toolchainTargetPatterns = */ gomock.Len(0),
 				/* devDependency = */ false,
 			).Times(2),
 			handler.EXPECT().RegisterToolchains(
-				/* toolchainLabels = */ []label.ApparentLabel{
-					label.MustNewApparentLabel("@bazel_tools//tools/python:autodetecting_toolchain"),
-					label.MustNewApparentLabel("@local_config_winsdk//:all"),
+				/* toolchainTargetPatterns = */ []label.ApparentTargetPattern{
+					label.MustNewApparentTargetPattern("@bazel_tools//tools/python:autodetecting_toolchain"),
+					label.MustNewApparentTargetPattern("@local_config_winsdk//:all"),
 				},
 				/* devDependency = */ true,
 			),
@@ -330,25 +262,6 @@ func TestParseModuleDotBazel(t *testing.T) {
 		require.NoError(t, pg_starlark.ParseModuleDotBazel(
 			`
 archive_override(
-    "my_module_name",
-    [
-        "https://example.com/url1",
-        "https://example.com/url2",
-    ],
-)
-archive_override(
-    "my_module_name",
-    [
-        "https://example.com/url1",
-        "https://example.com/url2",
-    ],
-    "",
-    "",
-    [],
-    [],
-    0,
-)
-archive_override(
     module_name = "my_module_name",
     urls = [
         "https://example.com/url1",
@@ -385,20 +298,6 @@ bazel_dep(
     dev_dependency = True,
 )
 
-git_override(
-    "my_module_name",
-    "https://github.com/my-project/my-project.git",
-)
-git_override(
-    "my_module_name",
-    "https://github.com/my-project/my-project.git",
-    "",
-    [],
-    [],
-    0,
-    False,
-    "",
-)
 git_override(
     module_name = "my_module_name",
     remote = "https://github.com/my-project/my-project.git",

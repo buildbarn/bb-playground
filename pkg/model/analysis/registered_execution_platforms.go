@@ -69,10 +69,15 @@ func (registeredExecutionPlatformExtractingModuleDotBazelHandler) Module(name la
 	return nil
 }
 
-func (h *registeredExecutionPlatformExtractingModuleDotBazelHandler) RegisterExecutionPlatforms(platformLabels []label.ApparentLabel, devDependency bool) error {
+func (h *registeredExecutionPlatformExtractingModuleDotBazelHandler) RegisterExecutionPlatforms(platformTargetPatterns []label.ApparentTargetPattern, devDependency bool) error {
 	if !devDependency || !h.ignoreDevDependencies {
-		for _, apparentPlatformLabel := range platformLabels {
-			canonicalPlatformLabel, err := resolveApparentLabel(h.environment, h.moduleInstance.GetBareCanonicalRepo(), apparentPlatformLabel)
+		for _, apparentPlatformTargetPattern := range platformTargetPatterns {
+			canonicalPlatformTargetPattern, err := resolveApparent(h.environment, h.moduleInstance.GetBareCanonicalRepo(), apparentPlatformTargetPattern)
+			if err != nil {
+				return err
+			}
+			// TODO: Actually expand the pattern!
+			canonicalPlatformLabel, err := label.NewCanonicalLabel(canonicalPlatformTargetPattern.String())
 			if err != nil {
 				return err
 			}
@@ -158,7 +163,7 @@ func (h *registeredExecutionPlatformExtractingModuleDotBazelHandler) RegisterExe
 	return nil
 }
 
-func (registeredExecutionPlatformExtractingModuleDotBazelHandler) RegisterToolchains(toolchainLabels []label.ApparentLabel, devDependency bool) error {
+func (registeredExecutionPlatformExtractingModuleDotBazelHandler) RegisterToolchains(toolchainTargetPatterns []label.ApparentTargetPattern, devDependency bool) error {
 	return nil
 }
 

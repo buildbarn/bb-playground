@@ -58,6 +58,7 @@ func main() {
 		buildQueue := scheduler.NewInMemoryBuildQueue(
 			clock.SystemClock,
 			uuid.NewRandom,
+			random.CryptoThreadSafeGenerator,
 			&scheduler.InMemoryBuildQueueConfiguration{
 				ExecutionUpdateInterval:           time.Minute,
 				OperationWithNoWaitersTimeout:     time.Minute,
