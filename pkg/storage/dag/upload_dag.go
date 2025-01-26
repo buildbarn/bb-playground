@@ -41,11 +41,20 @@ func NewSimpleObjectContentsWalker(contents *object.Contents, walkers []ObjectCo
 	}
 }
 
-func (w *simpleObjectContentsWalker) GetContents(ctx context.Context) (*object.Contents, []ObjectContentsWalker, error) {
-	return w.contents, w.walkers, nil
+func (w *simpleObjectContentsWalker) GetContents(ctx context.Context) (contents *object.Contents, walkers []ObjectContentsWalker, err error) {
+	if w.contents == nil {
+		panic("attempted to get contents of an object that was already discarded")
+	}
+	contents = w.contents
+	walkers = w.walkers
+	*w = simpleObjectContentsWalker{}
+	return
 }
 
 func (w *simpleObjectContentsWalker) Discard() {
+	if w.contents == nil {
+		panic("attempted to discard contents of an object that was already discarded")
+	}
 	for _, wChild := range w.walkers {
 		wChild.Discard()
 	}

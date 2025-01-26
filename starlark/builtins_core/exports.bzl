@@ -6,9 +6,10 @@ CcNativeLibraryInfo = provider()
 CcToolchainConfigInfo = provider()
 CcToolchainInfo = provider()
 ConfigSettingInfo = provider()
-ConstraintValueInfo = provider()
 ConstraintSettingInfo = provider()
+ConstraintValueInfo = provider()
 DebugPackageInfo = provider()
+DeclaredToolchainInfo = provider()
 DefaultInfo = provider()
 ExecutionInfo = provider()
 InstrumentedFilesInfo = provider()
@@ -23,7 +24,8 @@ ToolchainInfo = provider()
 ToolchainTypeInfo = provider()
 
 def _config_setting_impl(ctx):
-    fail("TODO: Implement")
+    # TODO: Implement.
+    return []
 
 config_setting = rule(
     implementation = _config_setting_impl,
@@ -37,17 +39,21 @@ config_setting = rule(
 )
 
 def _constraint_setting_impl(ctx):
+    default_constraint_value = ctx.attr.default_constraint_value
     return [ConstraintSettingInfo(
+        default_constraint_value = ctx.attr.default_constraint_value.label if ctx.attr.default_constraint_value else None,
+        has_default_constraint_value = bool(ctx.attr.default_constraint_value),
         label = ctx.label,
     )]
 
 constraint_setting = rule(
     implementation = _constraint_setting_impl,
-    default_exec_group = False,
+    attrs = {
+        "default_constraint_value": attr.label(
+            providers = [ConstraintValueInfo],
+        ),
+    },
     provides = [ConstraintSettingInfo],
-    # TODO: Provide the default_constraint_setting attribute. How can we
-    # offer this without causing cycles? Maybe change attr.label() to
-    # provide a flag to not inspect the configured target?
 )
 
 def _constraint_value_impl(ctx):
@@ -64,12 +70,13 @@ constraint_value = rule(
             providers = [ConstraintSettingInfo],
         ),
     },
-    default_exec_group = False,
     provides = [ConstraintValueInfo],
 )
 
 def _filegroup_impl(ctx):
-    fail("TODO")
+    # TODO: Provide an actual implementation that constructs a
+    # DefaultInfo object.
+    return []
 
 filegroup = rule(
     implementation = _filegroup_impl,
@@ -78,7 +85,6 @@ filegroup = rule(
         "output_group": attr.string(),
         "srcs": attr.label_list(allow_files = True),
     },
-    default_exec_group = False,
 )
 
 def _genrule_impl(ctx):
@@ -98,6 +104,7 @@ genrule = rule(
         "output_to_bindir": attr.bool(),
         "outs": attr.output_list(mandatory = True),
         "srcs": attr.label_list(allow_files = True),
+        "toolchains": attr.label_list(),
         "tools": attr.label_list(allow_files = True),
     },
 )
@@ -121,6 +128,12 @@ def _platform_impl(ctx):
                 constraints[setting_label],
                 value_label,
             ))
+
+        # If the value is equal to the setting's default value, we store
+        # None. This allows us to filter them out later, as there is no
+        # point in tracking these.
+        if value_label == value_info.constraint.default_constraint_value:
+            value_label = None
         constraints[setting_label] = value_label
 
     exec_pkix_public_key = ctx.attr.exec_pkix_public_key
@@ -140,7 +153,11 @@ def _platform_impl(ctx):
         repository_os_name = repository_os_name or parent.repository_os_name
 
     return [PlatformInfo(
-        constraints = constraints,
+        constraints = {
+            setting: value
+            for setting, value in constraints.items()
+            if value
+        },
         exec_pkix_public_key = exec_pkix_public_key,
         repository_os_arch = repository_os_arch,
         repository_os_environ = repository_os_environ,
@@ -215,14 +232,21 @@ platform = rule(
             """,
         ),
     },
-    # platform() cannot contain any exec_groups, as that would cause a
-    # cyclic dependency when configuring these targets.
-    default_exec_group = False,
     provides = [PlatformInfo],
 )
 
 def _toolchain_impl(ctx):
-    pass
+    return [DeclaredToolchainInfo(
+        target_settings = [
+            target_setting.label
+            for target_setting in ctx.attr.target_settings
+        ],
+        # Don't use .label, as that would cause the underlying toolchain
+        # to be configured, leading to unnecessary downloads. It is the
+        # responsibility of the analyzer to expand any aliases.
+        toolchain = ctx.attr.toolchain.original_label,
+        toolchain_type = ctx.attr.toolchain_type[ToolchainTypeInfo].type_label,
+    )]
 
 toolchain = rule(
     implementation = _toolchain_impl,
@@ -239,6 +263,7 @@ toolchain = rule(
             providers = [ToolchainTypeInfo],
         ),
     },
+    provides = [DeclaredToolchainInfo],
 )
 
 def _toolchain_type_impl(ctx):
@@ -257,13 +282,49 @@ def proto_common_incompatible_enable_proto_toolchain_resolution():
 def builtins_internal_apple_common_dotted_version(v):
     return [int(p) for p in v.split(".")]
 
+def builtins_internal_cc_common_check_private_api(allowlist = []):
+    pass
+
 def builtins_internal_cc_internal_empty_compilation_outputs():
     return "TODO"
 
-def builtins_internal_java_common_internal_do_not_use_google_legacy_api_enabled():
+def builtins_internal_java_common_internal_do_not_use__check_java_toolchain_is_declared_on_rule():
+    return "TODO"
+
+def builtins_internal_java_common_internal_do_not_use__google_legacy_api_enabled():
+    return "TODO"
+
+def builtins_internal_java_common_internal_do_not_use__incompatible_java_info_merge_runtime_module_flags():
+    return "TODO"
+
+def builtins_internal_java_common_internal_do_not_use_check_provider_instances():
+    return "TODO"
+
+def builtins_internal_java_common_internal_do_not_use_collect_native_deps_dirs():
+    return "TODO"
+
+def builtins_internal_java_common_internal_do_not_use_create_compilation_action():
+    return "TODO"
+
+def builtins_internal_java_common_internal_do_not_use_create_header_compilation_action():
+    return "TODO"
+
+def builtins_internal_java_common_internal_do_not_use_expand_java_opts():
+    return "TODO"
+
+def builtins_internal_java_common_internal_do_not_use_get_runtime_classpath_for_archive():
     return "TODO"
 
 def builtins_internal_java_common_internal_do_not_use_incompatible_disable_non_executable_java_binary():
+    return "TODO"
+
+def builtins_internal_java_common_internal_do_not_use_target_kind():
+    return "TODO"
+
+def builtins_internal_java_common_internal_do_not_use_tokenize_javacopts():
+    return "TODO"
+
+def builtins_internal_java_common_internal_do_not_use_wrap_java_info():
     return "TODO"
 
 exported_rules = {
@@ -271,6 +332,7 @@ exported_rules = {
     "config_setting": config_setting,
     "constraint_setting": constraint_setting,
     "constraint_value": constraint_value,
+    "exports_files": native.exports_files,
     "filegroup": filegroup,
     "genrule": genrule,
     "licenses": licenses,
@@ -315,6 +377,7 @@ exported_toplevels["_builtins"] = struct(
         ),
         cc_common = struct(
             CcToolchainInfo = CcToolchainInfo,
+            check_private_api = builtins_internal_cc_common_check_private_api,
             do_not_use_tools_cpp_compiler_present = None,
         ),
         cc_internal = struct(
@@ -322,8 +385,19 @@ exported_toplevels["_builtins"] = struct(
             launcher_provider = CcLauncherInfo,
         ),
         java_common_internal_do_not_use = struct(
-            _google_legacy_api_enabled = builtins_internal_java_common_internal_do_not_use_google_legacy_api_enabled,
+            _check_java_toolchain_is_declared_on_rule = builtins_internal_java_common_internal_do_not_use__check_java_toolchain_is_declared_on_rule,
+            _google_legacy_api_enabled = builtins_internal_java_common_internal_do_not_use__google_legacy_api_enabled,
+            _incompatible_java_info_merge_runtime_module_flags = builtins_internal_java_common_internal_do_not_use__incompatible_java_info_merge_runtime_module_flags,
+            check_provider_instances = builtins_internal_java_common_internal_do_not_use_check_provider_instances,
+            collect_native_deps_dirs = builtins_internal_java_common_internal_do_not_use_collect_native_deps_dirs,
+            create_compilation_action = builtins_internal_java_common_internal_do_not_use_create_compilation_action,
+            create_header_compilation_action = builtins_internal_java_common_internal_do_not_use_create_header_compilation_action,
+            expand_java_opts = builtins_internal_java_common_internal_do_not_use_expand_java_opts,
+            get_runtime_classpath_for_archive = builtins_internal_java_common_internal_do_not_use_get_runtime_classpath_for_archive,
             incompatible_disable_non_executable_java_binary = builtins_internal_java_common_internal_do_not_use_incompatible_disable_non_executable_java_binary,
+            target_kind = builtins_internal_java_common_internal_do_not_use_target_kind,
+            tokenize_javacopts = builtins_internal_java_common_internal_do_not_use_tokenize_javacopts,
+            wrap_java_info = builtins_internal_java_common_internal_do_not_use_wrap_java_info,
         ),
         objc_internal = struct(),
         py_builtins = struct(),

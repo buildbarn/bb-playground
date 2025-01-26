@@ -25,6 +25,7 @@ import (
 
 	"go.starlark.net/starlark"
 	"go.starlark.net/starlarkstruct"
+	"go.starlark.net/syntax"
 )
 
 const ValueEncodingOptionsKey = "value_encoding_options"
@@ -561,6 +562,59 @@ func DecodeValue(encodedValue model_core.Message[*model_starlark_pb.Value], curr
 		default:
 			return nil, errors.New("encoded rule does not have a reference or definition")
 		}
+	case *model_starlark_pb.Value_Select:
+		if len(typedValue.Select.Groups) < 1 {
+			return nil, errors.New("select does not contain any groups")
+		}
+		groups := make([]SelectGroup, 0, len(typedValue.Select.Groups))
+		for groupIndex, group := range typedValue.Select.Groups {
+			conditions := make(map[pg_label.CanonicalLabel]starlark.Value, len(group.Conditions))
+			for _, condition := range group.Conditions {
+				conditionIdentifier, err := pg_label.NewCanonicalLabel(condition.ConditionIdentifier)
+				if err != nil {
+					return nil, fmt.Errorf("invalid condition identifier %#v in group %d: %w", condition.ConditionIdentifier, groupIndex, err)
+				}
+				conditionValue, err := DecodeValue(model_core.Message[*model_starlark_pb.Value]{
+					Message:            condition.Value,
+					OutgoingReferences: encodedValue.OutgoingReferences,
+				}, nil, options)
+				if err != nil {
+					return nil, fmt.Errorf("condition with identifier %#v in group %d: %w", condition.ConditionIdentifier, groupIndex, err)
+				}
+				conditions[conditionIdentifier] = conditionValue
+			}
+			var defaultValue starlark.Value
+			noMatchError := ""
+			switch noMatch := group.NoMatch.(type) {
+			case *model_starlark_pb.Select_Group_NoMatchValue:
+				var err error
+				defaultValue, err = DecodeValue(model_core.Message[*model_starlark_pb.Value]{
+					Message:            noMatch.NoMatchValue,
+					OutgoingReferences: encodedValue.OutgoingReferences,
+				}, nil, options)
+				if err != nil {
+					return nil, fmt.Errorf("no match value of group %d: %w", groupIndex, err)
+				}
+			case *model_starlark_pb.Select_Group_NoMatchError:
+				noMatchError = noMatch.NoMatchError
+			case nil:
+			default:
+				return nil, fmt.Errorf("invalid no match value for group %d", groupIndex)
+			}
+			groups = append(groups, NewSelectGroup(conditions, defaultValue, noMatchError))
+		}
+		var concatenationOperator syntax.Token
+		if len(typedValue.Select.Groups) > 1 {
+			switch typedValue.Select.ConcatenationOperator {
+			case model_starlark_pb.Select_PIPE:
+				concatenationOperator = syntax.PIPE
+			case model_starlark_pb.Select_PLUS:
+				concatenationOperator = syntax.PLUS
+			default:
+				return nil, errors.New("invalid concatenation operator")
+			}
+		}
+		return NewSelect(groups, concatenationOperator), nil
 	case *model_starlark_pb.Value_Str:
 		return starlark.String(typedValue.Str), nil
 	case *model_starlark_pb.Value_Struct:
@@ -652,7 +706,11 @@ func DecodeAttrType(attr *model_starlark_pb.Attr) (AttrType, error) {
 	case *model_starlark_pb.Attr_IntList:
 		return NewIntListAttrType(), nil
 	case *model_starlark_pb.Attr_Label:
-		return NewLabelAttrType(attrTypeInfo.Label.AllowNone), nil
+		return NewLabelAttrType(
+			attrTypeInfo.Label.AllowNone,
+			attrTypeInfo.Label.AllowSingleFile,
+			attrTypeInfo.Label.Executable,
+		), nil
 	case *model_starlark_pb.Attr_LabelKeyedStringDict:
 		return NewLabelKeyedStringDictAttrType(), nil
 	case *model_starlark_pb.Attr_LabelList:
@@ -672,6 +730,24 @@ func DecodeAttrType(attr *model_starlark_pb.Attr) (AttrType, error) {
 	default:
 		return nil, errors.New("unknown attribute type")
 	}
+}
+
+func decodeBuildSetting(buildSetting *model_starlark_pb.BuildSetting) (*BuildSetting, error) {
+	var buildSettingType BuildSettingType
+	switch buildSettingTypeInfo := buildSetting.Type.(type) {
+	case *model_starlark_pb.BuildSetting_Bool:
+		buildSettingType = BoolBuildSettingType
+	case *model_starlark_pb.BuildSetting_Int:
+		buildSettingType = IntBuildSettingType
+	case *model_starlark_pb.BuildSetting_String_:
+		buildSettingType = StringBuildSettingType
+	case *model_starlark_pb.BuildSetting_StringList:
+		buildSettingType = NewStringListBuildSettingType(buildSettingTypeInfo.StringList.Repeatable)
+	default:
+		return nil, errors.New("unknown build setting type")
+	}
+
+	return NewBuildSetting(buildSettingType, buildSetting.Flag), nil
 }
 
 func DecodeStruct(m model_core.Message[*model_starlark_pb.Struct], options *ValueDecodingOptions) (*starlarkstruct.Struct, error) {

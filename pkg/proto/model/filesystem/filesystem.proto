@@ -2,6 +2,7 @@ syntax = "proto3";
 
 package buildbarn.playground.model.filesystem;
 
+import "google/protobuf/wrappers.proto";
 import "pkg/proto/model/core/core.proto";
 import "pkg/proto/model/encoding/encoding.proto";
 
@@ -15,6 +16,15 @@ message Leaves {
   // The symbolic links in the directory. Symbolic links MUST be
   // stored in alphabetical order.
   repeated SymlinkNode symlinks = 2;
+}
+
+message LeavesReference {
+  // Reference to an object containing a Leaves message.
+  buildbarn.playground.model.core.Reference reference = 1;
+
+  // Value indicating up to how many levels the symbolic links contained
+  // in the current directory escape it.
+  google.protobuf.UInt32Value maximum_symlink_escapement_levels = 2;
 }
 
 message FileProperties {
@@ -50,7 +60,7 @@ message Directory {
   oneof leaves {
     // The leaves are large enough, that it could not be inlined into
     // the current directory.
-    buildbarn.playground.model.core.Reference leaves_external = 1;
+    LeavesReference leaves_external = 1;
 
     // The leaves are small enough, that its contents have been inlined.
     Leaves leaves_inline = 2;
@@ -83,6 +93,27 @@ message DirectoryReference {
   // needs to be provided to make the link count of directories accurate
   // when exposed through a virtual file system.
   uint32 directories_count = 2;
+
+  // Value indicating up to how many levels the symbolic links contained
+  // in this directory hierarchy escape the current directory.
+  //
+  // - When the field is left unset, it indicates that the directory
+  //   hierarchy contains one or more symbolic links whose targets are
+  //   absolute paths, or contain ".." components that are not within
+  //   the leading part of the target (e.g., "a/b/../c").
+  //
+  // - When set to zero, it indicates that the directory hierarchy does
+  //   not contain any symbolic links, or that any targets of symbolic
+  //   links contained within do not contain a sufficient number of ".."
+  //   components to escape the current directory.
+  //
+  // - When set to a value greater than zero, it indicates that the
+  //   directory hierarchy contains symbolic links whose targets have
+  //   a sufficient number of leading ".." components to escape the
+  //   current directory. The value corresponds to the maximum number of
+  //   leading ".." components minus the depth at which the symbolic
+  //   link is stored.
+  google.protobuf.UInt32Value maximum_symlink_escapement_levels = 3;
 }
 
 message FileContents {

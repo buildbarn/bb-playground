@@ -17,30 +17,36 @@ import (
 	"go.starlark.net/syntax"
 )
 
-type selectGroup struct {
+type SelectGroup struct {
 	conditions   map[pg_label.CanonicalLabel]starlark.Value
 	defaultValue starlark.Value
 	noMatchError string
 }
 
+func NewSelectGroup(conditions map[pg_label.CanonicalLabel]starlark.Value, defaultValue starlark.Value, noMatchError string) SelectGroup {
+	return SelectGroup{
+		conditions:   conditions,
+		defaultValue: defaultValue,
+		noMatchError: noMatchError,
+	}
+}
+
 type Select struct {
-	groups                []selectGroup
+	groups                []SelectGroup
 	concatenationOperator syntax.Token
 }
 
 var (
-	_ starlark.Value     = &Select{}
+	_ EncodableValue     = &Select{}
+	_ HasLabels          = &Select{}
 	_ starlark.HasBinary = &Select{}
-	_ EncodableValue     = &rule{}
+	_ starlark.Value     = &Select{}
 )
 
-func NewSelect(conditions map[pg_label.CanonicalLabel]starlark.Value, defaultValue starlark.Value, noMatchError string) *Select {
+func NewSelect(groups []SelectGroup, concatenationOperator syntax.Token) *Select {
 	return &Select{
-		groups: []selectGroup{{
-			conditions:   conditions,
-			defaultValue: defaultValue,
-			noMatchError: noMatchError,
-		}},
+		groups:                groups,
+		concatenationOperator: concatenationOperator,
 	}
 }
 
@@ -77,25 +83,23 @@ func (s *Select) Binary(op syntax.Token, y starlark.Value, side starlark.Side) (
 	if err := s.validateConcatenationOperator(op); err != nil {
 		return nil, err
 	}
-	var newGroups []selectGroup
+	var newGroups []SelectGroup
 	switch other := y.(type) {
 	case *Select:
 		if err := other.validateConcatenationOperator(op); err != nil {
 			return nil, err
 		}
 		if side == starlark.Left {
-			newGroups = append(append([]selectGroup(nil), s.groups...), other.groups...)
+			newGroups = append(append([]SelectGroup(nil), s.groups...), other.groups...)
 		} else {
-			newGroups = append(append([]selectGroup(nil), other.groups...), s.groups...)
+			newGroups = append(append([]SelectGroup(nil), other.groups...), s.groups...)
 		}
 	default:
-		newGroup := selectGroup{
-			defaultValue: y,
-		}
+		newGroup := NewSelectGroup(nil, y, "")
 		if side == starlark.Left {
-			newGroups = append(append([]selectGroup(nil), s.groups...), newGroup)
+			newGroups = append(append([]SelectGroup(nil), s.groups...), newGroup)
 		} else {
-			newGroups = append([]selectGroup{newGroup}, s.groups...)
+			newGroups = append([]SelectGroup{newGroup}, s.groups...)
 		}
 	}
 	return &Select{
@@ -181,6 +185,18 @@ func (s *Select) EncodeValue(path map[starlark.Value]struct{}, currentIdentifier
 	), needsCode, nil
 }
 
+func (s *Select) VisitLabels(path map[starlark.Value]struct{}, visitor func(pg_label.CanonicalLabel)) {
+	for _, sg := range s.groups {
+		for conditionIdentifier, conditionValue := range sg.conditions {
+			visitor(conditionIdentifier)
+			VisitLabels(conditionValue, path, visitor)
+		}
+		if sg.defaultValue != nil {
+			VisitLabels(sg.defaultValue, path, visitor)
+		}
+	}
+}
+
 type selectUnpackerInto struct {
 	valueUnpackerInto unpack.Canonicalizer
 }
@@ -203,7 +219,7 @@ func (ui *selectUnpackerInto) UnpackInto(thread *starlark.Thread, v starlark.Val
 			}
 		}
 
-		canonicalizedGroups := make([]selectGroup, 0, len(typedV.groups))
+		canonicalizedGroups := make([]SelectGroup, 0, len(typedV.groups))
 		for _, group := range typedV.groups {
 			canonicalizedConditions := make(map[pg_label.CanonicalLabel]starlark.Value, len(group.conditions))
 			for condition, value := range group.conditions {
@@ -223,11 +239,7 @@ func (ui *selectUnpackerInto) UnpackInto(thread *starlark.Thread, v starlark.Val
 				}
 			}
 
-			canonicalizedGroups = append(canonicalizedGroups, selectGroup{
-				conditions:   canonicalizedConditions,
-				defaultValue: defaultValue,
-				noMatchError: group.noMatchError,
-			})
+			canonicalizedGroups = append(canonicalizedGroups, NewSelectGroup(canonicalizedConditions, defaultValue, group.noMatchError))
 		}
 		*dst = &Select{
 			groups:                canonicalizedGroups,
@@ -239,7 +251,7 @@ func (ui *selectUnpackerInto) UnpackInto(thread *starlark.Thread, v starlark.Val
 			return err
 		}
 		*dst = &Select{
-			groups: []selectGroup{{defaultValue: canonicalValue}},
+			groups: []SelectGroup{NewSelectGroup(nil, canonicalValue, "")},
 		}
 	}
 	return nil

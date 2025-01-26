@@ -9,34 +9,34 @@ import (
 	"go.starlark.net/starlark"
 )
 
-type depset struct{}
+type Depset struct{}
 
-var _ EncodableValue = &depset{}
+var _ EncodableValue = (*Depset)(nil)
 
-func NewDepset() starlark.Value {
-	return &depset{}
+func NewDepset() *Depset {
+	return &Depset{}
 }
 
-func (d *depset) String() string {
+func (Depset) String() string {
 	return "TODO"
 }
 
-func (d *depset) Type() string {
+func (Depset) Type() string {
 	return "depset"
 }
 
-func (d *depset) Freeze() {
+func (Depset) Freeze() {
 }
 
-func (d *depset) Truth() starlark.Bool {
+func (Depset) Truth() starlark.Bool {
 	panic("TODO")
 }
 
-func (d *depset) Hash() (uint32, error) {
+func (Depset) Hash() (uint32, error) {
 	return 0, nil
 }
 
-func (d *depset) EncodeValue(path map[starlark.Value]struct{}, currentIdentifier *pg_label.CanonicalStarlarkIdentifier, options *ValueEncodingOptions) (model_core.PatchedMessage[*model_starlark_pb.Value, dag.ObjectContentsWalker], bool, error) {
+func (Depset) EncodeValue(path map[starlark.Value]struct{}, currentIdentifier *pg_label.CanonicalStarlarkIdentifier, options *ValueEncodingOptions) (model_core.PatchedMessage[*model_starlark_pb.Value, dag.ObjectContentsWalker], bool, error) {
 	// TODO
 	needsCode := false
 	return model_core.NewSimplePatchedMessage[dag.ObjectContentsWalker](

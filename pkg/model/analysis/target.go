@@ -9,12 +9,20 @@ import (
 	"github.com/buildbarn/bb-playground/pkg/evaluation"
 	"github.com/buildbarn/bb-playground/pkg/label"
 	model_core "github.com/buildbarn/bb-playground/pkg/model/core"
+	model_parser "github.com/buildbarn/bb-playground/pkg/model/parser"
 	model_analysis_pb "github.com/buildbarn/bb-playground/pkg/proto/model/analysis"
 	model_starlark_pb "github.com/buildbarn/bb-playground/pkg/proto/model/starlark"
 	"github.com/buildbarn/bb-playground/pkg/storage/dag"
+	"github.com/buildbarn/bb-playground/pkg/storage/object"
 )
 
-func (c *baseComputer) lookupTargetDefinitionInTargetList(targetList model_core.Message[[]*model_analysis_pb.Package_Value_TargetList_Element], targetName label.TargetName) (model_core.Message[*model_starlark_pb.Target_Definition], error) {
+func (c *baseComputer) lookupTargetDefinitionInTargetList(ctx context.Context, targetList model_core.Message[[]*model_analysis_pb.Package_Value_TargetList_Element], targetName label.TargetName) (model_core.Message[*model_starlark_pb.Target_Definition], error) {
+	reader := model_parser.NewStorageBackedParsedObjectReader(
+		c.objectDownloader,
+		c.getValueObjectEncoder(),
+		model_parser.NewMessageObjectParser[object.LocalReference, model_analysis_pb.Package_Value_TargetList](),
+	)
+
 	targetNameStr := targetName.String()
 	for {
 		index := uint(sort.Search(
@@ -47,7 +55,21 @@ func (c *baseComputer) lookupTargetDefinitionInTargetList(targetList model_core.
 				OutgoingReferences: targetList.OutgoingReferences,
 			}, nil
 		case *model_analysis_pb.Package_Value_TargetList_Element_Parent_:
-			panic("TODO: Load target list from storage!")
+			index, err := model_core.GetIndexFromReferenceMessage(level.Parent.Reference, targetList.OutgoingReferences.GetDegree())
+			if err != nil {
+				return model_core.Message[*model_starlark_pb.Target_Definition]{}, err
+			}
+			listMessage, _, err := reader.ReadParsedObject(
+				ctx,
+				targetList.OutgoingReferences.GetOutgoingReference(index),
+			)
+			if err != nil {
+				return model_core.Message[*model_starlark_pb.Target_Definition]{}, err
+			}
+			targetList = model_core.Message[[]*model_analysis_pb.Package_Value_TargetList_Element]{
+				Message:            listMessage.Message.Elements,
+				OutgoingReferences: listMessage.OutgoingReferences,
+			}
 		default:
 			return model_core.Message[*model_starlark_pb.Target_Definition]{}, errors.New("target list has an unknown level type")
 		}
@@ -67,6 +89,7 @@ func (c *baseComputer) ComputeTargetValue(ctx context.Context, key *model_analys
 	}
 
 	definition, err := c.lookupTargetDefinitionInTargetList(
+		ctx,
 		model_core.Message[[]*model_analysis_pb.Package_Value_TargetList_Element]{
 			Message:            packageValue.Message.Targets,
 			OutgoingReferences: packageValue.OutgoingReferences,

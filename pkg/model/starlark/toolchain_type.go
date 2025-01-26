@@ -102,7 +102,7 @@ func (toolchainTypeUnpackerInto) UnpackInto(thread *starlark.Thread, v starlark.
 	switch typedV := v.(type) {
 	case starlark.String, label:
 		var l pg_label.CanonicalLabel
-		if err := NewLabelOrStringUnpackerInto(currentFilePackage(thread)).UnpackInto(thread, v, &l); err != nil {
+		if err := NewLabelOrStringUnpackerInto(CurrentFilePackage(thread, 1)).UnpackInto(thread, v, &l); err != nil {
 			return err
 		}
 		*dst = NewToolchainType(l, true)

@@ -16,8 +16,11 @@ message Module {
 
   // Reference to a Directory message that describes the root directory
   // of this module. The root directory MUST contain a file named
-  // "MODULE.bazel".
-  buildbarn.playground.model.core.Reference root_directory_reference = 2;
+  // "MODULE.bazel". It MUST NOT contain any symbolic links whose
+  // targets escape the root directory (i.e.,
+  // maximum_symlink_escapement_levels MUST be zero).
+  buildbarn.playground.model.filesystem.DirectoryReference
+      root_directory_reference = 2;
 }
 
 message UseLockfile {

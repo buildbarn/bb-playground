@@ -210,7 +210,8 @@ func Build[
 		}
 	}
 
-	for i, candidate := range candidates {
+	for i := range candidates {
+		candidate := &candidates[i]
 		if candidatesToInline[i] {
 			// Inline the message into the parent.
 			candidate.ParentAppender(output, nil, nil)
@@ -223,6 +224,7 @@ func Build[
 				return model_core.PatchedMessage[TParentMessagePtr, TMetadata]{}, util.StatusWrapf(err, "Failed to create object contents for candidate at index %d", i)
 			}
 			candidate.ParentAppender(output, contents, metadata)
+			candidate.ExternalMessage.Clear()
 		}
 	}
 	return output, nil

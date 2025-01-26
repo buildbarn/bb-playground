@@ -68,14 +68,20 @@ message PathPattern {
   }
 
   message Children {
-    repeated Child child = 1;
+    // The children that should be selectively matched. These MUST be
+    // sorted by name.
+    repeated Child children = 1;
   }
 
-  // If not set, the current path should be matched.
+  // If the current path is not a directory, it is matched.
   //
-  // If set, the current path must be non-existent or a directory. The
-  // matching process will traverse into the directory and attempt to
-  // match any of the children specified.
+  // If the current path is a directory and this field is not set, the
+  // directory and all of its children are matched.
+  //
+  // If the current path is a directory and this field is set, the
+  // directory itself is matched. The matching process will traverse
+  // into the directory and attempt to selectively match any of the
+  // children specified.
   oneof children {
     // Set if there are too many children to store in the current
     // object.

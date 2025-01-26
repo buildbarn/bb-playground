@@ -83,11 +83,12 @@ func (c *baseComputer) ComputeRegisteredRepoPlatformValue(ctx context.Context, k
 	if err != nil {
 		return PatchedRegisteredRepoPlatformValue{}, fmt.Errorf("failed to resolve repo platform label %#v: %w", apparentRepoPlatformLabel.String(), err)
 	}
+	repoPlatformLabelStr := repoPlatformLabel.String()
 
 	// Obtain the PlatformInfo provider of the repo platform.
-	platformInfoProvider, err := getPlatformInfoProvider(e, repoPlatformLabel)
+	platformInfoProvider, err := getProviderFromConfiguredTarget(e, repoPlatformLabelStr, platformInfoProviderIdentifier)
 	if err != nil {
-		return PatchedRegisteredRepoPlatformValue{}, fmt.Errorf("failed to obtain PlatformInfo of repo platform %#v: %w", repoPlatformLabel.String(), err)
+		return PatchedRegisteredRepoPlatformValue{}, fmt.Errorf("failed to obtain PlatformInfo of repo platform %#v: %w", repoPlatformLabelStr, err)
 	}
 
 	// Extract fields from the PlatformInfo provider that are needed
@@ -97,21 +98,21 @@ func (c *baseComputer) ComputeRegisteredRepoPlatformValue(ctx context.Context, k
 	var execPKIXPublicKey []byte
 	var repositoryOSArch, repositoryOSName string
 	var repositoryOSEnviron []*model_analysis_pb.RegisteredRepoPlatform_Value_EnvironmentVariable
-	for _, field := range platformInfoProvider.Message.Fields {
+	for _, field := range platformInfoProvider.Message {
 		switch field.Name {
 		case "exec_pkix_public_key":
 			str, ok := field.Value.GetKind().(*model_starlark_pb.Value_Str)
 			if !ok {
-				return PatchedRegisteredRepoPlatformValue{}, fmt.Errorf("exec_pkix_public_key field of PlatformInfo of repo platform %#v is not a string", repoPlatformLabel.String())
+				return PatchedRegisteredRepoPlatformValue{}, fmt.Errorf("exec_pkix_public_key field of PlatformInfo of repo platform %#v is not a string", repoPlatformLabelStr)
 			}
 			execPKIXPublicKey, err = base64.StdEncoding.DecodeString(str.Str)
 			if err != nil {
-				return PatchedRegisteredRepoPlatformValue{}, fmt.Errorf("exec_pkix_public_key field of PlatformInfo of repo platform %#v: %w", repoPlatformLabel.String(), err)
+				return PatchedRegisteredRepoPlatformValue{}, fmt.Errorf("exec_pkix_public_key field of PlatformInfo of repo platform %#v: %w", repoPlatformLabelStr, err)
 			}
 		case "repository_os_arch":
 			str, ok := field.Value.GetKind().(*model_starlark_pb.Value_Str)
 			if !ok {
-				return PatchedRegisteredRepoPlatformValue{}, fmt.Errorf("repository_os_arch field of PlatformInfo of repo platform %#v is not a string", repoPlatformLabel.String())
+				return PatchedRegisteredRepoPlatformValue{}, fmt.Errorf("repository_os_arch field of PlatformInfo of repo platform %#v is not a string", repoPlatformLabelStr)
 			}
 			repositoryOSArch = str.Str
 		case "repository_os_environ":
@@ -123,7 +124,7 @@ func (c *baseComputer) ComputeRegisteredRepoPlatformValue(ctx context.Context, k
 				},
 			)
 			if err != nil {
-				return PatchedRegisteredRepoPlatformValue{}, fmt.Errorf("repository_os_environ field of PlatformInfo of repo platform %#v: %w", repoPlatformLabel.String(), err)
+				return PatchedRegisteredRepoPlatformValue{}, fmt.Errorf("repository_os_environ field of PlatformInfo of repo platform %#v: %w", repoPlatformLabelStr, err)
 			}
 			repositoryOSEnviron = make([]*model_analysis_pb.RegisteredRepoPlatform_Value_EnvironmentVariable, 0, len(p))
 			for _, name := range slices.Sorted(maps.Keys(p)) {
@@ -135,23 +136,23 @@ func (c *baseComputer) ComputeRegisteredRepoPlatformValue(ctx context.Context, k
 		case "repository_os_name":
 			str, ok := field.Value.GetKind().(*model_starlark_pb.Value_Str)
 			if !ok {
-				return PatchedRegisteredRepoPlatformValue{}, fmt.Errorf("repository_os_name field of PlatformInfo of repo platform %#v is not a string", repoPlatformLabel.String())
+				return PatchedRegisteredRepoPlatformValue{}, fmt.Errorf("repository_os_name field of PlatformInfo of repo platform %#v is not a string", repoPlatformLabelStr)
 			}
 			repositoryOSName = str.Str
 		}
 	}
 
 	if len(execPKIXPublicKey) == 0 {
-		return PatchedRegisteredRepoPlatformValue{}, fmt.Errorf("exec_pkix_public_key field of PlatformInfo of repo platform %#v is not set to a non-empty string", repoPlatformLabel.String())
+		return PatchedRegisteredRepoPlatformValue{}, fmt.Errorf("exec_pkix_public_key field of PlatformInfo of repo platform %#v is not set to a non-empty string", repoPlatformLabelStr)
 	}
 	if repositoryOSArch == "" {
-		return PatchedRegisteredRepoPlatformValue{}, fmt.Errorf("repository_os_arch field of PlatformInfo of repo platform %#v is not set to a non-empty string", repoPlatformLabel.String())
+		return PatchedRegisteredRepoPlatformValue{}, fmt.Errorf("repository_os_arch field of PlatformInfo of repo platform %#v is not set to a non-empty string", repoPlatformLabelStr)
 	}
 	if repositoryOSEnviron == nil {
-		return PatchedRegisteredRepoPlatformValue{}, fmt.Errorf("PlatformInfo of repo platform %#v does not contain field repository_os_environ", repoPlatformLabel.String())
+		return PatchedRegisteredRepoPlatformValue{}, fmt.Errorf("PlatformInfo of repo platform %#v does not contain field repository_os_environ", repoPlatformLabelStr)
 	}
 	if repositoryOSName == "" {
-		return PatchedRegisteredRepoPlatformValue{}, fmt.Errorf("repository_os_name field of PlatformInfo of repo platform %#v is not set to a non-empty string", repoPlatformLabel.String())
+		return PatchedRegisteredRepoPlatformValue{}, fmt.Errorf("repository_os_name field of PlatformInfo of repo platform %#v is not set to a non-empty string", repoPlatformLabelStr)
 	}
 
 	return model_core.NewSimplePatchedMessage[dag.ObjectContentsWalker](

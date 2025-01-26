@@ -7,6 +7,7 @@ import (
 	"maps"
 	"slices"
 	"sort"
+	"strings"
 
 	"github.com/buildbarn/bb-playground/pkg/evaluation"
 	"github.com/buildbarn/bb-playground/pkg/label"
@@ -16,6 +17,7 @@ import (
 	model_starlark "github.com/buildbarn/bb-playground/pkg/model/starlark"
 	model_analysis_pb "github.com/buildbarn/bb-playground/pkg/proto/model/analysis"
 	model_starlark_pb "github.com/buildbarn/bb-playground/pkg/proto/model/starlark"
+	"github.com/buildbarn/bb-playground/pkg/starlark/unpack"
 	"github.com/buildbarn/bb-playground/pkg/storage/dag"
 	"github.com/buildbarn/bb-playground/pkg/storage/object"
 	"github.com/buildbarn/bb-storage/pkg/filesystem/path"
@@ -56,14 +58,13 @@ func (bazelModuleTag) Hash() (uint32, error) {
 
 func (t bazelModuleTag) Attr(name string) (starlark.Value, error) {
 	attrs := t.tagClass.GetAttrs()
-	index := sort.Search(
+	if index, ok := sort.Find(
 		len(attrs),
-		func(i int) bool { return attrs[i].Name >= name },
-	)
-	if index >= len(attrs) || attrs[index].Name != name {
-		return nil, nil
+		func(i int) int { return strings.Compare(name, attrs[i].Name) },
+	); ok {
+		return t.attrs[index], nil
 	}
-	return t.attrs[index], nil
+	return nil, nil
 }
 
 func (t bazelModuleTag) AttrNames() []string {
@@ -280,6 +281,19 @@ func (c *baseComputer) ComputeModuleExtensionReposValue(ctx context.Context, key
 			func(thread *starlark.Thread, b *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
 				// TODO: Properly implement this function.
 				return starlark.None, nil
+			},
+		),
+		"is_dev_dependency": starlark.NewBuiltin(
+			"module_ctx.is_dev_dependency",
+			func(thread *starlark.Thread, b *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
+				var tag bazelModuleTag
+				if err := starlark.UnpackArgs(
+					b.Name(), args, kwargs,
+					"tag", unpack.Bind(thread, &tag, unpack.Type[bazelModuleTag]("bazel_module_tag")),
+				); err != nil {
+					return nil, err
+				}
+				return starlark.Bool(tag.isDevDependency), nil
 			},
 		),
 		"modules": starlark.NewList(modules),

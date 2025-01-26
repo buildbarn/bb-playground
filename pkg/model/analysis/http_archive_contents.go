@@ -20,6 +20,7 @@ import (
 	"github.com/buildbarn/bb-storage/pkg/filesystem"
 	"github.com/buildbarn/bb-storage/pkg/filesystem/path"
 	"github.com/buildbarn/bb-storage/pkg/util"
+	"github.com/ulikunitz/xz"
 
 	"golang.org/x/sync/errgroup"
 	"golang.org/x/sync/semaphore"
@@ -174,17 +175,15 @@ type capturableArchiveDirectory[TDirectory, TFile model_core.ReferenceMetadata] 
 	directory *archiveDirectory
 }
 
-func (ad *capturableArchiveDirectory[TDirectory, TFile]) EnterCapturableDirectory(name path.Component) (model_core.PatchedMessage[*model_filesystem_pb.Directory, TDirectory], model_filesystem.CapturableDirectory[TDirectory, TFile], error) {
+func (ad *capturableArchiveDirectory[TDirectory, TFile]) EnterCapturableDirectory(name path.Component) (*model_filesystem.CreatedDirectory[TDirectory], model_filesystem.CapturableDirectory[TDirectory, TFile], error) {
 	dChild, ok := ad.directory.directories[name]
 	if !ok {
 		panic("attempted to enter non-existent directory")
 	}
-	return model_core.PatchedMessage[*model_filesystem_pb.Directory, TDirectory]{},
-		&capturableArchiveDirectory[TDirectory, TFile]{
-			options:   ad.options,
-			directory: dChild,
-		},
-		nil
+	return nil, &capturableArchiveDirectory[TDirectory, TFile]{
+		options:   ad.options,
+		directory: dChild,
+	}, nil
 }
 
 func (ad *capturableArchiveDirectory[TDirectory, TFile]) OpenForFileMerkleTreeCreation(name path.Component) (model_filesystem.CapturableFile[TFile], error) {
@@ -247,8 +246,9 @@ func (c *baseComputer) ComputeHttpArchiveContentsValue(ctx context.Context, key 
 	directoryCreationParameters, gotDirectoryCreationParameters := e.GetDirectoryCreationParametersObjectValue(&model_analysis_pb.DirectoryCreationParametersObject_Key{})
 	fileCreationParameters, gotFileCreationParameters := e.GetFileCreationParametersObjectValue(&model_analysis_pb.FileCreationParametersObject_Key{})
 	httpFileContentsValue := e.GetHttpFileContentsValue(&model_analysis_pb.HttpFileContents_Key{
-		Urls:      key.Urls,
+		AllowFail: key.AllowFail,
 		Integrity: key.Integrity,
+		Urls:      key.Urls,
 	})
 	if !gotFileReader || !gotDirectoryCreationParameters || !gotFileCreationParameters || !httpFileContentsValue.IsSet() {
 		return PatchedHttpArchiveContentsValue{}, evaluation.ErrMissingDependency
@@ -280,12 +280,24 @@ func (c *baseComputer) ComputeHttpArchiveContentsValue(ctx context.Context, key 
 	var rootDirectory archiveDirectory
 
 	switch key.Format {
-	case model_analysis_pb.HttpArchiveContents_Key_TAR_GZ:
-		gzipReader, err := gzip.NewReader(fileReader.FileOpenRead(ctx, httpFileContentsEntry, 0))
-		if err != nil {
-			return PatchedHttpArchiveContentsValue{}, err
+	case model_analysis_pb.HttpArchiveContents_Key_TAR_GZ, model_analysis_pb.HttpArchiveContents_Key_TAR_XZ:
+		compressedReader := fileReader.FileOpenRead(ctx, httpFileContentsEntry, 0)
+		var decompressedReader io.Reader
+		switch key.Format {
+		case model_analysis_pb.HttpArchiveContents_Key_TAR_GZ:
+			decompressedReader, err = gzip.NewReader(compressedReader)
+			if err != nil {
+				return PatchedHttpArchiveContentsValue{}, err
+			}
+		case model_analysis_pb.HttpArchiveContents_Key_TAR_XZ:
+			decompressedReader, err = xz.NewReader(compressedReader)
+			if err != nil {
+				return PatchedHttpArchiveContentsValue{}, err
+			}
+		default:
+			panic("unhandled compression format")
 		}
-		tarReader := tar.NewReader(gzipReader)
+		tarReader := tar.NewReader(decompressedReader)
 		for {
 			header, err := tarReader.Next()
 			if err != nil {
@@ -368,7 +380,7 @@ func (c *baseComputer) ComputeHttpArchiveContentsValue(ctx context.Context, key 
 	}()
 
 	group, groupCtx := errgroup.WithContext(ctx)
-	var rootDirectoryMessage model_core.PatchedMessage[*model_filesystem_pb.Directory, model_core.FileBackedObjectLocation]
+	var createdRootDirectory model_filesystem.CreatedDirectory[model_core.FileBackedObjectLocation]
 	fileWritingMerkleTreeCapturer := model_core.NewFileWritingMerkleTreeCapturer(model_filesystem.NewSectionWriter(merkleTreeNodes))
 	group.Go(func() error {
 		return model_filesystem.CreateDirectoryMerkleTree(
@@ -385,7 +397,7 @@ func (c *baseComputer) ComputeHttpArchiveContentsValue(ctx context.Context, key 
 				directory: &rootDirectory,
 			},
 			model_filesystem.NewFileWritingDirectoryMerkleTreeCapturer(fileWritingMerkleTreeCapturer),
-			&rootDirectoryMessage,
+			&createdRootDirectory,
 		)
 	})
 	if err := group.Wait(); err != nil {
@@ -394,8 +406,11 @@ func (c *baseComputer) ComputeHttpArchiveContentsValue(ctx context.Context, key 
 
 	// Store the root directory itself. We don't embed it into the
 	// response, as that prevents it from being accessed separately.
+	if l := createdRootDirectory.MaximumSymlinkEscapementLevels; l == nil || l.Value != 0 {
+		return PatchedHttpArchiveContentsValue{}, errors.New("archive contains one or more symbolic links that potentially escape the archive's root directory")
+	}
 	contents, children, err := model_core.MarshalAndEncodePatchedMessage(
-		rootDirectoryMessage,
+		createdRootDirectory.Message,
 		referenceFormat,
 		directoryCreationParameters.GetEncoder(),
 	)
@@ -417,9 +432,11 @@ func (c *baseComputer) ComputeHttpArchiveContentsValue(ctx context.Context, key 
 	rootReference := contents.GetReference()
 	return PatchedHttpArchiveContentsValue{
 		Message: &model_analysis_pb.HttpArchiveContents_Value{
-			Exists: patcher.AddReference(
-				rootReference,
-				objectContentsWalkerFactory.CreateObjectContentsWalker(rootReference, capturedRootDirectory),
+			Exists: createdRootDirectory.ToDirectoryReference(
+				patcher.AddReference(
+					rootReference,
+					objectContentsWalkerFactory.CreateObjectContentsWalker(rootReference, capturedRootDirectory),
+				),
 			),
 		},
 		Patcher: patcher,

@@ -23,10 +23,6 @@ import (
 	"github.com/buildbarn/bb-playground/pkg/storage/object"
 	re_filesystem "github.com/buildbarn/bb-remote-execution/pkg/filesystem"
 	"github.com/buildbarn/bb-storage/pkg/filesystem"
-	bb_path "github.com/buildbarn/bb-storage/pkg/filesystem/path"
-
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
 
 	"go.starlark.net/starlark"
 )
@@ -262,82 +258,54 @@ func (c *baseComputer) newStarlarkThread(ctx context.Context, e starlarkThreadEn
 }
 
 func (c *baseComputer) ComputeBuildResultValue(ctx context.Context, key *model_analysis_pb.BuildResult_Key, e BuildResultEnvironment) (PatchedBuildResultValue, error) {
-	// TODO: Do something proper here.
-	missing := false
-	for _, pkg := range []string{
-		"//cmd/bb_copy",
-		"//cmd/bb_replicator",
-		"//cmd/bb_storage",
-		"//internal/mock",
-		"//internal/mock/aliases",
-		"//pkg/auth",
-		"//pkg/blobstore",
-		"//pkg/blobstore/buffer",
-		"//pkg/blobstore/completenesschecking",
-		"//pkg/blobstore/configuration",
-		"//pkg/blobstore/grpcclients",
-		"//pkg/blobstore/grpcservers",
-		"//pkg/blobstore/local",
-		"//pkg/blobstore/mirrored",
-		"//pkg/blobstore/readcaching",
-		"//pkg/blobstore/readfallback",
-		"//pkg/blobstore/replication",
-		"//pkg/blobstore/sharding",
-		"//pkg/blobstore/slicing",
-		"//pkg/blockdevice",
-		"//pkg/builder",
-		"//pkg/capabilities",
-		"//pkg/clock",
-		"//pkg/cloud/aws",
-		"//pkg/cloud/gcp",
-		"//pkg/digest",
-		"//pkg/digest/sha256tree",
-		"//pkg/eviction",
-		"//pkg/filesystem",
-		"//pkg/filesystem/path",
-		"//pkg/filesystem/windowsext",
-		"//pkg/global",
-		"//pkg/grpc",
-		"//pkg/http",
-		"//pkg/jwt",
-		"//pkg/otel",
-		"//pkg/program",
-		"//pkg/prometheus",
-		"//pkg/proto/auth",
-		"//pkg/proto/blobstore/local",
-		"//pkg/proto/configuration/auth",
-		"//pkg/proto/configuration/bb_copy",
-		"//pkg/proto/configuration/bb_replicator",
-		"//pkg/proto/configuration/bb_storage",
-		"//pkg/proto/configuration/blobstore",
-		"//pkg/proto/configuration/blockdevice",
-		"//pkg/proto/configuration/builder",
-		"//pkg/proto/configuration/cloud/aws",
-		"//pkg/proto/configuration/cloud/gcp",
-		"//pkg/proto/configuration/digest",
-		"//pkg/proto/configuration/eviction",
-		"//pkg/proto/configuration/global",
-		"//pkg/proto/configuration/grpc",
-		"//pkg/proto/configuration/http",
-		"//pkg/proto/configuration/jwt",
-		"//pkg/proto/configuration/tls",
-		"//pkg/proto/fsac",
-		"//pkg/proto/http/oidc",
-		"//pkg/proto/icas",
-		"//pkg/proto/iscc",
-		"//pkg/proto/replicator",
-		"//pkg/random",
-		"//pkg/testutil",
-		"//pkg/util",
-	} {
-		targetCompletion := e.GetTargetCompletionValue(&model_analysis_pb.TargetCompletion_Key{
-			Label: "@@com_github_buildbarn_bb_storage+" + pkg,
-		})
-		if !targetCompletion.IsSet() {
-			missing = true
+	buildSpecification := e.GetBuildSpecificationValue(&model_analysis_pb.BuildSpecification_Key{})
+	if !buildSpecification.IsSet() {
+		return PatchedBuildResultValue{}, evaluation.ErrMissingDependency
+	}
+	rootModuleName := buildSpecification.Message.BuildSpecification.RootModuleName
+	rootModule, err := label.NewModule(rootModuleName)
+	if err != nil {
+		return PatchedBuildResultValue{}, fmt.Errorf("invalid root module name %#v: %w", rootModuleName, err)
+	}
+	rootRepo := rootModule.ToModuleInstance(nil).GetBareCanonicalRepo()
+	rootPackage := rootRepo.GetRootPackage()
+
+	missingDependencies := false
+	for _, targetPattern := range buildSpecification.Message.BuildSpecification.TargetPatterns {
+		apparentTargetPattern, err := rootPackage.AppendTargetPattern(targetPattern)
+		if err != nil {
+			return PatchedBuildResultValue{}, fmt.Errorf("invalid target pattern %#v: %w", targetPattern, err)
+		}
+		canonicalTargetPattern, err := resolveApparent(e, rootRepo, apparentTargetPattern)
+		if err != nil {
+			return PatchedBuildResultValue{}, err
+		}
+
+		var iterErr error
+		for canonicalTargetLabel := range c.expandCanonicalTargetPattern(ctx, e, canonicalTargetPattern, &iterErr) {
+			visibleTargetValue := e.GetVisibleTargetValue(&model_analysis_pb.VisibleTarget_Key{
+				FromPackage: canonicalTargetLabel.GetCanonicalPackage().String(),
+				ToLabel:     canonicalTargetLabel.String(),
+			})
+			if !visibleTargetValue.IsSet() {
+				missingDependencies = true
+				continue
+			}
+			targetCompletion := e.GetTargetCompletionValue(&model_analysis_pb.TargetCompletion_Key{
+				Label: visibleTargetValue.Message.Label,
+			})
+			if !targetCompletion.IsSet() {
+				missingDependencies = true
+			}
+		}
+		if iterErr != nil {
+			if !errors.Is(iterErr, evaluation.ErrMissingDependency) {
+				return PatchedBuildResultValue{}, fmt.Errorf("failed to iterate target pattern %#v: %w", targetPattern, iterErr)
+			}
+			missingDependencies = true
 		}
 	}
-	if missing {
+	if missingDependencies {
 		return PatchedBuildResultValue{}, evaluation.ErrMissingDependency
 	}
 	return model_core.NewSimplePatchedMessage[dag.ObjectContentsWalker](&model_analysis_pb.BuildResult_Value{}), nil
@@ -386,77 +354,6 @@ func (c *baseComputer) ComputeDirectoryAccessParametersValue(ctx context.Context
 	return model_core.NewSimplePatchedMessage[dag.ObjectContentsWalker](&model_analysis_pb.DirectoryAccessParameters_Value{
 		DirectoryAccessParameters: buildSpecification.Message.BuildSpecification.GetDirectoryCreationParameters().GetAccess(),
 	}), nil
-}
-
-func (c *baseComputer) ComputeFilePropertiesValue(ctx context.Context, key *model_analysis_pb.FileProperties_Key, e FilePropertiesEnvironment) (PatchedFilePropertiesValue, error) {
-	repoValue := e.GetRepoValue(&model_analysis_pb.Repo_Key{
-		CanonicalRepo: key.CanonicalRepo,
-	})
-	directoryAccessParametersValue := e.GetDirectoryAccessParametersValue(&model_analysis_pb.DirectoryAccessParameters_Key{})
-	if !repoValue.IsSet() {
-		return PatchedFilePropertiesValue{}, evaluation.ErrMissingDependency
-	}
-
-	if !directoryAccessParametersValue.IsSet() {
-		return PatchedFilePropertiesValue{}, evaluation.ErrMissingDependency
-	}
-	directoryAccessParameters, err := model_filesystem.NewDirectoryAccessParametersFromProto(
-		directoryAccessParametersValue.Message.DirectoryAccessParameters,
-		c.buildSpecificationReference.GetReferenceFormat(),
-	)
-	if err != nil {
-		return PatchedFilePropertiesValue{}, fmt.Errorf("invalid directory access parameters: %w", err)
-	}
-	directoryReader := model_parser.NewStorageBackedParsedObjectReader(
-		c.objectDownloader,
-		directoryAccessParameters.GetEncoder(),
-		model_parser.NewMessageObjectParser[object.LocalReference, model_filesystem_pb.Directory](),
-	)
-	leavesReader := model_parser.NewStorageBackedParsedObjectReader(
-		c.objectDownloader,
-		directoryAccessParameters.GetEncoder(),
-		model_parser.NewMessageObjectParser[object.LocalReference, model_filesystem_pb.Leaves](),
-	)
-
-	rootDirectoryReferenceIndex, err := model_core.GetIndexFromReferenceMessage(repoValue.Message.RootDirectoryReference, repoValue.OutgoingReferences.GetDegree())
-	if err != nil {
-		return PatchedFilePropertiesValue{}, fmt.Errorf("invalid root directory reference: %w", err)
-	}
-
-	resolver := model_filesystem.NewDirectoryMerkleTreeFileResolver(
-		ctx,
-		directoryReader,
-		leavesReader,
-		repoValue.OutgoingReferences.GetOutgoingReference(rootDirectoryReferenceIndex),
-	)
-	if err := bb_path.Resolve(
-		bb_path.UNIXFormat.NewParser(key.Path),
-		bb_path.NewLoopDetectingScopeWalker(
-			bb_path.NewRelativeScopeWalker(resolver),
-		),
-	); err != nil {
-		if status.Code(err) == codes.NotFound {
-			return model_core.NewSimplePatchedMessage[dag.ObjectContentsWalker](&model_analysis_pb.FileProperties_Value{}), nil
-		}
-		return PatchedFilePropertiesValue{}, fmt.Errorf("failed to resolve %#v: %w", key.Path, err)
-	}
-
-	fileProperties := resolver.GetFileProperties()
-	if !fileProperties.IsSet() {
-		return PatchedFilePropertiesValue{}, errors.New("path resolves to a directory")
-	}
-	patchedFileProperties := model_core.NewPatchedMessageFromExisting(
-		fileProperties,
-		func(index int) dag.ObjectContentsWalker {
-			return dag.ExistingObjectContentsWalker
-		},
-	)
-	return PatchedFilePropertiesValue{
-		Message: &model_analysis_pb.FileProperties_Value{
-			Exists: patchedFileProperties.Message,
-		},
-		Patcher: patchedFileProperties.Patcher,
-	}, nil
 }
 
 func (c *baseComputer) ComputeFileReaderValue(ctx context.Context, key *model_analysis_pb.FileReader_Key, e FileReaderEnvironment) (*model_filesystem.FileReader, error) {

@@ -35,6 +35,23 @@ type DirectoryInfo struct {
 	DirectoriesCount uint32
 }
 
+// NewDirectoryInfoFromDirectoryReference creates a DirectoryInfo based
+// on the contents of a DirectoryReference message.
+func NewDirectoryInfoFromDirectoryReference(directoryReference model_core.Message[*model_filesystem_pb.DirectoryReference]) (DirectoryInfo, error) {
+	if directoryReference.Message == nil {
+		return DirectoryInfo{}, status.Error(codes.InvalidArgument, "No directory reference provided")
+	}
+	childDirectoryReferenceIndex, err := model_core.GetIndexFromReferenceMessage(directoryReference.Message.Reference, directoryReference.OutgoingReferences.GetDegree())
+	if err != nil {
+		return DirectoryInfo{}, err
+	}
+	return DirectoryInfo{
+		ClusterReference: directoryReference.OutgoingReferences.GetOutgoingReference(childDirectoryReferenceIndex),
+		DirectoryIndex:   0,
+		DirectoriesCount: directoryReference.Message.DirectoriesCount,
+	}, nil
+}
+
 // DirectoryNode contains the name and properties of a directory that is
 // contained within another directory.
 type DirectoryNode struct {
@@ -93,7 +110,7 @@ func (p *directoryClusterObjectParser[TReference]) addDirectoriesToCluster(ctx c
 	externalLeavesTotalSizeBytes := 0
 	switch leaves := d.Leaves.(type) {
 	case *model_filesystem_pb.Directory_LeavesExternal:
-		leavesReferenceIndex, err := model_core.GetIndexFromReferenceMessage(leaves.LeavesExternal, degree)
+		leavesReferenceIndex, err := model_core.GetIndexFromReferenceMessage(leaves.LeavesExternal.Reference, degree)
 		if err != nil {
 			return 0, 0, util.StatusWrapf(err, "Invalid reference index for leaves for directory %#v", dTrace.GetUNIXString())
 		}
@@ -122,19 +139,20 @@ func (p *directoryClusterObjectParser[TReference]) addDirectoriesToCluster(ctx c
 		case *model_filesystem_pb.DirectoryNode_ContentsExternal:
 			// Subdirectory is stored in another object.
 			// Extract its reference.
-			childDirectoryReferenceIndex, err := model_core.GetIndexFromReferenceMessage(contents.ContentsExternal.Reference, degree)
+			directoryInfo, err := NewDirectoryInfoFromDirectoryReference(
+				model_core.Message[*model_filesystem_pb.DirectoryReference]{
+					Message:            contents.ContentsExternal,
+					OutgoingReferences: outgoingReferences,
+				},
+			)
 			if err != nil {
-				return 0, 0, util.StatusWrapf(err, "Invalid reference index for directory %#v", dTrace.Append(name).GetUNIXString())
+				return 0, 0, util.StatusWrapf(err, "Failed to create info for directory %#v", dTrace.Append(name).GetUNIXString())
 			}
 			(*c)[directoryIndex].Directories = append(
 				(*c)[directoryIndex].Directories,
 				DirectoryNode{
 					Name: name,
-					Info: DirectoryInfo{
-						ClusterReference: outgoingReferences.GetOutgoingReference(childDirectoryReferenceIndex),
-						DirectoryIndex:   0,
-						DirectoriesCount: contents.ContentsExternal.DirectoriesCount,
-					},
+					Info: directoryInfo,
 				},
 			)
 		case *model_filesystem_pb.DirectoryNode_ContentsInline:

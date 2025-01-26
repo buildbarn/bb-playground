@@ -4,12 +4,17 @@ import (
 	"context"
 	"errors"
 	"io/fs"
+	"sort"
+	"strings"
 	"sync"
+	"sync/atomic"
+	"syscall"
 	"time"
 
 	model_core "github.com/buildbarn/bb-playground/pkg/model/core"
 	model_encoding "github.com/buildbarn/bb-playground/pkg/model/encoding"
 	model_filesystem "github.com/buildbarn/bb-playground/pkg/model/filesystem"
+	model_filesystem_virtual "github.com/buildbarn/bb-playground/pkg/model/filesystem/virtual"
 	pg_vfs "github.com/buildbarn/bb-playground/pkg/model/filesystem/virtual"
 	model_parser "github.com/buildbarn/bb-playground/pkg/model/parser"
 	model_command_pb "github.com/buildbarn/bb-playground/pkg/proto/model/command"
@@ -25,10 +30,12 @@ import (
 	"github.com/buildbarn/bb-remote-execution/pkg/filesystem/virtual"
 	runner_pb "github.com/buildbarn/bb-remote-execution/pkg/proto/runner"
 	"github.com/buildbarn/bb-storage/pkg/clock"
+	"github.com/buildbarn/bb-storage/pkg/filesystem"
 	"github.com/buildbarn/bb-storage/pkg/filesystem/path"
 	"github.com/buildbarn/bb-storage/pkg/util"
 	"github.com/google/uuid"
 
+	"golang.org/x/sync/errgroup"
 	"golang.org/x/sync/semaphore"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -163,7 +170,7 @@ func (e *localExecutor) gatherEnvironmentVariables(elements model_core.Message[[
 }
 
 func captureLog(ctx context.Context, buildDirectory virtual.PrepopulatedDirectory, name path.Component, writableFileUploadDelay <-chan struct{}, fileCreationParameters *model_filesystem.FileCreationParameters) (model_core.PatchedMessage[*model_filesystem_pb.FileContents, dag.ObjectContentsWalker], error) {
-	stdoutFile, err := buildDirectory.LookupChild(stdoutComponent)
+	stdoutFile, err := buildDirectory.LookupChild(name)
 	if err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
 			return model_core.PatchedMessage[*model_filesystem_pb.FileContents, dag.ObjectContentsWalker]{}, nil
@@ -370,6 +377,14 @@ func (e *localExecutor) Execute(ctx context.Context, action *model_command_pb.Ac
 	}
 	defer e.topLevelDirectory.RemoveChild(buildDirectoryName)
 
+	// TODO: This is currently needed, because NFSv4 caches
+	// directory entries even if we fully disable any form of
+	// caching. Figure out what's going on here, so we can get rid
+	// of this unnecessary delay.
+	if command.Message.NeedsStableInputRootPath {
+		time.Sleep(1)
+	}
+
 	// Invoke the command.
 	buildDirectoryPath := (*path.Trace)(nil).Append(buildDirectoryName)
 	ctxWithTimeout, cancelTimeout := e.clock.NewContextWithTimeout(ctxWithIOError, executionTimeout)
@@ -450,6 +465,45 @@ func (e *localExecutor) Execute(ctx context.Context, action *model_command_pb.Ac
 		setError(util.StatusWrap(err, "Failed to capture standard error"))
 	}
 
+	if pattern := command.Message.OutputPathPattern; pattern != nil {
+		if inputRoot, err := buildDirectory.LookupChild(inputRootDirectoryComponent); err != nil {
+			setError(util.StatusWrap(err, "Failed to look up input root directory"))
+		} else if inputRootDirectory, _ := inputRoot.GetPair(); inputRootDirectory == nil {
+			setError(util.StatusWrap(err, "Input root is not a directory"))
+		} else {
+			group, groupCtx := errgroup.WithContext(ctx)
+			var outputRoot model_filesystem.CreatedDirectory[dag.ObjectContentsWalker]
+			group.Go(func() error {
+				return model_filesystem.CreateDirectoryMerkleTree(
+					groupCtx,
+					// TODO: Should this be a separate semaphore?
+					e.objectContentsWalkerSemaphore,
+					group,
+					directoryCreationParameters,
+					&prepopulatedCapturableDirectory{
+						options: &prepopulatedCapturableDirectoryOptions{
+							writableFileUploadDelay: writableFileUploadDelayChan,
+							fileCreationParameters:  fileCreationParameters,
+						},
+						directory: inputRootDirectory,
+						pattern: model_core.Message[*model_command_pb.PathPattern]{
+							Message:            pattern,
+							OutgoingReferences: command.OutgoingReferences,
+						},
+					},
+					model_filesystem.InMemoryDirectoryMerkleTreeCapturer,
+					&outputRoot,
+				)
+			})
+			if err := group.Wait(); err == nil {
+				outputs.OutputRoot = outputRoot.Message.Message
+				outputsPatcher.Merge(outputRoot.Message.Patcher)
+			} else {
+				setError(util.StatusWrap(err, "Failed to capture output root"))
+			}
+		}
+	}
+
 	if proto.Size(&outputs) > 0 {
 		// Action has one or more outputs. Upload them and
 		// attach a reference to the result message.
@@ -481,3 +535,198 @@ func (e *localExecutor) Execute(ctx context.Context, action *model_command_pb.Ac
 	}
 	return resultMessage, virtualExecutionDuration, resultCode
 }
+
+type prepopulatedCapturableDirectoryOptions struct {
+	writableFileUploadDelay <-chan struct{}
+	fileCreationParameters  *model_filesystem.FileCreationParameters
+}
+
+type prepopulatedCapturableDirectory struct {
+	options         *prepopulatedCapturableDirectoryOptions
+	directory       virtual.PrepopulatedDirectory
+	pattern         model_core.Message[*model_command_pb.PathPattern]
+	patternChildren atomic.Pointer[model_core.Message[*model_command_pb.PathPattern_Children]]
+}
+
+func (d *prepopulatedCapturableDirectory) getPatternChildren() (model_core.Message[*model_command_pb.PathPattern_Children], error) {
+	if patternChildren := d.patternChildren.Load(); patternChildren != nil {
+		return *patternChildren, nil
+	}
+
+	var patternChildren model_core.Message[*model_command_pb.PathPattern_Children]
+	switch childrenType := d.pattern.Message.Children.(type) {
+	case *model_command_pb.PathPattern_ChildrenExternal:
+		return model_core.Message[*model_command_pb.PathPattern_Children]{}, status.Error(codes.Unimplemented, "TODO: Fetch path pattern from storage")
+	case *model_command_pb.PathPattern_ChildrenInline:
+		patternChildren = model_core.Message[*model_command_pb.PathPattern_Children]{
+			Message:            childrenType.ChildrenInline,
+			OutgoingReferences: d.pattern.OutgoingReferences,
+		}
+	case nil:
+		// Capture all children.
+	default:
+		return model_core.Message[*model_command_pb.PathPattern_Children]{}, status.Error(codes.InvalidArgument, "Unknown children type in path pattern")
+	}
+
+	d.patternChildren.Store(&patternChildren)
+	return patternChildren, nil
+}
+
+func (prepopulatedCapturableDirectory) Close() error {
+	return nil
+}
+
+func (d *prepopulatedCapturableDirectory) ReadDir() ([]filesystem.FileInfo, error) {
+	entries, err := d.directory.ReadDir()
+	if err != nil {
+		return nil, err
+	}
+
+	patternChildren, err := d.getPatternChildren()
+	if err != nil {
+		return nil, err
+	}
+	if !patternChildren.IsSet() {
+		// We should capture the entire directory.
+		return entries, nil
+	}
+
+	// We should only capture certain children. Filter the results
+	// of ReadDir() by name.
+	permittedEntries := patternChildren.Message.Children
+	var filteredEntries []filesystem.FileInfo
+	for len(entries) > 0 && len(permittedEntries) > 0 {
+		if cmp := strings.Compare(entries[0].Name().String(), permittedEntries[0].Name); cmp < 0 {
+			entries = entries[1:]
+		} else if cmp > 0 {
+			permittedEntries = permittedEntries[1:]
+		} else {
+			filteredEntries = append(filteredEntries, entries[0])
+			entries = entries[1:]
+			permittedEntries = permittedEntries[1:]
+		}
+	}
+	return filteredEntries, nil
+}
+
+func (d *prepopulatedCapturableDirectory) Readlink(name path.Component) (path.Parser, error) {
+	child, err := d.directory.LookupChild(name)
+	if err != nil {
+		return nil, err
+	}
+	if _, leaf := child.GetPair(); leaf != nil {
+		p := virtual.ApplyReadlink{}
+		if !child.GetNode().VirtualApply(&p) {
+			panic("build directory contains leaves that don't handle ApplyReadlink")
+		}
+		return p.Target, p.Err
+	}
+	return nil, syscall.EISDIR
+}
+
+func (d *prepopulatedCapturableDirectory) EnterCapturableDirectory(name path.Component) (*model_filesystem.CreatedDirectory[dag.ObjectContentsWalker], model_filesystem.CapturableDirectory[dag.ObjectContentsWalker, dag.ObjectContentsWalker], error) {
+	patternChildren, err := d.getPatternChildren()
+	if err != nil {
+		return nil, nil, err
+	}
+
+	var childPattern model_core.Message[*model_command_pb.PathPattern]
+	if patternChildren.IsSet() {
+		// Determine if the requested directory is part of the
+		// path pattern. If not, hide it.
+		nameStr := name.String()
+		children := patternChildren.Message.Children
+		index, ok := sort.Find(
+			len(children),
+			func(i int) int { return strings.Compare(nameStr, children[i].Name) },
+		)
+		if !ok {
+			return nil, nil, syscall.ENOENT
+		}
+
+		// Extract the pattern to apply to the child.
+		childPatternMessage := children[index].Pattern
+		if childPatternMessage == nil {
+			return nil, nil, status.Error(codes.InvalidArgument, "Missing path pattern")
+		}
+		childPattern = model_core.Message[*model_command_pb.PathPattern]{
+			Message:            childPatternMessage,
+			OutgoingReferences: patternChildren.OutgoingReferences,
+		}
+	} else {
+		// The current directory should be captured without any
+		// filtering. Also don't apply any filtering in the
+		// child directory.
+		childPattern = model_core.NewSimpleMessage(&model_command_pb.PathPattern{})
+	}
+
+	child, err := d.directory.LookupChild(name)
+	if err != nil {
+		return nil, nil, err
+	}
+	childDirectory, _ := child.GetPair()
+	if childDirectory == nil {
+		return nil, nil, syscall.ENOTDIR
+	}
+	return nil,
+		&prepopulatedCapturableDirectory{
+			options:   d.options,
+			directory: childDirectory,
+			pattern:   childPattern,
+		},
+		nil
+}
+
+func (d *prepopulatedCapturableDirectory) OpenForFileMerkleTreeCreation(name path.Component) (model_filesystem.CapturableFile[dag.ObjectContentsWalker], error) {
+	child, err := d.directory.LookupChild(name)
+	if err != nil {
+		return nil, err
+	}
+	return &prepopulatedCapturableFile{
+		options: d.options,
+		node:    child.GetNode(),
+	}, nil
+}
+
+type prepopulatedCapturableFile struct {
+	options *prepopulatedCapturableDirectoryOptions
+	node    virtual.Node
+}
+
+func (f *prepopulatedCapturableFile) CreateFileMerkleTree(ctx context.Context) (model_core.PatchedMessage[*model_filesystem_pb.FileContents, dag.ObjectContentsWalker], error) {
+	// Read-only object store backed files.
+	var getFileContents model_filesystem_virtual.ApplyGetFileContents
+	if f.node.VirtualApply(&getFileContents) {
+		if getFileContents.FileContents.EndBytes == 0 {
+			// Empty file.
+			return model_core.PatchedMessage[*model_filesystem_pb.FileContents, dag.ObjectContentsWalker]{}, nil
+		}
+		patcher := model_core.NewReferenceMessagePatcher[dag.ObjectContentsWalker]()
+		return model_core.PatchedMessage[*model_filesystem_pb.FileContents, dag.ObjectContentsWalker]{
+			Message: &model_filesystem_pb.FileContents{
+				TotalSizeBytes: getFileContents.FileContents.EndBytes,
+				Reference:      patcher.AddReference(getFileContents.FileContents.Reference, dag.ExistingObjectContentsWalker),
+			},
+			Patcher: patcher,
+		}, nil
+	}
+
+	// Mutable files created during execution.
+	openReadFrozen := virtual.ApplyOpenReadFrozen{
+		WritableFileDelay: f.options.writableFileUploadDelay,
+	}
+	if f.node.VirtualApply(&openReadFrozen) {
+		if openReadFrozen.Err != nil {
+			return model_core.PatchedMessage[*model_filesystem_pb.FileContents, dag.ObjectContentsWalker]{}, util.StatusWrap(openReadFrozen.Err, "Failed to open file")
+		}
+		fileContents, err := model_filesystem.CreateChunkDiscardingFileMerkleTree(ctx, f.options.fileCreationParameters, openReadFrozen.Reader)
+		if err != nil {
+			return model_core.PatchedMessage[*model_filesystem_pb.FileContents, dag.ObjectContentsWalker]{}, util.StatusWrap(openReadFrozen.Err, "Failed to create file Merkle tree")
+		}
+		return fileContents, nil
+	}
+
+	return model_core.PatchedMessage[*model_filesystem_pb.FileContents, dag.ObjectContentsWalker]{}, status.Error(codes.InvalidArgument, "File is of an incorrect type")
+}
+
+func (prepopulatedCapturableFile) Discard() {}

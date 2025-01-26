@@ -78,16 +78,15 @@ type localCapturableDirectory[TDirectory, TFile model_core.ReferenceMetadata] st
 	options *localCapturableDirectoryOptions[TFile]
 }
 
-func (d *localCapturableDirectory[TDirectory, TFile]) EnterCapturableDirectory(name path.Component) (model_core.PatchedMessage[*model_filesystem_pb.Directory, TDirectory], model_filesystem.CapturableDirectory[TDirectory, TFile], error) {
+func (d *localCapturableDirectory[TDirectory, TFile]) EnterCapturableDirectory(name path.Component) (*model_filesystem.CreatedDirectory[TDirectory], model_filesystem.CapturableDirectory[TDirectory, TFile], error) {
 	child, err := d.DirectoryCloser.EnterDirectory(name)
 	if err != nil {
-		return model_core.PatchedMessage[*model_filesystem_pb.Directory, TDirectory]{}, nil, err
+		return nil, nil, err
 	}
-	return model_core.PatchedMessage[*model_filesystem_pb.Directory, TDirectory]{},
-		&localCapturableDirectory[TDirectory, TFile]{
-			DirectoryCloser: child,
-			options:         d.options,
-		}, nil
+	return nil, &localCapturableDirectory[TDirectory, TFile]{
+		DirectoryCloser: child,
+		options:         d.options,
+	}, nil
 }
 
 func (d *localCapturableDirectory[TDirectory, TFile]) OpenForFileMerkleTreeCreation(name path.Component) (model_filesystem.CapturableFile[TFile], error) {
@@ -251,7 +250,7 @@ func DoBuild(args *arguments.BuildCommand, workspacePath path.Parser) {
 	logger.Info("Scanning module sources")
 	group, groupCtx := errgroup.WithContext(context.Background())
 	moduleRootDirectories := make([]model_filesystem.CapturedDirectory, 0, len(moduleNames))
-	moduleRootDirectoryMessages := make([]model_core.PatchedMessage[*model_filesystem_pb.Directory, model_filesystem.CapturedObject], len(moduleNames))
+	createdModuleRootDirectories := make([]model_filesystem.CreatedDirectory[model_filesystem.CapturedObject], len(moduleNames))
 	createMerkleTreesConcurrency := semaphore.NewWeighted(int64(runtime.NumCPU()))
 	group.Go(func() error {
 		for i, moduleName := range moduleNames {
@@ -276,7 +275,7 @@ func DoBuild(args *arguments.BuildCommand, workspacePath path.Parser) {
 					},
 				},
 				model_filesystem.FileDiscardingDirectoryMerkleTreeCapturer,
-				&moduleRootDirectoryMessages[i],
+				&createdModuleRootDirectories[i],
 			); err != nil {
 				return util.StatusWrapf(err, "Failed to create directory Merkle tree for module %#v", moduleName.String())
 			}
@@ -323,8 +322,12 @@ func DoBuild(args *arguments.BuildCommand, workspacePath path.Parser) {
 	buildSpecificationPatcher := model_core.NewReferenceMessagePatcher[dag.ObjectContentsWalker]()
 
 	for i, moduleName := range moduleNames {
+		createdRootDirectory := createdModuleRootDirectories[i]
+		if l := createdRootDirectory.MaximumSymlinkEscapementLevels; l == nil || l.Value != 0 {
+			logger.Fatalf("Module %#v contains one or more symbolic links that potentially escape the module's root directory", moduleName.String())
+		}
 		contents, children, err := model_core.MarshalAndEncodePatchedMessage(
-			moduleRootDirectoryMessages[i],
+			createdModuleRootDirectories[i].Message,
 			referenceFormat,
 			directoryParameters.GetEncoder(),
 		)
@@ -336,16 +339,18 @@ func DoBuild(args *arguments.BuildCommand, workspacePath path.Parser) {
 			buildSpecification.Modules,
 			&model_build_pb.Module{
 				Name: moduleName.String(),
-				RootDirectoryReference: buildSpecificationPatcher.AddReference(
-					contents.GetReference(),
-					model_filesystem.NewCapturedDirectoryWalker(
-						directoryParameters.DirectoryAccessParameters,
-						fileParameters,
-						moduleRootDirectories[i],
-						&model_filesystem.CapturedObject{
-							Contents: contents,
-							Children: children,
-						},
+				RootDirectoryReference: createdRootDirectory.ToDirectoryReference(
+					buildSpecificationPatcher.AddReference(
+						contents.GetReference(),
+						model_filesystem.NewCapturedDirectoryWalker(
+							directoryParameters.DirectoryAccessParameters,
+							fileParameters,
+							moduleRootDirectories[i],
+							&model_filesystem.CapturedObject{
+								Contents: contents,
+								Children: children,
+							},
+						),
 					),
 				),
 			},

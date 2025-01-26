@@ -244,8 +244,12 @@ func FullyComputeValue(ctx context.Context, c Computer, requestedKey model_core.
 		ks := p.firstPendingKey
 		if ks == p.firstMissingDependency {
 			var stack []*keyState
+			traceLongestKeyType := 0
 			for ksIter := ks; ksIter != nil; ksIter = ksIter.parent {
 				stack = append(stack, ksIter)
+				if l := len(ksIter.getKeyType()); traceLongestKeyType < l {
+					traceLongestKeyType = l
+				}
 			}
 			slices.Reverse(stack)
 			seen := make(map[*keyState]int, len(stack))
@@ -262,7 +266,7 @@ func FullyComputeValue(ctx context.Context, c Computer, requestedKey model_core.
 				}
 				keyType := ksIter.getKeyType()
 				cycleStr = append(cycleStr, keyType...)
-				for i := len(keyType); i < longestKeyType+2; i++ {
+				for i := len(keyType); i < traceLongestKeyType+2; i++ {
 					cycleStr = append(cycleStr, ' ')
 				}
 				cycleStr = appendFormattedKey(cycleStr, ksIter.key)
@@ -294,8 +298,12 @@ func FullyComputeValue(ctx context.Context, c Computer, requestedKey model_core.
 				fmt.Printf("\n")
 
 				var stack []*keyState
+				traceLongestKeyType := 0
 				for ksIter := ks; ksIter != nil; ksIter = ksIter.parent {
 					stack = append(stack, ksIter)
+					if l := len(ksIter.getKeyType()); traceLongestKeyType < l {
+						traceLongestKeyType = l
+					}
 				}
 				var stackStr []byte
 				for i := len(stack) - 1; i >= 0; i-- {
@@ -303,7 +311,7 @@ func FullyComputeValue(ctx context.Context, c Computer, requestedKey model_core.
 					stackStr = append(stackStr, "\n  "...)
 					keyType := ksIter.getKeyType()
 					stackStr = append(stackStr, keyType...)
-					for i := len(keyType); i < longestKeyType+2; i++ {
+					for i := len(keyType); i < traceLongestKeyType+2; i++ {
 						stackStr = append(stackStr, ' ')
 					}
 					stackStr = appendFormattedKey(stackStr, ksIter.key)

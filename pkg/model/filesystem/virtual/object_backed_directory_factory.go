@@ -5,6 +5,7 @@ import (
 	"context"
 	"io"
 	"sort"
+	"strings"
 
 	"github.com/buildbarn/bb-playground/pkg/encoding/varint"
 	model_core "github.com/buildbarn/bb-playground/pkg/model/core"
@@ -190,10 +191,10 @@ func (d *objectBackedDirectory) VirtualLookup(ctx context.Context, name path.Com
 	// Directory message are sorted alphabetically. Make use of this
 	// fact by performing binary searching when looking up entries.
 	n := name.String()
-	if i := sort.Search(
+	if i, ok := sort.Find(
 		len(directory.Directories),
-		func(i int) bool { return directory.Directories[i].Name.String() >= n },
-	); i < len(directory.Directories) && directory.Directories[i].Name.String() == n {
+		func(i int) int { return strings.Compare(n, directory.Directories[i].Name.String()) },
+	); ok {
 		subdirectory := &directory.Directories[i]
 		child := df.LookupDirectory(subdirectory.Info)
 		child.VirtualGetAttributes(ctx, requested, out)
@@ -201,10 +202,10 @@ func (d *objectBackedDirectory) VirtualLookup(ctx context.Context, name path.Com
 	}
 
 	files := directory.Leaves.Message.Files
-	if i := sort.Search(
+	if i, ok := sort.Find(
 		len(files),
-		func(i int) bool { return files[i].Name >= n },
-	); i < len(files) && files[i].Name == n {
+		func(i int) int { return strings.Compare(n, files[i].Name) },
+	); ok {
 		entry := files[i]
 		child, s := d.lookupFile(entry, directory.Leaves.OutgoingReferences)
 		if s != virtual.StatusOK {
@@ -215,10 +216,10 @@ func (d *objectBackedDirectory) VirtualLookup(ctx context.Context, name path.Com
 	}
 
 	symlinks := directory.Leaves.Message.Symlinks
-	if i := sort.Search(
+	if i, ok := sort.Find(
 		len(symlinks),
-		func(i int) bool { return symlinks[i].Name >= n },
-	); i < len(symlinks) && symlinks[i].Name == n {
+		func(i int) int { return strings.Compare(n, symlinks[i].Name) },
+	); ok {
 		f := df.createSymlink(d.info.ClusterReference, d.info.DirectoryIndex, uint(i), symlinks[i].Target)
 		f.VirtualGetAttributes(ctx, requested, out)
 		return virtual.DirectoryChild{}.FromLeaf(f), virtual.StatusOK
@@ -234,18 +235,18 @@ func (d *objectBackedDirectory) VirtualOpenChild(ctx context.Context, name path.
 	}
 
 	n := name.String()
-	if i := sort.Search(
+	if _, ok := sort.Find(
 		len(directory.Directories),
-		func(i int) bool { return directory.Directories[i].Name.String() >= n },
-	); i < len(directory.Directories) && directory.Directories[i].Name.String() == n {
+		func(i int) int { return strings.Compare(n, directory.Directories[i].Name.String()) },
+	); ok {
 		return virtual.ReadOnlyDirectoryOpenChildWrongFileType(existingOptions, virtual.StatusErrIsDir)
 	}
 
 	files := directory.Leaves.Message.Files
-	if i := sort.Search(
+	if i, ok := sort.Find(
 		len(files),
-		func(i int) bool { return files[i].Name >= n },
-	); i < len(files) && files[i].Name == n {
+		func(i int) int { return strings.Compare(n, files[i].Name) },
+	); ok {
 		if existingOptions == nil {
 			return nil, 0, virtual.ChangeInfo{}, virtual.StatusErrExist
 		}
@@ -259,10 +260,10 @@ func (d *objectBackedDirectory) VirtualOpenChild(ctx context.Context, name path.
 	}
 
 	symlinks := directory.Leaves.Message.Symlinks
-	if i := sort.Search(
+	if _, ok := sort.Find(
 		len(symlinks),
-		func(i int) bool { return symlinks[i].Name >= n },
-	); i < len(symlinks) && symlinks[i].Name == n {
+		func(i int) int { return strings.Compare(n, symlinks[i].Name) },
+	); ok {
 		return virtual.ReadOnlyDirectoryOpenChildWrongFileType(existingOptions, virtual.StatusErrSymlink)
 	}
 

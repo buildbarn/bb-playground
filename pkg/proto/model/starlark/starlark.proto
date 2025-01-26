@@ -31,14 +31,15 @@ message Value {
     Provider provider = 14;
     RepositoryRule repository_rule = 15;
     Rule rule = 16;
-    Select select = 17;
-    string str = 18;
-    Struct struct = 19;
-    Subrule subrule = 20;
-    TagClass tag_class = 21;
-    ToolchainType toolchain_type = 22;
-    Transition transition = 23;
-    Tuple tuple = 24;
+    Runfiles runfiles = 17;
+    Select select = 18;
+    string str = 19;
+    Struct struct = 20;
+    Subrule subrule = 21;
+    TagClass tag_class = 22;
+    ToolchainType toolchain_type = 23;
+    Transition transition = 24;
+    Tuple tuple = 25;
   }
 }
 
@@ -94,6 +95,11 @@ message Attr {
       // Apply a user-defined transition.
       string cfg_transition_identifier = 5;
     }
+
+    // If non-empty, allow file targets having one of the file
+    // extensions listed. If file targets with any name should be
+    // allowed, the list should contain the empty string.
+    repeated string allow_files = 6;
   }
 
   // Options that apply to all attribute types containing dicts or
@@ -117,7 +123,14 @@ message Attr {
 
     bool allow_none = 2;
 
-    bool executable = 3;
+    // Only allow file targets corresponding to a single file. If this
+    // field is set, LabelOptions.allow_files must be set as well.
+    bool allow_single_file = 3;
+
+    // True if the dependency has to be executable. This means the label
+    // must refer to an executable file, or to a rule that outputs an
+    // executable file.
+    bool executable = 4;
   }
 
   message LabelKeyedStringDictType {
@@ -192,6 +205,36 @@ message Attr {
   }
 }
 
+message BuildSetting {
+  // Whether or not this build setting is callable on the command line.
+  bool flag = 1;
+
+  message StringListType {
+    // If set, instead of expecting a comma-separated value, this flag
+    // is allowed to be set multiple times on the command line with each
+    // individual value treated as a single string to add to the list
+    // value. Insertion order and repeated values are both maintained.
+    //
+    // This list can be post-processed in the build setting
+    // implementation function if different behavior is desired.
+    bool repeatable = 1;
+  }
+
+  oneof type {
+    // Accept bool values.
+    google.protobuf.Empty bool = 2;
+
+    // Accept int32 values.
+    google.protobuf.Empty int = 3;
+
+    // Accept string values.
+    google.protobuf.Empty string = 4;
+
+    // Accept []string values.
+    StringListType string_list = 5;
+  }
+}
+
 message Depset {}
 
 message Dict {
@@ -222,6 +265,11 @@ message ExecGroup {
   // Set of toolchains this execution group requires, deduplicated and
   // sorted alphabetically by ToolchainType.toolchain_type.
   repeated ToolchainType toolchains = 2;
+}
+
+message SourceFileTarget {
+  // Visibility of the file target.
+  PackageGroup visibility = 4;
 }
 
 message Function {
@@ -444,19 +492,28 @@ message Rule {
     // Attributes of the rule, sorted by name.
     repeated NamedAttr attrs = 1;
 
+    // If set, describes what kind of build setting this rule is. A
+    // mandatory attribute named build_setting_default is automatically
+    // added to this rule, with a type corresponding to that of the
+    // build setting.
+    BuildSetting build_setting = 2;
+
     // If set, the identifier of the user-defined transition to apply to
     // its own configuration before analysis.
-    string cfg_transition_identifier = 2;
+    string cfg_transition_identifier = 3;
 
     // Execution groups of the rule, sorted by name.
-    repeated NamedExecGroup exec_groups = 3;
+    repeated NamedExecGroup exec_groups = 4;
 
     // Starlark function that implements this rule.
-    Function implementation = 4;
+    Function implementation = 5;
+
+    // Stalark function initializing the attributes of the rule.
+    Function initializer = 6;
 
     // List of providers that the implementation function must return,
     // sorted by name.
-    repeated string provides = 5;
+    repeated string provides = 7;
   }
 
   oneof kind {
@@ -502,6 +559,8 @@ message RuleTarget {
   // in REPO.bazel and package() in BUILD.bazel.
   InheritableAttrs inheritable_attrs = 6;
 }
+
+message Runfiles {}
 
 message Select {
   message Condition {
@@ -560,6 +619,10 @@ message Target {
 
       // Buildable target backed by a rule.
       RuleTarget rule_target = 3;
+
+      // File exposed via exports_files() or referenced by a rule
+      // target's attribute.
+      SourceFileTarget source_file_target = 4;
     }
   }
 

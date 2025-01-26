@@ -7,6 +7,7 @@ import (
 	"maps"
 	"slices"
 	"sort"
+	"strings"
 
 	"github.com/buildbarn/bb-playground/pkg/evaluation"
 	"github.com/buildbarn/bb-playground/pkg/label"
@@ -97,6 +98,11 @@ func (c *baseComputer) ComputePackageValue(ctx context.Context, key *model_analy
 		thread := c.newStarlarkThread(ctx, e, builtinsModuleNames)
 		thread.SetLocal(model_starlark.CanonicalPackageKey, canonicalPackage)
 		thread.SetLocal(model_starlark.ValueEncodingOptionsKey, c.getValueEncodingOptions(buildFileLabel))
+		thread.SetLocal(model_starlark.GlobExpanderKey, func(include, exclude []string, includeDirectories bool) ([]label.TargetName, error) {
+			return []label.TargetName{
+				label.MustNewTargetName("TODO implement globbing"),
+			}, nil
+		})
 
 		repoDefaultAttrs := model_core.Message[*model_starlark_pb.InheritableAttrs]{
 			Message:            repoDefaultAttrsValue.Message.InheritableAttrs,
@@ -116,9 +122,10 @@ func (c *baseComputer) ComputePackageValue(ctx context.Context, key *model_analy
 			}
 			identifierStr := identifier.GetStarlarkIdentifier().String()
 			globals := compiledBzlFile.Message.CompiledProgram.GetGlobals()
-			if i := sort.Search(len(globals), func(i int) bool {
-				return globals[i].Name >= identifierStr
-			}); i < len(globals) && globals[i].Name == identifierStr {
+			if i, ok := sort.Find(
+				len(globals),
+				func(i int) int { return strings.Compare(identifierStr, globals[i].Name) },
+			); ok {
 				global := globals[i]
 				if global.Value == nil {
 					return model_core.Message[*model_starlark_pb.Value]{}, fmt.Errorf("global %#v has no value", identifier.String())
@@ -176,10 +183,30 @@ func (c *baseComputer) ComputePackageValue(ctx context.Context, key *model_analy
 		targets := targetRegistrar.GetTargets()
 		for _, name := range slices.Sorted(maps.Keys(targets)) {
 			target := targets[name]
+			if !target.IsSet() {
+				// Target is referenced, but not
+				// provided explicitly. Assume it refers
+				// to a source file with private
+				// visibility.
+				target = model_core.NewSimplePatchedMessage[dag.ObjectContentsWalker](
+					&model_starlark_pb.Target_Definition{
+						Kind: &model_starlark_pb.Target_Definition_SourceFileTarget{
+							SourceFileTarget: &model_starlark_pb.SourceFileTarget{
+								Visibility: &model_starlark_pb.PackageGroup{
+									Tree: &model_starlark_pb.PackageGroup_Subpackages{},
+								},
+							},
+						},
+					},
+				)
+			}
 			if err := treeBuilder.PushChild(model_core.NewPatchedMessage(
 				&model_analysis_pb.Package_Value_TargetList_Element{
 					Level: &model_analysis_pb.Package_Value_TargetList_Element_Leaf{
-						Leaf: target.Message,
+						Leaf: &model_starlark_pb.Target{
+							Name:       name,
+							Definition: target.Message,
+						},
 					},
 				},
 				target.Patcher,

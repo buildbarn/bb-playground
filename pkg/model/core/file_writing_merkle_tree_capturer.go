@@ -162,6 +162,7 @@ type fileReadingObjectContentsWalker struct {
 func (w *fileReadingObjectContentsWalker) GetContents(ctx context.Context) (*object.Contents, []dag.ObjectContentsWalker, error) {
 	refcountDelta := ^uint64(0)
 	wf := w.factory
+	w.factory = nil
 	defer func() {
 		if wf.referenceCount.Add(refcountDelta) == 0 {
 			wf.reader.Close()

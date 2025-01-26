@@ -130,7 +130,7 @@ func (c *baseComputer) ComputeStableInputRootPathValue(ctx context.Context, key 
 	), nil
 }
 
-func (c *baseComputer) ComputeStableInputRootPathObjectValue(ctx context.Context, key *model_analysis_pb.StableInputRootPathObject_Key, e StableInputRootPathObjectEnvironment) (*model_starlark.Path, error) {
+func (c *baseComputer) ComputeStableInputRootPathObjectValue(ctx context.Context, key *model_analysis_pb.StableInputRootPathObject_Key, e StableInputRootPathObjectEnvironment) (*model_starlark.BarePath, error) {
 	stableInputRootPath := e.GetStableInputRootPathValue(&model_analysis_pb.StableInputRootPath_Key{})
 	if !stableInputRootPath.IsSet() {
 		return nil, evaluation.ErrMissingDependency

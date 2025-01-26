@@ -92,6 +92,46 @@ message CommandEncoders {
   }
 }
 
+message CompatibleExecutionPlatforms {
+  message Key {
+    // The constraints that must be present on the execution platform
+    // for it to be considered compatible.
+    //
+    // Constraints whose values correspond to the default value MUST
+    // have Constraint.value set to the empty string.
+    repeated Constraint constraints = 1;
+  }
+
+  message Value {
+    // List of platforms that are available for executing commands that
+    // match the provided set of constraints, ordered by decreasing
+    // preference.
+    repeated ExecutionPlatform execution_platforms = 1;
+  }
+}
+
+message CompatibleToolchainsForType {
+  message Key {
+    // The label of the toolchain type for which toolchains are
+    // requested.
+    string toolchain_type = 1;
+
+    // The constraints that are present on the target.
+    //
+    // Constraints for which the value is equal to the default value of
+    // the setting are omitted.
+    repeated Constraint target_constraints = 2;
+  }
+
+  message Value {
+    // Properties of the toolchains that were registered for the
+    // requested type, listed in the order in which registration
+    // occurred. An empty list is returned if no toolchains for this
+    // type were registered.
+    repeated RegisteredToolchain toolchains = 2;
+  }
+}
+
 message CompiledBzlFile {
   message Key {
     // The label of the .bzl file. The label MUST include a canonical
@@ -275,9 +315,12 @@ message HttpArchiveContents {
       // Gzip compressed tarball.
       TAR_GZ = 1;
 
+      // XZ compressed tarball.
+      TAR_XZ = 2;
+
       // ZIP archive, using the file format documented at
       // https://support.pkware.com/pkzip/appnote.
-      ZIP = 2;
+      ZIP = 3;
     }
 
     // The URLs to fetch.
@@ -289,12 +332,20 @@ message HttpArchiveContents {
     // Optional checksum of the archive to download, provided in the
     // Subresource Integrity (SRI) format.
     string integrity = 3;
+
+    // If not set, let the function fail if the server returns a HTTP
+    // status code other than 200 and 404.
+    bool allow_fail = 4;
   }
 
   message Value {
     // If set, the archive was fetched and extracted successfully. If
     // not set, fetching the file failed with a HTTP 404 status code.
-    buildbarn.playground.model.core.Reference exists = 1;
+    //
+    // The directory hierarchy MUST NOT contain any symbolic links whose
+    // targets escape the root directory (i.e.,
+    // maximum_symlink_escapement_levels MUST be zero).
+    buildbarn.playground.model.filesystem.DirectoryReference exists = 1;
   }
 }
 
@@ -544,31 +595,34 @@ message Package {
   }
 }
 
+message Constraint {
+  // The label of the constraint_setting() target.
+  string setting = 1;
+
+  // The label of the constraint_value() target.
+  string value = 2;
+}
+
+message ExecutionPlatform {
+  // Constraints that apply to the execution platform, such as the
+  // CPU architecture or operating system. Constraints are sorted
+  // alphabetically by setting.
+  //
+  // Constraints for which the value is equal to the default value of
+  // the setting are omitted.
+  repeated Constraint constraints = 1;
+
+  // The X25519 public key that identifies the platform that should be
+  // used to execute the action in PKIX, ASN.1 DER form.
+  bytes exec_pkix_public_key = 2;
+
+  // TODO: Also add flags, required_settings, etc.?
+}
+
 message RegisteredExecutionPlatforms {
   message Key {}
 
   message Value {
-    message ExecutionPlatform {
-      message Constraint {
-        // The label of the constraint_setting() target.
-        string setting = 1;
-
-        // The label of the constraint_value() target.
-        string value = 2;
-      }
-
-      // Constraints that apply to the execution platform, such as the
-      // CPU architecture or operating system. Constraints are sorted
-      // alphabetically by setting.
-      repeated Constraint constraints = 1;
-
-      // The X25519 public key that identifies the platform that should be
-      // used to execute the action in PKIX, ASN.1 DER form.
-      bytes exec_pkix_public_key = 2;
-
-      // TODO: Also add flags, required_settings, etc.?
-    }
-
     // List of platforms that are available for executing commands,
     // ordered by decreasing preference.
     repeated ExecutionPlatform execution_platforms = 1;
@@ -603,10 +657,75 @@ message RegisteredRepoPlatform {
   }
 }
 
+message RegisteredToolchain {
+  // List of constraints that must be satisfied by an execution platform
+  // in order for this toolchain to be selected for a target building on
+  // that platform.
+  //
+  // Constraints for which the value is equal to the default value of
+  // the setting have their value set to the empty string.
+  repeated Constraint exec_compatible_with = 1;
+
+  // List of constraints that must be satisfied by the target platform
+  // in order for this toolchain to be selected for a target building
+  // for that platform.
+  //
+  // Constraints for which the value is equal to the default value of
+  // the setting have their value set to the empty string.
+  repeated Constraint target_compatible_with = 2;
+
+  // List of config_settings that must be satisfied by the target
+  // configuration in order for this toolchain to be selected during
+  // toolchain resolution.
+  repeated string target_settings = 3;
+
+  // Label of target representing the actual tool or tool suite that is
+  // made available when this toolchain is selected.
+  //
+  // As toolchain targets are typically placed in other repos, this
+  // label may still refer to an alias that needs to be expanded.
+  string toolchain = 4;
+
+  // The package in which the toolchain() target is declared. This is
+  // recorded to be able to check visibility from the toolchain() to the
+  // actual tool or tool suite.
+  string package = 5;
+}
+
 message RegisteredToolchains {
   message Key {}
 
-  message Value {}
+  message Value {
+    message RegisteredToolchainType {
+      // The label of the toolchain type for which one or more
+      // toolchains are registered.
+      string toolchain_type = 1;
+
+      // Properties of the toolchains that were registered, listed in
+      // the order in which registration occurred.
+      repeated RegisteredToolchain toolchains = 2;
+    }
+
+    // Toolchain types for which one or more toolchains are registered,
+    // sorted by toolchain type label.
+    repeated RegisteredToolchainType toolchain_types = 1;
+  }
+}
+
+message RegisteredToolchainsForType {
+  message Key {
+    // The label of the toolchain type for which toolchains are
+    // requested.
+    string toolchain_type = 1;
+  }
+
+  message Value {
+    // Properties of the toolchains that were registered for the
+    // requested type, listed in the order in which registration
+    // occurred. An empty list is returned if no toolchains for this
+    // type were registered.
+    repeated RegisteredToolchain toolchains = 2;
+  }
 }
 
 message Repo {
@@ -618,7 +737,17 @@ message Repo {
 
   message Value {
     // The root directory containing the files in the repository.
-    buildbarn.playground.model.core.Reference root_directory_reference = 1;
+    //
+    // For this directory, maximum_symlink_escapement_levels may only
+    // have one of the following values:
+    //
+    // - 0: The repo does not contain any symbolic links, or all
+    //   symbolic links expand to paths within the same repo.
+    //
+    // - 1: The repo contains symbolic links that expand to paths in
+    //   other repos (e.g., "../other_repo/hello.txt").
+    buildbarn.playground.model.filesystem.DirectoryReference
+        root_directory_reference = 1;
   }
 }
 
@@ -638,9 +767,23 @@ message RepoDefaultAttrs {
 
 message ResolvedToolchains {
   message Key {
+    // List of constraints that must be satisfied by an execution
+    // platform in order for this toolchain to be selected for a target
+    // building on that platform.
+    //
+    // Constraints for which the value is equal to the default value of
+    // the setting have their value set to the empty string.
+    repeated Constraint exec_compatible_with = 1;
+
+    // List of constraints that are present on the target platform.
+    //
+    // Constraints for which the value is equal to the default value of
+    // the setting are omitted.
+    repeated Constraint target_constraints = 2;
+
     // The set of toolchains to resolve, and any constraints placed on
     // the execution platform.
-    buildbarn.playground.model.starlark.ExecGroup exec_group = 1;
+    repeated buildbarn.playground.model.starlark.ToolchainType toolchains = 3;
   }
 
   message Value {
@@ -650,7 +793,7 @@ message ResolvedToolchains {
     // the toolchain types in the key. Any optional toolchains that
     // could not be resolved will have their identifier set to the
     // empty string.
-    repeated string resolved_toolchain_identifiers = 1;
+    repeated string toolchain_identifiers = 1;
   }
 }
 
@@ -666,6 +809,24 @@ message RootModule {
     // that such dependencies are always ignored in the MODULE.bazel
     // file of modules other than the root module.
     bool ignore_root_module_dev_dependencies = 2;
+  }
+}
+
+message Select {
+  message Key {
+    // Condition identifiers from which a selection needs to be made.
+    repeated string condition_identifiers = 1;
+  }
+
+  message Value {
+    // Indices of conditions which are selected.
+    //
+    // If an empty list is returned, the default condition should be
+    // selected. If multiple indices are returned, multiple conditions
+    // match that are not specializations of each other. In that case
+    // the caller should check whether the values associated with the
+    // conditions are identical.
+    repeated int32 condition_indices = 1;
   }
 }
 
@@ -818,5 +979,31 @@ message UsedModuleExtensions {
     // derived from the canonical Starlark identifier of the
     // module_extension() object.
     repeated ModuleExtension module_extensions = 1;
+  }
+}
+
+message VisibleTarget {
+  message Key {
+    // The package that references the label.
+    string from_package = 1;
+
+    // The label being referenced.
+    string to_label = 2;
+
+    // Don't fail if the target is an alias() that contains a select()
+    // expression that does not many any of the conditions. In that case the
+    // resulting label will be set to the empty string.
+    //
+    // This may be used to suppress errors in case the provided label
+    // was obtained by expanding a target pattern, and any incompatible
+    // targets should be ignored, (e.g., as part of
+    // register_toolchains()).
+    bool permit_alias_no_match = 3;
+  }
+
+  message Value {
+    // The label of the target after aliases are expanded and visibility
+    // is checked.
+    string label = 1;
   }
 }

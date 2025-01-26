@@ -3,8 +3,11 @@ package analysis
 import (
 	"context"
 	"errors"
+	"fmt"
+	"strings"
 
 	"github.com/buildbarn/bb-playground/pkg/evaluation"
+	"github.com/buildbarn/bb-playground/pkg/label"
 	model_core "github.com/buildbarn/bb-playground/pkg/model/core"
 	model_starlark "github.com/buildbarn/bb-playground/pkg/model/starlark"
 	model_analysis_pb "github.com/buildbarn/bb-playground/pkg/proto/model/analysis"
@@ -35,10 +38,16 @@ func (c *baseComputer) ComputeRepositoryRuleObjectValue(ctx context.Context, key
 		return nil, errors.New("global value is not a repository rule definition")
 	}
 
-	attrs, err := c.decodeAttrsDict(ctx, model_core.Message[[]*model_starlark_pb.NamedAttr]{
-		Message:            d.Definition.Attrs,
-		OutgoingReferences: repositoryRuleValue.OutgoingReferences,
-	})
+	attrs, err := c.decodeAttrsDict(
+		ctx,
+		model_core.Message[[]*model_starlark_pb.NamedAttr]{
+			Message:            d.Definition.Attrs,
+			OutgoingReferences: repositoryRuleValue.OutgoingReferences,
+		},
+		func(canonicalLabel label.CanonicalLabel) (starlark.Value, error) {
+			return model_starlark.NewLabel(canonicalLabel), nil
+		},
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -52,4 +61,66 @@ func (c *baseComputer) ComputeRepositoryRuleObjectValue(ctx context.Context, key
 		)),
 		Attrs: attrs,
 	}, nil
+}
+
+type PublicAttr struct {
+	Name     string
+	Default  starlark.Value
+	AttrType model_starlark.AttrType
+}
+
+type AttrsDict struct {
+	Public  []PublicAttr
+	Private starlark.StringDict
+}
+
+func (c *baseComputer) decodeAttrsDict(ctx context.Context, encodedAttrs model_core.Message[[]*model_starlark_pb.NamedAttr], labelCreator func(label.CanonicalLabel) (starlark.Value, error)) (AttrsDict, error) {
+	attrsDict := AttrsDict{
+		Private: starlark.StringDict{},
+	}
+	for _, namedAttr := range encodedAttrs.Message {
+		attrType, err := model_starlark.DecodeAttrType(namedAttr.Attr)
+		if err != nil {
+			return AttrsDict{}, fmt.Errorf("invalid type for attribute %#v: %w", namedAttr.Name, err)
+		}
+
+		if strings.HasPrefix(namedAttr.Name, "_") {
+			value, err := model_starlark.DecodeValue(
+				model_core.Message[*model_starlark_pb.Value]{
+					Message:            namedAttr.Attr.GetDefault(),
+					OutgoingReferences: encodedAttrs.OutgoingReferences,
+				},
+				/* currentIdentifier = */ nil,
+				c.getValueDecodingOptions(ctx, labelCreator),
+			)
+			if err != nil {
+				return AttrsDict{}, fmt.Errorf("invalid default value for attribute %#v: %w", namedAttr.Name, err)
+			}
+			attrsDict.Private[namedAttr.Name] = value
+		} else {
+
+			var defaultAttr starlark.Value
+			if d := namedAttr.Attr.GetDefault(); d != nil {
+				// TODO: Call into attr type to validate
+				// the value!
+				defaultAttr, err = model_starlark.DecodeValue(
+					model_core.Message[*model_starlark_pb.Value]{
+						Message:            d,
+						OutgoingReferences: encodedAttrs.OutgoingReferences,
+					},
+					/* currentIdentifier = */ nil,
+					c.getValueDecodingOptions(ctx, labelCreator),
+				)
+				if err != nil {
+					return AttrsDict{}, fmt.Errorf("invalid default value for attribute %#v: %w", namedAttr.Name, err)
+				}
+			}
+			attrsDict.Public = append(attrsDict.Public, PublicAttr{
+				Name:     namedAttr.Name,
+				Default:  defaultAttr,
+				AttrType: attrType,
+			})
+		}
+	}
+	return attrsDict, nil
 }

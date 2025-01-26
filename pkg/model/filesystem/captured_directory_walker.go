@@ -142,7 +142,7 @@ func (w *capturedDirectoryWalker) GetContents(ctx context.Context) (*object.Cont
 func (w *capturedDirectoryWalker) gatherWalkers(directory *model_filesystem_pb.Directory, pathTrace *path.Trace, walkers []dag.ObjectContentsWalker) error {
 	switch leaves := directory.Leaves.(type) {
 	case *model_filesystem_pb.Directory_LeavesExternal:
-		index, err := model_core.GetIndexFromReferenceMessage(leaves.LeavesExternal, len(walkers))
+		index, err := model_core.GetIndexFromReferenceMessage(leaves.LeavesExternal.Reference, len(walkers))
 		if err != nil {
 			return util.StatusWrapf(err, "Invalid reference index for leaves of directory %#v", pathTrace.GetUNIXString())
 		}
@@ -362,7 +362,9 @@ func (w *computedConcatenatedFileWalker) GetContents(ctx context.Context) (*obje
 func (w *computedConcatenatedFileWalker) Discard() {
 	if w.options.referenceCount.Add(^uint64(0)) == 0 {
 		w.options.file.Close()
+		w.options.file = nil
 	}
+	w.options = nil
 }
 
 // concatenatedFileChunkWalker is an ObjectContentsWalker that is backed
@@ -394,5 +396,7 @@ func (w *concatenatedFileChunkWalker) GetContents(ctx context.Context) (*object.
 func (w *concatenatedFileChunkWalker) Discard() {
 	if w.options.referenceCount.Add(^uint64(0)) == 0 {
 		w.options.file.Close()
+		w.options.file = nil
 	}
+	w.options = nil
 }

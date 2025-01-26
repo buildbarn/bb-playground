@@ -6,30 +6,29 @@ import (
 
 	pg_label "github.com/buildbarn/bb-playground/pkg/label"
 	"github.com/buildbarn/bb-playground/pkg/starlark/unpack"
-	"github.com/buildbarn/bb-storage/pkg/filesystem/path"
+	bb_path "github.com/buildbarn/bb-storage/pkg/filesystem/path"
 
 	"go.starlark.net/starlark"
 	"go.starlark.net/syntax"
 )
 
-type Path struct {
-	parent    *Path
-	component path.Component
+// BarePath stores an absolute pathname contained in a Starlark path
+// object.
+type BarePath struct {
+	parent    *BarePath
+	component bb_path.Component
 }
 
-var (
-	_ path.Parser    = &Path{}
-	_ starlark.Value = &Path{}
-)
+var _ bb_path.Parser = &BarePath{}
 
-func (p *Path) Append(component path.Component) *Path {
-	return &Path{
-		parent:    p,
+func (bp *BarePath) Append(component bb_path.Component) *BarePath {
+	return &BarePath{
+		parent:    bp,
 		component: component,
 	}
 }
 
-func (p *Path) ParseScope(scopeWalker path.ScopeWalker) (path.ComponentWalker, path.RelativeParser, error) {
+func (bp *BarePath) ParseScope(scopeWalker bb_path.ScopeWalker) (bb_path.ComponentWalker, bb_path.RelativeParser, error) {
 	next, err := scopeWalker.OnAbsolute()
 	if err != nil {
 		return nil, nil, err
@@ -37,14 +36,14 @@ func (p *Path) ParseScope(scopeWalker path.ScopeWalker) (path.ComponentWalker, p
 
 	// Obtain all components of the path.
 	count := 0
-	for pCount := p; pCount != nil; pCount = pCount.parent {
+	for bpCount := bp; bpCount != nil; bpCount = bpCount.parent {
 		count++
 	}
-	components := make([]path.Component, count)
+	components := make([]bb_path.Component, count)
 	for count > 0 {
 		count--
-		components[count] = p.component
-		p = p.parent
+		components[count] = bp.component
+		bp = bp.parent
 	}
 
 	return next, pathComponentParser{
@@ -52,45 +51,160 @@ func (p *Path) ParseScope(scopeWalker path.ScopeWalker) (path.ComponentWalker, p
 	}, nil
 }
 
-func (p *Path) writeToStringBuilder(sb *strings.Builder) {
-	if p.parent != nil {
-		p.parent.writeToStringBuilder(sb)
+func (bp *BarePath) writeToStringBuilder(sb *strings.Builder) {
+	if bp.parent != nil {
+		bp.parent.writeToStringBuilder(sb)
 	}
 	sb.WriteByte('/')
-	sb.WriteString(p.component.String())
+	sb.WriteString(bp.component.String())
 }
 
-func (p *Path) String() string {
-	if p == nil {
+func (bp *BarePath) GetUNIXString() string {
+	if bp == nil {
 		return "/"
 	}
 	var sb strings.Builder
-	p.writeToStringBuilder(&sb)
+	bp.writeToStringBuilder(&sb)
 	return sb.String()
 }
 
-func (*Path) Type() string {
+type Filesystem interface {
+	Exists(*BarePath) (bool, error)
+	IsDir(*BarePath) (bool, error)
+	Readdir(*BarePath) ([]bb_path.Component, error)
+	Realpath(*BarePath) (*BarePath, error)
+}
+
+type path struct {
+	bare       *BarePath
+	filesystem Filesystem
+}
+
+var (
+	_ starlark.Value    = &path{}
+	_ starlark.HasAttrs = &label{}
+)
+
+func NewPath(bp *BarePath, filesystem Filesystem) starlark.Value {
+	return &path{
+		bare:       bp,
+		filesystem: filesystem,
+	}
+}
+
+func (p *path) String() string {
+	return p.bare.GetUNIXString()
+}
+
+func (*path) Type() string {
 	return "path"
 }
 
-func (*Path) Freeze() {}
+func (*path) Freeze() {}
 
-func (*Path) Truth() starlark.Bool {
+func (*path) Truth() starlark.Bool {
 	return starlark.True
 }
 
-func (*Path) Hash() (uint32, error) {
+func (*path) Hash() (uint32, error) {
 	return 0, nil
 }
 
-type pathComponentParser struct {
-	components []path.Component
+func (p *path) Attr(name string) (starlark.Value, error) {
+	bp := p.bare
+	switch name {
+	case "basename":
+		if bp == nil {
+			return starlark.None, nil
+		}
+		return starlark.String(bp.component.String()), nil
+	case "dirname":
+		if bp == nil {
+			return starlark.None, nil
+		}
+		return NewPath(bp.parent, p.filesystem), nil
+	case "exists":
+		exists, err := p.filesystem.Exists(p.bare)
+		if err != nil {
+			return nil, err
+		}
+		return starlark.Bool(exists), nil
+	case "get_child":
+		return starlark.NewBuiltin(
+			"path.get_child",
+			func(thread *starlark.Thread, b *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
+				if len(kwargs) != 0 {
+					return nil, fmt.Errorf("%s: got %d keyword arguments, want 0", b.Name(), len(kwargs))
+				}
+
+				resolver := PathResolver{
+					CurrentPath: bp,
+				}
+				for i, relativePath := range args {
+					relativePathStr, ok := starlark.AsString(relativePath)
+					if !ok {
+						return nil, fmt.Errorf("at index %d: got %d, want string", i, relativePath.Type())
+					}
+					if err := bb_path.Resolve(
+						bb_path.UNIXFormat.NewParser(relativePathStr),
+						bb_path.NewRelativeScopeWalker(&resolver),
+					); err != nil {
+						return nil, fmt.Errorf("failed to resolve path %#v: %w", relativePathStr)
+					}
+				}
+
+				return NewPath(resolver.CurrentPath, p.filesystem), nil
+			},
+		), nil
+	case "is_dir":
+		isDir, err := p.filesystem.IsDir(p.bare)
+		if err != nil {
+			return nil, err
+		}
+		return starlark.Bool(isDir), nil
+	case "readdir":
+		names, err := p.filesystem.Readdir(p.bare)
+		if err != nil {
+			return nil, err
+		}
+		paths := make([]starlark.Value, 0, len(names))
+		for _, name := range names {
+			paths = append(paths, NewPath(bp.Append(name), p.filesystem))
+		}
+		return starlark.NewList(paths), nil
+	case "realpath":
+		realpath, err := p.filesystem.Realpath(p.bare)
+		if err != nil {
+			return nil, err
+		}
+		return NewPath(realpath, p.filesystem), nil
+	default:
+		return nil, nil
+	}
 }
 
-func (pcp pathComponentParser) ParseFirstComponent(componentWalker path.ComponentWalker, mustBeDirectory bool) (next path.GotDirectoryOrSymlink, remainder path.RelativeParser, err error) {
+var pathAttrNames = []string{
+	"basename",
+	"dirname",
+	"exists",
+	"get_child",
+	"is_dir",
+	"readdir",
+	"realpath",
+}
+
+func (*path) AttrNames() []string {
+	return pathAttrNames
+}
+
+type pathComponentParser struct {
+	components []bb_path.Component
+}
+
+func (pcp pathComponentParser) ParseFirstComponent(componentWalker bb_path.ComponentWalker, mustBeDirectory bool) (next bb_path.GotDirectoryOrSymlink, remainder bb_path.RelativeParser, err error) {
 	// Stop parsing if there are no components left.
 	if len(pcp.components) == 0 {
-		return path.GotDirectory{Child: componentWalker}, nil, nil
+		return bb_path.GotDirectory{Child: componentWalker}, nil, nil
 	}
 	name := pcp.components[0]
 	remainder = pathComponentParser{
@@ -111,85 +225,85 @@ func (pcp pathComponentParser) ParseFirstComponent(componentWalker path.Componen
 }
 
 type PathResolver struct {
-	CurrentPath *Path
+	CurrentPath *BarePath
 }
 
 var (
-	_ path.ScopeWalker     = &PathResolver{}
-	_ path.ComponentWalker = &PathResolver{}
+	_ bb_path.ScopeWalker     = &PathResolver{}
+	_ bb_path.ComponentWalker = &PathResolver{}
 )
 
-func (r *PathResolver) OnAbsolute() (path.ComponentWalker, error) {
+func (r *PathResolver) OnAbsolute() (bb_path.ComponentWalker, error) {
 	r.CurrentPath = nil
 	return r, nil
 }
 
-func (r *PathResolver) OnRelative() (path.ComponentWalker, error) {
+func (r *PathResolver) OnRelative() (bb_path.ComponentWalker, error) {
 	return r, nil
 }
 
-func (r *PathResolver) OnDriveLetter(drive rune) (path.ComponentWalker, error) {
+func (r *PathResolver) OnDriveLetter(drive rune) (bb_path.ComponentWalker, error) {
 	r.CurrentPath = nil
 	return r, nil
 }
 
-func (r *PathResolver) OnDirectory(name path.Component) (path.GotDirectoryOrSymlink, error) {
+func (r *PathResolver) OnDirectory(name bb_path.Component) (bb_path.GotDirectoryOrSymlink, error) {
 	r.CurrentPath = r.CurrentPath.Append(name)
-	return path.GotDirectory{
+	return bb_path.GotDirectory{
 		Child:        r,
 		IsReversible: true,
 	}, nil
 }
 
-func (r *PathResolver) OnTerminal(name path.Component) (*path.GotSymlink, error) {
+func (r *PathResolver) OnTerminal(name bb_path.Component) (*bb_path.GotSymlink, error) {
 	r.CurrentPath = r.CurrentPath.Append(name)
 	return nil, nil
 }
 
-func (r *PathResolver) OnUp() (path.ComponentWalker, error) {
+func (r *PathResolver) OnUp() (bb_path.ComponentWalker, error) {
 	if r.CurrentPath != nil {
 		r.CurrentPath = r.CurrentPath.parent
 	}
 	return r, nil
 }
 
-type RepoPathResolver func(canonicalRepo pg_label.CanonicalRepo) (*Path, error)
+type RepoPathResolver func(canonicalRepo pg_label.CanonicalRepo) (*BarePath, error)
 
 type pathOrLabelOrStringUnpackerInto struct {
 	repoPathResolver RepoPathResolver
-	workingDirectory *Path
+	workingDirectory *BarePath
 }
 
-func NewPathOrLabelOrStringUnpackerInto(repoPathResolver RepoPathResolver, workingDirectory *Path) unpack.UnpackerInto[*Path] {
+func NewPathOrLabelOrStringUnpackerInto(repoPathResolver RepoPathResolver, workingDirectory *BarePath) unpack.UnpackerInto[*BarePath] {
 	return &pathOrLabelOrStringUnpackerInto{
 		repoPathResolver: repoPathResolver,
 		workingDirectory: workingDirectory,
 	}
 }
 
-func (ui *pathOrLabelOrStringUnpackerInto) UnpackInto(thread *starlark.Thread, v starlark.Value, dst **Path) error {
+func (ui *pathOrLabelOrStringUnpackerInto) UnpackInto(thread *starlark.Thread, v starlark.Value, dst **BarePath) error {
 	switch typedV := v.(type) {
 	case starlark.String:
 		r := PathResolver{
 			CurrentPath: ui.workingDirectory,
 		}
-		if err := path.Resolve(path.UNIXFormat.NewParser(string(typedV)), &r); err != nil {
+		if err := bb_path.Resolve(bb_path.UNIXFormat.NewParser(string(typedV)), &r); err != nil {
 			return err
 		}
 		*dst = r.CurrentPath
 		return nil
 	case label:
-		p, err := ui.repoPathResolver(typedV.value.GetCanonicalRepo())
+		bp, err := ui.repoPathResolver(typedV.value.GetCanonicalRepo())
 		if err != nil {
 			return err
 		}
 		for _, component := range strings.Split(typedV.value.GetRepoRelativePath(), "/") {
-			p = p.Append(path.MustNewComponent(component))
+			bp = bp.Append(bb_path.MustNewComponent(component))
 		}
-		*dst = p
+		*dst = bp
 		return nil
-	case *Path:
-		*dst = typedV
+	case *path:
+		*dst = typedV.bare
 		return nil
 	default:
 		return fmt.Errorf("got %s, want path, Label or str", v.Type())
@@ -197,11 +311,11 @@ func (ui *pathOrLabelOrStringUnpackerInto) UnpackInto(thread *starlark.Thread, v
 }
 
 func (ui *pathOrLabelOrStringUnpackerInto) Canonicalize(thread *starlark.Thread, v starlark.Value) (starlark.Value, error) {
-	var p *Path
-	if err := ui.UnpackInto(thread, v, &p); err != nil {
+	var bp *BarePath
+	if err := ui.UnpackInto(thread, v, &bp); err != nil {
 		return nil, err
 	}
-	return p, nil
+	return starlark.String(bp.GetUNIXString()), nil
 }
 
 func (pathOrLabelOrStringUnpackerInto) GetConcatenationOperator() syntax.Token {

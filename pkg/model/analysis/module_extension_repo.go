@@ -9,9 +9,11 @@ import (
 	"github.com/buildbarn/bb-playground/pkg/evaluation"
 	"github.com/buildbarn/bb-playground/pkg/label"
 	model_core "github.com/buildbarn/bb-playground/pkg/model/core"
+	model_parser "github.com/buildbarn/bb-playground/pkg/model/parser"
 	model_analysis_pb "github.com/buildbarn/bb-playground/pkg/proto/model/analysis"
 	model_starlark_pb "github.com/buildbarn/bb-playground/pkg/proto/model/starlark"
 	"github.com/buildbarn/bb-playground/pkg/storage/dag"
+	"github.com/buildbarn/bb-playground/pkg/storage/object"
 )
 
 func (c *baseComputer) ComputeModuleExtensionRepoValue(ctx context.Context, key *model_analysis_pb.ModuleExtensionRepo_Key, e ModuleExtensionRepoEnvironment) (PatchedModuleExtensionRepoValue, error) {
@@ -29,6 +31,12 @@ func (c *baseComputer) ComputeModuleExtensionRepoValue(ctx context.Context, key 
 	if !moduleExtensionReposValue.IsSet() {
 		return PatchedModuleExtensionRepoValue{}, evaluation.ErrMissingDependency
 	}
+
+	reader := model_parser.NewStorageBackedParsedObjectReader(
+		c.objectDownloader,
+		c.getValueObjectEncoder(),
+		model_parser.NewMessageObjectParser[object.LocalReference, model_analysis_pb.ModuleExtensionRepos_Value_RepoList](),
+	)
 
 	repoName := apparentRepo.String()
 	repoList := model_core.Message[[]*model_analysis_pb.ModuleExtensionRepos_Value_RepoList_Element]{
@@ -77,7 +85,21 @@ func (c *baseComputer) ComputeModuleExtensionRepoValue(ctx context.Context, key 
 				patchedDefinition.Patcher,
 			), nil
 		case *model_analysis_pb.ModuleExtensionRepos_Value_RepoList_Element_Parent_:
-			panic("TODO: Load repo list from storage!")
+			index, err := model_core.GetIndexFromReferenceMessage(level.Parent.Reference, repoList.OutgoingReferences.GetDegree())
+			if err != nil {
+				return PatchedModuleExtensionRepoValue{}, err
+			}
+			listMessage, _, err := reader.ReadParsedObject(
+				ctx,
+				repoList.OutgoingReferences.GetOutgoingReference(index),
+			)
+			if err != nil {
+				return PatchedModuleExtensionRepoValue{}, err
+			}
+			repoList = model_core.Message[[]*model_analysis_pb.ModuleExtensionRepos_Value_RepoList_Element]{
+				Message:            listMessage.Message.Elements,
+				OutgoingReferences: listMessage.OutgoingReferences,
+			}
 		default:
 			return PatchedModuleExtensionRepoValue{}, errors.New("repo list has an unknown level type")
 		}

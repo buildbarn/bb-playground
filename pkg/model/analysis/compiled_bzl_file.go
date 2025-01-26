@@ -182,10 +182,10 @@ func (c *baseComputer) ComputeCompiledBzlFileGlobalValue(ctx context.Context, ke
 
 	globals := compiledBzlFile.Message.CompiledProgram.GetGlobals()
 	name := identifier.GetStarlarkIdentifier().String()
-	if i := sort.Search(
+	if i, ok := sort.Find(
 		len(globals),
-		func(i int) bool { return globals[i].Name >= name },
-	); i < len(globals) && globals[i].Name == name {
+		func(i int) int { return strings.Compare(name, globals[i].Name) },
+	); ok {
 		global := model_core.NewPatchedMessageFromExisting(
 			model_core.Message[*model_starlark_pb.Value]{
 				Message:            globals[i].Value,

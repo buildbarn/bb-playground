@@ -66,7 +66,9 @@ func TestBuild(t *testing.T) {
 		parentAppender.EXPECT().Call(gomock.Any(), gomock.Not(gomock.Nil()), gomock.Len(0)).
 			Do(func(output model_core.PatchedMessage[*model_filesystem_pb.Directory, model_core.ReferenceMetadata], externalContents *object.Contents, externalMetadata []model_core.ReferenceMetadata) {
 				output.Message.Leaves = &model_filesystem_pb.Directory_LeavesExternal{
-					LeavesExternal: output.Patcher.AddReference(externalContents.GetReference(), metadata1),
+					LeavesExternal: &model_filesystem_pb.LeavesReference{
+						Reference: output.Patcher.AddReference(externalContents.GetReference(), metadata1),
+					},
 				}
 			}).
 			Times(1)
@@ -120,7 +122,9 @@ func TestBuild(t *testing.T) {
 		parentAppender.EXPECT().Call(gomock.Any(), gomock.Not(gomock.Nil()), gomock.Len(0)).
 			Do(func(output model_core.PatchedMessage[*model_filesystem_pb.Directory, model_core.ReferenceMetadata], externalContents *object.Contents, externalMetadata []model_core.ReferenceMetadata) {
 				output.Message.Leaves = &model_filesystem_pb.Directory_LeavesExternal{
-					LeavesExternal: output.Patcher.AddReference(externalContents.GetReference(), metadata1),
+					LeavesExternal: &model_filesystem_pb.LeavesReference{
+						Reference: output.Patcher.AddReference(externalContents.GetReference(), metadata1),
+					},
 				}
 			}).
 			Times(2)
@@ -142,8 +146,10 @@ func TestBuild(t *testing.T) {
 		references, metadata := output.Patcher.SortAndSetReferences()
 		testutil.RequireEqualProto(t, &model_filesystem_pb.Directory{
 			Leaves: &model_filesystem_pb.Directory_LeavesExternal{
-				LeavesExternal: &model_core_pb.Reference{
-					Index: 1,
+				LeavesExternal: &model_filesystem_pb.LeavesReference{
+					Reference: &model_core_pb.Reference{
+						Index: 1,
+					},
 				},
 			},
 		}, output.Message)
@@ -179,7 +185,9 @@ func TestBuild(t *testing.T) {
 		parentAppender.EXPECT().Call(gomock.Any(), gomock.Not(gomock.Nil()), gomock.Len(0)).
 			Do(func(output model_core.PatchedMessage[*model_filesystem_pb.Directory, model_core.ReferenceMetadata], externalContents *object.Contents, externalMetadata []model_core.ReferenceMetadata) {
 				output.Message.Leaves = &model_filesystem_pb.Directory_LeavesExternal{
-					LeavesExternal: output.Patcher.AddReference(externalContents.GetReference(), metadata1),
+					LeavesExternal: &model_filesystem_pb.LeavesReference{
+						Reference: output.Patcher.AddReference(externalContents.GetReference(), metadata1),
+					},
 				}
 			}).
 			Times(1)

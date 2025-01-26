@@ -94,20 +94,20 @@ func (rr *repositoryRule) CallInternal(thread *starlark.Thread, args starlark.Tu
 		if name.IsPublic() {
 			attr := attrs[name]
 			nameStr := name.String()
+			unpacker := unpack.Canonicalize(attr.attrType.GetCanonicalizer(currentPackage))
 			if attr.defaultValue == nil {
 				// Attribute is mandatory.
 				unpackers = append(unpackers, nameStr)
 			} else {
-				// Attribute is optional.
+				// Attribute is optional. Bazel allows
+				// None to be used to select the default
+				// value.
 				unpackers = append(unpackers, nameStr+"?")
+				unpacker = unpack.IfNotNone(unpacker)
 			}
 			unpackers = append(
 				unpackers,
-				unpack.Bind(
-					thread,
-					&values[len(attrNames)],
-					unpack.Canonicalize(attr.attrType.GetCanonicalizer(currentPackage)),
-				),
+				unpack.Bind(thread, &values[len(attrNames)], unpacker),
 			)
 			attrNames = append(attrNames, nameStr)
 		}

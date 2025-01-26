@@ -15,6 +15,7 @@ import (
 	"google.golang.org/protobuf/types/known/emptypb"
 
 	"go.starlark.net/starlark"
+	"go.starlark.net/syntax"
 )
 
 type Attr struct {
@@ -90,6 +91,29 @@ type AttrType interface {
 	GetCanonicalizer(currentPackage pg_label.CanonicalPackage) unpack.Canonicalizer
 }
 
+// sloppyBoolCanonicalizer can be used to canonicalize Boolean values.
+// For compatibility with Bazel, it also accepts integers with values
+// zero and one, which it converts to False and True, respectively.
+type sloppyBoolCanonicalizer struct{}
+
+func (sloppyBoolCanonicalizer) Canonicalize(thread *starlark.Thread, v starlark.Value) (starlark.Value, error) {
+	if vInt, ok := v.(starlark.Int); ok {
+		if n, ok := vInt.Int64(); ok {
+			switch n {
+			case 0:
+				return starlark.False, nil
+			case 1:
+				return starlark.True, nil
+			}
+		}
+	}
+	return unpack.Bool.Canonicalize(thread, v)
+}
+
+func (sloppyBoolCanonicalizer) GetConcatenationOperator() syntax.Token {
+	return 0
+}
+
 type boolAttrType struct{}
 
 var BoolAttrType AttrType = boolAttrType{}
@@ -105,7 +129,7 @@ func (boolAttrType) Encode(out *model_starlark_pb.Attr) {
 }
 
 func (boolAttrType) GetCanonicalizer(currentPackage pg_label.CanonicalPackage) unpack.Canonicalizer {
-	return unpack.Bool
+	return sloppyBoolCanonicalizer{}
 }
 
 type intAttrType struct {
@@ -157,12 +181,16 @@ func (intListAttrType) GetCanonicalizer(currentPackage pg_label.CanonicalPackage
 }
 
 type labelAttrType struct {
-	allowNone bool
+	allowNone       bool
+	allowSingleFile bool
+	executable      bool
 }
 
-func NewLabelAttrType(allowNone bool) AttrType {
+func NewLabelAttrType(allowNone, allowSingleFile, executable bool) AttrType {
 	return &labelAttrType{
-		allowNone: allowNone,
+		allowNone:       allowNone,
+		allowSingleFile: allowSingleFile,
+		executable:      executable,
 	}
 }
 
@@ -173,7 +201,9 @@ func (labelAttrType) Type() string {
 func (at *labelAttrType) Encode(out *model_starlark_pb.Attr) {
 	out.Type = &model_starlark_pb.Attr_Label{
 		Label: &model_starlark_pb.Attr_LabelType{
-			AllowNone: at.allowNone,
+			AllowNone:       at.allowNone,
+			AllowSingleFile: at.allowSingleFile,
+			Executable:      at.executable,
 		},
 	}
 }

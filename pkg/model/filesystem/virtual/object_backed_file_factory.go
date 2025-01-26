@@ -118,6 +118,20 @@ func (objectBackedFile) VirtualWrite(buf []byte, offset uint64) (int, virtual.St
 	panic("request to write to read-only file should have been intercepted")
 }
 
-func (objectBackedFile) VirtualApply(data any) bool {
-	return false
+// ApplyGetFileContents can be used to reobtain the FileContentsEntry
+// that was provided to LookupFile() to construct the file. This can be
+// used to obtain a reference to the underlying file without recomputing
+// the file's Merkle tree.
+type ApplyGetFileContents struct {
+	FileContents model_filesystem.FileContentsEntry
+}
+
+func (f *objectBackedFile) VirtualApply(data any) bool {
+	switch p := data.(type) {
+	case *ApplyGetFileContents:
+		p.FileContents = f.fileContents
+	default:
+		return false
+	}
+	return true
 }

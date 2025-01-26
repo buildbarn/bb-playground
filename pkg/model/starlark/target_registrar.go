@@ -18,7 +18,7 @@ type TargetRegistrar struct {
 	defaultInheritableAttrs               model_core.Message[*model_starlark_pb.InheritableAttrs]
 	createDefaultInheritableAttrsMetadata func(index int) dag.ObjectContentsWalker
 	setDefaultInheritableAttrs            bool
-	targets                               map[string]model_core.PatchedMessage[*model_starlark_pb.Target, dag.ObjectContentsWalker]
+	targets                               map[string]model_core.PatchedMessage[*model_starlark_pb.Target_Definition, dag.ObjectContentsWalker]
 }
 
 func NewTargetRegistrar(inlinedTreeOptions *inlinedtree.Options, defaultInheritableAttrs model_core.Message[*model_starlark_pb.InheritableAttrs]) *TargetRegistrar {
@@ -28,11 +28,11 @@ func NewTargetRegistrar(inlinedTreeOptions *inlinedtree.Options, defaultInherita
 		createDefaultInheritableAttrsMetadata: func(index int) dag.ObjectContentsWalker {
 			return dag.ExistingObjectContentsWalker
 		},
-		targets: map[string]model_core.PatchedMessage[*model_starlark_pb.Target, dag.ObjectContentsWalker]{},
+		targets: map[string]model_core.PatchedMessage[*model_starlark_pb.Target_Definition, dag.ObjectContentsWalker]{},
 	}
 }
 
-func (tr *TargetRegistrar) GetTargets() map[string]model_core.PatchedMessage[*model_starlark_pb.Target, dag.ObjectContentsWalker] {
+func (tr *TargetRegistrar) GetTargets() map[string]model_core.PatchedMessage[*model_starlark_pb.Target_Definition, dag.ObjectContentsWalker] {
 	return tr.targets
 }
 
@@ -53,10 +53,16 @@ func (tr *TargetRegistrar) getVisibilityPackageGroup(visibility []pg_label.Canon
 	), nil
 }
 
-func (tr *TargetRegistrar) registerTarget(name string, target model_core.PatchedMessage[*model_starlark_pb.Target, dag.ObjectContentsWalker]) error {
-	if _, ok := tr.targets[name]; ok {
+func (tr *TargetRegistrar) registerExplicitTarget(name string, target model_core.PatchedMessage[*model_starlark_pb.Target_Definition, dag.ObjectContentsWalker]) error {
+	if tr.targets[name].IsSet() {
 		return fmt.Errorf("package contains multiple targets with name %#v", name)
 	}
 	tr.targets[name] = target
 	return nil
+}
+
+func (tr *TargetRegistrar) registerImplicitTarget(name string) {
+	if _, ok := tr.targets[name]; !ok {
+		tr.targets[name] = model_core.PatchedMessage[*model_starlark_pb.Target_Definition, dag.ObjectContentsWalker]{}
+	}
 }

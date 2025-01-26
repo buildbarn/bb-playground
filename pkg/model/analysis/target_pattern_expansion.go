@@ -13,6 +13,7 @@ import (
 	model_encoding "github.com/buildbarn/bb-playground/pkg/model/encoding"
 	model_parser "github.com/buildbarn/bb-playground/pkg/model/parser"
 	model_analysis_pb "github.com/buildbarn/bb-playground/pkg/proto/model/analysis"
+	model_starlark_pb "github.com/buildbarn/bb-playground/pkg/proto/model/starlark"
 	"github.com/buildbarn/bb-playground/pkg/storage/dag"
 	"github.com/buildbarn/bb-playground/pkg/storage/object"
 )
@@ -57,12 +58,12 @@ func (c *baseComputer) expandCanonicalTargetPattern(
 			OutgoingReferences: targetPatternExpansion.OutgoingReferences,
 		}}
 		for len(lists) > 0 {
-			lastDict := &lists[len(lists)-1]
-			if len(lastDict.Message) == 0 {
+			lastList := &lists[len(lists)-1]
+			if len(lastList.Message) == 0 {
 				lists = lists[:len(lists)-1]
 			} else {
-				entry := lastDict.Message[0]
-				lastDict.Message = lastDict.Message[1:]
+				entry := lastList.Message[0]
+				lastList.Message = lastList.Message[1:]
 				switch level := entry.Level.(type) {
 				case *model_analysis_pb.TargetPatternExpansion_Value_TargetLabelList_Element_Leaf:
 					targetLabel, err := label.NewCanonicalLabel(level.Leaf)
@@ -75,14 +76,14 @@ func (c *baseComputer) expandCanonicalTargetPattern(
 						return
 					}
 				case *model_analysis_pb.TargetPatternExpansion_Value_TargetLabelList_Element_Parent_:
-					index, err := model_core.GetIndexFromReferenceMessage(level.Parent.Reference, lastDict.OutgoingReferences.GetDegree())
+					index, err := model_core.GetIndexFromReferenceMessage(level.Parent.Reference, lastList.OutgoingReferences.GetDegree())
 					if err != nil {
 						*errOut = err
 						return
 					}
 					child, _, err := reader.ReadParsedObject(
 						ctx,
-						lastDict.OutgoingReferences.GetOutgoingReference(index),
+						lastList.OutgoingReferences.GetOutgoingReference(index),
 					)
 					if err != nil {
 						*errOut = err
@@ -93,7 +94,7 @@ func (c *baseComputer) expandCanonicalTargetPattern(
 						OutgoingReferences: child.OutgoingReferences,
 					})
 				default:
-					*errOut = errors.New("dict entry is of an unknown type")
+					*errOut = errors.New("list entry is of an unknown type")
 					return
 				}
 			}
@@ -110,14 +111,16 @@ func (c *baseComputer) ComputeTargetPatternExpansionValue(ctx context.Context, k
 	if initialTarget, includeFileTargets, ok := canonicalTargetPattern.AsSinglePackageTargetPattern(); ok {
 		// Target pattern of shape "@@a+//b:all",
 		// "@@a+//b:all-targets" or "@@a+//b:*".
+		canonicalPackage := initialTarget.GetCanonicalPackage()
 		packageValue := e.GetPackageValue(&model_analysis_pb.Package_Key{
-			Label: initialTarget.GetCanonicalPackage().String(),
+			Label: canonicalPackage.String(),
 		})
 		if !packageValue.IsSet() {
 			return PatchedTargetPatternExpansionValue{}, evaluation.ErrMissingDependency
 		}
 
 		definition, err := c.lookupTargetDefinitionInTargetList(
+			ctx,
 			model_core.Message[[]*model_analysis_pb.Package_Value_TargetList_Element]{
 				Message:            packageValue.Message.Targets,
 				OutgoingReferences: packageValue.OutgoingReferences,
@@ -139,10 +142,6 @@ func (c *baseComputer) ComputeTargetPatternExpansionValue(ctx context.Context, k
 					},
 				}},
 			}), nil
-		}
-
-		if includeFileTargets {
-			return PatchedTargetPatternExpansionValue{}, errors.New("target pattern expansion with file targets is not yet supported")
 		}
 
 		treeBuilder := btree.NewSplitProllyBuilder(
@@ -167,7 +166,72 @@ func (c *baseComputer) ComputeTargetPatternExpansionValue(ctx context.Context, k
 			),
 		)
 
-		// TODO: Iterate over targets and add them to the B-tree!
+		reader := model_parser.NewStorageBackedParsedObjectReader(
+			c.objectDownloader,
+			c.getValueObjectEncoder(),
+			model_parser.NewMessageObjectParser[object.LocalReference, model_analysis_pb.Package_Value_TargetList](),
+		)
+
+		targetLists := []model_core.Message[[]*model_analysis_pb.Package_Value_TargetList_Element]{{
+			Message:            packageValue.Message.Targets,
+			OutgoingReferences: packageValue.OutgoingReferences,
+		}}
+		for len(targetLists) > 0 {
+			lastList := &targetLists[len(targetLists)-1]
+			if len(lastList.Message) == 0 {
+				targetLists = targetLists[:len(targetLists)-1]
+			} else {
+				entry := lastList.Message[0]
+				lastList.Message = lastList.Message[1:]
+				switch level := entry.Level.(type) {
+				case *model_analysis_pb.Package_Value_TargetList_Element_Leaf:
+					reportTarget := false
+					switch level.Leaf.Definition.GetKind().(type) {
+					case *model_starlark_pb.Target_Definition_Alias:
+						reportTarget = true
+					case *model_starlark_pb.Target_Definition_RuleTarget:
+						reportTarget = true
+					case *model_starlark_pb.Target_Definition_SourceFileTarget:
+						if includeFileTargets {
+							reportTarget = true
+						}
+					}
+					if reportTarget {
+						targetName, err := label.NewTargetName(level.Leaf.Name)
+						if err != nil {
+							return PatchedTargetPatternExpansionValue{}, fmt.Errorf("invalid target name %#v: %w", level.Leaf.Name, err)
+						}
+						if err := treeBuilder.PushChild(model_core.NewSimplePatchedMessage[dag.ObjectContentsWalker](
+							&model_analysis_pb.TargetPatternExpansion_Value_TargetLabelList_Element{
+								Level: &model_analysis_pb.TargetPatternExpansion_Value_TargetLabelList_Element_Leaf{
+									Leaf: canonicalPackage.AppendTargetName(targetName).String(),
+								},
+							},
+						)); err != nil {
+							return PatchedTargetPatternExpansionValue{}, err
+						}
+					}
+				case *model_analysis_pb.Package_Value_TargetList_Element_Parent_:
+					index, err := model_core.GetIndexFromReferenceMessage(level.Parent.Reference, lastList.OutgoingReferences.GetDegree())
+					if err != nil {
+						return PatchedTargetPatternExpansionValue{}, err
+					}
+					child, _, err := reader.ReadParsedObject(
+						ctx,
+						lastList.OutgoingReferences.GetOutgoingReference(index),
+					)
+					if err != nil {
+						return PatchedTargetPatternExpansionValue{}, err
+					}
+					targetLists = append(targetLists, model_core.Message[[]*model_analysis_pb.Package_Value_TargetList_Element]{
+						Message:            child.Message.Elements,
+						OutgoingReferences: child.OutgoingReferences,
+					})
+				default:
+					return PatchedTargetPatternExpansionValue{}, errors.New("list entry is of an unknown type")
+				}
+			}
+		}
 
 		targetLabelsList, err := treeBuilder.FinalizeList()
 		if err != nil {

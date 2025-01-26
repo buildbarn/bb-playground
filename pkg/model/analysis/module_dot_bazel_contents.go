@@ -214,27 +214,23 @@ func (c *baseComputer) ComputeModuleDotBazelContentsValue(ctx context.Context, k
 	}
 
 	buildList := finalBuildListValue.Message.BuildList
-	if i := sort.Search(
+	if i, ok := sort.Find(
 		len(buildList),
-		func(i int) bool {
+		func(i int) int {
 			module := buildList[i]
-			if expectedNameStr < module.Name {
-				return true
-			} else if expectedNameStr > module.Name {
-				return false
+			if cmp := strings.Compare(expectedNameStr, module.Name); cmp != 0 {
+				return cmp
 			}
 			if hasVersion {
 				if version, err := label.NewModuleVersion(module.Version); err == nil {
-					if cmp := expectedVersion.Compare(version); cmp < 0 {
-						return true
-					} else if cmp > 0 {
-						return false
+					if cmp := expectedVersion.Compare(version); cmp != 0 {
+						return cmp
 					}
 				}
 			}
-			return true
+			return 0
 		},
-	); i < len(buildList) && buildList[i].Name == expectedNameStr {
+	); ok {
 		foundModule := buildList[i]
 		foundVersion, err := label.NewModuleVersion(foundModule.Version)
 		if err != nil {

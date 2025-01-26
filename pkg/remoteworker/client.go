@@ -159,10 +159,10 @@ func (c *Client[TAction, TActionPtr]) startExecution(desiredState *remoteworker_
 	}
 
 	// Determine which worker key is used.
-	workerKeyIndex := sort.Search(len(c.request.PublicKeys), func(i int) bool {
-		return bytes.Compare(action.PlatformPkixPublicKey, c.request.PublicKeys[i].PkixPublicKey) <= 0
+	workerKeyIndex, ok := sort.Find(len(c.request.PublicKeys), func(i int) int {
+		return bytes.Compare(action.PlatformPkixPublicKey, c.request.PublicKeys[i].PkixPublicKey)
 	})
-	if workerKeyIndex >= len(c.request.PublicKeys) || !bytes.Equal(action.PlatformPkixPublicKey, c.request.PublicKeys[workerKeyIndex].PkixPublicKey) {
+	if !ok {
 		return status.Errorf(codes.InvalidArgument, "Worker received action for platform with PKIX public key %s, even though it does not announce this key", base64.StdEncoding.EncodeToString(action.PlatformPkixPublicKey))
 	}
 

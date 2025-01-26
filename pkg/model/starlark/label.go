@@ -19,9 +19,10 @@ type label struct {
 }
 
 var (
+	_ EncodableValue    = &label{}
+	_ HasLabels         = &label{}
 	_ starlark.HasAttrs = &label{}
 	_ starlark.Value    = &label{}
-	_ EncodableValue    = &label{}
 )
 
 func NewLabel(value pg_label.CanonicalLabel) starlark.Value {
@@ -79,6 +80,10 @@ func (l label) EncodeValue(path map[starlark.Value]struct{}, currentIdentifier *
 			},
 		},
 	), false, nil
+}
+
+func (l label) VisitLabels(path map[starlark.Value]struct{}, visitor func(pg_label.CanonicalLabel)) {
+	visitor(l.value)
 }
 
 type (
@@ -189,6 +194,6 @@ func (labelUnpackerInto) GetConcatenationOperator() syntax.Token {
 	return 0
 }
 
-func currentFilePackage(thread *starlark.Thread) pg_label.CanonicalPackage {
-	return pg_label.MustNewCanonicalLabel(thread.CallFrame(1).Pos.Filename()).GetCanonicalPackage()
+func CurrentFilePackage(thread *starlark.Thread, depth int) pg_label.CanonicalPackage {
+	return pg_label.MustNewCanonicalLabel(thread.CallFrame(depth).Pos.Filename()).GetCanonicalPackage()
 }

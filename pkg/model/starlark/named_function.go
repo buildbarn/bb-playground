@@ -87,6 +87,12 @@ func (d starlarkNamedFunctionDefinition) Encode(path map[starlark.Value]struct{}
 
 	var closure *model_starlark_pb.Function_Closure
 	if position.Col != 1 || name == "lambda" {
+		if _, ok := path[d]; ok {
+			return model_core.PatchedMessage[*model_starlark_pb.Function, dag.ObjectContentsWalker]{}, false, errors.New("value is defined recursively")
+		}
+		path[d] = struct{}{}
+		defer delete(path, d)
+
 		numRawDefaults := d.Function.NumRawDefaults()
 		defaultParameters := make([]*model_starlark_pb.Function_Closure_DefaultParameter, 0, numRawDefaults)
 		for index := 0; index < numRawDefaults; index++ {

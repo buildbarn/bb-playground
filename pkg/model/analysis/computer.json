@@ -8,7 +8,12 @@
       },
       "BuildResult": {
          "dependsOn": [
-            "TargetCompletion"
+            "BuildSpecification",
+            "CanonicalRepoName",
+            "RootModule",
+            "TargetCompletion",
+            "TargetPatternExpansion",
+            "VisibleTarget"
          ]
       },
       "BuildSpecification": { },
@@ -37,6 +42,16 @@
       "CommandEncoders": {
          "dependsOn": [
             "BuildSpecification"
+         ]
+      },
+      "CompatibleExecutionPlatforms": {
+         "dependsOn": [
+            "RegisteredExecutionPlatforms"
+         ]
+      },
+      "CompatibleToolchainsForType": {
+         "dependsOn": [
+            "RegisteredToolchainsForType"
          ]
       },
       "CompiledBzlFile": {
@@ -83,21 +98,6 @@
             "CompiledBzlFile"
          ]
       },
-      "ConfiguredRule": {
-         "dependsOn": [
-            "CompiledBzlFileGlobal",
-            "ResolvedToolchains"
-         ]
-      },
-      "ConfiguredRuleObject": {
-         "dependsOn": [
-            "CompiledBzlFileGlobal",
-            "ConfiguredRule"
-         ],
-         "nativeValueType": {
-            "type": "*ConfiguredRule"
-         }
-      },
       "ConfiguredTarget": {
          "dependsOn": [
             "BuiltinsModuleNames",
@@ -105,10 +105,12 @@
             "CompiledBzlFileDecodedGlobals",
             "CompiledBzlFileFunctionFactory",
             "CompiledBzlFileGlobal",
-            "ConfiguredRuleObject",
             "ConfiguredTarget",
+            "ResolvedToolchains",
             "RootModule",
-            "Target"
+            "Select",
+            "Target",
+            "VisibleTarget"
          ]
       },
       "DirectoryAccessParameters": {
@@ -216,6 +218,7 @@
             "FileCreationParameters",
             "FileCreationParametersObject",
             "FileReader",
+            "HttpArchiveContents",
             "HttpFileContents",
             "RegisteredRepoPlatform",
             "Repo",
@@ -293,7 +296,8 @@
             "FileReader",
             "ModuleDotBazelContents",
             "ModulesWithMultipleVersionsObject",
-            "RootModule"
+            "RootModule",
+            "TargetPatternExpansion"
          ]
       },
       "RegisteredRepoPlatform": {
@@ -312,7 +316,14 @@
             "ModuleDotBazelContents",
             "ModulesWithMultipleVersionsObject",
             "RootModule",
-            "TargetPatternExpansion"
+            "Target",
+            "TargetPatternExpansion",
+            "VisibleTarget"
+         ]
+      },
+      "RegisteredToolchainsForType": {
+         "dependsOn": [
+            "RegisteredToolchains"
          ]
       },
       "Repo": {
@@ -357,8 +368,9 @@
       },
       "ResolvedToolchains": {
          "dependsOn": [
-            "RegisteredExecutionPlatforms",
-            "RegisteredToolchains"
+            "CompatibleExecutionPlatforms",
+            "CompatibleToolchainsForType",
+            "VisibleTarget"
          ]
       },
       "RootModule": {
@@ -366,6 +378,7 @@
             "BuildSpecification"
          ]
       },
+      "Select": { },
       "StableInputRootPath": {
          "dependsOn": [
             "ActionResult",
@@ -385,7 +398,7 @@
             "imports": {
                "model_starlark": "github.com/buildbarn/bb-playground/pkg/model/starlark"
             },
-            "type": "*model_starlark.Path"
+            "type": "*model_starlark.BarePath"
          }
       },
       "Target": {
@@ -415,6 +428,13 @@
             "ModuleDotBazelContents",
             "ModulesWithMultipleVersionsObject",
             "RootModule"
+         ]
+      },
+      "VisibleTarget": {
+         "dependsOn": [
+            "Select",
+            "Target",
+            "VisibleTarget"
          ]
       }
    },

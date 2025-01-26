@@ -18,13 +18,13 @@ git_override(
 
 git_override(
     module_name = "com_github_buildbarn_bb_remote_execution",
-    commit = "b7b3bc45a017562064b0cd60ea65ae7ddb4be28a",
+    commit = "d03d5e3708ed851f7ec73a92e8ba155a97d88793",
     remote = "https://github.com/buildbarn/bb-remote-execution.git",
 )
 
 git_override(
     module_name = "com_github_buildbarn_bb_storage",
-    commit = "078d9d76e0f03cf20480f5e9afa76484f2701a30",
+    commit = "ff8c80c6eb4c844b4b79f4f015babc10addc1139",
     remote = "https://github.com/buildbarn/bb-storage.git",
 )
 
@@ -62,6 +62,7 @@ use_repo(
     "com_github_secure_io_siv_go",
     "com_github_seehuhn_mt19937",
     "com_github_stretchr_testify",
+    "com_github_ulikunitz_xz",
     "net_starlark_go",
     "org_golang_google_genproto_googleapis_rpc",
     "org_golang_google_grpc",

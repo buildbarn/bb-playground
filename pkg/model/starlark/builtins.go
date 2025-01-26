@@ -3,6 +3,7 @@ package starlark
 import (
 	"errors"
 	"fmt"
+	"sort"
 
 	pg_label "github.com/buildbarn/bb-playground/pkg/label"
 	model_core "github.com/buildbarn/bb-playground/pkg/model/core"
@@ -13,6 +14,7 @@ import (
 	"go.starlark.net/lib/json"
 	"go.starlark.net/starlark"
 	"go.starlark.net/starlarkstruct"
+	"go.starlark.net/syntax"
 )
 
 var providersListUnpackerInto = unpack.Or([]unpack.UnpackerInto[[][]*Provider]{
@@ -20,7 +22,51 @@ var providersListUnpackerInto = unpack.Or([]unpack.UnpackerInto[[][]*Provider]{
 	unpack.List(unpack.List(unpack.Type[*Provider]("provider"))),
 })
 
-const CanonicalPackageKey = "canonical_package"
+type allowFilesBoolUnpackerInto struct{}
+
+func (allowFilesBoolUnpackerInto) UnpackInto(thread *starlark.Thread, v starlark.Value, dst *[]string) error {
+	var allowFiles bool
+	if err := unpack.Bool.UnpackInto(thread, v, &allowFiles); err != nil {
+		return err
+	}
+	if allowFiles {
+		*dst = []string{""}
+	} else {
+		*dst = nil
+	}
+	return nil
+}
+
+func (allowFilesBoolUnpackerInto) Canonicalize(thread *starlark.Thread, v starlark.Value) (starlark.Value, error) {
+	var allowFiles bool
+	if err := unpack.Bool.UnpackInto(thread, v, &allowFiles); err != nil {
+		return nil, err
+	}
+	if allowFiles {
+		return starlark.NewList([]starlark.Value{starlark.String("")}), nil
+	}
+	return starlark.NewList(nil), nil
+}
+
+func (allowFilesBoolUnpackerInto) GetConcatenationOperator() syntax.Token {
+	return syntax.PLUS
+}
+
+// allowFilesUnpackerInto can be used to unpack allow_files arguments,
+// which either take a list of permitted file extensions or a Boolean
+// value. When the Boolean value is set to true, all file extensions are
+// accepted.
+var allowFilesUnpackerInto = unpack.IfNotNone(unpack.Or([]unpack.UnpackerInto[[]string]{
+	allowFilesBoolUnpackerInto{},
+	unpack.List(unpack.String),
+}))
+
+const (
+	CanonicalPackageKey = "canonical_package"
+	GlobExpanderKey     = "glob_expander"
+)
+
+type GlobExpander = func(include, exclude []string, includeDirectories bool) ([]pg_label.TargetName, error)
 
 var commonBuiltins = starlark.StringDict{
 	"Label": starlark.NewBuiltin(
@@ -32,7 +78,7 @@ var commonBuiltins = starlark.StringDict{
 			var input pg_label.CanonicalLabel
 			if err := starlark.UnpackArgs(
 				b.Name(), args, kwargs,
-				"input", unpack.Bind(thread, &input, NewLabelOrStringUnpackerInto(currentFilePackage(thread))),
+				"input", unpack.Bind(thread, &input, NewLabelOrStringUnpackerInto(CurrentFilePackage(thread, 1))),
 			); err != nil {
 				return nil, err
 			}
@@ -42,9 +88,40 @@ var commonBuiltins = starlark.StringDict{
 	"glob": starlark.NewBuiltin(
 		"glob",
 		func(thread *starlark.Thread, b *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
-			return starlark.NewList([]starlark.Value{
-				starlark.String("TODO: Implement glob()"),
-			}), nil
+			globExpander := thread.Local(GlobExpanderKey)
+			if globExpander == nil {
+				return nil, fmt.Errorf("globs cannot be expanded within this context")
+			}
+
+			var include []string
+			var exclude []string
+			excludeDirectories := 1
+			allowEmpty := false
+			if err := starlark.UnpackArgs(
+				b.Name(), args, kwargs,
+				"include", unpack.Bind(thread, &include, unpack.List(unpack.String)),
+				"exclude?", unpack.Bind(thread, &exclude, unpack.List(unpack.String)),
+				"exclude_sirectories?", unpack.Bind(thread, &excludeDirectories, unpack.Int[int]()),
+				"allow_empty?", unpack.Bind(thread, &allowEmpty, unpack.Bool),
+			); err != nil {
+				return nil, err
+			}
+
+			sort.Strings(include)
+			sort.Strings(exclude)
+			targetNames, err := globExpander.(GlobExpander)(include, exclude, excludeDirectories == 0)
+			if err != nil {
+				return nil, err
+			}
+			if len(targetNames) == 0 && !allowEmpty {
+				return nil, errors.New("glob does not match any source files")
+			}
+
+			labels := make([]starlark.Value, 0, len(targetNames))
+			for _, targetName := range targetNames {
+				labels = append(labels, starlark.String(targetName.String()))
+			}
+			return starlark.NewList(labels), nil
 		},
 	),
 	"select": starlark.NewBuiltin(
@@ -58,7 +135,7 @@ var commonBuiltins = starlark.StringDict{
 			noMatchError := ""
 			if err := starlark.UnpackArgs(
 				b.Name(), args, kwargs,
-				"conditions", unpack.Bind(thread, &conditions, unpack.Dict(NewLabelOrStringUnpackerInto(currentFilePackage(thread)), unpack.Any)),
+				"conditions", unpack.Bind(thread, &conditions, unpack.Dict(NewLabelOrStringUnpackerInto(CurrentFilePackage(thread, 1)), unpack.Any)),
 				"no_match_error?", unpack.Bind(thread, &noMatchError, unpack.String),
 			); err != nil {
 				return nil, err
@@ -78,7 +155,10 @@ var commonBuiltins = starlark.StringDict{
 				}
 			}
 
-			return NewSelect(conditions, defaultValue, noMatchError), nil
+			return NewSelect(
+				[]SelectGroup{NewSelectGroup(conditions, defaultValue, noMatchError)},
+				/* concatenationOperator = */ 0,
+			), nil
 		},
 	),
 }
@@ -196,7 +276,7 @@ var BzlFileBuiltins = starlark.StringDict{
 					defaultValue = nil
 				} else {
 					var err error
-					defaultValue, err = attrType.GetCanonicalizer(currentFilePackage(thread)).
+					defaultValue, err = attrType.GetCanonicalizer(CurrentFilePackage(thread, 1)).
 						Canonicalize(thread, defaultValue)
 					if err != nil {
 						return nil, fmt.Errorf("%s: for parameter default: %w", b.Name(), err)
@@ -231,7 +311,7 @@ var BzlFileBuiltins = starlark.StringDict{
 					defaultValue = nil
 				} else {
 					var err error
-					defaultValue, err = attrType.GetCanonicalizer(currentFilePackage(thread)).
+					defaultValue, err = attrType.GetCanonicalizer(CurrentFilePackage(thread, 1)).
 						Canonicalize(thread, defaultValue)
 					if err != nil {
 						return nil, fmt.Errorf("%s: for parameter default: %w", b.Name(), err)
@@ -247,9 +327,9 @@ var BzlFileBuiltins = starlark.StringDict{
 					return nil, fmt.Errorf("%s: got %d positional arguments, want 0", b.Name(), len(args))
 				}
 
-				var allowFiles starlark.Value
+				var allowFiles []string
 				var allowRules []string
-				var allowSingleFile starlark.Value
+				var allowSingleFile []string
 				var aspects []*Aspect
 				var cfg starlark.Value
 				var defaultValue starlark.Value = starlark.None
@@ -260,9 +340,9 @@ var BzlFileBuiltins = starlark.StringDict{
 				providers := [][]*Provider{{}}
 				if err := starlark.UnpackArgs(
 					b.Name(), args, kwargs,
-					"allow_files?", &allowFiles,
+					"allow_files?", unpack.Bind(thread, &allowFiles, allowFilesUnpackerInto),
 					"allow_rules?", unpack.Bind(thread, &allowRules, unpack.List(unpack.String)),
-					"allow_single_file?", &allowSingleFile,
+					"allow_single_file?", unpack.Bind(thread, &allowSingleFile, allowFilesUnpackerInto),
 					"aspects?", unpack.Bind(thread, &aspects, unpack.List(unpack.Type[*Aspect]("aspect"))),
 					"cfg?", &cfg,
 					"default?", &defaultValue,
@@ -274,14 +354,17 @@ var BzlFileBuiltins = starlark.StringDict{
 				); err != nil {
 					return nil, err
 				}
+				if len(allowFiles) > 0 && len(allowSingleFile) > 0 {
+					return nil, errors.New("allow_files and allow_single_file cannot be specified at the same time")
+				}
 
-				attrType := NewLabelAttrType(!mandatory)
+				attrType := NewLabelAttrType(!mandatory, len(allowSingleFile) > 0, executable)
 				if mandatory {
 					defaultValue = nil
 				} else {
 					if err := unpack.Or([]unpack.UnpackerInto[starlark.Value]{
 						unpack.Canonicalize(NamedFunctionUnpackerInto),
-						unpack.Canonicalize(attrType.GetCanonicalizer(currentFilePackage(thread))),
+						unpack.Canonicalize(attrType.GetCanonicalizer(CurrentFilePackage(thread, 1))),
 					}).UnpackInto(thread, defaultValue, &defaultValue); err != nil {
 						return nil, fmt.Errorf("%s: for parameter default: %w", b.Name(), err)
 					}
@@ -297,7 +380,7 @@ var BzlFileBuiltins = starlark.StringDict{
 				}
 
 				allowEmpty := true
-				var allowFiles starlark.Value
+				var allowFiles []string
 				var aspects []*Aspect
 				var cfg starlark.Value
 				var defaultValue starlark.Value = starlark.NewDict(0)
@@ -309,7 +392,7 @@ var BzlFileBuiltins = starlark.StringDict{
 					// Positional arguments.
 					"allow_empty?", unpack.Bind(thread, &allowEmpty, unpack.Bool),
 					// Keyword arguments.
-					"allow_files?", &allowFiles,
+					"allow_files?", unpack.Bind(thread, &allowFiles, allowFilesUnpackerInto),
 					"aspects?", unpack.Bind(thread, &aspects, unpack.List(unpack.Type[*Aspect]("aspect"))),
 					"cfg?", &cfg,
 					"default?", &defaultValue,
@@ -326,7 +409,7 @@ var BzlFileBuiltins = starlark.StringDict{
 				} else {
 					if err := unpack.Or([]unpack.UnpackerInto[starlark.Value]{
 						unpack.Canonicalize(NamedFunctionUnpackerInto),
-						unpack.Canonicalize(attrType.GetCanonicalizer(currentFilePackage(thread))),
+						unpack.Canonicalize(attrType.GetCanonicalizer(CurrentFilePackage(thread, 1))),
 					}).UnpackInto(thread, defaultValue, &defaultValue); err != nil {
 						return nil, fmt.Errorf("%s: for parameter default: %w", b.Name(), err)
 					}
@@ -342,7 +425,7 @@ var BzlFileBuiltins = starlark.StringDict{
 				}
 
 				allowEmpty := true
-				var allowFiles starlark.Value
+				var allowFiles []string
 				var allowRules []string
 				var aspects []*Aspect
 				var cfg starlark.Value
@@ -356,7 +439,7 @@ var BzlFileBuiltins = starlark.StringDict{
 					// Positional arguments.
 					"allow_empty?", unpack.Bind(thread, &allowEmpty, unpack.Bool),
 					// Keyword arguments.
-					"allow_files?", &allowFiles,
+					"allow_files?", unpack.Bind(thread, &allowFiles, allowFilesUnpackerInto),
 					"allow_rules?", unpack.Bind(thread, &allowRules, unpack.List(unpack.String)),
 					"aspects?", unpack.Bind(thread, &aspects, unpack.List(unpack.Type[*Aspect]("aspect"))),
 					"cfg?", &cfg,
@@ -375,7 +458,7 @@ var BzlFileBuiltins = starlark.StringDict{
 				} else {
 					if err := unpack.Or([]unpack.UnpackerInto[starlark.Value]{
 						unpack.Canonicalize(NamedFunctionUnpackerInto),
-						unpack.Canonicalize(attrType.GetCanonicalizer(currentFilePackage(thread))),
+						unpack.Canonicalize(attrType.GetCanonicalizer(CurrentFilePackage(thread, 1))),
 					}).UnpackInto(thread, defaultValue, &defaultValue); err != nil {
 						return nil, fmt.Errorf("%s: for parameter default: %w", b.Name(), err)
 					}
@@ -454,7 +537,7 @@ var BzlFileBuiltins = starlark.StringDict{
 				} else {
 					if err := unpack.Or([]unpack.UnpackerInto[starlark.Value]{
 						unpack.Canonicalize(NamedFunctionUnpackerInto),
-						unpack.Canonicalize(attrType.GetCanonicalizer(currentFilePackage(thread))),
+						unpack.Canonicalize(attrType.GetCanonicalizer(CurrentFilePackage(thread, 1))),
 					}).UnpackInto(thread, defaultValue, &defaultValue); err != nil {
 						return nil, fmt.Errorf("%s: for parameter default: %w", b.Name(), err)
 					}
@@ -491,7 +574,7 @@ var BzlFileBuiltins = starlark.StringDict{
 				} else {
 					if err := unpack.Or([]unpack.UnpackerInto[starlark.Value]{
 						unpack.Canonicalize(NamedFunctionUnpackerInto),
-						unpack.Canonicalize(attrType.GetCanonicalizer(currentFilePackage(thread))),
+						unpack.Canonicalize(attrType.GetCanonicalizer(CurrentFilePackage(thread, 1))),
 					}).UnpackInto(thread, defaultValue, &defaultValue); err != nil {
 						return nil, fmt.Errorf("%s: for parameter default: %w", b.Name(), err)
 					}
@@ -528,7 +611,7 @@ var BzlFileBuiltins = starlark.StringDict{
 				} else {
 					if err := unpack.Or([]unpack.UnpackerInto[starlark.Value]{
 						unpack.Canonicalize(NamedFunctionUnpackerInto),
-						unpack.Canonicalize(attrType.GetCanonicalizer(currentFilePackage(thread))),
+						unpack.Canonicalize(attrType.GetCanonicalizer(CurrentFilePackage(thread, 1))),
 					}).UnpackInto(thread, defaultValue, &defaultValue); err != nil {
 						return nil, fmt.Errorf("%s: for parameter default: %w", b.Name(), err)
 					}
@@ -564,7 +647,7 @@ var BzlFileBuiltins = starlark.StringDict{
 				} else {
 					if err := unpack.Or([]unpack.UnpackerInto[starlark.Value]{
 						unpack.Canonicalize(NamedFunctionUnpackerInto),
-						unpack.Canonicalize(attrType.GetCanonicalizer(currentFilePackage(thread))),
+						unpack.Canonicalize(attrType.GetCanonicalizer(CurrentFilePackage(thread, 1))),
 					}).UnpackInto(thread, defaultValue, &defaultValue); err != nil {
 						return nil, fmt.Errorf("%s: for parameter default: %w", b.Name(), err)
 					}
@@ -665,7 +748,7 @@ var BzlFileBuiltins = starlark.StringDict{
 				mandatory := true
 				if err := starlark.UnpackArgs(
 					b.Name(), args, kwargs,
-					"name", unpack.Bind(thread, &name, NewLabelOrStringUnpackerInto(currentFilePackage(thread))),
+					"name", unpack.Bind(thread, &name, NewLabelOrStringUnpackerInto(CurrentFilePackage(thread, 1))),
 					"mandatory?", unpack.Bind(thread, &mandatory, unpack.Bool),
 				); err != nil {
 					return nil, err
@@ -722,7 +805,7 @@ var BzlFileBuiltins = starlark.StringDict{
 			var toolchains []*ToolchainType
 			if err := starlark.UnpackArgs(
 				b.Name(), args, kwargs,
-				"exec_compatible_with?", unpack.Bind(thread, &execCompatibleWith, unpack.List(NewLabelOrStringUnpackerInto(currentFilePackage(thread)))),
+				"exec_compatible_with?", unpack.Bind(thread, &execCompatibleWith, unpack.List(NewLabelOrStringUnpackerInto(CurrentFilePackage(thread, 1)))),
 				"toolchains?", unpack.Bind(thread, &toolchains, unpack.List(ToolchainTypeUnpackerInto)),
 			); err != nil {
 				return nil, err
@@ -767,26 +850,41 @@ var BzlFileBuiltins = starlark.StringDict{
 				if targetRegistrar == nil {
 					return nil, errors.New("targets cannot be registered from within this context")
 				}
+				currentPackage := thread.Local(CanonicalPackageKey).(pg_label.CanonicalPackage)
 
 				var name string
 				var actual *Select
+				deprecation := ""
 				var visibility []pg_label.CanonicalLabel
-				labelOrStringUnpackerInto := NewLabelOrStringUnpackerInto(currentFilePackage(thread))
+				labelOrStringUnpackerInto := NewLabelOrStringUnpackerInto(currentPackage)
 				if err := starlark.UnpackArgs(
 					b.Name(), args, kwargs,
 					"name", unpack.Bind(thread, &name, unpack.Stringer(unpack.TargetName)),
 					"actual", unpack.Bind(thread, &actual, NewSelectUnpackerInto(labelOrStringUnpackerInto)),
-					"visibility?", unpack.Bind(thread, &visibility, unpack.List(labelOrStringUnpackerInto)),
+					"deprecation?", unpack.Bind(thread, &deprecation, unpack.String),
+					"visibility?", unpack.Bind(thread, &visibility, unpack.IfNotNone(unpack.List(labelOrStringUnpackerInto))),
 				); err != nil {
 					return nil, err
 				}
 
 				patcher := model_core.NewReferenceMessagePatcher[dag.ObjectContentsWalker]()
-				visibilityPackageGroup, err := targetRegistrar.getVisibilityPackageGroup(visibility)
-				if err != nil {
-					return nil, err
+				var visibilityPackageGroup *model_starlark_pb.PackageGroup
+				if len(visibility) == 0 {
+					// Unlike rule targets, exports_files()
+					// defaults to public visibility.
+					visibilityPackageGroup = &model_starlark_pb.PackageGroup{
+						Tree: &model_starlark_pb.PackageGroup_Subpackages{
+							IncludeSubpackages: true,
+						},
+					}
+				} else {
+					m, err := targetRegistrar.getVisibilityPackageGroup(visibility)
+					if err != nil {
+						return nil, err
+					}
+					patcher.Merge(m.Patcher)
+					visibilityPackageGroup = m.Message
 				}
-				patcher.Merge(visibilityPackageGroup.Patcher)
 
 				valueEncodingOptions := thread.Local(ValueEncodingOptionsKey).(*ValueEncodingOptions)
 				actualGroups, _, err := actual.EncodeGroups(
@@ -801,17 +899,20 @@ var BzlFileBuiltins = starlark.StringDict{
 				}
 				patcher.Merge(actualGroups.Patcher)
 
-				return starlark.None, targetRegistrar.registerTarget(
+				actual.VisitLabels(map[starlark.Value]struct{}{}, func(l pg_label.CanonicalLabel) {
+					if l.GetCanonicalPackage() == currentPackage {
+						targetRegistrar.registerImplicitTarget(l.GetTargetName().String())
+					}
+				})
+
+				return starlark.None, targetRegistrar.registerExplicitTarget(
 					name,
 					model_core.NewPatchedMessage(
-						&model_starlark_pb.Target{
-							Name: name,
-							Definition: &model_starlark_pb.Target_Definition{
-								Kind: &model_starlark_pb.Target_Definition_Alias{
-									Alias: &model_starlark_pb.Alias{
-										Actual:     actualGroups.Message[0],
-										Visibility: visibilityPackageGroup.Message,
-									},
+						&model_starlark_pb.Target_Definition{
+							Kind: &model_starlark_pb.Target_Definition_Alias{
+								Alias: &model_starlark_pb.Alias{
+									Actual:     actualGroups.Message[0],
+									Visibility: visibilityPackageGroup,
 								},
 							},
 						},
@@ -821,6 +922,71 @@ var BzlFileBuiltins = starlark.StringDict{
 			},
 		),
 		"bazel_version": starlark.String("8.0.0"),
+		"exports_files": starlark.NewBuiltin(
+			"native.exports_files",
+			func(thread *starlark.Thread, b *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
+				targetRegistrar := thread.Local(TargetRegistrarKey).(*TargetRegistrar)
+				if targetRegistrar == nil {
+					return nil, errors.New("targets cannot be registered from within this context")
+				}
+				currentPackage := thread.Local(CanonicalPackageKey).(pg_label.CanonicalPackage)
+
+				if len(args) != 1 {
+					return nil, fmt.Errorf("%s: got %d positional arguments, want at 1", b.Name(), len(args))
+				}
+				var targetNames []string
+				var visibility []pg_label.CanonicalLabel
+				if err := starlark.UnpackArgs(
+					b.Name(), args, kwargs,
+					// Positional arguments.
+					"target_names", unpack.Bind(thread, &targetNames, unpack.List(unpack.Stringer(unpack.TargetName))),
+					// Keyword arguments.
+					"visibility?", unpack.Bind(thread, &visibility, unpack.List(NewLabelOrStringUnpackerInto(currentPackage))),
+				); err != nil {
+					return nil, err
+				}
+
+				for _, targetName := range targetNames {
+					// TODO: Only create the package group once.
+					visibilityPackageGroup, err := targetRegistrar.getVisibilityPackageGroup(visibility)
+					if err != nil {
+						return nil, err
+					}
+
+					if err := targetRegistrar.registerExplicitTarget(
+						targetName,
+						model_core.NewPatchedMessage(
+							&model_starlark_pb.Target_Definition{
+								Kind: &model_starlark_pb.Target_Definition_SourceFileTarget{
+									SourceFileTarget: &model_starlark_pb.SourceFileTarget{
+										Visibility: visibilityPackageGroup.Message,
+									},
+								},
+							},
+							visibilityPackageGroup.Patcher,
+						),
+					); err != nil {
+						return nil, err
+					}
+				}
+				return starlark.None, nil
+			},
+		),
+		"package_name": starlark.NewBuiltin(
+			"native.package_name",
+			func(thread *starlark.Thread, b *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
+				canonicalPackage := thread.Local(CanonicalPackageKey)
+				if canonicalPackage == nil {
+					return nil, errors.New("package name cannot be obtained from within this context")
+				}
+
+				if err := starlark.UnpackArgs(b.Name(), args, kwargs); err != nil {
+					return nil, err
+				}
+
+				return starlark.String(canonicalPackage.(pg_label.CanonicalPackage).GetPackagePath()), nil
+			},
+		),
 		"package_relative_label": starlark.NewBuiltin(
 			"native.package_relative_label",
 			func(thread *starlark.Thread, b *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
@@ -914,16 +1080,15 @@ var BzlFileBuiltins = starlark.StringDict{
 			}
 			var implementation NamedFunction
 			attrs := map[pg_label.StarlarkIdentifier]*Attr{}
-			var buildSetting starlark.Value
+			var buildSetting *BuildSetting
 			var cfg *Transition
-			defaultExecGroup := true
 			doc := ""
 			execGroups := map[string]*ExecGroup{}
 			executable := false
 			var execCompatibleWith []pg_label.CanonicalLabel
 			var fragments []string
 			var hostFragments []string
-			var initializer NamedFunction
+			var initializer *NamedFunction
 			outputs := map[string]string{}
 			var provides []*Provider
 			var subrules starlark.Value
@@ -935,16 +1100,15 @@ var BzlFileBuiltins = starlark.StringDict{
 				"implementation", unpack.Bind(thread, &implementation, NamedFunctionUnpackerInto),
 				// Keyword arguments.
 				"attrs?", unpack.Bind(thread, &attrs, unpack.Dict(unpack.StarlarkIdentifier, unpack.Type[*Attr]("attr.*"))),
-				"build_setting?", &buildSetting,
+				"build_setting?", unpack.Bind(thread, &buildSetting, unpack.IfNotNone(unpack.Type[*BuildSetting]("config.*"))),
 				"cfg?", unpack.Bind(thread, &cfg, unpack.IfNotNone(unpack.Type[*Transition]("transition"))),
-				"default_exec_group?", unpack.Bind(thread, &defaultExecGroup, unpack.Bool),
 				"doc?", unpack.Bind(thread, &doc, unpack.String),
 				"executable?", unpack.Bind(thread, &executable, unpack.Bool),
-				"exec_compatible_with?", unpack.Bind(thread, &execCompatibleWith, unpack.List(NewLabelOrStringUnpackerInto(currentFilePackage(thread)))),
+				"exec_compatible_with?", unpack.Bind(thread, &execCompatibleWith, unpack.List(NewLabelOrStringUnpackerInto(CurrentFilePackage(thread, 1)))),
 				"exec_groups?", unpack.Bind(thread, &execGroups, unpack.Dict(unpack.String, unpack.Type[*ExecGroup]("exec_group"))),
 				"fragments?", unpack.Bind(thread, &fragments, unpack.List(unpack.String)),
 				"host_fragments?", unpack.Bind(thread, &hostFragments, unpack.List(unpack.String)),
-				"initializer?", unpack.Bind(thread, &initializer, unpack.IfNotNone(NamedFunctionUnpackerInto)),
+				"initializer?", unpack.Bind(thread, &initializer, unpack.IfNotNone(unpack.Pointer(NamedFunctionUnpackerInto))),
 				"outputs?", unpack.Bind(thread, &outputs, unpack.Dict(unpack.String, unpack.String)),
 				"provides?", unpack.Bind(thread, &provides, unpack.List(unpack.Type[*Provider]("provider"))),
 				"subrules?", &subrules,
@@ -954,20 +1118,18 @@ var BzlFileBuiltins = starlark.StringDict{
 				return nil, err
 			}
 
-			if defaultExecGroup {
-				if _, ok := execGroups[""]; ok {
-					return nil, errors.New("cannot declare exec_group with name \"\" when default_exec_group=True")
-				}
-				execGroups[""] = NewExecGroup(execCompatibleWith, toolchains)
-			} else if len(execCompatibleWith) > 0 || len(toolchains) > 0 {
-				return nil, errors.New("cannot provide exec_compatible_with or toolchains when default_exec_group=False")
+			if _, ok := execGroups[""]; ok {
+				return nil, errors.New("cannot explicitly declare exec_group with name \"\"")
 			}
+			execGroups[""] = NewExecGroup(execCompatibleWith, toolchains)
 
 			return NewRule(nil, NewStarlarkRuleDefinition(
 				attrs,
+				buildSetting,
 				cfg,
 				execGroups,
 				implementation,
+				initializer,
 				provides,
 			)), nil
 		},
@@ -1026,7 +1188,7 @@ var BzlFileBuiltins = starlark.StringDict{
 			var implementation NamedFunction
 			var inputs []pg_label.CanonicalLabel
 			var outputs []pg_label.CanonicalLabel
-			canonicalLabelListUnpackerInto := unpack.List(NewLabelOrStringUnpackerInto(currentFilePackage(thread)))
+			canonicalLabelListUnpackerInto := unpack.List(NewLabelOrStringUnpackerInto(CurrentFilePackage(thread, 1)))
 			if err := starlark.UnpackArgs(
 				b.Name(), args, kwargs,
 				"implementation", unpack.Bind(thread, &implementation, NamedFunctionUnpackerInto),
