@@ -49,7 +49,6 @@ func main() {
 			return status.Error(codes.InvalidArgument, "No maximum unfinalized parents limit provided")
 		}
 		maximumUnfinalizedParentsLimit := object.NewLimit(configuration.MaximumUnfinalizedParentsLimit)
-		objectStoreSemaphore := semaphore.NewWeighted(configuration.ObjectStoreConcurrency)
 
 		// Construct object and tag stores for mirrored replicas.
 		objectStoreA, tagStoreA, err := createShardsForReplica(grpcClientFactory, configuration.GrpcClientsShardsReplicaA)
@@ -65,7 +64,7 @@ func main() {
 		objectDownloader := object_mirrored.NewMirroredDownloader(objectStoreA, objectStoreB)
 		objectUploader := object_leaserenewing.NewLeaseRenewingUploader(
 			object_mirrored.NewMirroredUploader(objectStoreA, objectStoreB),
-			objectStoreSemaphore,
+			semaphore.NewWeighted(configuration.ObjectStoreConcurrency),
 			maximumUnfinalizedParentsLimit,
 		)
 		dependenciesGroup.Go(func(ctx context.Context, siblingsGroup, dependenciesGroup program.Group) error {
@@ -101,7 +100,7 @@ func main() {
 					s,
 					dag.NewUploaderServer(
 						objectUploader,
-						objectStoreSemaphore,
+						semaphore.NewWeighted(configuration.ObjectStoreConcurrency),
 						tagUpdater,
 						configuration.MaximumUnfinalizedDagsCount,
 						maximumUnfinalizedParentsLimit,

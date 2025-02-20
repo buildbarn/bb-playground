@@ -30,7 +30,7 @@ func (ui *dictUnpackerInto[TKey, TValue]) UnpackInto(thread *starlark.Thread, v 
 	}
 
 	d := make(map[TKey]TValue, dict.Len())
-	for key, value := range starlark.Entries(dict) {
+	for key, value := range starlark.Entries(thread, dict) {
 		var unpackedKey TKey
 		if err := ui.keyUnpacker.UnpackInto(thread, key, &unpackedKey); err != nil {
 			return err
@@ -58,7 +58,7 @@ func (ui *dictUnpackerInto[TKey, TValue]) Canonicalize(thread *starlark.Thread, 
 	}
 
 	d := starlark.NewDict(dict.Len())
-	for key, value := range starlark.Entries(dict) {
+	for key, value := range starlark.Entries(thread, dict) {
 		canonicalizedKey, err := ui.keyUnpacker.Canonicalize(thread, key)
 		if err != nil {
 			return nil, err
@@ -67,7 +67,7 @@ func (ui *dictUnpackerInto[TKey, TValue]) Canonicalize(thread *starlark.Thread, 
 		if err != nil {
 			return nil, err
 		}
-		d.SetKey(canonicalizedKey, canonicalizedValue)
+		d.SetKey(thread, canonicalizedKey, canonicalizedValue)
 	}
 	return d, nil
 }

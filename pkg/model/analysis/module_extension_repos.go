@@ -14,6 +14,7 @@ import (
 	model_core "github.com/buildbarn/bb-playground/pkg/model/core"
 	"github.com/buildbarn/bb-playground/pkg/model/core/btree"
 	model_encoding "github.com/buildbarn/bb-playground/pkg/model/encoding"
+	model_parser "github.com/buildbarn/bb-playground/pkg/model/parser"
 	model_starlark "github.com/buildbarn/bb-playground/pkg/model/starlark"
 	model_analysis_pb "github.com/buildbarn/bb-playground/pkg/proto/model/analysis"
 	model_starlark_pb "github.com/buildbarn/bb-playground/pkg/proto/model/starlark"
@@ -23,7 +24,6 @@ import (
 	"github.com/buildbarn/bb-storage/pkg/filesystem/path"
 
 	"go.starlark.net/starlark"
-	"go.starlark.net/starlarkstruct"
 )
 
 type bazelModuleTag struct {
@@ -53,10 +53,10 @@ func (bazelModuleTag) Truth() starlark.Bool {
 }
 
 func (bazelModuleTag) Hash() (uint32, error) {
-	return 0, nil
+	return 0, errors.New("bazel_module_tag cannot be hashed")
 }
 
-func (t bazelModuleTag) Attr(name string) (starlark.Value, error) {
+func (t bazelModuleTag) Attr(thread *starlark.Thread, name string) (starlark.Value, error) {
 	attrs := t.tagClass.GetAttrs()
 	if index, ok := sort.Find(
 		len(attrs),
@@ -115,13 +115,20 @@ func (c *baseComputer) ComputeModuleExtensionReposValue(ctx context.Context, key
 	}
 	moduleExtensionDefinition := v.ModuleExtension
 
+	thread := c.newStarlarkThread(ctx, e, allBuiltinsModulesNames.Message.BuiltinsModuleNames)
+
 	// Decode tags declared in all MODULE.bazel files belonging to
 	// this module extension.
 	moduleExtensionUsers := usedModuleExtension.GetUsers()
 	modules := make([]starlark.Value, 0, len(moduleExtensionUsers))
-	valueDecodingOptions := c.getValueDecodingOptions(ctx, func(canonicalLabel label.CanonicalLabel) (starlark.Value, error) {
-		return model_starlark.NewLabel(canonicalLabel), nil
+	valueDecodingOptions := c.getValueDecodingOptions(ctx, func(resolvedLabel label.ResolvedLabel) (starlark.Value, error) {
+		return model_starlark.NewLabel(resolvedLabel), nil
 	})
+	listReader := model_parser.NewStorageBackedParsedObjectReader(
+		c.objectDownloader,
+		c.getValueObjectEncoder(),
+		model_parser.NewMessageListObjectParser[object.LocalReference, model_starlark_pb.List_Element](),
+	)
 	tagClassAttrTypes := make([][]model_starlark.AttrType, len(moduleExtensionDefinition.TagClasses))
 	tagClassAttrDefaults := make([][]starlark.Value, len(moduleExtensionDefinition.TagClasses))
 	for _, user := range moduleExtensionUsers {
@@ -135,7 +142,7 @@ func (c *baseComputer) ComputeModuleExtensionReposValue(ctx context.Context, key
 		}
 
 		usedTagClasses := user.TagClasses
-		tagClasses := starlark.StringDict{}
+		tagClasses := map[string]any{}
 		for tagClassIndex, tagClass := range moduleExtensionDefinition.TagClasses {
 			tagClassDefinition := tagClass.TagClass
 			tagClassAttrs := tagClassDefinition.GetAttrs()
@@ -145,15 +152,27 @@ func (c *baseComputer) ComputeModuleExtensionReposValue(ctx context.Context, key
 				declaredTags := usedTagClasses[0].Tags
 				tags = make([]starlark.Value, 0, len(declaredTags))
 				for _, declaredTag := range declaredTags {
+					var errIter error
+					declaredAttrs := maps.Collect(
+						model_starlark.AllStructFields(
+							ctx,
+							listReader,
+							model_core.Message[*model_starlark_pb.Struct_Fields]{
+								Message:            declaredTag.Attrs,
+								OutgoingReferences: usedModuleExtensionValue.OutgoingReferences,
+							},
+							&errIter,
+						),
+					)
+					if errIter != nil {
+						return PatchedModuleExtensionReposValue{}, errIter
+					}
+
 					attrs := make([]starlark.Value, 0, len(tagClassAttrs))
-					declaredAttrs := declaredTag.Attrs
 					for attrIndex, attr := range tagClassAttrs {
-						if len(declaredAttrs) > 0 && declaredAttrs[0].Name == attr.Name {
+						if declaredValue, ok := declaredAttrs[attr.Name]; ok {
 							value, err := model_starlark.DecodeValue(
-								model_core.Message[*model_starlark_pb.Value]{
-									Message:            declaredAttrs[0].Value,
-									OutgoingReferences: usedModuleExtensionValue.OutgoingReferences,
-								},
+								declaredValue,
 								/* currentIdentifier = */ nil,
 								valueDecodingOptions,
 							)
@@ -177,16 +196,15 @@ func (c *baseComputer) ComputeModuleExtensionReposValue(ctx context.Context, key
 								}
 							}
 
-							// TODO: We're passing in a nil thread!
 							canonicalValue, err := (*attrType).GetCanonicalizer(
 								moduleInstance.GetBareCanonicalRepo().GetRootPackage(),
-							).Canonicalize(nil, value)
+							).Canonicalize(thread, value)
 							if err != nil {
 								return PatchedModuleExtensionReposValue{}, fmt.Errorf("failed to canonicalize value of attribute %#v of tag class %#v declared by module instance %#v: %w", attr.Name, tagClass.Name, moduleInstance.String(), err)
 							}
 							attrs = append(attrs, canonicalValue)
 
-							declaredAttrs = declaredAttrs[1:]
+							delete(declaredAttrs, attr.Name)
 						} else if encodedDefaultValue := attr.Attr.GetDefault(); encodedDefaultValue != nil {
 							// Tag didn't provide the attribute.
 							// Use the default value.
@@ -216,7 +234,12 @@ func (c *baseComputer) ComputeModuleExtensionReposValue(ctx context.Context, key
 						}
 					}
 					if len(declaredAttrs) > 0 {
-						return PatchedModuleExtensionReposValue{}, fmt.Errorf("module instance %#v declares tag of class %#v with unknown attribute %#v", moduleInstance.String(), tagClass.Name, declaredAttrs[0].Name)
+						return PatchedModuleExtensionReposValue{}, fmt.Errorf(
+							"module instance %#v declares tag of class %#v with unknown attribute %#v",
+							moduleInstance.String(),
+							tagClass.Name,
+							slices.Min(slices.Collect(maps.Keys(declaredAttrs))),
+						)
 					}
 
 					tags = append(tags, bazelModuleTag{
@@ -234,17 +257,16 @@ func (c *baseComputer) ComputeModuleExtensionReposValue(ctx context.Context, key
 			return PatchedModuleExtensionReposValue{}, fmt.Errorf("module instance %#v uses unknown tag class %#v", moduleInstance.String(), usedTagClasses[0].Name)
 		}
 
-		modules = append(modules, starlarkstruct.FromStringDict(starlarkstruct.Default, starlark.StringDict{
+		modules = append(modules, model_starlark.NewStructFromDict(nil, map[string]any{
 			"is_root": starlark.Bool(user.IsRoot),
 			"name":    starlark.String(moduleInstance.GetModule().String()),
-			"tags":    starlarkstruct.FromStringDict(starlarkstruct.Default, tagClasses),
+			"tags":    model_starlark.NewStructFromDict(nil, tagClasses),
 			"version": starlark.String(versionStr),
 		}))
 	}
 
 	// Call into the implementation function to obtain a set of
 	// repos declared by this module extension.
-	thread := c.newStarlarkThread(ctx, e, allBuiltinsModulesNames.Message.BuiltinsModuleNames)
 	thread.SetLocal(model_starlark.CanonicalPackageKey, moduleExtensionName.GetModuleInstance().GetBareCanonicalRepo().GetRootPackage())
 	thread.SetLocal(model_starlark.ValueEncodingOptionsKey, c.getValueEncodingOptions(moduleExtensionIdentifier.GetCanonicalLabel()))
 
@@ -260,7 +282,7 @@ func (c *baseComputer) ComputeModuleExtensionReposValue(ctx context.Context, key
 	}
 	defer moduleContext.release()
 
-	moduleCtx := starlarkstruct.FromStringDict(starlarkstruct.Default, starlark.StringDict{
+	moduleCtx := model_starlark.NewStructFromDict(nil, map[string]any{
 		// Fields shared with repository_ctx.
 		"download":             starlark.NewBuiltin("module_ctx.download", moduleContext.doDownload),
 		"download_and_extract": starlark.NewBuiltin("module_ctx.download_and_extract", moduleContext.doDownloadAndExtract),
@@ -268,7 +290,7 @@ func (c *baseComputer) ComputeModuleExtensionReposValue(ctx context.Context, key
 		"extract":              starlark.NewBuiltin("module_ctx.extract", moduleContext.doExtract),
 		"file":                 starlark.NewBuiltin("module_ctx.file", moduleContext.doFile),
 		"getenv":               starlark.NewBuiltin("module_ctx.getenv", moduleContext.doGetenv),
-		"os":                   newRepositoryOS(repoPlatform.Message),
+		"os":                   newRepositoryOS(thread, repoPlatform.Message),
 		"path":                 starlark.NewBuiltin("module_ctx.path", moduleContext.doPath),
 		"read":                 starlark.NewBuiltin("module_ctx.read", moduleContext.doRead),
 		"report_progress":      starlark.NewBuiltin("module_ctx.report_progress", moduleContext.doReportProgress),
@@ -328,19 +350,19 @@ func (c *baseComputer) ComputeModuleExtensionReposValue(ctx context.Context, key
 		btree.NewObjectCreatingNodeMerger(
 			model_encoding.NewChainedBinaryEncoder(nil),
 			c.buildSpecificationReference.GetReferenceFormat(),
-			/* parentNodeComputer = */ func(contents *object.Contents, childNodes []*model_analysis_pb.ModuleExtensionRepos_Value_RepoList_Element, outgoingReferences object.OutgoingReferences, metadata []dag.ObjectContentsWalker) (model_core.PatchedMessage[*model_analysis_pb.ModuleExtensionRepos_Value_RepoList_Element, dag.ObjectContentsWalker], error) {
+			/* parentNodeComputer = */ func(contents *object.Contents, childNodes []*model_analysis_pb.ModuleExtensionRepos_Value_Repo, outgoingReferences object.OutgoingReferences, metadata []dag.ObjectContentsWalker) (model_core.PatchedMessage[*model_analysis_pb.ModuleExtensionRepos_Value_Repo, dag.ObjectContentsWalker], error) {
 				var firstName string
 				switch firstElement := childNodes[0].Level.(type) {
-				case *model_analysis_pb.ModuleExtensionRepos_Value_RepoList_Element_Leaf:
+				case *model_analysis_pb.ModuleExtensionRepos_Value_Repo_Leaf:
 					firstName = firstElement.Leaf.Name
-				case *model_analysis_pb.ModuleExtensionRepos_Value_RepoList_Element_Parent_:
+				case *model_analysis_pb.ModuleExtensionRepos_Value_Repo_Parent_:
 					firstName = firstElement.Parent.FirstName
 				}
 				patcher := model_core.NewReferenceMessagePatcher[dag.ObjectContentsWalker]()
 				return model_core.NewPatchedMessage(
-					&model_analysis_pb.ModuleExtensionRepos_Value_RepoList_Element{
-						Level: &model_analysis_pb.ModuleExtensionRepos_Value_RepoList_Element_Parent_{
-							Parent: &model_analysis_pb.ModuleExtensionRepos_Value_RepoList_Element_Parent{
+					&model_analysis_pb.ModuleExtensionRepos_Value_Repo{
+						Level: &model_analysis_pb.ModuleExtensionRepos_Value_Repo_Parent_{
+							Parent: &model_analysis_pb.ModuleExtensionRepos_Value_Repo_Parent{
 								Reference: patcher.AddReference(contents.GetReference(), dag.NewSimpleObjectContentsWalker(contents, metadata)),
 								FirstName: firstName,
 							},
@@ -356,8 +378,8 @@ func (c *baseComputer) ComputeModuleExtensionReposValue(ctx context.Context, key
 	for _, name := range slices.Sorted(maps.Keys(repos)) {
 		repo := repos[name]
 		if err := treeBuilder.PushChild(model_core.NewPatchedMessage(
-			&model_analysis_pb.ModuleExtensionRepos_Value_RepoList_Element{
-				Level: &model_analysis_pb.ModuleExtensionRepos_Value_RepoList_Element_Leaf{
+			&model_analysis_pb.ModuleExtensionRepos_Value_Repo{
+				Level: &model_analysis_pb.ModuleExtensionRepos_Value_Repo_Leaf{
 					Leaf: repo.Message,
 				},
 			},

@@ -1,14 +1,16 @@
 package filesystem
 
 import (
+	"context"
+
 	"github.com/buildbarn/bb-playground/pkg/model/encoding"
+	model_parser "github.com/buildbarn/bb-playground/pkg/model/parser"
 	model_filesystem_pb "github.com/buildbarn/bb-playground/pkg/proto/model/filesystem"
 	"github.com/buildbarn/bb-playground/pkg/storage/object"
 	"github.com/buildbarn/bb-storage/pkg/util"
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
-	"google.golang.org/protobuf/proto"
 )
 
 // FileAccessParameters contains parameters that were used when creating
@@ -45,18 +47,22 @@ func NewFileAccessParametersFromProto(m *model_filesystem_pb.FileAccessParameter
 	}, nil
 }
 
-// DecodeFileContentsList extracts the FileContentsList that is stored
+// DecodeFileContentsList extracts the FileContents list that is stored
 // in an object backed by storage.
-func (p *FileAccessParameters) DecodeFileContentsList(contents *object.Contents) (*model_filesystem_pb.FileContentsList, error) {
+//
+// TODO: Maybe we should simply throw out this method? It doesn't
+// provide a lot of value.
+func (p *FileAccessParameters) DecodeFileContentsList(contents *object.Contents) ([]*model_filesystem_pb.FileContents, error) {
 	decodedData, err := p.fileContentsListEncoder.DecodeBinary(contents.GetPayload())
 	if err != nil {
 		return nil, err
 	}
-	var fileContentsList model_filesystem_pb.FileContentsList
-	if err := proto.Unmarshal(decodedData, &fileContentsList); err != nil {
-		return nil, util.StatusWrapWithCode(err, codes.InvalidArgument, "Invalid Protobuf message")
+	fileContentsList, _, err := model_parser.NewMessageListObjectParser[object.LocalReference, model_filesystem_pb.FileContents]().
+		ParseObject(context.Background(), contents.GetReference(), contents, decodedData)
+	if err != nil {
+		return nil, err
 	}
-	return &fileContentsList, nil
+	return fileContentsList.Message, nil
 }
 
 func (p *FileAccessParameters) GetChunkEncoder() encoding.BinaryEncoder {

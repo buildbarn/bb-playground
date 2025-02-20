@@ -77,4 +77,18 @@ func TestApparentLabel(t *testing.T) {
 			require.Equal(t, output, label.MustNewApparentLabel(input).WithCanonicalRepo(toRepo).String())
 		}
 	})
+
+	t.Run("AsResolvedWithError", func(t *testing.T) {
+		for input, output := range map[string]string{
+			"@@rules_go+//package:target":  "@@[message]//package:target",
+			"@rules_go//tests/legacy/info": "@@[message]//tests/legacy/info",
+			"@rules_go//:rules_go":         "@@[message]//:rules_go",
+			"@rules_go":                    "@@[message]//:rules_go",
+			"@rules_go//:target":           "@@[message]//:target",
+			"@@//:rules_go":                "@@[message]//:rules_go",
+			"@@//hello/world":              "@@[message]//hello/world",
+		} {
+			require.Equal(t, output, label.MustNewApparentLabel(input).AsResolvedWithError("message").String())
+		}
+	})
 }

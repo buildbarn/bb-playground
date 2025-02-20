@@ -1,6 +1,8 @@
 package starlark
 
 import (
+	"errors"
+
 	pg_label "github.com/buildbarn/bb-playground/pkg/label"
 	model_core "github.com/buildbarn/bb-playground/pkg/model/core"
 	model_starlark_pb "github.com/buildbarn/bb-playground/pkg/proto/model/starlark"
@@ -39,8 +41,7 @@ func (TagClass) Truth() starlark.Bool {
 }
 
 func (TagClass) Hash() (uint32, error) {
-	// TODO
-	return 0, nil
+	return 0, errors.New("tag_class cannot be hashed")
 }
 
 func (tc *TagClass) EncodeValue(path map[starlark.Value]struct{}, currentIdentifier *pg_label.CanonicalStarlarkIdentifier, options *ValueEncodingOptions) (model_core.PatchedMessage[*model_starlark_pb.Value, dag.ObjectContentsWalker], bool, error) {

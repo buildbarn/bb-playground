@@ -19,6 +19,13 @@ func (lnv *LateNamedValue) AssignIdentifier(identifier pg_label.CanonicalStarlar
 	}
 }
 
+func (lnv *LateNamedValue) equals(other *LateNamedValue) bool {
+	// First check whether the values have the same memory address.
+	// If values are restored from storage, then their addresses may
+	// differ. Fall back to comparing their identifiers in that case.
+	return lnv == other || (lnv.Identifier != nil && other.Identifier != nil && *lnv.Identifier == *other.Identifier)
+}
+
 type NamedGlobal interface {
 	starlark.Value
 	AssignIdentifier(identifier pg_label.CanonicalStarlarkIdentifier)

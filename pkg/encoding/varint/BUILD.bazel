@@ -5,6 +5,7 @@ go_library(
     srcs = [
         "backward.go",
         "forward.go",
+        "size_bytes.go",
     ],
     importpath = "github.com/buildbarn/bb-playground/pkg/encoding/varint",
     visibility = ["//visibility:public"],

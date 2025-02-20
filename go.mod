@@ -14,12 +14,13 @@ require (
 	github.com/buildbarn/bb-storage v0.0.0-20241220082316-ff8c80c6eb4c
 	github.com/buildbarn/go-cdc v0.0.0-20240326143813-ab4a540e41c6
 	github.com/google/uuid v1.6.0
+	github.com/kballard/go-shellquote v0.0.0-20180428030007-95032a82bc51
 	github.com/prometheus/client_golang v1.20.5
 	github.com/secure-io/siv-go v0.0.0-20180922214919-5ff40651e2c4
 	github.com/seehuhn/mt19937 v1.0.0
 	github.com/stretchr/testify v1.10.0
 	github.com/ulikunitz/xz v0.5.12
-	go.starlark.net v0.0.0-20241226192728-8dfa5b98479f
+	go.starlark.net v0.0.0-20250205221240-492d3672b3f4
 	go.uber.org/mock v0.5.0
 	golang.org/x/exp v0.0.0-20250106191152-7588d65b2ba8
 	golang.org/x/sync v0.10.0

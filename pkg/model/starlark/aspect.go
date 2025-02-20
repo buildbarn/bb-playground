@@ -35,7 +35,7 @@ func (a *Aspect) String() string {
 }
 
 func (a *Aspect) Type() string {
-	return "aspect"
+	return "Aspect"
 }
 
 func (a *Aspect) Freeze() {}
@@ -45,8 +45,7 @@ func (a *Aspect) Truth() starlark.Bool {
 }
 
 func (a *Aspect) Hash() (uint32, error) {
-	// TODO
-	return 0, nil
+	return 0, errors.New("aspect cannot be hashed")
 }
 
 func (a *Aspect) EncodeValue(path map[starlark.Value]struct{}, currentIdentifier *pg_label.CanonicalStarlarkIdentifier, options *ValueEncodingOptions) (model_core.PatchedMessage[*model_starlark_pb.Value, dag.ObjectContentsWalker], bool, error) {

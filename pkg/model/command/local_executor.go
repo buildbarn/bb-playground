@@ -12,12 +12,14 @@ import (
 	"time"
 
 	model_core "github.com/buildbarn/bb-playground/pkg/model/core"
+	"github.com/buildbarn/bb-playground/pkg/model/core/btree"
 	model_encoding "github.com/buildbarn/bb-playground/pkg/model/encoding"
 	model_filesystem "github.com/buildbarn/bb-playground/pkg/model/filesystem"
 	model_filesystem_virtual "github.com/buildbarn/bb-playground/pkg/model/filesystem/virtual"
 	pg_vfs "github.com/buildbarn/bb-playground/pkg/model/filesystem/virtual"
 	model_parser "github.com/buildbarn/bb-playground/pkg/model/parser"
 	model_command_pb "github.com/buildbarn/bb-playground/pkg/proto/model/command"
+	model_core_pb "github.com/buildbarn/bb-playground/pkg/proto/model/core"
 	model_filesystem_pb "github.com/buildbarn/bb-playground/pkg/proto/model/filesystem"
 	remoteworker_pb "github.com/buildbarn/bb-playground/pkg/proto/remoteworker"
 	dag_pb "github.com/buildbarn/bb-playground/pkg/proto/storage/dag"
@@ -101,6 +103,7 @@ type localExecutor struct {
 	uuidGenerator                  util.UUIDGenerator
 	maximumWritableFileUploadDelay time.Duration
 	environmentVariables           map[string]string
+	readinessCheckingDirectory     virtual.Directory
 }
 
 func NewLocalExecutor(
@@ -134,39 +137,27 @@ func NewLocalExecutor(
 		uuidGenerator:                  uuidGenerator,
 		maximumWritableFileUploadDelay: maximumWritableFileUploadDelay,
 		environmentVariables:           environmentVariables,
+		readinessCheckingDirectory:     handleAllocator.New().AsStatelessDirectory(virtual.NewStaticDirectory(nil)),
 	}
 }
 
 func (e *localExecutor) CheckReadiness(ctx context.Context) error {
-	return nil
-}
-
-func (e *localExecutor) gatherArguments(elements model_core.Message[[]*model_command_pb.ArgumentList_Element], out *[]string) error {
-	for _, element := range elements.Message {
-		switch level := element.Level.(type) {
-		case *model_command_pb.ArgumentList_Element_Leaf:
-			*out = append(*out, level.Leaf)
-		case *model_command_pb.ArgumentList_Element_Parent:
-			panic("TODO")
-		default:
-			return status.Error(codes.InvalidArgument, "Argument list element has an unknown level type")
-		}
+	// Create a randomly named directory.
+	directoryName := path.MustNewComponent(uuid.Must(e.uuidGenerator()).String())
+	if err := e.topLevelDirectory.AddChild(
+		ctx,
+		directoryName,
+		virtual.DirectoryChild{}.FromDirectory(e.readinessCheckingDirectory),
+	); err != nil {
+		return util.StatusWrap(err, "Failed to attach readiness checking directory")
 	}
-	return nil
-}
+	defer e.topLevelDirectory.RemoveChild(directoryName)
 
-func (e *localExecutor) gatherEnvironmentVariables(elements model_core.Message[[]*model_command_pb.EnvironmentVariableList_Element], out map[string]string) error {
-	for _, element := range elements.Message {
-		switch level := element.Level.(type) {
-		case *model_command_pb.EnvironmentVariableList_Element_Leaf_:
-			out[level.Leaf.Name] = level.Leaf.Value
-		case *model_command_pb.EnvironmentVariableList_Element_Parent:
-			panic("TODO")
-		default:
-			return status.Error(codes.InvalidArgument, "Environment variable list element has an unknown level type")
-		}
-	}
-	return nil
+	// Ask the runner to validate its existence.
+	_, err := e.runner.CheckReadiness(ctx, &runner_pb.CheckReadinessRequest{
+		Path: directoryName.String(),
+	})
+	return err
 }
 
 func captureLog(ctx context.Context, buildDirectory virtual.PrepopulatedDirectory, name path.Component, writableFileUploadDelay <-chan struct{}, fileCreationParameters *model_filesystem.FileCreationParameters) (model_core.PatchedMessage[*model_filesystem_pb.FileContents, dag.ObjectContentsWalker], error) {
@@ -238,28 +229,71 @@ func (e *localExecutor) Execute(ctx context.Context, action *model_command_pb.Ac
 	// backed by storage to plain lists, so that they can be sent to
 	// the runner.
 	var arguments []string
-	if err := e.gatherArguments(
+	var errIter error
+	for element := range btree.AllLeaves(
+		ctx,
+		model_parser.NewStorageBackedParsedObjectReader(
+			objectDownloader,
+			commandEncoder,
+			model_parser.NewMessageListObjectParser[object.LocalReference, model_command_pb.ArgumentList_Element](),
+		),
 		model_core.Message[[]*model_command_pb.ArgumentList_Element]{
 			Message:            command.Message.Arguments,
 			OutgoingReferences: command.OutgoingReferences,
 		},
-		&arguments,
-	); err != nil {
+		func(element *model_command_pb.ArgumentList_Element) *model_core_pb.Reference {
+			if level, ok := element.Level.(*model_command_pb.ArgumentList_Element_Parent); ok {
+				return level.Parent
+			}
+			return nil
+		},
+		&errIter,
+	) {
+		level, ok := element.Message.Level.(*model_command_pb.ArgumentList_Element_Leaf)
+		if !ok {
+			return &model_command_pb.Result{
+				Status: status.New(codes.InvalidArgument, "Invalid leaf element in arguments").Proto(),
+			}, 0, remoteworker_pb.CurrentState_Completed_FAILED
+		}
+		arguments = append(arguments, level.Leaf)
+	}
+	if errIter != nil {
 		return &model_command_pb.Result{
-			Status: status.Convert(util.StatusWrap(err, "Failed to gather arguments")).Proto(),
+			Status: status.Convert(util.StatusWrap(err, "Failed to iterate arguments")).Proto(),
 		}, 0, remoteworker_pb.CurrentState_Completed_FAILED
 	}
 
 	environmentVariables := map[string]string{}
-	if err := e.gatherEnvironmentVariables(
+	for entry := range btree.AllLeaves(
+		ctx,
+		model_parser.NewStorageBackedParsedObjectReader(
+			objectDownloader,
+			commandEncoder,
+			model_parser.NewMessageListObjectParser[object.LocalReference, model_command_pb.EnvironmentVariableList_Element](),
+		),
 		model_core.Message[[]*model_command_pb.EnvironmentVariableList_Element]{
 			Message:            command.Message.EnvironmentVariables,
 			OutgoingReferences: command.OutgoingReferences,
 		},
-		environmentVariables,
-	); err != nil {
+		func(entry *model_command_pb.EnvironmentVariableList_Element) *model_core_pb.Reference {
+			if level, ok := entry.Level.(*model_command_pb.EnvironmentVariableList_Element_Parent); ok {
+				return level.Parent
+			}
+			return nil
+		},
+		&errIter,
+	) {
+		level, ok := entry.Message.Level.(*model_command_pb.EnvironmentVariableList_Element_Leaf_)
+		if !ok {
+			return &model_command_pb.Result{
+				Status: status.New(codes.InvalidArgument, "Invalid leaf entry in environment variables").Proto(),
+			}, 0, remoteworker_pb.CurrentState_Completed_FAILED
+		}
+		environmentVariables[level.Leaf.Name] = level.Leaf.Value
+	}
+	if errIter != nil {
 		return &model_command_pb.Result{
-			Status: status.Convert(util.StatusWrap(err, "Failed to gather environment variables")).Proto(),
+			Status: status.Convert(util.StatusWrap(err, "Failed to iterate environment variables")).Proto(),
 		}, 0, remoteworker_pb.CurrentState_Completed_FAILED
 	}
 

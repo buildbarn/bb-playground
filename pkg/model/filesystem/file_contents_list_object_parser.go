@@ -6,13 +6,13 @@ import (
 
 	model_core "github.com/buildbarn/bb-playground/pkg/model/core"
 	"github.com/buildbarn/bb-playground/pkg/model/parser"
+	model_parser "github.com/buildbarn/bb-playground/pkg/model/parser"
 	model_filesystem_pb "github.com/buildbarn/bb-playground/pkg/proto/model/filesystem"
 	"github.com/buildbarn/bb-playground/pkg/storage/object"
 	"github.com/buildbarn/bb-storage/pkg/util"
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
-	"google.golang.org/protobuf/proto"
 )
 
 // FileContentsEntry contains the properties of a part of a concatenated file.
@@ -72,18 +72,19 @@ func NewFileContentsListObjectParser[TReference FileContentsListObjectParserRefe
 }
 
 func (p *fileContentsListObjectParser[TReference]) ParseObject(ctx context.Context, reference TReference, outgoingReferences object.OutgoingReferences, data []byte) (FileContentsList, int, error) {
-	var l model_filesystem_pb.FileContentsList
-	if err := proto.Unmarshal(data, &l); err != nil {
-		return nil, 0, util.StatusWrapWithCode(err, codes.InvalidArgument, "Failed to parse file contents list")
+	l, sizeBytes, err := model_parser.NewMessageListObjectParser[TReference, model_filesystem_pb.FileContents]().
+		ParseObject(ctx, reference, outgoingReferences, data)
+	if err != nil {
+		return nil, 0, err
 	}
-	if len(l.Parts) < 2 {
+	if len(l.Message) < 2 {
 		return nil, 0, status.Error(codes.InvalidArgument, "File contents list contains fewer than two parts")
 	}
 
 	var endBytes uint64
 	degree := outgoingReferences.GetDegree()
-	fileContentsList := make(FileContentsList, 0, len(l.Parts))
-	for i, part := range l.Parts {
+	fileContentsList := make(FileContentsList, 0, len(l.Message))
+	for i, part := range l.Message {
 		// Convert 'total_size_bytes' to a cumulative value, to
 		// allow FileContentsIterator to perform binary searching.
 		if part.TotalSizeBytes < 1 {
@@ -104,5 +105,5 @@ func (p *fileContentsListObjectParser[TReference]) ParseObject(ctx context.Conte
 			Reference: outgoingReferences.GetOutgoingReference(partReferenceIndex),
 		})
 	}
-	return fileContentsList, reference.GetSizeBytes(), nil
+	return fileContentsList, sizeBytes, nil
 }

@@ -1,3 +1,16 @@
+diff --git starlark/library.go starlark/library.go
+index 6d7ff45..a7748d6 100644
+--- starlark/library.go
++++ starlark/library.go
+@@ -2476,5 +2476,8 @@ func setUpdate(s *Set, args Tuple, kwargs []Tuple) error {
+ // nameErr returns an error message of the form "name: msg"
+ // where name is b.Name() and msg is a string or error.
+ func nameErr(b *Builtin, msg interface{}) error {
++	if err, ok := msg.(error); ok {
++		return fmt.Errorf("%s: %w", b.Name(), err)
++	}
+ 	return fmt.Errorf("%s: %v", b.Name(), msg)
+ }
 diff --git starlark/unpack.go starlark/unpack.go
 index d15dd8e..ba5ae2f 100644
 --- starlark/unpack.go

@@ -35,3 +35,27 @@ func (ui *ifNotNoneUnpackerInto[T]) Canonicalize(thread *starlark.Thread, v star
 func (ui *ifNotNoneUnpackerInto[T]) GetConcatenationOperator() syntax.Token {
 	return ui.base.GetConcatenationOperator()
 }
+
+type ifNotNoneCanonicalizer struct {
+	base Canonicalizer
+}
+
+// IfNotNoneCanonicalizer is a decorator for Canonicalizer that only calls
+// into the underlying unpacker if the value is not None. This can be of
+// use if None is used to denote that a value is unset.
+func IfNotNoneCanonicalizer(base Canonicalizer) Canonicalizer {
+	return &ifNotNoneCanonicalizer{
+		base: base,
+	}
+}
+
+func (ui *ifNotNoneCanonicalizer) Canonicalize(thread *starlark.Thread, v starlark.Value) (starlark.Value, error) {
+	if v == starlark.None {
+		return v, nil
+	}
+	return ui.base.Canonicalize(thread, v)
+}
+
+func (ui *ifNotNoneCanonicalizer) GetConcatenationOperator() syntax.Token {
+	return ui.base.GetConcatenationOperator()
+}

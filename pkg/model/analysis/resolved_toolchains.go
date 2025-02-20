@@ -8,6 +8,7 @@ import (
 	"github.com/buildbarn/bb-playground/pkg/evaluation"
 	model_core "github.com/buildbarn/bb-playground/pkg/model/core"
 	model_analysis_pb "github.com/buildbarn/bb-playground/pkg/proto/model/analysis"
+	model_core_pb "github.com/buildbarn/bb-playground/pkg/proto/model/core"
 	"github.com/buildbarn/bb-playground/pkg/storage/dag"
 )
 
@@ -47,21 +48,35 @@ func constraintsAreCompatible(actual, expected []*model_analysis_pb.Constraint) 
 	return true
 }
 
-func (c *baseComputer) ComputeResolvedToolchainsValue(ctx context.Context, key *model_analysis_pb.ResolvedToolchains_Key, e ResolvedToolchainsEnvironment) (PatchedResolvedToolchainsValue, error) {
+func (c *baseComputer) ComputeResolvedToolchainsValue(ctx context.Context, key model_core.Message[*model_analysis_pb.ResolvedToolchains_Key], e ResolvedToolchainsEnvironment) (PatchedResolvedToolchainsValue, error) {
 	// Obtain all compatible execution platforms and toolchains.
 	missingDependencies := false
 	compatibleExecutionPlatforms := e.GetCompatibleExecutionPlatformsValue(&model_analysis_pb.CompatibleExecutionPlatforms_Key{
-		Constraints: key.ExecCompatibleWith,
+		Constraints: key.Message.ExecCompatibleWith,
 	})
 	if !compatibleExecutionPlatforms.IsSet() {
 		missingDependencies = true
 	}
-	compatibleToolchainsByType := make([][]*model_analysis_pb.RegisteredToolchain, 0, len(key.Toolchains))
-	for _, toolchain := range key.Toolchains {
-		compatibleToolchainsForTypeValue := e.GetCompatibleToolchainsForTypeValue(&model_analysis_pb.CompatibleToolchainsForType_Key{
-			ToolchainType:     toolchain.ToolchainType,
-			TargetConstraints: key.TargetConstraints,
-		})
+	compatibleToolchainsByType := make([][]*model_analysis_pb.RegisteredToolchain, 0, len(key.Message.Toolchains))
+	for _, toolchain := range key.Message.Toolchains {
+		configurationReference := model_core.NewPatchedMessageFromExisting(
+			model_core.Message[*model_core_pb.Reference]{
+				Message:            key.Message.ConfigurationReference,
+				OutgoingReferences: key.OutgoingReferences,
+			},
+			func(index int) dag.ObjectContentsWalker {
+				return dag.ExistingObjectContentsWalker
+			},
+		)
+		compatibleToolchainsForTypeValue := e.GetCompatibleToolchainsForTypeValue(
+			model_core.PatchedMessage[*model_analysis_pb.CompatibleToolchainsForType_Key, dag.ObjectContentsWalker]{
+				Message: &model_analysis_pb.CompatibleToolchainsForType_Key{
+					ToolchainType:          toolchain.ToolchainType,
+					ConfigurationReference: configurationReference.Message,
+				},
+				Patcher: configurationReference.Patcher,
+			},
+		)
 		if !compatibleToolchainsForTypeValue.IsSet() {
 			missingDependencies = true
 			continue
@@ -79,7 +94,7 @@ func (c *baseComputer) ComputeResolvedToolchainsValue(ctx context.Context, key *
 	// Pick the first execution platform having at least one
 	// matching toolchain for all mandatory toolchain types.
 	executionPlatforms := compatibleExecutionPlatforms.Message.ExecutionPlatforms
-	toolchainTypeHasAtLeastOneMatchingExecutionPlatform := make([]bool, len(compatibleExecutionPlatforms.Message.ExecutionPlatforms))
+	toolchainTypeHasAtLeastOneMatchingExecutionPlatform := make([]bool, len(compatibleToolchainsByType))
 CheckExecutionPlatform:
 	for _, executionPlatform := range executionPlatforms {
 		resolvedToolchains := make([]*model_analysis_pb.RegisteredToolchain, 0, len(compatibleToolchainsByType))
@@ -94,7 +109,7 @@ CheckExecutionPlatform:
 			}
 
 			// Did not find any compatible toolchain.
-			if key.Toolchains[i].Mandatory {
+			if key.Message.Toolchains[i].Mandatory {
 				continue CheckExecutionPlatform
 			}
 			toolchainTypeHasAtLeastOneMatchingExecutionPlatform[i] = true
@@ -116,10 +131,17 @@ CheckExecutionPlatform:
 				// Optional toolchain that is missing.
 				toolchainIdentifiers = append(toolchainIdentifiers, "")
 			} else {
-				visibleTarget := e.GetVisibleTargetValue(&model_analysis_pb.VisibleTarget_Key{
-					FromPackage: resolvedToolchain.Package,
-					ToLabel:     resolvedToolchain.Toolchain,
-				})
+				visibleTarget := e.GetVisibleTargetValue(
+					model_core.NewSimplePatchedMessage[dag.ObjectContentsWalker](
+						&model_analysis_pb.VisibleTarget_Key{
+							FromPackage: resolvedToolchain.Package,
+							ToLabel:     resolvedToolchain.Toolchain,
+							// Don't specify a configuration, as
+							// the toolchain() itself is also
+							// evaluated without one.
+						},
+					),
+				)
 				if !visibleTarget.IsSet() {
 					missingDependencies = true
 					continue
@@ -139,7 +161,7 @@ CheckExecutionPlatform:
 
 	for i, hasMatching := range toolchainTypeHasAtLeastOneMatchingExecutionPlatform {
 		if !hasMatching {
-			return PatchedResolvedToolchainsValue{}, fmt.Errorf("dependency on toolchain type %#v is mandatory, but none of the %d toolchains that are compatible with the target are also compatible with any of the %d execution platforms", key.Toolchains[i].ToolchainType, len(compatibleToolchainsByType[i]), len(executionPlatforms))
+			return PatchedResolvedToolchainsValue{}, fmt.Errorf("dependency on toolchain type %#v is mandatory, but none of the %d toolchains that are compatible with the target are also compatible with any of the %d execution platforms", key.Message.Toolchains[i].ToolchainType, len(compatibleToolchainsByType[i]), len(executionPlatforms))
 		}
 	}
 	return PatchedResolvedToolchainsValue{}, fmt.Errorf("even though all mandatory toolchain types have at least one toolchain that is compatible with one of the %d execution platforms, no single execution platform exists for which all mandatory toolchain types have at least one compatible toolchain", len(executionPlatforms))

@@ -10,10 +10,15 @@ import (
 	"github.com/buildbarn/bb-playground/pkg/evaluation"
 	"github.com/buildbarn/bb-playground/pkg/label"
 	model_core "github.com/buildbarn/bb-playground/pkg/model/core"
+	"github.com/buildbarn/bb-playground/pkg/model/core/btree"
+	model_parser "github.com/buildbarn/bb-playground/pkg/model/parser"
+	model_starlark "github.com/buildbarn/bb-playground/pkg/model/starlark"
 	model_analysis_pb "github.com/buildbarn/bb-playground/pkg/proto/model/analysis"
+	model_core_pb "github.com/buildbarn/bb-playground/pkg/proto/model/core"
 	model_starlark_pb "github.com/buildbarn/bb-playground/pkg/proto/model/starlark"
 	pg_starlark "github.com/buildbarn/bb-playground/pkg/starlark"
 	"github.com/buildbarn/bb-playground/pkg/storage/dag"
+	"github.com/buildbarn/bb-playground/pkg/storage/object"
 
 	"go.starlark.net/starlark"
 )
@@ -57,11 +62,15 @@ func (h *registeredToolchainExtractingModuleDotBazelHandler) RegisterToolchains(
 			}
 			var iterErr error
 			for canonicalToolchainLabel := range h.computer.expandCanonicalTargetPattern(h.context, h.environment, canonicalToolchainTargetPattern, &iterErr) {
-				visibleTargetValue := h.environment.GetVisibleTargetValue(&model_analysis_pb.VisibleTarget_Key{
-					FromPackage:        canonicalToolchainLabel.GetCanonicalPackage().String(),
-					ToLabel:            canonicalToolchainLabel.String(),
-					PermitAliasNoMatch: true,
-				})
+				visibleTargetValue := h.environment.GetVisibleTargetValue(
+					model_core.NewSimplePatchedMessage[dag.ObjectContentsWalker](
+						&model_analysis_pb.VisibleTarget_Key{
+							FromPackage:        canonicalToolchainLabel.GetCanonicalPackage().String(),
+							ToLabel:            canonicalToolchainLabel.String(),
+							PermitAliasNoMatch: true,
+						},
+					),
+				)
 				if !visibleTargetValue.IsSet() {
 					missingDependencies = true
 					continue
@@ -97,6 +106,7 @@ func (h *registeredToolchainExtractingModuleDotBazelHandler) RegisterToolchains(
 				declaredToolchainInfoProvider, err := getProviderFromConfiguredTarget(
 					h.environment,
 					toolchainLabelStr,
+					model_core.NewSimplePatchedMessage[dag.ObjectContentsWalker, *model_core_pb.Reference](nil),
 					declaredToolchainInfoProviderIdentifier,
 				)
 				if err != nil {
@@ -108,26 +118,39 @@ func (h *registeredToolchainExtractingModuleDotBazelHandler) RegisterToolchains(
 				}
 
 				var toolchain, toolchainType *string
-				for _, field := range declaredToolchainInfoProvider.Message {
-					switch field.Name {
+				var errIter error
+				for key, value := range model_starlark.AllStructFields(
+					h.context,
+					model_parser.NewStorageBackedParsedObjectReader(
+						h.computer.objectDownloader,
+						h.computer.getValueObjectEncoder(),
+						model_parser.NewMessageListObjectParser[object.LocalReference, model_starlark_pb.List_Element](),
+					),
+					declaredToolchainInfoProvider,
+					&errIter,
+				) {
+					switch key {
 					case "target_settings":
-						_, ok := field.Value.GetKind().(*model_starlark_pb.Value_List)
+						_, ok := value.Message.Kind.(*model_starlark_pb.Value_List)
 						if !ok {
 							return fmt.Errorf("target_settings field of DeclaredToolchainInfo of toolchain %#v is not a list", toolchainLabelStr)
 						}
 					case "toolchain":
-						l, ok := field.Value.GetKind().(*model_starlark_pb.Value_Label)
+						l, ok := value.Message.Kind.(*model_starlark_pb.Value_Label)
 						if !ok {
 							return fmt.Errorf("toolchain field of DeclaredToolchainInfo of toolchain %#v is not a label", toolchainLabelStr)
 						}
 						toolchain = &l.Label
 					case "toolchain_type":
-						l, ok := field.Value.GetKind().(*model_starlark_pb.Value_Label)
+						l, ok := value.Message.Kind.(*model_starlark_pb.Value_Label)
 						if !ok {
 							return fmt.Errorf("toolchain_type field of DeclaredToolchainInfo of toolchain %#v is not a label", toolchainLabelStr)
 						}
 						toolchainType = &l.Label
 					}
+				}
+				if errIter != nil {
+					return errIter
 				}
 				if toolchain == nil {
 					return fmt.Errorf("DeclaredToolchainInfo of toolchain %#v does not contain field toolchain", toolchainLabelStr)
@@ -138,6 +161,7 @@ func (h *registeredToolchainExtractingModuleDotBazelHandler) RegisterToolchains(
 
 				toolchainPackage := toolchainLabel.GetCanonicalPackage()
 				execCompatibleWith, err := h.computer.constraintValuesToConstraints(
+					h.context,
 					h.environment,
 					toolchainPackage,
 					ruleTarget.RuleTarget.ExecCompatibleWith,
@@ -148,10 +172,60 @@ func (h *registeredToolchainExtractingModuleDotBazelHandler) RegisterToolchains(
 					}
 					missingDependencies = true
 				}
+
+				// Annoyingly enough, target_compatible_with is
+				// configurable. Expand select() expressions.
+				var targetCompatibleWithLabels []string
+				for _, selectGroup := range ruleTarget.RuleTarget.TargetCompatibleWith {
+					targetCompatibleWithValue, err := getValueFromSelectGroup(h.environment, selectGroup, false)
+					if err != nil {
+						return err
+					}
+					targetCompatibleWithList, ok := targetCompatibleWithValue.Kind.(*model_starlark_pb.Value_List)
+					if !ok {
+						return fmt.Errorf("target_compatible_with of toolchain %#v is not a list", toolchainLabelStr)
+					}
+
+					var errIter error
+					for element := range btree.AllLeaves(
+						h.context,
+						model_parser.NewStorageBackedParsedObjectReader(
+							h.computer.objectDownloader,
+							h.computer.getValueObjectEncoder(),
+							model_parser.NewMessageListObjectParser[object.LocalReference, model_starlark_pb.List_Element](),
+						),
+						model_core.Message[[]*model_starlark_pb.List_Element]{
+							Message:            targetCompatibleWithList.List.Elements,
+							OutgoingReferences: targetValue.OutgoingReferences,
+						},
+						func(element *model_starlark_pb.List_Element) *model_core_pb.Reference {
+							if level, ok := element.Level.(*model_starlark_pb.List_Element_Parent_); ok {
+								return level.Parent.Reference
+							}
+							return nil
+						},
+						&errIter,
+					) {
+						level, ok := element.Message.Level.(*model_starlark_pb.List_Element_Leaf)
+						if !ok {
+							return fmt.Errorf("invalid list element level type for target_compatible_with of toolchain %#v", toolchainLabelStr)
+						}
+						label, ok := level.Leaf.Kind.(*model_starlark_pb.Value_Label)
+						if !ok {
+							return fmt.Errorf("invalid list element type for target_compatible_with of toolchain %#v", toolchainLabelStr)
+						}
+						targetCompatibleWithLabels = append(targetCompatibleWithLabels, label.Label)
+					}
+					if errIter != nil {
+						return err
+					}
+				}
+
 				targetCompatibleWith, err := h.computer.constraintValuesToConstraints(
+					h.context,
 					h.environment,
 					toolchainPackage,
-					ruleTarget.RuleTarget.TargetCompatibleWith,
+					targetCompatibleWithLabels,
 				)
 				if err != nil {
 					if !errors.Is(err, evaluation.ErrMissingDependency) {

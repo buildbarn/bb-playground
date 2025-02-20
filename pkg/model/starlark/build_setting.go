@@ -40,8 +40,7 @@ func (bs *BuildSetting) Truth() starlark.Bool {
 }
 
 func (bs *BuildSetting) Hash() (uint32, error) {
-	// TODO
-	return 0, nil
+	return 0, fmt.Errorf("config.%s cannot be hashed", bs.buildSettingType.Type())
 }
 
 func (bs *BuildSetting) Encode() *model_starlark_pb.BuildSetting {

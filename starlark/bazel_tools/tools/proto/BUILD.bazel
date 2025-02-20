@@ -1,0 +1,24 @@
+package(default_visibility = ["//visibility:public"])
+
+# Those aliases are needed to resolve the repository name correctly in both
+# bzlmod and WORKSPACE mode. They are resolved in the namespace of MODULE.tools
+
+alias(
+    name = "protoc",
+    actual = "@protobuf//:protoc",
+)
+
+alias(
+    name = "javalite_toolchain",
+    actual = "@protobuf//:javalite_toolchain",
+)
+
+alias(
+    name = "java_toolchain",
+    actual = "@protobuf//:java_toolchain",
+)
+
+alias(
+    name = "cc_toolchain",
+    actual = "@protobuf//:cc_toolchain",
+)

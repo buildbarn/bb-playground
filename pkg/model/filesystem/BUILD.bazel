@@ -57,6 +57,7 @@ go_test(
     ],
     embed = [":filesystem"],
     deps = [
+        "//pkg/encoding/varint",
         "//pkg/model/core",
         "//pkg/proto/model/core",
         "//pkg/proto/model/filesystem",

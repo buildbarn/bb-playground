@@ -18,12 +18,12 @@ import (
 )
 
 type SelectGroup struct {
-	conditions   map[pg_label.CanonicalLabel]starlark.Value
+	conditions   map[pg_label.ResolvedLabel]starlark.Value
 	defaultValue starlark.Value
 	noMatchError string
 }
 
-func NewSelectGroup(conditions map[pg_label.CanonicalLabel]starlark.Value, defaultValue starlark.Value, noMatchError string) SelectGroup {
+func NewSelectGroup(conditions map[pg_label.ResolvedLabel]starlark.Value, defaultValue starlark.Value, noMatchError string) SelectGroup {
 	return SelectGroup{
 		conditions:   conditions,
 		defaultValue: defaultValue,
@@ -65,8 +65,7 @@ func (Select) Truth() starlark.Bool {
 }
 
 func (Select) Hash() (uint32, error) {
-	// TODO!
-	return 0, nil
+	return 0, errors.New("select cannot be hashed")
 }
 
 func (s *Select) validateConcatenationOperator(op syntax.Token) error {
@@ -76,7 +75,7 @@ func (s *Select) validateConcatenationOperator(op syntax.Token) error {
 	return nil
 }
 
-func (s *Select) Binary(op syntax.Token, y starlark.Value, side starlark.Side) (starlark.Value, error) {
+func (s *Select) Binary(thread *starlark.Thread, op syntax.Token, y starlark.Value, side starlark.Side) (starlark.Value, error) {
 	if op != syntax.PLUS && op != syntax.PIPE {
 		return nil, errors.New("select only supports operators + and |")
 	}
@@ -120,7 +119,7 @@ func (s *Select) EncodeGroups(path map[starlark.Value]struct{}, options *ValueEn
 
 		for _, condition := range slices.SortedFunc(
 			maps.Keys(group.conditions),
-			func(a, b pg_label.CanonicalLabel) int { return strings.Compare(a.String(), b.String()) },
+			func(a, b pg_label.ResolvedLabel) int { return strings.Compare(a.String(), b.String()) },
 		) {
 			value, valueNeedsCode, err := EncodeValue(group.conditions[condition], path, nil, options)
 			if err != nil {
@@ -185,14 +184,14 @@ func (s *Select) EncodeValue(path map[starlark.Value]struct{}, currentIdentifier
 	), needsCode, nil
 }
 
-func (s *Select) VisitLabels(path map[starlark.Value]struct{}, visitor func(pg_label.CanonicalLabel)) {
+func (s *Select) VisitLabels(thread *starlark.Thread, path map[starlark.Value]struct{}, visitor func(pg_label.ResolvedLabel)) {
 	for _, sg := range s.groups {
 		for conditionIdentifier, conditionValue := range sg.conditions {
 			visitor(conditionIdentifier)
-			VisitLabels(conditionValue, path, visitor)
+			VisitLabels(thread, conditionValue, path, visitor)
 		}
 		if sg.defaultValue != nil {
-			VisitLabels(sg.defaultValue, path, visitor)
+			VisitLabels(thread, sg.defaultValue, path, visitor)
 		}
 	}
 }
@@ -221,7 +220,7 @@ func (ui *selectUnpackerInto) UnpackInto(thread *starlark.Thread, v starlark.Val
 
 		canonicalizedGroups := make([]SelectGroup, 0, len(typedV.groups))
 		for _, group := range typedV.groups {
-			canonicalizedConditions := make(map[pg_label.CanonicalLabel]starlark.Value, len(group.conditions))
+			canonicalizedConditions := make(map[pg_label.ResolvedLabel]starlark.Value, len(group.conditions))
 			for condition, value := range group.conditions {
 				canonicalValue, err := ui.valueUnpackerInto.Canonicalize(thread, value)
 				if err != nil {

@@ -14,7 +14,10 @@ func TestBackward(t *testing.T) {
 		t.Run("Random", func(t *testing.T) {
 			for i := 0; i < 100; i++ {
 				before := int8(rand.Int32())
-				after, n := varint.ConsumeBackward[int8](varint.AppendBackward(nil, before))
+				buf := varint.AppendBackward(nil, before)
+				require.Len(t, buf, varint.SizeBytes(before))
+
+				after, n := varint.ConsumeBackward[int8](buf)
 				require.Less(t, 0, n)
 				require.Equal(t, before, after)
 			}
@@ -38,7 +41,10 @@ func TestBackward(t *testing.T) {
 		t.Run("Random", func(t *testing.T) {
 			for i := 0; i < 100; i++ {
 				before := uint8(rand.Uint32())
-				after, n := varint.ConsumeBackward[uint8](varint.AppendBackward(nil, before))
+				buf := varint.AppendBackward(nil, before)
+				require.Len(t, buf, varint.SizeBytes(before))
+
+				after, n := varint.ConsumeBackward[uint8](buf)
 				require.Less(t, 0, n)
 				require.Equal(t, before, after)
 			}
@@ -62,7 +68,10 @@ func TestBackward(t *testing.T) {
 		t.Run("Random", func(t *testing.T) {
 			for i := 0; i < 1000; i++ {
 				before := int16(rand.Int32())
-				after, n := varint.ConsumeBackward[int16](varint.AppendBackward(nil, before))
+				buf := varint.AppendBackward(nil, before)
+				require.Len(t, buf, varint.SizeBytes(before))
+
+				after, n := varint.ConsumeBackward[int16](buf)
 				require.Less(t, 0, n)
 				require.Equal(t, before, after)
 			}
@@ -86,7 +95,10 @@ func TestBackward(t *testing.T) {
 		t.Run("Random", func(t *testing.T) {
 			for i := 0; i < 1000; i++ {
 				before := uint16(rand.Uint32())
-				after, n := varint.ConsumeBackward[uint16](varint.AppendBackward(nil, before))
+				buf := varint.AppendBackward(nil, before)
+				require.Len(t, buf, varint.SizeBytes(before))
+
+				after, n := varint.ConsumeBackward[uint16](buf)
 				require.Less(t, 0, n)
 				require.Equal(t, before, after)
 			}
@@ -110,7 +122,10 @@ func TestBackward(t *testing.T) {
 		t.Run("Random", func(t *testing.T) {
 			for i := 0; i < 10000; i++ {
 				before := rand.Int32()
-				after, n := varint.ConsumeBackward[int32](varint.AppendBackward(nil, before))
+				buf := varint.AppendBackward(nil, before)
+				require.Len(t, buf, varint.SizeBytes(before))
+
+				after, n := varint.ConsumeBackward[int32](buf)
 				require.Less(t, 0, n)
 				require.Equal(t, before, after)
 			}
@@ -134,7 +149,10 @@ func TestBackward(t *testing.T) {
 		t.Run("Random", func(t *testing.T) {
 			for i := 0; i < 10000; i++ {
 				before := rand.Uint32()
-				after, n := varint.ConsumeBackward[uint32](varint.AppendBackward(nil, before))
+				buf := varint.AppendBackward(nil, before)
+				require.Len(t, buf, varint.SizeBytes(before))
+
+				after, n := varint.ConsumeBackward[uint32](buf)
 				require.Less(t, 0, n)
 				require.Equal(t, before, after)
 			}
@@ -158,7 +176,10 @@ func TestBackward(t *testing.T) {
 		t.Run("Random", func(t *testing.T) {
 			for i := 0; i < 100000; i++ {
 				before := rand.Int64()
-				after, n := varint.ConsumeBackward[int64](varint.AppendBackward(nil, before))
+				buf := varint.AppendBackward(nil, before)
+				require.Len(t, buf, varint.SizeBytes(before))
+
+				after, n := varint.ConsumeBackward[int64](buf)
 				require.Less(t, 0, n)
 				require.Equal(t, before, after)
 			}
@@ -182,7 +203,10 @@ func TestBackward(t *testing.T) {
 		t.Run("Random", func(t *testing.T) {
 			for i := 0; i < 100000; i++ {
 				before := rand.Uint64()
-				after, n := varint.ConsumeBackward[uint64](varint.AppendBackward(nil, before))
+				buf := varint.AppendBackward(nil, before)
+				require.Len(t, buf, varint.SizeBytes(before))
+
+				after, n := varint.ConsumeBackward[uint64](buf)
 				require.Less(t, 0, n)
 				require.Equal(t, before, after)
 			}

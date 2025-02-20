@@ -3,6 +3,8 @@ package starlark
 import (
 	"errors"
 	"fmt"
+	"sort"
+	"strings"
 
 	pg_label "github.com/buildbarn/bb-playground/pkg/label"
 	model_core "github.com/buildbarn/bb-playground/pkg/model/core"
@@ -10,26 +12,50 @@ import (
 	"github.com/buildbarn/bb-playground/pkg/storage/dag"
 
 	"go.starlark.net/starlark"
-	"go.starlark.net/starlarkstruct"
 )
 
-type Provider struct {
+type ProviderInstanceProperties struct {
 	LateNamedValue
+	dictLike bool
+}
+
+func (pip *ProviderInstanceProperties) Encode() (*model_starlark_pb.Provider_InstanceProperties, error) {
+	if pip.Identifier == nil {
+		return nil, errors.New("provider does not have a name")
+	}
+	return &model_starlark_pb.Provider_InstanceProperties{
+		ProviderIdentifier: pip.Identifier.String(),
+		DictLike:           pip.dictLike,
+	}, nil
+}
+
+func NewProviderInstanceProperties(identifier *pg_label.CanonicalStarlarkIdentifier, dictLike bool) *ProviderInstanceProperties {
+	return &ProviderInstanceProperties{
+		LateNamedValue: LateNamedValue{
+			Identifier: identifier,
+		},
+		dictLike: dictLike,
+	}
+}
+
+type Provider struct {
+	*ProviderInstanceProperties
+	fields       []string
 	initFunction *NamedFunction
 }
 
 var (
-	_ EncodableValue    = &Provider{}
-	_ NamedGlobal       = &Provider{}
-	_ starlark.Callable = &Provider{}
+	_ EncodableValue          = &Provider{}
+	_ NamedGlobal             = &Provider{}
+	_ starlark.Callable       = &Provider{}
+	_ starlark.TotallyOrdered = &Provider{}
 )
 
-func NewProvider(identifier *pg_label.CanonicalStarlarkIdentifier, initFunction *NamedFunction) starlark.Value {
+func NewProvider(instanceProperties *ProviderInstanceProperties, fields []string, initFunction *NamedFunction) *Provider {
 	return &Provider{
-		LateNamedValue: LateNamedValue{
-			Identifier: identifier,
-		},
-		initFunction: initFunction,
+		ProviderInstanceProperties: instanceProperties,
+		fields:                     fields,
+		initFunction:               initFunction,
 	}
 }
 
@@ -48,8 +74,18 @@ func (p *Provider) Truth() starlark.Bool {
 }
 
 func (p *Provider) Hash() (uint32, error) {
-	// TODO
-	return 0, nil
+	if p.Identifier == nil {
+		return 0, errors.New("provider without a name cannot be hashed")
+	}
+	return starlark.String(p.Identifier.String()).Hash()
+}
+
+func (p *Provider) Cmp(other starlark.Value, depth int) (int, error) {
+	pOther := other.(*Provider)
+	if p.Identifier == nil || pOther.Identifier == nil {
+		return 0, errors.New("provider without a name cannot be compared")
+	}
+	return strings.Compare(p.Identifier.String(), pOther.Identifier.String()), nil
 }
 
 func (p *Provider) Name() string {
@@ -57,27 +93,56 @@ func (p *Provider) Name() string {
 }
 
 func (p *Provider) CallInternal(thread *starlark.Thread, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
-	// TODO: WE SHOULD VALIDATE FIELDS HERE!
-	if len(args) > 0 {
-		return nil, fmt.Errorf("%s: got %d positional arguments, want 0", p.Name(), len(args))
+	var fields map[string]any
+	if p.initFunction == nil {
+		// Trivially constructible provider.
+		if len(args) > 0 {
+			return nil, fmt.Errorf("%s: got %d positional arguments, want 0", p.Name(), len(args))
+		}
+		fields = make(map[string]any, len(kwargs))
+		for _, kwarg := range kwargs {
+			field := string(kwarg[0].(starlark.String))
+			if len(p.fields) > 0 {
+				if _, ok := sort.Find(
+					len(p.fields),
+					func(i int) int { return strings.Compare(field, p.fields[i]) },
+				); !ok {
+					return nil, fmt.Errorf("field %#v is not in the allowed set of fields for this provider", field)
+				}
+			}
+			fields[field] = kwarg[1]
+		}
+	} else {
+		// Provider has a custom init function.
+		result, err := starlark.Call(thread, p.initFunction, args, kwargs)
+		if err != nil {
+			return nil, err
+		}
+		mapping, ok := result.(starlark.IterableMapping)
+		if !ok {
+			return nil, fmt.Errorf("init function returned %s, want dict", result.Type())
+		}
+		fields = map[string]any{}
+		for key, value := range starlark.Entries(thread, mapping) {
+			keyStr, ok := starlark.AsString(key)
+			if !ok {
+				return nil, fmt.Errorf("init function returned dict containing key of type %s, want string", key.Type())
+			}
+			fields[keyStr] = value
+		}
 	}
-	fields := make(starlark.StringDict, len(kwargs))
-	for _, kwarg := range kwargs {
-		fields[string(kwarg[0].(starlark.String))] = kwarg[1]
-	}
-	return ProviderInstance{
-		Struct:   starlarkstruct.FromStringDict(starlarkstruct.Default, fields),
-		provider: p,
-	}, nil
+
+	return NewStructFromDict(p.ProviderInstanceProperties, fields), nil
 }
 
 func (p *Provider) EncodeValue(path map[starlark.Value]struct{}, currentIdentifier *pg_label.CanonicalStarlarkIdentifier, options *ValueEncodingOptions) (model_core.PatchedMessage[*model_starlark_pb.Value, dag.ObjectContentsWalker], bool, error) {
-	if p.Identifier == nil {
-		return model_core.PatchedMessage[*model_starlark_pb.Value, dag.ObjectContentsWalker]{}, false, errors.New("provider does not have a name")
+	instanceProperties, err := p.ProviderInstanceProperties.Encode()
+	if err != nil {
+		return model_core.PatchedMessage[*model_starlark_pb.Value, dag.ObjectContentsWalker]{}, false, err
 	}
 
 	provider := &model_starlark_pb.Provider{
-		ProviderIdentifier: p.Identifier.String(),
+		InstanceProperties: instanceProperties,
 	}
 	patcher := model_core.NewReferenceMessagePatcher[dag.ObjectContentsWalker]()
 	needsCode := false
@@ -99,44 +164,5 @@ func (p *Provider) EncodeValue(path map[starlark.Value]struct{}, currentIdentifi
 			},
 		},
 		patcher,
-	), needsCode, nil
-}
-
-type ProviderInstance struct {
-	*starlarkstruct.Struct
-	provider *Provider
-}
-
-func NewProviderInstance(strukt *starlarkstruct.Struct, providerIdentifier pg_label.CanonicalStarlarkIdentifier) ProviderInstance {
-	return ProviderInstance{
-		Struct: strukt,
-		provider: &Provider{
-			LateNamedValue: LateNamedValue{
-				Identifier: &providerIdentifier,
-			},
-		},
-	}
-}
-
-func (pi ProviderInstance) EncodeStruct(path map[starlark.Value]struct{}, options *ValueEncodingOptions) (model_core.PatchedMessage[*model_starlark_pb.Struct, dag.ObjectContentsWalker], bool, error) {
-	providerIdentifier := pi.provider.Identifier
-	if providerIdentifier == nil {
-		return model_core.PatchedMessage[*model_starlark_pb.Struct, dag.ObjectContentsWalker]{}, false, errors.New("provider does not have a name")
-	}
-	return encodeStruct(pi.Struct, path, providerIdentifier.String(), options)
-}
-
-func (pi ProviderInstance) EncodeValue(path map[starlark.Value]struct{}, currentIdentifier *pg_label.CanonicalStarlarkIdentifier, options *ValueEncodingOptions) (model_core.PatchedMessage[*model_starlark_pb.Value, dag.ObjectContentsWalker], bool, error) {
-	encodedStruct, needsCode, err := pi.EncodeStruct(path, options)
-	if err != nil {
-		return model_core.PatchedMessage[*model_starlark_pb.Value, dag.ObjectContentsWalker]{}, false, err
-	}
-	return model_core.NewPatchedMessage(
-		&model_starlark_pb.Value{
-			Kind: &model_starlark_pb.Value_Struct{
-				Struct: encodedStruct.Message,
-			},
-		},
-		encodedStruct.Patcher,
 	), needsCode, nil
 }

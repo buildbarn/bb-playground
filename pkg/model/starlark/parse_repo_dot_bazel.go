@@ -75,7 +75,7 @@ func getDefaultInheritableAttrs(thread *starlark.Thread, b *starlark.Builtin, ar
 	deprecation := previousInheritableAttrs.Message.Deprecation
 	packageMetadata := previousInheritableAttrs.Message.PackageMetadata
 	testOnly := previousInheritableAttrs.Message.Testonly
-	var visibility []pg_label.CanonicalLabel
+	var visibility []pg_label.ResolvedLabel
 	canonicalPackage := CurrentFilePackage(thread, 1)
 	labelStringListUnpackerInto := unpack.List(unpack.Stringer(NewLabelOrStringUnpackerInto(canonicalPackage)))
 	if err := starlark.UnpackArgs(

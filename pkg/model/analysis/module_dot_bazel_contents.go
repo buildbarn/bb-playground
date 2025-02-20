@@ -17,41 +17,89 @@ import (
 	"github.com/buildbarn/bb-playground/pkg/storage/dag"
 )
 
+type parseLocalModuleDotBazelEnvironment interface {
+	parseModuleDotBazelFileEnvironment
+	GetFilePropertiesValue(key *model_analysis_pb.FileProperties_Key) model_core.Message[*model_analysis_pb.FileProperties_Value]
+}
+
+func (c *baseComputer) parseLocalModuleInstanceModuleDotBazel(ctx context.Context, moduleInstance label.ModuleInstance, e parseLocalModuleDotBazelEnvironment, handler pg_starlark.RootModuleDotBazelHandler) error {
+	// Load a file that we know exists in storage already.
+	moduleFileProperties := e.GetFilePropertiesValue(&model_analysis_pb.FileProperties_Key{
+		CanonicalRepo: moduleInstance.String(),
+		Path:          moduleDotBazelFilename,
+	})
+	if !moduleFileProperties.IsSet() {
+		return evaluation.ErrMissingDependency
+	}
+	if moduleFileProperties.Message.Exists == nil {
+		return fmt.Errorf("file %#v does not exist", moduleDotBazelTargetName.String())
+	}
+
+	return c.parseModuleDotBazel(
+		ctx,
+		model_core.Message[*model_filesystem_pb.FileContents]{
+			Message:            moduleFileProperties.Message.Exists.Contents,
+			OutgoingReferences: moduleFileProperties.OutgoingReferences,
+		},
+		moduleInstance,
+		e,
+		handler,
+	)
+}
+
 type parseActiveModuleDotBazelEnvironment interface {
+	parseModuleDotBazelFileEnvironment
 	GetModuleDotBazelContentsValue(key *model_analysis_pb.ModuleDotBazelContents_Key) model_core.Message[*model_analysis_pb.ModuleDotBazelContents_Value]
 }
 
-func (c *baseComputer) parseModuleInstanceModuleDotBazel(ctx context.Context, moduleInstance label.ModuleInstance, e parseActiveModuleDotBazelEnvironment, fileReader *model_filesystem.FileReader, handler pg_starlark.ChildModuleDotBazelHandler) error {
-	moduleFileLabel := moduleInstance.GetBareCanonicalRepo().
-		GetRootPackage().
-		AppendTargetName(moduleDotBazelTargetName)
+func (c *baseComputer) parseActiveModuleInstanceModuleDotBazel(ctx context.Context, moduleInstance label.ModuleInstance, e parseActiveModuleDotBazelEnvironment, handler pg_starlark.RootModuleDotBazelHandler) error {
+	// This module file might have to be loaded.
 	moduleFileContentsValue := e.GetModuleDotBazelContentsValue(&model_analysis_pb.ModuleDotBazelContents_Key{
 		ModuleInstance: moduleInstance.String(),
 	})
 	if !moduleFileContentsValue.IsSet() {
 		return evaluation.ErrMissingDependency
 	}
-	moduleFileContentsEntry, err := model_filesystem.NewFileContentsEntryFromProto(
+	return c.parseModuleDotBazel(
+		ctx,
 		model_core.Message[*model_filesystem_pb.FileContents]{
 			Message:            moduleFileContentsValue.Message.Contents,
 			OutgoingReferences: moduleFileContentsValue.OutgoingReferences,
 		},
+		moduleInstance,
+		e,
+		handler,
+	)
+}
+
+type parseModuleDotBazelFileEnvironment interface {
+	GetFileReaderValue(key *model_analysis_pb.FileReader_Key) (*model_filesystem.FileReader, bool)
+}
+
+func (c *baseComputer) parseModuleDotBazel(ctx context.Context, moduleContentsMsg model_core.Message[*model_filesystem_pb.FileContents], moduleInstance label.ModuleInstance, e parseModuleDotBazelFileEnvironment, handler pg_starlark.RootModuleDotBazelHandler) error {
+	fileReader, gotFileReader := e.GetFileReaderValue(&model_analysis_pb.FileReader_Key{})
+	if !gotFileReader {
+		return evaluation.ErrMissingDependency
+	}
+
+	moduleTarget := moduleInstance.GetBareCanonicalRepo().GetRootPackage().AppendTargetName(moduleDotBazelTargetName)
+	moduleFileContentsEntry, err := model_filesystem.NewFileContentsEntryFromProto(
+		moduleContentsMsg,
 		c.buildSpecificationReference.GetReferenceFormat(),
 	)
 	if err != nil {
-		return fmt.Errorf("invalid file contents entry for file %#v: %w", moduleFileLabel.String(), err)
+		return fmt.Errorf("invalid file contents entry for file %#v: %w", moduleTarget.String(), err)
 	}
-
-	moduleFileData, err := fileReader.FileReadAll(ctx, moduleFileContentsEntry, 1<<20)
+	moduleFileContents, err := fileReader.FileReadAll(ctx, moduleFileContentsEntry, 1<<20)
 	if err != nil {
 		return err
 	}
 
 	return pg_starlark.ParseModuleDotBazel(
-		string(moduleFileData),
-		moduleFileLabel,
+		string(moduleFileContents),
+		moduleTarget,
 		nil,
-		pg_starlark.NewOverrideIgnoringRootModuleDotBazelHandler(handler),
+		handler,
 	)
 }
 
@@ -104,8 +152,7 @@ func (c *baseComputer) visitModuleDotBazelFilesBreadthFirst(
 ) error {
 	rootModuleValue := e.GetRootModuleValue(&model_analysis_pb.RootModule_Key{})
 	modulesWithMultipleVersions, gotModulesWithMultipleVersions := e.GetModulesWithMultipleVersionsObjectValue(&model_analysis_pb.ModulesWithMultipleVersionsObject_Key{})
-	fileReader, gotFileReader := e.GetFileReaderValue(&model_analysis_pb.FileReader_Key{})
-	if !rootModuleValue.IsSet() || !gotModulesWithMultipleVersions || !gotFileReader {
+	if !rootModuleValue.IsSet() || !gotModulesWithMultipleVersions {
 		return evaluation.ErrMissingDependency
 	}
 
@@ -126,18 +173,17 @@ func (c *baseComputer) visitModuleDotBazelFilesBreadthFirst(
 		moduleInstance := moduleInstancesToCheck[0]
 		moduleInstancesToCheck = moduleInstancesToCheck[1:]
 
-		if err := c.parseModuleInstanceModuleDotBazel(
+		if err := c.parseActiveModuleInstanceModuleDotBazel(
 			ctx,
 			moduleInstance,
 			e,
-			fileReader,
-			&dependencQueueingModuleDotBazelHandler{
+			pg_starlark.NewOverrideIgnoringRootModuleDotBazelHandler(&dependencQueueingModuleDotBazelHandler{
 				ChildModuleDotBazelHandler:  createHandler(moduleInstance, ignoreDevDependencies),
 				modulesWithMultipleVersions: modulesWithMultipleVersions,
 				moduleInstancesToCheck:      &moduleInstancesToCheck,
 				moduleInstancesSeen:         moduleInstancesSeen,
 				ignoreDevDependencies:       ignoreDevDependencies,
-			},
+			}),
 		); err != nil {
 			// Continue iteration if we have missing
 			// dependency errors, so that we compute these

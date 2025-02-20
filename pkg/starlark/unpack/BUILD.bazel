@@ -10,6 +10,7 @@ go_library(
         "bind.go",
         "bool.go",
         "canonicalize.go",
+        "decay.go",
         "dict.go",
         "if_non_empty_string.go",
         "if_not_none.go",

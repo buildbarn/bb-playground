@@ -1,12 +1,15 @@
 package starlark
 
 import (
+	"errors"
 	"maps"
 	"slices"
 	"sort"
 
 	pg_label "github.com/buildbarn/bb-playground/pkg/label"
+	model_core "github.com/buildbarn/bb-playground/pkg/model/core"
 	model_starlark_pb "github.com/buildbarn/bb-playground/pkg/proto/model/starlark"
+	"github.com/buildbarn/bb-playground/pkg/storage/dag"
 
 	"go.starlark.net/starlark"
 )
@@ -16,7 +19,7 @@ type ExecGroup struct {
 	toolchains         []*ToolchainType
 }
 
-func NewExecGroup(execCompatibleWith []pg_label.CanonicalLabel, toolchains []*ToolchainType) *ExecGroup {
+func NewExecGroup(execCompatibleWith []pg_label.ResolvedLabel, toolchains []*ToolchainType) *ExecGroup {
 	execCompatibleWithStrings := make([]string, 0, len(execCompatibleWith))
 	for _, label := range execCompatibleWith {
 		execCompatibleWithStrings = append(execCompatibleWithStrings, label.String())
@@ -45,32 +48,41 @@ func NewExecGroup(execCompatibleWith []pg_label.CanonicalLabel, toolchains []*To
 	}
 }
 
-func (l *ExecGroup) String() string {
+func (ExecGroup) String() string {
 	return "<exec_group>"
 }
 
-func (l *ExecGroup) Type() string {
+func (ExecGroup) Type() string {
 	return "exec_group"
 }
 
-func (l *ExecGroup) Freeze() {}
+func (ExecGroup) Freeze() {}
 
-func (l *ExecGroup) Truth() starlark.Bool {
+func (ExecGroup) Truth() starlark.Bool {
 	return starlark.True
 }
 
-func (l *ExecGroup) Hash() (uint32, error) {
-	// TODO
-	return 0, nil
+func (ExecGroup) Hash() (uint32, error) {
+	return 0, errors.New("exec_group cannot be hashed")
 }
 
-func (l *ExecGroup) Encode() *model_starlark_pb.ExecGroup {
+func (eg *ExecGroup) Encode() *model_starlark_pb.ExecGroup {
 	execGroup := model_starlark_pb.ExecGroup{
-		ExecCompatibleWith: l.execCompatibleWith,
-		Toolchains:         make([]*model_starlark_pb.ToolchainType, 0, len(l.toolchains)),
+		ExecCompatibleWith: eg.execCompatibleWith,
+		Toolchains:         make([]*model_starlark_pb.ToolchainType, 0, len(eg.toolchains)),
 	}
-	for _, toolchain := range l.toolchains {
+	for _, toolchain := range eg.toolchains {
 		execGroup.Toolchains = append(execGroup.Toolchains, toolchain.Encode())
 	}
 	return &execGroup
+}
+
+func (eg *ExecGroup) EncodeValue(path map[starlark.Value]struct{}, currentIdentifier *pg_label.CanonicalStarlarkIdentifier, options *ValueEncodingOptions) (model_core.PatchedMessage[*model_starlark_pb.Value, dag.ObjectContentsWalker], bool, error) {
+	return model_core.NewSimplePatchedMessage[dag.ObjectContentsWalker](
+		&model_starlark_pb.Value{
+			Kind: &model_starlark_pb.Value_ExecGroup{
+				ExecGroup: eg.Encode(),
+			},
+		},
+	), false, nil
 }

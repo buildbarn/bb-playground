@@ -56,6 +56,14 @@ func removeLabelTargetNameIfRedundant(label string) string {
 		canonicalPackage := label[:targetNameOffset]
 		var lastComponent string
 		if canonicalRepo, ok := strings.CutSuffix(canonicalPackage, "//"); ok {
+			if strings.HasPrefix(canonicalRepo, "@@[") {
+				// Resolved label of shape
+				// "@@[error message]//:foo". These
+				// labels should always keep their
+				// target name. We shouldn't convert
+				// "@@[x]//:[x]" to "@@[x]".
+				return label
+			}
 			canonicalPackage = canonicalRepo
 			lastComponent = strings.TrimLeft(canonicalPackage, "@")
 		} else {
@@ -152,4 +160,9 @@ func (l CanonicalLabel) AppendStarlarkIdentifier(identifier StarlarkIdentifier) 
 	return CanonicalStarlarkIdentifier{
 		value: l.value + "%" + identifier.value,
 	}
+}
+
+func (l CanonicalLabel) AsResolved() ResolvedLabel {
+	// All canonical labels are also valid resolved labels.
+	return ResolvedLabel{value: l.value}
 }

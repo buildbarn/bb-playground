@@ -42,8 +42,7 @@ func (f NamedFunction) Truth() starlark.Bool {
 }
 
 func (f NamedFunction) Hash() (uint32, error) {
-	// TODO
-	return 0, nil
+	return 0, errors.New("function cannot be hashed")
 }
 
 func (f NamedFunction) EncodeValue(path map[starlark.Value]struct{}, currentIdentifier *pg_label.CanonicalStarlarkIdentifier, options *ValueEncodingOptions) (model_core.PatchedMessage[*model_starlark_pb.Value, dag.ObjectContentsWalker], bool, error) {
@@ -143,7 +142,7 @@ func (d starlarkNamedFunctionDefinition) Encode(path map[starlark.Value]struct{}
 	), needsCode, nil
 }
 
-type FunctionFactoryResolver = func(filename pg_label.CanonicalLabel) (*starlark.FunctionFactory, *ValueDecodingOptions, error)
+type FunctionFactoryResolver = func(filename pg_label.CanonicalLabel) (*starlark.FunctionFactory, error)
 
 const FunctionFactoryResolverKey = "function_factory_resolver"
 
@@ -173,7 +172,7 @@ func (d *protoNamedFunctionDefinition) CallInternal(thread *starlark.Thread, arg
 		if err != nil {
 			return nil, fmt.Errorf("invalid filename %#v: %w", definition.Filename, err)
 		}
-		functionFactory, options, err := functionFactoryResolver.(FunctionFactoryResolver)(filename)
+		functionFactory, err := functionFactoryResolver.(FunctionFactoryResolver)(filename)
 		if err != nil {
 			return nil, err
 		}
@@ -184,6 +183,7 @@ func (d *protoNamedFunctionDefinition) CallInternal(thread *starlark.Thread, arg
 				return nil, err
 			}
 		} else {
+			options := thread.Local(ValueDecodingOptionsKey).(*ValueDecodingOptions)
 			freeVariables := make(starlark.Tuple, 0, len(closure.FreeVariables))
 			for index, freeVariable := range closure.FreeVariables {
 				value, err := DecodeValue(model_core.Message[*model_starlark_pb.Value]{

@@ -1,0 +1,5 @@
+load(":fragments.bzl", "apple_fragment", "cpp_fragment")
+
+apple_fragment(name = "apple")
+
+cpp_fragment(name = "cpp")

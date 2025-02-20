@@ -26,19 +26,33 @@ func NewPatchedMessage[TMessage any, TMetadata ReferenceMetadata](
 	}
 }
 
-func NewPatchedMessageFromExisting[TMessage proto.Message, TMetadata ReferenceMetadata](
-	existing Message[TMessage],
+func NewPatchedMessageFromExisting[
+	TMessage any,
+	TMetadata ReferenceMetadata,
+	TMessagePtr interface {
+		*TMessage
+		proto.Message
+	},
+](
+	existing Message[TMessagePtr],
 	createMetadata ReferenceMetadataCreator[TMetadata],
-) PatchedMessage[TMessage, TMetadata] {
-	clonedMessage := proto.Clone(existing.Message)
+) PatchedMessage[TMessagePtr, TMetadata] {
 	patcher := NewReferenceMessagePatcher[TMetadata]()
+	if existing.Message == nil || existing.OutgoingReferences.GetDegree() == 0 {
+		return PatchedMessage[TMessagePtr, TMetadata]{
+			Message: existing.Message,
+			Patcher: patcher,
+		}
+	}
+
+	clonedMessage := proto.Clone(existing.Message)
 	patcher.addReferenceMessagesRecursively(
 		clonedMessage.ProtoReflect(),
 		existing.OutgoingReferences,
 		createMetadata,
 	)
-	return PatchedMessage[TMessage, TMetadata]{
-		Message: clonedMessage.(TMessage),
+	return PatchedMessage[TMessagePtr, TMetadata]{
+		Message: clonedMessage.(TMessagePtr),
 		Patcher: patcher,
 	}
 }

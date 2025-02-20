@@ -1,6 +1,7 @@
 package starlark
 
 import (
+	"errors"
 	"maps"
 	"slices"
 	"strings"
@@ -47,8 +48,7 @@ func (me *moduleExtension) Truth() starlark.Bool {
 }
 
 func (me *moduleExtension) Hash() (uint32, error) {
-	// TODO
-	return 0, nil
+	return 0, errors.New("module_extension cannot be hashed")
 }
 
 type starlarkModuleExtensionDefinition struct {

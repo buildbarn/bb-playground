@@ -120,7 +120,7 @@ func parseOverridesList(overridesList []*model_analysis_pb.OverridesListModule) 
 		for _, versionStr := range module.Versions {
 			version, err := label.NewModuleVersion(versionStr)
 			if err != nil {
-				return nil, fmt.Errorf("Invalid version %#v for module %#v: %w", versionStr, moduleNameStr, err)
+				return nil, fmt.Errorf("invalid version %#v for module %#v: %w", versionStr, moduleNameStr, err)
 			}
 			versions = append(versions, version)
 		}

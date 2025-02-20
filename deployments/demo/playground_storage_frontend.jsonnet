@@ -2,6 +2,14 @@ local replicasCount = 4;
 local statePath = std.extVar('STATE_PATH');
 
 {
+  global: { diagnosticsHttpServer: {
+    httpServers: [{
+      listenAddresses: [':9981'],
+      authenticationPolicy: { allow: {} },
+    }],
+    enablePrometheus: true,
+    enablePprof: true,
+  } },
   grpcServers: [{
     listenPaths: [statePath + '/playground_storage_frontend.sock'],
     authenticationPolicy: { allow: {} },

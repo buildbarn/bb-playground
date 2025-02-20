@@ -46,10 +46,10 @@ func (CapturedObject) Discard() {}
 type chunkDiscardingFileMerkleTreeCapturer struct{}
 
 // ChunkDiscardingFileMerkleTreeCapturer is an implementation of
-// FileMerkleTreeCapturer that only preserves the FileContentsList
-// messages of the Merkle tree. This can be of use when incrementally
-// replicating the contents of a file. In those cases it's wasteful to
-// store the full contents of a file in memory.
+// FileMerkleTreeCapturer that only preserves the FileContents messages
+// of the Merkle tree. This can be of use when incrementally replicating
+// the contents of a file. In those cases it's wasteful to store the
+// full contents of a file in memory.
 var ChunkDiscardingFileMerkleTreeCapturer FileMerkleTreeCapturer[CapturedObject] = chunkDiscardingFileMerkleTreeCapturer{}
 
 func (chunkDiscardingFileMerkleTreeCapturer) CaptureChunk(contents *object.Contents) CapturedObject {

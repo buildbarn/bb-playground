@@ -8,7 +8,7 @@ import "pkg/proto/model/core/core.proto";
 option go_package = "github.com/buildbarn/bb-playground/pkg/proto/model/starlark";
 
 message CompiledProgram {
-  repeated NamedValue globals = 1;
+  Struct.Fields globals = 1;
 
   bytes code = 2;
 }
@@ -22,32 +22,28 @@ message Value {
     bytes bytes = 5;
     Depset depset = 6;
     Dict dict = 7;
-    Function function = 8;
-    bytes int = 9;
-    string label = 10;
-    List list = 11;
-    ModuleExtension module_extension = 12;
-    google.protobuf.Empty none = 13;
-    Provider provider = 14;
-    RepositoryRule repository_rule = 15;
-    Rule rule = 16;
-    Runfiles runfiles = 17;
-    Select select = 18;
-    string str = 19;
-    Struct struct = 20;
-    Subrule subrule = 21;
-    TagClass tag_class = 22;
-    ToolchainType toolchain_type = 23;
-    Transition transition = 24;
-    Tuple tuple = 25;
+    ExecGroup exec_group = 8;
+    File file = 9;
+    Function function = 10;
+    bytes int = 11;
+    string label = 12;
+    List list = 13;
+    ModuleExtension module_extension = 14;
+    google.protobuf.Empty none = 15;
+    Provider provider = 16;
+    RepositoryRule repository_rule = 17;
+    Rule rule = 18;
+    Runfiles runfiles = 19;
+    Select select = 20;
+    string str = 21;
+    Struct struct = 22;
+    Subrule subrule = 23;
+    TagClass tag_class = 24;
+    TargetReference target_reference = 25;
+    ToolchainType toolchain_type = 26;
+    Transition transition = 27;
+    Tuple tuple = 28;
   }
-}
-
-// NamedValue can be used in places where values need to be associated
-// with names, such as structs.
-message NamedValue {
-  string name = 1;
-  Value value = 2;
 }
 
 message Alias {
@@ -85,21 +81,18 @@ message Attr {
 
     repeated string aspects = 2;
 
-    oneof cfg {
-      // Don't perform any transition.
-      google.protobuf.Empty cfg_target = 3;
-
-      // Transition to the platform of the named execution group.
-      string cfg_exec_group = 4;
-
-      // Apply a user-defined transition.
-      string cfg_transition_identifier = 5;
-    }
+    // The transition to apply when configuring the target associated
+    // with the label.
+    Transition.Reference cfg = 3;
 
     // If non-empty, allow file targets having one of the file
     // extensions listed. If file targets with any name should be
     // allowed, the list should contain the empty string.
-    repeated string allow_files = 6;
+    //
+    // Extensions should be sorted by lexicographically comparing the
+    // runes in each string in reverse order. Elements may not be
+    // suffixes of each other.
+    repeated string allow_files = 4;
   }
 
   // Options that apply to all attribute types containing dicts or
@@ -235,7 +228,40 @@ message BuildSetting {
   }
 }
 
-message Depset {}
+message Depset {
+  // Elements contained in the depset.
+  //
+  // Duplicate elements may exist. These must be suppressed when
+  // converting the depset to a list, retaining the first occurrence.
+  //
+  // If the order of the depset is equal to TOPOLOGICAL, elements in
+  // this list are stored in reverse order, for the the reason that the
+  // last occurrence must be retained.
+  repeated List.Element elements = 1;
+
+  enum Order {
+    // Order is unspecified (but deterministic).
+    DEFAULT = 0;
+
+    // A left-to-right post-ordering. Precisely, this recursively
+    // traverses all children leftmost-first, then the direct elements
+    // leftmost-first.
+    POSTORDER = 1;
+
+    // A left-to-right pre-ordering. Precisely, this traverses the
+    // direct elements leftmost-first, then recursively traverses the
+    // children leftmost-first.
+    PREORDER = 2;
+
+    // A topological ordering from the root down to the leaves. There is
+    // no left-to-right guarantee.
+    TOPOLOGICAL = 3;
+  }
+
+  // The order that was used to construct combine the direct and
+  // transitive elements.
+  Order order = 2;
+}
 
 message Dict {
   message Entry {
@@ -267,9 +293,41 @@ message ExecGroup {
   repeated ToolchainType toolchains = 2;
 }
 
-message SourceFileTarget {
-  // Visibility of the file target.
-  PackageGroup visibility = 4;
+message File {
+  message Owner {
+    // Identifier of the configuration that is used to build the file.
+    bytes cfg = 1;
+
+    // Name of the target inside the canonical package that creates
+    // this file.
+    string target_name = 2;
+  }
+
+  // If not set, the file is a source file.
+  //
+  // If set, the file is the output of a configured target.
+  Owner owner = 1;
+
+  // Canonical package that contains the file.
+  string package = 2;
+
+  // The name of the directory, file, or symlink relative to the
+  // canonical package.
+  string package_relative_path = 3;
+
+  enum Type {
+    // Regular file declared through ctx.actions.declare_file().
+    FILE = 0;
+
+    // Directory declared through ctx.actions.declare_directory().
+    DIRECTORY = 1;
+
+    // Symbolic link declared through ctx.actions.declare_symlink().
+    SYMLINK = 2;
+  }
+
+  // The type of the file.
+  Type type = 5;
 }
 
 message Function {
@@ -325,6 +383,18 @@ message InheritableAttrs {
   // Which targets in other packages are permitted to depend on this
   // target.
   PackageGroup visibility = 4;
+}
+
+message LabelSetting {
+  // The default label value to use if the setting is not specified.
+  string build_setting_default = 1;
+
+  // Whether the setting can be controlled via a command line flag.
+  bool flag = 2;
+
+  // The visibility of the label setting, which may differ from the
+  // visibility of the target to which the label setting.
+  PackageGroup visibility = 3;
 }
 
 message List {
@@ -406,23 +476,59 @@ message PackageGroup {
 }
 
 message Provider {
-  string provider_identifier = 1;
+  message InstanceProperties {
+    // Canonical starlark identifier of the provider that was used to
+    // create this struct.
+    string provider_identifier = 1;
 
+    // If set, the fields in this struct can also be accessed using
+    // square brackets and the "in" binary operator.
+    bool dict_like = 2;
+  }
+
+  // Properties that affect the behavior of structs that are created
+  // through this provider.
+  InstanceProperties instance_properties = 1;
+
+  // Initialization function that should be invoked to mutate fields
+  // prior to constructing provider instances.
   Function init_function = 2;
+
+  // If non-empty, restrict the set of allowed fields. Field names are
+  // provided in alphabetical order.
+  repeated string fields = 3;
 }
 
 message Struct {
-  // The fields contained within the struct.
-  repeated NamedValue fields = 1;
+  message Fields {
+    // The names of the fields in the struct, listed in alphabetical
+    // order.
+    repeated string keys = 1;
 
-  // If set, the struct was created by invoking a provider. The value
-  // corresponds to the identifier of the provider.
-  string provider_identifier = 2;
+    // List of values of the fields, stored in the same order as the
+    // keys.
+    repeated List.Element values = 2;
+  }
+
+  // The fields contained within the struct.
+  Fields fields = 1;
+
+  // If set, the struct was created not by invoking struct(), but by
+  // calling into a provider.
+  Provider.InstanceProperties provider_instance_properties = 2;
 }
 
 message TagClass {
   // Attributes of the tag class, sorted by name.
   repeated NamedAttr attrs = 1;
+}
+
+message TargetReference {
+  // Canonical label of the target.
+  string label = 1;
+
+  // Providers of the rule target, sorted by provider identifier.
+  repeated Struct providers = 2;
 }
 
 message ToolchainType {
@@ -462,7 +568,7 @@ message Repo {
 
     // Repository rule specific attributes whose values were provided
     // explicitly.
-    repeated NamedValue attr_values = 2;
+    Struct.Fields attr_values = 2;
   }
 
   // Name of the repo within the module extension.
@@ -514,6 +620,13 @@ message Rule {
     // List of providers that the implementation function must return,
     // sorted by name.
     repeated string provides = 7;
+
+    // If set to true, the rule provides a test.
+    bool test = 8;
+
+    // Identifiers of subrules that may be invoked by the implementation
+    // function of this rule, sorted alphabetically.
+    repeated string subrule_identifiers = 9;
   }
 
   oneof kind {
@@ -553,14 +666,29 @@ message RuleTarget {
   // addition to any constraints already set by the rule type. If the
   // target platform does not satisfy all listed constraints then the
   // target is considered incompatible.
-  repeated string target_compatible_with = 5;
+  repeated Select.Group target_compatible_with = 5;
 
   // Attributes on rule targets that are inherited from calls to repo()
   // in REPO.bazel and package() in BUILD.bazel.
   InheritableAttrs inheritable_attrs = 6;
+
+  // If set, the rule used by this target is a build setting, and the
+  // default value if the build setting is not set explicitly is
+  // provided.
+  Value build_setting_default = 7;
 }
 
-message Runfiles {}
+message Runfiles {
+  // Files to place in the runfiles directory.
+  Depset files = 1;
+
+  // Symbolic links to place in the root of the runfiles directory.
+  Depset root_symlinks = 2;
+
+  // Symbolic links to place in the subdirectory inside the runfiles
+  // directory belonging to the root module.
+  Depset symlinks = 3;
+}
 
 message Select {
   message Condition {
@@ -598,8 +726,23 @@ message Select {
   ConcatenationOperator concatenation_operator = 2;
 }
 
+message SourceFileTarget {
+  // Visibility of the file target.
+  PackageGroup visibility = 4;
+}
+
 message Subrule {
-  message Definition {}
+  message Definition {
+    // Attributes of the subrule, sorted by name.
+    repeated NamedAttr attrs = 1;
+
+    // Starlark function that implements this subrule.
+    Function implementation = 2;
+
+    // Identifiers of subrules that may be invoked by the implementation
+    // function of this rule, sorted alphabetically.
+    repeated string subrule_identifiers = 3;
+  }
 
   oneof kind {
     string reference = 1;
@@ -614,15 +757,18 @@ message Target {
       // Reference to another target.
       Alias alias = 1;
 
+      // Build setting having a label value.
+      LabelSetting label_setting = 2;
+
       // Group of packages, used to control visibility of targets.
-      PackageGroup package_group = 2;
+      PackageGroup package_group = 3;
 
       // Buildable target backed by a rule.
-      RuleTarget rule_target = 3;
+      RuleTarget rule_target = 4;
 
       // File exposed via exports_files() or referenced by a rule
       // target's attribute.
-      SourceFileTarget source_file_target = 4;
+      SourceFileTarget source_file_target = 5;
     }
   }
 
@@ -633,11 +779,61 @@ message Target {
 }
 
 message Transition {
-  message Definition {}
+  message Reference {
+    oneof kind {
+      // Transition to the platform of the named execution group.
+      string exec_group = 1;
+
+      // Apply a transition which removes all configuration, unsetting
+      // all flags. Intended for the case where a dependency is
+      // data-only and contains no code that needs to be built, but
+      // should only be analyzed once.
+      google.protobuf.Empty none = 2;
+
+      // Don't perform any transition.
+      google.protobuf.Empty target = 3;
+
+      // Starlark identifier of a user-defined transition.
+      string user_defined = 4;
+
+      // Leave the target unconfigured.
+      //
+      // If this option is set, then any labels will appear as target
+      // references having no providers. The label associated with the
+      // target reference will also not be subject to alias expansion.
+      //
+      // This transition can be used by rules like toolchain() to ensure
+      // that the underlying toolchain is only configured upon use.
+      google.protobuf.Empty unconfigured = 5;
+    }
+  }
+
+  message Definition {
+    // Starlark function that implements this transition.
+    Function implementation = 1;
+
+    // List of build settings that can be read by this transition. This
+    // becomes the key set of the settings parameter of the
+    // implementation function parameter.
+    //
+    // Entries in this list SHOULD be deduplicated and sorted
+    // alphabetically.
+    repeated string inputs = 2;
+
+    // List of build settings that can be written by this transition.
+    // This must be a superset of the key set of the dictionary returned
+    // by this transition.
+    //
+    // Entries in this list SHOULD be deduplicated and sorted
+    // alphabetically.
+    repeated string outputs = 3;
+  }
 
   oneof kind {
-    string reference = 1;
+    // Reference to a transition.
+    Reference reference = 1;
 
+    // Definition of a user-defined transition.
     Definition definition = 2;
   }
 }

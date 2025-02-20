@@ -36,7 +36,7 @@ func (tr *TargetRegistrar) GetTargets() map[string]model_core.PatchedMessage[*mo
 	return tr.targets
 }
 
-func (tr *TargetRegistrar) getVisibilityPackageGroup(visibility []pg_label.CanonicalLabel) (model_core.PatchedMessage[*model_starlark_pb.PackageGroup, dag.ObjectContentsWalker], error) {
+func (tr *TargetRegistrar) getVisibilityPackageGroup(visibility []pg_label.ResolvedLabel) (model_core.PatchedMessage[*model_starlark_pb.PackageGroup, dag.ObjectContentsWalker], error) {
 	if len(visibility) > 0 {
 		// Explicit visibility provided. Construct new package group.
 		return NewPackageGroupFromVisibility(visibility, tr.inlinedTreeOptions)

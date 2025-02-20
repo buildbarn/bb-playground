@@ -11,7 +11,6 @@ import (
 	model_core "github.com/buildbarn/bb-playground/pkg/model/core"
 	model_starlark "github.com/buildbarn/bb-playground/pkg/model/starlark"
 	model_analysis_pb "github.com/buildbarn/bb-playground/pkg/proto/model/analysis"
-	model_starlark_pb "github.com/buildbarn/bb-playground/pkg/proto/model/starlark"
 	pg_starlark "github.com/buildbarn/bb-playground/pkg/starlark"
 	"github.com/buildbarn/bb-playground/pkg/storage/dag"
 
@@ -49,27 +48,20 @@ func (p *usedModuleExtensionProxy) Tag(className string, attrs map[string]starla
 		meu.tagClasses[className] = tagClass
 	}
 
-	encodedAttrs := make([]*model_starlark_pb.NamedValue, 0, len(attrs))
-	for _, name := range slices.Sorted(maps.Keys(attrs)) {
-		encodedValue, _, err := model_starlark.EncodeValue(
-			attrs[name],
-			map[starlark.Value]struct{}{},
-			/* currentIdentifier = */ nil,
-			p.handler.valueEncodingOptions,
-		)
-		if err != nil {
-			return fmt.Errorf("tag class %s attr %s: %w", className, name)
-		}
-		encodedAttrs = append(encodedAttrs, &model_starlark_pb.NamedValue{
-			Name:  name,
-			Value: encodedValue.Message,
-		})
-		p.handler.options.patcher.Merge(encodedValue.Patcher)
+	attrsMap := make(map[string]any, len(attrs))
+	for key, value := range attrs {
+		attrsMap[key] = value
 	}
+	fields, _, err := model_starlark.NewStructFromDict(nil, attrsMap).
+		EncodeStructFields(map[starlark.Value]struct{}{}, p.handler.valueEncodingOptions)
+	if err != nil {
+		return err
+	}
+	p.handler.options.patcher.Merge(fields.Patcher)
 
 	tagClass.Tags = append(tagClass.Tags, &model_analysis_pb.ModuleExtension_Tag{
 		IsDevDependency: p.devDependency,
-		Attrs:           encodedAttrs,
+		Attrs:           fields.Message,
 	})
 	return nil
 }

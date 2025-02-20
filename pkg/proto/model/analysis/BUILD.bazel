@@ -13,6 +13,7 @@ proto_library(
         "//pkg/proto/model/filesystem:filesystem_proto",
         "//pkg/proto/model/starlark:starlark_proto",
         "@protobuf//:duration_proto",
+        "@protobuf//:empty_proto",
     ],
 )
 

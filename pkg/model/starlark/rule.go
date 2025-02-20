@@ -53,8 +53,7 @@ func (r *rule) Truth() starlark.Bool {
 }
 
 func (r *rule) Hash() (uint32, error) {
-	// TODO
-	return 0, nil
+	return 0, errors.New("rule cannot be hashed")
 }
 
 func (r *rule) Name() string {
@@ -65,6 +64,13 @@ func (r *rule) Name() string {
 }
 
 const TargetRegistrarKey = "target_registrar"
+
+var emptyTargetCompatibleWith = NewSelect(
+	[]SelectGroup{
+		NewSelectGroup(nil, starlark.NewList(nil), ""),
+	},
+	/* concatenationOperator = */ 0,
+)
 
 func (r *rule) CallInternal(thread *starlark.Thread, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
 	if len(args) != 0 {
@@ -90,7 +96,12 @@ func (r *rule) CallInternal(thread *starlark.Thread, args starlark.Tuple, kwargs
 		return nil, err
 	}
 
-	var unpackers []any
+	test, err := r.definition.GetTest(thread)
+	if err != nil {
+		return nil, err
+	}
+
+	var mandatoryUnpackers, optionalUnpackers []any
 	attrNames := make([]pg_label.StarlarkIdentifier, 0, len(attrs))
 	values := make([]starlark.Value, len(attrs))
 	currentPackage := thread.Local(CanonicalPackageKey).(pg_label.CanonicalPackage)
@@ -100,7 +111,8 @@ func (r *rule) CallInternal(thread *starlark.Thread, args starlark.Tuple, kwargs
 	) {
 		nameStr := name.String()
 		switch nameStr {
-		case "deprecation", "exec_compatible_with", "name",
+		case "applicable_licenses", "deprecation",
+			"exec_compatible_with", "features", "name",
 			"package_metadata", "tags", "target_compatible_with",
 			"testonly", "visibility":
 			return nil, fmt.Errorf("rule uses attribute with reserved name %#v", nameStr)
@@ -108,16 +120,19 @@ func (r *rule) CallInternal(thread *starlark.Thread, args starlark.Tuple, kwargs
 			if buildSetting != nil {
 				return nil, fmt.Errorf("rule uses attribute with name \"build_setting_default\", which is reserved for build settings", nameStr)
 			}
+		case "args", "flaky", "local", "shard_count", "size", "timeout":
+			if test {
+				return nil, fmt.Errorf("rule uses attribute with name %#v, which is reserved for tests", nameStr)
+			}
 		}
 		if name.IsPublic() {
 			if attrs[name].defaultValue == nil {
 				// Attribute is mandatory.
-				unpackers = append(unpackers, nameStr)
+				mandatoryUnpackers = append(mandatoryUnpackers, nameStr, &values[len(attrNames)])
 			} else {
 				// Attribute is optional.
-				unpackers = append(unpackers, nameStr+"?")
+				optionalUnpackers = append(optionalUnpackers, nameStr+"?", &values[len(attrNames)])
 			}
-			unpackers = append(unpackers, &values[len(attrNames)])
 			attrNames = append(attrNames, name)
 		} else {
 			// TODO: Visit labels from private attribute default values!
@@ -127,39 +142,71 @@ func (r *rule) CallInternal(thread *starlark.Thread, args starlark.Tuple, kwargs
 	defaultInheritableAttrs := targetRegistrar.defaultInheritableAttrs.Message
 
 	var name string
-	deprecation := defaultInheritableAttrs.Deprecation
-	var execCompatibleWith []string
-	packageMetadata := defaultInheritableAttrs.PackageMetadata
-	var tags []string
-	var targetCompatibleWith []string
-	testOnly := defaultInheritableAttrs.Testonly
-	var visibility []pg_label.CanonicalLabel
-	labelStringListUnpackerInto := unpack.List(unpack.Stringer(NewLabelOrStringUnpackerInto(currentPackage)))
-	unpackers = append(
-		unpackers,
+	mandatoryUnpackers = append(
+		mandatoryUnpackers,
 		"name", unpack.Bind(thread, &name, unpack.Stringer(unpack.TargetName)),
-		"deprecation?", unpack.Bind(thread, &deprecation, unpack.String),
-		"exec_compatible_with?", unpack.Bind(thread, &execCompatibleWith, labelStringListUnpackerInto),
-		"package_metadata?", unpack.Bind(thread, &packageMetadata, labelStringListUnpackerInto),
-		"tags?", unpack.Bind(thread, &tags, unpack.List(unpack.String)),
-		"target_compatible_with?", unpack.Bind(thread, &targetCompatibleWith, labelStringListUnpackerInto),
-		"testonly?", unpack.Bind(thread, &testOnly, unpack.Bool),
-		"visibility?", unpack.Bind(thread, &visibility, unpack.List(NewLabelOrStringUnpackerInto(currentPackage))),
 	)
 
+	var applicableLicenses []string
+	deprecation := defaultInheritableAttrs.Deprecation
+	var execCompatibleWith []string
+	var features *Select
+	packageMetadata := defaultInheritableAttrs.PackageMetadata
+	var tags []string
+	targetCompatibleWith := emptyTargetCompatibleWith
+	testOnly := defaultInheritableAttrs.Testonly
+	var visibility []pg_label.ResolvedLabel
+	labelUnpackerInto := NewLabelOrStringUnpackerInto(currentPackage)
+	labelStringListUnpackerInto := unpack.List(unpack.Stringer(labelUnpackerInto))
+	optionalUnpackers = append(
+		optionalUnpackers,
+		"applicable_licenses?", unpack.Bind(thread, &applicableLicenses, labelStringListUnpackerInto),
+		"deprecation?", unpack.Bind(thread, &deprecation, unpack.String),
+		"exec_compatible_with?", unpack.Bind(thread, &execCompatibleWith, labelStringListUnpackerInto),
+		"features?", unpack.Bind(thread, &features, NewSelectUnpackerInto(unpack.Canonicalize(unpack.List(unpack.String)))),
+		"package_metadata?", unpack.Bind(thread, &packageMetadata, labelStringListUnpackerInto),
+		"tags?", unpack.Bind(thread, &tags, unpack.IfNotNone(unpack.List(unpack.String))),
+		"target_compatible_with?", unpack.Bind(thread, &targetCompatibleWith, NewSelectUnpackerInto(unpack.Canonicalize(unpack.List(labelUnpackerInto)))),
+		"testonly?", unpack.Bind(thread, &testOnly, unpack.IfNotNone(sloppyBoolUnpackerInto{})),
+		"visibility?", unpack.Bind(thread, &visibility, unpack.IfNotNone(unpack.List(NewLabelOrStringUnpackerInto(currentPackage)))),
+	)
+
+	var buildSettingDefault starlark.Value
 	if buildSetting != nil {
-		// TODO: Save build setting default value in target.
-		var buildSettingDefault starlark.Value
-		unpackers = append(
-			unpackers,
+		mandatoryUnpackers = append(
+			mandatoryUnpackers,
 			"build_setting_default",
 			unpack.Bind(thread, &buildSettingDefault, unpack.Canonicalize(buildSetting.buildSettingType.GetCanonicalizer())),
 		)
 	}
 
+	if test {
+		var args []string
+		flaky := false
+		local := false
+		shardCount := 1
+		size := "medium"
+		var timeout string
+		optionalUnpackers = append(
+			optionalUnpackers,
+			"args?",
+			unpack.Bind(thread, &args, unpack.List(unpack.String)),
+			"flaky?",
+			unpack.Bind(thread, &flaky, sloppyBoolUnpackerInto{}),
+			"local?",
+			unpack.Bind(thread, &local, sloppyBoolUnpackerInto{}),
+			"shard_count?",
+			unpack.Bind(thread, &shardCount, unpack.Int[int]()),
+			"size?",
+			unpack.Bind(thread, &size, unpack.String),
+			"timeout?",
+			unpack.Bind(thread, &timeout, unpack.String),
+		)
+	}
+
 	if err := starlark.UnpackArgs(
 		r.Identifier.GetStarlarkIdentifier().String(), nil, kwargs,
-		unpackers...,
+		append(mandatoryUnpackers, optionalUnpackers...)...,
 	); err != nil {
 		return nil, err
 	}
@@ -211,47 +258,75 @@ func (r *rule) CallInternal(thread *starlark.Thread, args starlark.Tuple, kwargs
 	valueEncodingOptions := thread.Local(ValueEncodingOptionsKey).(*ValueEncodingOptions)
 	for i, attrName := range attrNames {
 		attr := attrs[attrName]
-		unpacker := NewSelectUnpackerInto(attr.attrType.GetCanonicalizer(currentPackage))
+		canonicalizer := attr.attrType.GetCanonicalizer(currentPackage)
 		if attr.defaultValue != nil {
-			unpacker = unpack.IfNotNone(unpacker)
+			canonicalizer = unpack.IfNotNoneCanonicalizer(canonicalizer)
 		}
 		value := values[i]
 		if value == nil {
 			value = starlark.None
 		}
 		var selectValue *Select
-		if err := unpacker.UnpackInto(thread, value, &selectValue); err != nil {
+		if err := NewSelectUnpackerInto(canonicalizer).UnpackInto(thread, value, &selectValue); err != nil {
 			return nil, fmt.Errorf("invalid argument %#v: %w", attrName.String(), err)
 		}
-		if selectValue != nil {
-			encodedGroups, _, err := selectValue.EncodeGroups(
-				/* path = */ map[starlark.Value]struct{}{},
-				valueEncodingOptions,
-			)
-			if err != nil {
-				return nil, err
-			}
-			attrValues = append(attrValues,
-				&model_starlark_pb.RuleTarget_AttrValue{
-					Name:       attrName.String(),
-					ValueParts: encodedGroups.Message,
-				},
-			)
-			patcher.Merge(encodedGroups.Patcher)
 
-			selectValue.VisitLabels(map[starlark.Value]struct{}{}, func(l pg_label.CanonicalLabel) {
-				if l.GetCanonicalPackage() == currentPackage {
+		encodedGroups, _, err := selectValue.EncodeGroups(
+			/* path = */ map[starlark.Value]struct{}{},
+			valueEncodingOptions,
+		)
+		if err != nil {
+			return nil, err
+		}
+		attrValues = append(attrValues,
+			&model_starlark_pb.RuleTarget_AttrValue{
+				Name:       attrName.String(),
+				ValueParts: encodedGroups.Message,
+			},
+		)
+		patcher.Merge(encodedGroups.Patcher)
+
+		selectValue.VisitLabels(thread, map[starlark.Value]struct{}{}, func(l pg_label.ResolvedLabel) {
+			if canonicalLabel, err := l.AsCanonical(); err == nil {
+				if canonicalLabel.GetCanonicalPackage() == currentPackage {
 					targetRegistrar.registerImplicitTarget(l.GetTargetName().String())
 				}
-			})
-		} else {
-			// TODO: Also visit labels from attribute default values!
-		}
+			}
+		})
 	}
+
+	var encodedBuildSettingDefault model_core.PatchedMessage[*model_starlark_pb.Value, dag.ObjectContentsWalker]
+	if buildSetting != nil {
+		encodedBuildSettingDefault, _, err = EncodeValue(
+			buildSettingDefault,
+			/* path = */ map[starlark.Value]struct{}{},
+			/* identifier = */ nil,
+			valueEncodingOptions,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("failed to encode \"build_setting_default\": %w", err)
+		}
+		patcher.Merge(encodedBuildSettingDefault.Patcher)
+	}
+
+	if len(applicableLicenses) > 0 {
+		if len(packageMetadata) > 0 {
+			return nil, fmt.Errorf("\"applicable_licenses\" and \"package_metadata\" cannot be specified at the same time")
+		}
+		packageMetadata = applicableLicenses
+	}
+
+	targetCompatibleWithGroups, _, err := targetCompatibleWith.EncodeGroups(
+		/* path = */ map[starlark.Value]struct{}{},
+		valueEncodingOptions,
+	)
+	if err != nil {
+		return nil, err
+	}
+	patcher.Merge(targetCompatibleWithGroups.Patcher)
 
 	sort.Strings(execCompatibleWith)
 	sort.Strings(tags)
-	sort.Strings(targetCompatibleWith)
 
 	visibilityPackageGroup, err := targetRegistrar.getVisibilityPackageGroup(visibility)
 	if err != nil {
@@ -269,13 +344,14 @@ func (r *rule) CallInternal(thread *starlark.Thread, args starlark.Tuple, kwargs
 						AttrValues:           attrValues,
 						ExecCompatibleWith:   execCompatibleWith,
 						Tags:                 slices.Compact(tags),
-						TargetCompatibleWith: targetCompatibleWith,
+						TargetCompatibleWith: targetCompatibleWithGroups.Message,
 						InheritableAttrs: &model_starlark_pb.InheritableAttrs{
 							Deprecation:     deprecation,
 							PackageMetadata: packageMetadata,
 							Testonly:        testOnly,
 							Visibility:      visibilityPackageGroup.Message,
 						},
+						BuildSettingDefault: encodedBuildSettingDefault.Message,
 					},
 				},
 			},
@@ -325,6 +401,7 @@ type RuleDefinition interface {
 	GetAttrsCheap(thread *starlark.Thread) (map[pg_label.StarlarkIdentifier]*Attr, error)
 	GetBuildSetting(thread *starlark.Thread) (*BuildSetting, error)
 	GetInitializer(thread *starlark.Thread) (*NamedFunction, error)
+	GetTest(thread *starlark.Thread) (bool, error)
 }
 
 type starlarkRuleDefinition struct {
@@ -335,6 +412,8 @@ type starlarkRuleDefinition struct {
 	implementation NamedFunction
 	initializer    *NamedFunction
 	provides       []*Provider
+	test           bool
+	subrules       []*Subrule
 }
 
 func NewStarlarkRuleDefinition(
@@ -345,6 +424,8 @@ func NewStarlarkRuleDefinition(
 	implementation NamedFunction,
 	initializer *NamedFunction,
 	provides []*Provider,
+	test bool,
+	subrules []*Subrule,
 ) RuleDefinition {
 	return &starlarkRuleDefinition{
 		attrs:          attrs,
@@ -354,6 +435,8 @@ func NewStarlarkRuleDefinition(
 		implementation: implementation,
 		initializer:    initializer,
 		provides:       provides,
+		test:           test,
+		subrules:       subrules,
 	}
 }
 
@@ -397,13 +480,33 @@ func (rd *starlarkRuleDefinition) Encode(path map[starlark.Value]struct{}, optio
 	needsCode = needsCode || namedAttrsNeedCode
 	patcher.Merge(namedAttrs.Patcher)
 
+	cfgTransitionIdentifier := ""
+	if rd.cfg != nil {
+		cfgTransitionIdentifier, err = rd.cfg.GetUserDefinedTransitionIdentifier()
+		if err != nil {
+			return model_core.PatchedMessage[*model_starlark_pb.Rule_Definition, dag.ObjectContentsWalker]{}, false, err
+		}
+	}
+
+	subruleIdentifiers := make([]string, 0, len(rd.subrules))
+	for i, subrule := range rd.subrules {
+		if subrule.Identifier == nil {
+			return model_core.PatchedMessage[*model_starlark_pb.Rule_Definition, dag.ObjectContentsWalker]{}, false, fmt.Errorf("subrule at index %d does not have an identifier", i)
+		}
+		subruleIdentifiers = append(subruleIdentifiers, subrule.Identifier.String())
+	}
+	sort.Strings(subruleIdentifiers)
+
 	return model_core.NewPatchedMessage(
 		&model_starlark_pb.Rule_Definition{
-			Attrs:          namedAttrs.Message,
-			BuildSetting:   buildSetting,
-			ExecGroups:     execGroups,
-			Implementation: implementation.Message,
-			Initializer:    initializerMessage,
+			Attrs:                   namedAttrs.Message,
+			BuildSetting:            buildSetting,
+			CfgTransitionIdentifier: cfgTransitionIdentifier,
+			ExecGroups:              execGroups,
+			Implementation:          implementation.Message,
+			Initializer:             initializerMessage,
+			Test:                    rd.test,
+			SubruleIdentifiers:      slices.Compact(subruleIdentifiers),
 		},
 		patcher,
 	), needsCode, nil
@@ -419,6 +522,10 @@ func (rd *starlarkRuleDefinition) GetBuildSetting(thread *starlark.Thread) (*Bui
 
 func (rd *starlarkRuleDefinition) GetInitializer(thread *starlark.Thread) (*NamedFunction, error) {
 	return rd.initializer, nil
+}
+
+func (rd *starlarkRuleDefinition) GetTest(thread *starlark.Thread) (bool, error) {
+	return rd.test, nil
 }
 
 type protoRuleDefinition struct {
@@ -461,6 +568,10 @@ func (rd *protoRuleDefinition) GetInitializer(thread *starlark.Thread) (*NamedFu
 		),
 	)
 	return &f, nil
+}
+
+func (rd *protoRuleDefinition) GetTest(thread *starlark.Thread) (bool, error) {
+	return rd.message.Message.Test, nil
 }
 
 type reloadingRuleDefinition struct {
@@ -532,6 +643,14 @@ func (rd *reloadingRuleDefinition) GetInitializer(thread *starlark.Thread) (*Nam
 	return base.GetInitializer(thread)
 }
 
+func (rd *reloadingRuleDefinition) GetTest(thread *starlark.Thread) (bool, error) {
+	base, err := rd.getBase(thread)
+	if err != nil {
+		return false, err
+	}
+	return base.GetTest(thread)
+}
+
 // bogusValue is a simple Starlark value type that acts as a
 // placeholder. It can be used in places where we need to replace a
 // value by a stub, and need to be sure the stub isn't being interpreted
@@ -553,7 +672,7 @@ func (bogusValue) Truth() starlark.Bool {
 }
 
 func (bogusValue) Hash() (uint32, error) {
-	return 0, nil
+	return 0, errors.New("bogus_value cannot be hashed")
 }
 
 type protoAttrsCache struct {

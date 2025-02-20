@@ -1,5 +1,5 @@
 diff --git internal/compile/compile.go internal/compile/compile.go
-index b257d70..c171dc6 100644
+index bc38200..fe7e58e 100644
 --- internal/compile/compile.go
 +++ internal/compile/compile.go
 @@ -29,6 +29,7 @@ import (
@@ -18,7 +18,7 @@ index b257d70..c171dc6 100644
  
  	// -- transient state --
  
-@@ -364,7 +366,6 @@ type pcomp struct {
+@@ -366,7 +368,6 @@ type pcomp struct {
  
  	names     map[string]uint32
  	constants map[interface{}]uint32
@@ -26,7 +26,7 @@ index b257d70..c171dc6 100644
  }
  
  // An fcomp holds the compiler state for a Funcode.
-@@ -503,7 +504,6 @@ func File(opts *syntax.FileOptions, stmts []syntax.Stmt, pos syntax.Position, na
+@@ -523,7 +524,6 @@ func File(opts *syntax.FileOptions, stmts []syntax.Stmt, pos syntax.Position, na
  		},
  		names:     make(map[string]uint32),
  		constants: make(map[interface{}]uint32),
@@ -34,7 +34,7 @@ index b257d70..c171dc6 100644
  	}
  	pcomp.prog.Toplevel = pcomp.function(name, pos, stmts, locals, nil)
  
-@@ -521,6 +521,7 @@ func (pcomp *pcomp) function(name string, pos syntax.Position, stmts []syntax.St
+@@ -541,6 +541,7 @@ func (pcomp *pcomp) function(name string, pos syntax.Position, stmts []syntax.St
  			Doc:      docStringFromBody(stmts),
  			Locals:   bindings(locals),
  			FreeVars: bindings(freevars),
@@ -42,7 +42,7 @@ index b257d70..c171dc6 100644
  		},
  	}
  
-@@ -980,13 +981,11 @@ func (pcomp *pcomp) constantIndex(v interface{}) uint32 {
+@@ -1001,13 +1002,11 @@ func (pcomp *pcomp) constantIndex(v interface{}) uint32 {
  // functionIndex returns the index of the specified function
  // AST the nestedfun pool, adding it if necessary.
  func (pcomp *pcomp) functionIndex(fn *Funcode) uint32 {
@@ -60,7 +60,7 @@ index b257d70..c171dc6 100644
  
  // string emits code to push the specified string.
 diff --git internal/compile/serial.go internal/compile/serial.go
-index 0dbae47..af003d7 100644
+index 6131322..0b27769 100644
 --- internal/compile/serial.go
 +++ internal/compile/serial.go
 @@ -267,10 +267,10 @@ func DecodeProgram(data []byte) (_ *Program, err error) {
@@ -85,15 +85,16 @@ index 0dbae47..af003d7 100644
  	id := d.binding()
  	doc := d.string()
  	code := d.bytes()
-@@ -395,5 +395,6 @@ func (d *decoder) function() *Funcode {
+@@ -395,6 +395,7 @@ func (d *decoder) function() *Funcode {
  		NumKwonlyParams: numKwonlyParams,
  		HasVarargs:      hasVarargs,
  		HasKwargs:       hasKwargs,
 +		Index:           index,
  	}
- }
+ 	fn.finish()
+ 	return fn
 diff --git starlark/eval.go starlark/eval.go
-index be3eb61..fe2b3bc 100644
+index a4640e4..16b75bb 100644
 --- starlark/eval.go
 +++ starlark/eval.go
 @@ -5,6 +5,7 @@
@@ -174,10 +175,10 @@ index be3eb61..fe2b3bc 100644
  // and global environment. This is a variant of ExecFile specialized to
  // the needs of a REPL, in which a sequence of input chunks, each
 diff --git starlark/value.go starlark/value.go
-index 5e323ca..345b664 100644
+index d89a9f5..62d679f 100644
 --- starlark/value.go
 +++ starlark/value.go
-@@ -696,6 +696,25 @@ type Function struct {
+@@ -701,6 +701,25 @@ type Function struct {
  	freevars Tuple
  }
  

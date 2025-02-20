@@ -83,3 +83,19 @@ func (l ApparentLabel) GetApparentRepo() (ApparentRepo, bool) {
 func (l ApparentLabel) WithCanonicalRepo(canonicalRepo CanonicalRepo) CanonicalLabel {
 	return newValidCanonicalLabel(canonicalRepo.applyToLabelOrTargetPattern(l.value))
 }
+
+// AsResolvedWithError converts an apparent label to a canonical label
+// containing an error message. This method can be called after
+// attempting to resolve an apparent repo to a canonical repo fails.
+func (l ApparentLabel) AsResolvedWithError(message string) ResolvedLabel {
+	if strings.IndexByte(message, ']') >= 0 {
+		panic("error message cannot contain closing brackets")
+	}
+
+	if offset := strings.IndexByte(l.value, '/'); offset > 0 {
+		// Translate "@repo//x/y:z" to "@@[message]//x/y:z".
+		return ResolvedLabel{value: "@@[" + message + "]" + l.value[offset:]}
+	}
+	// Translate "@repo" to "@@[message]//:repo".
+	return ResolvedLabel{value: "@@[" + message + "]//:" + strings.TrimLeft(l.value, "@")}
+}

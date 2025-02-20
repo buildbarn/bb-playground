@@ -14,6 +14,7 @@ import (
 	model_parser "github.com/buildbarn/bb-playground/pkg/model/parser"
 	model_starlark "github.com/buildbarn/bb-playground/pkg/model/starlark"
 	model_analysis_pb "github.com/buildbarn/bb-playground/pkg/proto/model/analysis"
+	model_core_pb "github.com/buildbarn/bb-playground/pkg/proto/model/core"
 	model_starlark_pb "github.com/buildbarn/bb-playground/pkg/proto/model/starlark"
 	"github.com/buildbarn/bb-playground/pkg/storage/dag"
 	"github.com/buildbarn/bb-playground/pkg/storage/object"
@@ -31,7 +32,7 @@ func (c *baseComputer) decodeStringDict(ctx context.Context, d model_core.Messag
 		model_parser.NewStorageBackedParsedObjectReader(
 			c.objectDownloader,
 			c.getValueObjectEncoder(),
-			model_parser.NewMessageObjectParser[object.LocalReference, model_starlark_pb.Dict](),
+			model_parser.NewMessageListObjectParser[object.LocalReference, model_starlark_pb.Dict_Entry](),
 		),
 		model_core.Message[*model_starlark_pb.Dict]{
 			Message:            dict.Dict,
@@ -86,7 +87,12 @@ func (c *baseComputer) ComputeRegisteredRepoPlatformValue(ctx context.Context, k
 	repoPlatformLabelStr := repoPlatformLabel.String()
 
 	// Obtain the PlatformInfo provider of the repo platform.
-	platformInfoProvider, err := getProviderFromConfiguredTarget(e, repoPlatformLabelStr, platformInfoProviderIdentifier)
+	platformInfoProvider, err := getProviderFromConfiguredTarget(
+		e,
+		repoPlatformLabelStr,
+		model_core.NewSimplePatchedMessage[dag.ObjectContentsWalker, *model_core_pb.Reference](nil),
+		platformInfoProviderIdentifier,
+	)
 	if err != nil {
 		return PatchedRegisteredRepoPlatformValue{}, fmt.Errorf("failed to obtain PlatformInfo of repo platform %#v: %w", repoPlatformLabelStr, err)
 	}
@@ -98,10 +104,20 @@ func (c *baseComputer) ComputeRegisteredRepoPlatformValue(ctx context.Context, k
 	var execPKIXPublicKey []byte
 	var repositoryOSArch, repositoryOSName string
 	var repositoryOSEnviron []*model_analysis_pb.RegisteredRepoPlatform_Value_EnvironmentVariable
-	for _, field := range platformInfoProvider.Message {
-		switch field.Name {
+	var errIter error
+	for key, value := range model_starlark.AllStructFields(
+		ctx,
+		model_parser.NewStorageBackedParsedObjectReader(
+			c.objectDownloader,
+			c.getValueObjectEncoder(),
+			model_parser.NewMessageListObjectParser[object.LocalReference, model_starlark_pb.List_Element](),
+		),
+		platformInfoProvider,
+		&errIter,
+	) {
+		switch key {
 		case "exec_pkix_public_key":
-			str, ok := field.Value.GetKind().(*model_starlark_pb.Value_Str)
+			str, ok := value.Message.Kind.(*model_starlark_pb.Value_Str)
 			if !ok {
 				return PatchedRegisteredRepoPlatformValue{}, fmt.Errorf("exec_pkix_public_key field of PlatformInfo of repo platform %#v is not a string", repoPlatformLabelStr)
 			}
@@ -110,19 +126,13 @@ func (c *baseComputer) ComputeRegisteredRepoPlatformValue(ctx context.Context, k
 				return PatchedRegisteredRepoPlatformValue{}, fmt.Errorf("exec_pkix_public_key field of PlatformInfo of repo platform %#v: %w", repoPlatformLabelStr, err)
 			}
 		case "repository_os_arch":
-			str, ok := field.Value.GetKind().(*model_starlark_pb.Value_Str)
+			str, ok := value.Message.Kind.(*model_starlark_pb.Value_Str)
 			if !ok {
 				return PatchedRegisteredRepoPlatformValue{}, fmt.Errorf("repository_os_arch field of PlatformInfo of repo platform %#v is not a string", repoPlatformLabelStr)
 			}
 			repositoryOSArch = str.Str
 		case "repository_os_environ":
-			p, err := c.decodeStringDict(
-				ctx,
-				model_core.Message[*model_starlark_pb.Value]{
-					Message:            field.Value,
-					OutgoingReferences: platformInfoProvider.OutgoingReferences,
-				},
-			)
+			p, err := c.decodeStringDict(ctx, value)
 			if err != nil {
 				return PatchedRegisteredRepoPlatformValue{}, fmt.Errorf("repository_os_environ field of PlatformInfo of repo platform %#v: %w", repoPlatformLabelStr, err)
 			}
@@ -134,12 +144,15 @@ func (c *baseComputer) ComputeRegisteredRepoPlatformValue(ctx context.Context, k
 				})
 			}
 		case "repository_os_name":
-			str, ok := field.Value.GetKind().(*model_starlark_pb.Value_Str)
+			str, ok := value.Message.Kind.(*model_starlark_pb.Value_Str)
 			if !ok {
 				return PatchedRegisteredRepoPlatformValue{}, fmt.Errorf("repository_os_name field of PlatformInfo of repo platform %#v is not a string", repoPlatformLabelStr)
 			}
 			repositoryOSName = str.Str
 		}
+	}
+	if errIter != nil {
+		return PatchedRegisteredRepoPlatformValue{}, errIter
 	}
 
 	if len(execPKIXPublicKey) == 0 {

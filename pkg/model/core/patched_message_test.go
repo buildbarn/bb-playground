@@ -67,17 +67,22 @@ func TestNewPatchedMessageFromExisting(t *testing.T) {
 		// any attempt to access them fails.
 		metadataCreator := NewMockReferenceMetadataCreatorForTesting(ctrl)
 		m1 := model_core.NewPatchedMessageFromExisting(
-			model_core.NewSimpleMessage(&model_filesystem_pb.FileNode{
-				Name: "hello",
-				Properties: &model_filesystem_pb.FileProperties{
-					Contents: &model_filesystem_pb.FileContents{
-						Reference: &model_core_pb.Reference{
-							Index: 42,
+			model_core.Message[*model_filesystem_pb.FileNode]{
+				Message: &model_filesystem_pb.FileNode{
+					Name: "hello",
+					Properties: &model_filesystem_pb.FileProperties{
+						Contents: &model_filesystem_pb.FileContents{
+							Reference: &model_core_pb.Reference{
+								Index: 42,
+							},
+							TotalSizeBytes: 583,
 						},
-						TotalSizeBytes: 583,
 					},
 				},
-			}),
+				OutgoingReferences: object.OutgoingReferencesList{
+					object.MustNewSHA256V1LocalReference("31233528b0ccc08d56724b2f132154967a89c4fb79de65fc65e3eeb42d9f89e4", 4828, 0, 0, 0),
+				},
+			},
 			metadataCreator.Call,
 		)
 

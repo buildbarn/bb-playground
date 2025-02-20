@@ -7,26 +7,26 @@ import (
 )
 
 type HasLabels interface {
-	VisitLabels(path map[starlark.Value]struct{}, visitor func(pg_label.CanonicalLabel))
+	VisitLabels(thread *starlark.Thread, path map[starlark.Value]struct{}, visitor func(pg_label.ResolvedLabel))
 }
 
-func VisitLabels(v starlark.Value, path map[starlark.Value]struct{}, visitor func(pg_label.CanonicalLabel)) {
+func VisitLabels(thread *starlark.Thread, v starlark.Value, path map[starlark.Value]struct{}, visitor func(pg_label.ResolvedLabel)) {
 	if _, ok := path[v]; !ok {
 		path[v] = struct{}{}
 		switch typedV := v.(type) {
 		case HasLabels:
 			// Type has its own logic for reporting labels.
-			typedV.VisitLabels(path, visitor)
+			typedV.VisitLabels(thread, path, visitor)
 
 		// Composite types that require special handling.
 		case *starlark.Dict:
-			for key, value := range starlark.Entries(typedV) {
-				VisitLabels(key, path, visitor)
-				VisitLabels(value, path, visitor)
+			for key, value := range starlark.Entries(thread, typedV) {
+				VisitLabels(thread, key, path, visitor)
+				VisitLabels(thread, value, path, visitor)
 			}
 		case *starlark.List:
 			for value := range starlark.Elements(typedV) {
-				VisitLabels(value, path, visitor)
+				VisitLabels(thread, value, path, visitor)
 			}
 
 		// Non-label scalars.

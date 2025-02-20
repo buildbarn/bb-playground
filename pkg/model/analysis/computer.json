@@ -51,8 +51,11 @@
       },
       "CompatibleToolchainsForType": {
          "dependsOn": [
-            "RegisteredToolchainsForType"
-         ]
+            "ConfiguredTarget",
+            "RegisteredToolchainsForType",
+            "Target"
+         ],
+         "keyContainsReferences": true
       },
       "CompiledBzlFile": {
          "dependsOn": [
@@ -110,8 +113,10 @@
             "RootModule",
             "Select",
             "Target",
+            "UserDefinedTransition",
             "VisibleTarget"
-         ]
+         ],
+         "keyContainsReferences": true
       },
       "DirectoryAccessParameters": {
          "dependsOn": [
@@ -273,7 +278,16 @@
       },
       "ModulesWithOverrides": {
          "dependsOn": [
-            "BuildSpecification"
+            "BuildSpecification",
+            "ModulesWithRemoteOverrides"
+         ]
+      },
+      "ModulesWithRemoteOverrides": {
+         "dependsOn": [
+            "FileProperties",
+            "FileReader",
+            "ModuleDotBazelContents",
+            "RootModule"
          ]
       },
       "Package": {
@@ -316,6 +330,7 @@
             "ModuleDotBazelContents",
             "ModulesWithMultipleVersionsObject",
             "RootModule",
+            "Select",
             "Target",
             "TargetPatternExpansion",
             "VisibleTarget"
@@ -345,6 +360,7 @@
             "HttpFileContents",
             "ModuleExtensionRepo",
             "ModuleFinalBuildList",
+            "ModulesWithRemoteOverrides",
             "RegisteredRepoPlatform",
             "Repo",
             "RepositoryRuleObject",
@@ -371,7 +387,8 @@
             "CompatibleExecutionPlatforms",
             "CompatibleToolchainsForType",
             "VisibleTarget"
-         ]
+         ],
+         "keyContainsReferences": true
       },
       "RootModule": {
          "dependsOn": [
@@ -409,7 +426,8 @@
       "TargetCompletion": {
          "dependsOn": [
             "ConfiguredTarget"
-         ]
+         ],
+         "keyContainsReferences": true
       },
       "TargetPatternExpansion": {
          "dependsOn": [
@@ -430,12 +448,26 @@
             "RootModule"
          ]
       },
+      "UserDefinedTransition": {
+         "dependsOn": [
+            "BuiltinsModuleNames",
+            "CanonicalRepoName",
+            "CompiledBzlFileDecodedGlobals",
+            "CompiledBzlFileFunctionFactory",
+            "CompiledBzlFileGlobal",
+            "RootModule",
+            "Target",
+            "VisibleTarget"
+         ],
+         "keyContainsReferences": true
+      },
       "VisibleTarget": {
          "dependsOn": [
             "Select",
             "Target",
             "VisibleTarget"
-         ]
+         ],
+         "keyContainsReferences": true
       }
    },
    "goPackage": "analysis",

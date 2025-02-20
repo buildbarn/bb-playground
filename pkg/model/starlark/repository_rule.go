@@ -51,8 +51,7 @@ func (rr *repositoryRule) Truth() starlark.Bool {
 }
 
 func (rr *repositoryRule) Hash() (uint32, error) {
-	// TODO
-	return 0, nil
+	return 0, errors.New("repository_rule cannot be hashed")
 }
 
 func (rr *repositoryRule) Name() string {
@@ -126,9 +125,9 @@ func (rr *repositoryRule) CallInternal(thread *starlark.Thread, args starlark.Tu
 		return nil, err
 	}
 
-	var attrValues []*model_starlark_pb.NamedValue
-	patcher := model_core.NewReferenceMessagePatcher[dag.ObjectContentsWalker]()
 	valueEncodingOptions := thread.Local(ValueEncodingOptionsKey).(*ValueEncodingOptions)
+	var attrKeys []string
+	attrValuesBuilder := newListBuilder(valueEncodingOptions)
 	for i, attrName := range attrNames {
 		if value := values[i]; value != nil {
 			encodedValue, _, err := EncodeValue(
@@ -140,14 +139,22 @@ func (rr *repositoryRule) CallInternal(thread *starlark.Thread, args starlark.Tu
 			if err != nil {
 				return nil, err
 			}
-			attrValues = append(attrValues,
-				&model_starlark_pb.NamedValue{
-					Name:  attrName,
-					Value: encodedValue.Message,
+			attrKeys = append(attrKeys, attrName)
+			if err := attrValuesBuilder.PushChild(model_core.NewPatchedMessage(
+				&model_starlark_pb.List_Element{
+					Level: &model_starlark_pb.List_Element_Leaf{
+						Leaf: encodedValue.Message,
+					},
 				},
-			)
-			patcher.Merge(encodedValue.Patcher)
+				encodedValue.Patcher,
+			)); err != nil {
+				return nil, err
+			}
 		}
+	}
+	attrValues, err := attrValuesBuilder.FinalizeList()
+	if err != nil {
+		return nil, err
 	}
 
 	return starlark.None, repoRegistrar.registerRepo(
@@ -157,10 +164,13 @@ func (rr *repositoryRule) CallInternal(thread *starlark.Thread, args starlark.Tu
 				Name: name,
 				Definition: &model_starlark_pb.Repo_Definition{
 					RepositoryRuleIdentifier: rr.Identifier.String(),
-					AttrValues:               attrValues,
+					AttrValues: &model_starlark_pb.Struct_Fields{
+						Keys:   attrKeys,
+						Values: attrValues.Message,
+					},
 				},
 			},
-			patcher,
+			attrValues.Patcher,
 		),
 	)
 }

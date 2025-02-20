@@ -4,76 +4,60 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"sort"
+	"strings"
 
 	"github.com/buildbarn/bb-playground/pkg/evaluation"
 	"github.com/buildbarn/bb-playground/pkg/label"
 	model_core "github.com/buildbarn/bb-playground/pkg/model/core"
+	"github.com/buildbarn/bb-playground/pkg/model/core/btree"
 	model_parser "github.com/buildbarn/bb-playground/pkg/model/parser"
 	model_analysis_pb "github.com/buildbarn/bb-playground/pkg/proto/model/analysis"
+	model_core_pb "github.com/buildbarn/bb-playground/pkg/proto/model/core"
 	model_starlark_pb "github.com/buildbarn/bb-playground/pkg/proto/model/starlark"
 	"github.com/buildbarn/bb-playground/pkg/storage/dag"
 	"github.com/buildbarn/bb-playground/pkg/storage/object"
 )
 
-func (c *baseComputer) lookupTargetDefinitionInTargetList(ctx context.Context, targetList model_core.Message[[]*model_analysis_pb.Package_Value_TargetList_Element], targetName label.TargetName) (model_core.Message[*model_starlark_pb.Target_Definition], error) {
-	reader := model_parser.NewStorageBackedParsedObjectReader(
-		c.objectDownloader,
-		c.getValueObjectEncoder(),
-		model_parser.NewMessageObjectParser[object.LocalReference, model_analysis_pb.Package_Value_TargetList](),
-	)
-
+func (c *baseComputer) lookupTargetDefinitionInTargetList(ctx context.Context, targetList model_core.Message[[]*model_analysis_pb.Package_Value_Target], targetName label.TargetName) (model_core.Message[*model_starlark_pb.Target_Definition], error) {
 	targetNameStr := targetName.String()
-	for {
-		index := uint(sort.Search(
-			len(targetList.Message),
-			func(i int) bool {
-				switch level := targetList.Message[i].Level.(type) {
-				case *model_analysis_pb.Package_Value_TargetList_Element_Leaf:
-					return targetNameStr < level.Leaf.Name
-				case *model_analysis_pb.Package_Value_TargetList_Element_Parent_:
-					return targetNameStr < level.Parent.FirstName
-				default:
-					return false
-				}
-			},
-		) - 1)
-		if index >= uint(len(targetList.Message)) {
-			return model_core.Message[*model_starlark_pb.Target_Definition]{}, nil
-		}
-		switch level := targetList.Message[index].Level.(type) {
-		case *model_analysis_pb.Package_Value_TargetList_Element_Leaf:
-			if level.Leaf.Name != targetNameStr {
-				return model_core.Message[*model_starlark_pb.Target_Definition]{}, nil
+	target, err := btree.Find(
+		ctx,
+		model_parser.NewStorageBackedParsedObjectReader(
+			c.objectDownloader,
+			c.getValueObjectEncoder(),
+			model_parser.NewMessageListObjectParser[object.LocalReference, model_analysis_pb.Package_Value_Target](),
+		),
+		targetList,
+		func(entry *model_analysis_pb.Package_Value_Target) (int, *model_core_pb.Reference) {
+			switch level := entry.Level.(type) {
+			case *model_analysis_pb.Package_Value_Target_Leaf:
+				return strings.Compare(targetNameStr, level.Leaf.Name), nil
+			case *model_analysis_pb.Package_Value_Target_Parent_:
+				return strings.Compare(targetNameStr, level.Parent.FirstName), level.Parent.Reference
+			default:
+				return 0, nil
 			}
-			definition := level.Leaf.Definition
-			if definition == nil {
-				return model_core.Message[*model_starlark_pb.Target_Definition]{}, errors.New("target does not have a definition")
-			}
-			return model_core.Message[*model_starlark_pb.Target_Definition]{
-				Message:            definition,
-				OutgoingReferences: targetList.OutgoingReferences,
-			}, nil
-		case *model_analysis_pb.Package_Value_TargetList_Element_Parent_:
-			index, err := model_core.GetIndexFromReferenceMessage(level.Parent.Reference, targetList.OutgoingReferences.GetDegree())
-			if err != nil {
-				return model_core.Message[*model_starlark_pb.Target_Definition]{}, err
-			}
-			listMessage, _, err := reader.ReadParsedObject(
-				ctx,
-				targetList.OutgoingReferences.GetOutgoingReference(index),
-			)
-			if err != nil {
-				return model_core.Message[*model_starlark_pb.Target_Definition]{}, err
-			}
-			targetList = model_core.Message[[]*model_analysis_pb.Package_Value_TargetList_Element]{
-				Message:            listMessage.Message.Elements,
-				OutgoingReferences: listMessage.OutgoingReferences,
-			}
-		default:
-			return model_core.Message[*model_starlark_pb.Target_Definition]{}, errors.New("target list has an unknown level type")
-		}
+		},
+	)
+	if err != nil {
+		return model_core.Message[*model_starlark_pb.Target_Definition]{}, err
 	}
+	if !target.IsSet() {
+		return model_core.Message[*model_starlark_pb.Target_Definition]{}, nil
+	}
+
+	level, ok := target.Message.Level.(*model_analysis_pb.Package_Value_Target_Leaf)
+	if !ok {
+		return model_core.Message[*model_starlark_pb.Target_Definition]{}, errors.New("target list has an unknown level type")
+	}
+	definition := level.Leaf.Definition
+	if definition == nil {
+		return model_core.Message[*model_starlark_pb.Target_Definition]{}, errors.New("target does not have a definition")
+	}
+	return model_core.Message[*model_starlark_pb.Target_Definition]{
+		Message:            definition,
+		OutgoingReferences: targetList.OutgoingReferences,
+	}, nil
 }
 
 func (c *baseComputer) ComputeTargetValue(ctx context.Context, key *model_analysis_pb.Target_Key, e TargetEnvironment) (PatchedTargetValue, error) {
@@ -90,7 +74,7 @@ func (c *baseComputer) ComputeTargetValue(ctx context.Context, key *model_analys
 
 	definition, err := c.lookupTargetDefinitionInTargetList(
 		ctx,
-		model_core.Message[[]*model_analysis_pb.Package_Value_TargetList_Element]{
+		model_core.Message[[]*model_analysis_pb.Package_Value_Target]{
 			Message:            packageValue.Message.Targets,
 			OutgoingReferences: packageValue.OutgoingReferences,
 		},

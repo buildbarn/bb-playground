@@ -123,19 +123,13 @@ message FileContents {
   // contains the literal contents of the file.
   //
   // If the reference points to an object with a height greater than
-  // zero, the payload contains a message of type FileContentsList. The
+  // zero, the payload contains a list of FileContents messages. The
   // file's contents can be reobtained by concatenating the parts
   // referenced by this message.
   buildbarn.playground.model.core.Reference reference = 1;
 
   // The total size of all chunks of data in this part of the file.
   uint64 total_size_bytes = 2;
-}
-
-message FileContentsList {
-  // Parts of data that need to be concatenated to form the file's
-  // contents.
-  repeated FileContents parts = 1;
 }
 
 message DirectoryAccessParameters {
@@ -159,8 +153,8 @@ message FileAccessParameters {
   // data.
   repeated buildbarn.playground.model.encoding.BinaryEncoder chunk_encoders = 1;
 
-  // Encoders that were used when creating objects containing
-  // FileContentsList messages.
+  // Encoders that were used when creating objects containing lists of
+  // FileContents messages.
   repeated buildbarn.playground.model.encoding.BinaryEncoder
       file_contents_list_encoders = 2;
 }
@@ -186,22 +180,23 @@ message FileCreationParameters {
   // chunk sizes small.
   uint32 chunk_maximum_size_bytes = 3;
 
-  // The minimum size of objects containing FileContentsList messages,
-  // prior to applying any encoding steps and deduplicating any outgoing
-  // references.
+  // The minimum size of objects containing lists of FileContents
+  // messages, prior to applying any encoding steps and deduplicating
+  // any outgoing references.
   //
   // The resulting objects may be smaller than the minimum size, if and
   // only if the file consists of fewer chunks than are needed to reach
   // the limit.
   uint32 file_contents_list_minimum_size_bytes = 4;
 
-  // The maximum size of objects containing FileContentsList messages,
-  // prior to applying any encoding steps and deduplicating any outgoing
-  // references.
+  // The maximum size of objects containing lists of FileContents
+  // messages, prior to applying any encoding steps and deduplicating
+  // any outgoing references.
   //
   // The result objects may be larger than the maximum size, if further
-  // partitioning a FileContentsList would violate the minimum size or
-  // cause it to contain fewer than two parts. However, if the maximum
-  // size is sufficiently large, this cannot occur in practice.
+  // partitioning a list of FileContents messages would violate the
+  // minimum size or cause it to contain fewer than two parts. However,
+  // if the maximum size is sufficiently large, this cannot occur in
+  // practice.
   uint32 file_contents_list_maximum_size_bytes = 5;
 }

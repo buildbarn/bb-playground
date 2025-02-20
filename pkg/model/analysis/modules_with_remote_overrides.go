@@ -1,0 +1,201 @@
+package analysis
+
+import (
+	"context"
+	"fmt"
+	"maps"
+	"net/url"
+	"slices"
+	"sort"
+	"strings"
+
+	"go.starlark.net/starlark"
+
+	"github.com/buildbarn/bb-playground/pkg/evaluation"
+	"github.com/buildbarn/bb-playground/pkg/label"
+	model_core "github.com/buildbarn/bb-playground/pkg/model/core"
+	model_starlark "github.com/buildbarn/bb-playground/pkg/model/starlark"
+	model_analysis_pb "github.com/buildbarn/bb-playground/pkg/proto/model/analysis"
+	model_starlark_pb "github.com/buildbarn/bb-playground/pkg/proto/model/starlark"
+	pg_starlark "github.com/buildbarn/bb-playground/pkg/starlark"
+	"github.com/buildbarn/bb-playground/pkg/storage/dag"
+	"github.com/buildbarn/bb-storage/pkg/filesystem/path"
+)
+
+func (c *baseComputer) ComputeModulesWithRemoteOverridesValue(ctx context.Context, key *model_analysis_pb.ModulesWithRemoteOverrides_Key, e ModulesWithRemoteOverridesEnvironment) (PatchedModulesWithRemoteOverridesValue, error) {
+	rootModuleValue := e.GetRootModuleValue(&model_analysis_pb.RootModule_Key{})
+	if !rootModuleValue.IsSet() {
+		return PatchedModulesWithRemoteOverridesValue{}, evaluation.ErrMissingDependency
+	}
+
+	// Obtain the root module name to find the file.
+	rootModuleName, err := label.NewModule(rootModuleValue.Message.RootModuleName)
+	if err != nil {
+		return PatchedModulesWithRemoteOverridesValue{}, fmt.Errorf("invalid root module name %#v: %w", rootModuleValue.Message.RootModuleName, err)
+	}
+
+	// Parse out the root module to find the overrides.
+	overrideModules := []*model_analysis_pb.ModuleOverride{}
+	handler := &overrideExtractingModuleDotBazelHandler{
+		overrideModules: &overrideModules,
+		valueEncodingOptions: c.getValueEncodingOptions(
+			rootModuleName.ToModuleInstance(nil).
+				GetBareCanonicalRepo().
+				GetRootPackage().
+				AppendTargetName(moduleDotBazelTargetName),
+		),
+		patcher: model_core.NewReferenceMessagePatcher[dag.ObjectContentsWalker](),
+	}
+	err = c.parseLocalModuleInstanceModuleDotBazel(ctx, rootModuleName.ToModuleInstance(nil), e, handler)
+	if err != nil {
+		return PatchedModulesWithRemoteOverridesValue{}, err
+	}
+
+	// Set any overrides coming from a remote location.
+	return PatchedModulesWithRemoteOverridesValue{
+		Message: &model_analysis_pb.ModulesWithRemoteOverrides_Value{
+			ModuleOverrides: overrideModules,
+		},
+		Patcher: handler.patcher,
+	}, nil
+}
+
+// overrideExtractingModuleDotBazelHandler is capable of capturing the paths
+// contained in git_override(), archive_override(), single_version_override(),
+// and multi_version_override() directives of a MODULE.bazel file. These paths
+// are needed by server to determine which remote modules to download perform
+// the build.
+type overrideExtractingModuleDotBazelHandler struct {
+	overrideModules      *[]*model_analysis_pb.ModuleOverride // Keep them in order for duplication checks and caching.
+	valueEncodingOptions *model_starlark.ValueEncodingOptions
+	patcher              *model_core.ReferenceMessagePatcher[dag.ObjectContentsWalker]
+}
+
+func prefixToUNIXString(stripPrefix path.Parser) (string, error) {
+	p, scopeWalker := path.EmptyBuilder.Join(path.VoidScopeWalker)
+	if err := path.Resolve(stripPrefix, scopeWalker); err != nil {
+		return "", err
+	}
+	return p.GetUNIXString(), nil
+}
+
+func stringersToStrings[E fmt.Stringer, T ~[]E](slice T) []string {
+	strs := make([]string, len(slice))
+	for idx := range slice {
+		strs[idx] = slice[idx].String()
+	}
+	return strs
+}
+
+func (h *overrideExtractingModuleDotBazelHandler) addOverrideModule(override *model_analysis_pb.ModuleOverride) error {
+	idx, found := slices.BinarySearchFunc(*h.overrideModules, override, func(a, b *model_analysis_pb.ModuleOverride) int {
+		return strings.Compare(a.GetName(), b.GetName())
+	})
+	if found {
+		return fmt.Errorf("module %s already contains a module override", override.GetName())
+	}
+	*h.overrideModules = slices.Insert(*h.overrideModules, idx, override)
+	return nil
+}
+
+func (h *overrideExtractingModuleDotBazelHandler) GetRootModuleName() (label.Module, error) {
+	return label.Module{}, nil
+}
+
+func (overrideExtractingModuleDotBazelHandler) BazelDep(name label.Module, version *label.ModuleVersion, maxCompatibilityLevel int, repoName label.ApparentRepo, devDependency bool) error {
+	return nil
+}
+
+func (h *overrideExtractingModuleDotBazelHandler) LocalPathOverride(moduleName label.Module, path path.Parser) error {
+	return nil
+}
+
+func (h *overrideExtractingModuleDotBazelHandler) Module(name label.Module, version *label.ModuleVersion, compatibilityLevel int, repoName label.ApparentRepo, bazelCompatibility []string) error {
+	return nil
+}
+
+func (h *overrideExtractingModuleDotBazelHandler) MultipleVersionOverride(moduleName label.Module, versions []label.ModuleVersion, registryURL *url.URL) error {
+	vers := stringersToStrings(versions)
+	slices.Sort(vers) // Ensure versions are sorted for caching.
+
+	var registry string
+	if registryURL != nil {
+		registry = registryURL.String()
+	}
+
+	return h.addOverrideModule(&model_analysis_pb.ModuleOverride{
+		Name: moduleName.String(),
+		Kind: &model_analysis_pb.ModuleOverride_MultipleVersions_{
+			MultipleVersions: &model_analysis_pb.ModuleOverride_MultipleVersions{
+				Versions: vers,
+				Registry: registry,
+			},
+		},
+	})
+}
+
+func (overrideExtractingModuleDotBazelHandler) RegisterExecutionPlatforms(platformLabels []label.ApparentTargetPattern, devDependency bool) error {
+	return nil
+}
+
+func (overrideExtractingModuleDotBazelHandler) RegisterToolchains(toolchainLabels []label.ApparentTargetPattern, devDependency bool) error {
+	return nil
+}
+
+func (h *overrideExtractingModuleDotBazelHandler) RepositoryRuleOverride(moduleName label.Module, repositoryRuleIdentifier label.CanonicalStarlarkIdentifier, attrs map[string]starlark.Value) error {
+	attrNames := slices.Collect(maps.Keys(attrs))
+	sort.Strings(attrNames)
+
+	attrsMap := make(map[string]any, len(attrs))
+	for key, value := range attrs {
+		attrsMap[key] = value
+	}
+	fields, _, err := model_starlark.NewStructFromDict(nil, attrsMap).
+		EncodeStructFields(map[starlark.Value]struct{}{}, h.valueEncodingOptions)
+	if err != nil {
+		return err
+	}
+	h.patcher.Merge(fields.Patcher)
+
+	return h.addOverrideModule(&model_analysis_pb.ModuleOverride{
+		Name: moduleName.String(),
+		Kind: &model_analysis_pb.ModuleOverride_RepositoryRule{
+			RepositoryRule: &model_starlark_pb.Repo_Definition{
+				RepositoryRuleIdentifier: repositoryRuleIdentifier.String(),
+				AttrValues:               fields.Message,
+			},
+		},
+	})
+}
+
+func (h *overrideExtractingModuleDotBazelHandler) SingleVersionOverride(moduleName label.Module, version *label.ModuleVersion, registryURL *url.URL, patchOptions *pg_starlark.PatchOptions) error {
+	var vers, registry string
+	if version != nil {
+		vers = version.String()
+	}
+	if registryURL != nil {
+		registry = registryURL.String()
+	}
+	return h.addOverrideModule(&model_analysis_pb.ModuleOverride{
+		Name: moduleName.String(),
+		Kind: &model_analysis_pb.ModuleOverride_SingleVersion_{
+			SingleVersion: &model_analysis_pb.ModuleOverride_SingleVersion{
+				Version:       vers,
+				Registry:      registry,
+				PatchLabels:   stringersToStrings(patchOptions.Patches),
+				PatchCommands: patchOptions.PatchCmds,
+				PatchStrip:    int64(patchOptions.PatchStrip),
+			},
+		},
+	})
+}
+
+func (overrideExtractingModuleDotBazelHandler) UseExtension(extensionBzlFile label.ApparentLabel, extensionName label.StarlarkIdentifier, devDependency, isolate bool) (pg_starlark.ModuleExtensionProxy, error) {
+	return pg_starlark.NullModuleExtensionProxy, nil
+}
+
+func (overrideExtractingModuleDotBazelHandler) UseRepoRule(repoRuleBzlFile label.ApparentLabel, repoRuleName string) (pg_starlark.RepoRuleProxy, error) {
+	return func(name label.ApparentRepo, devDependency bool, attrs map[string]starlark.Value) error {
+		return nil
+	}, nil
+}

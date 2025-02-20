@@ -122,10 +122,10 @@ func (v *moduleExtensionProxyValue) Truth() starlark.Bool {
 }
 
 func (v *moduleExtensionProxyValue) Hash() (uint32, error) {
-	return starlark.String(v.name.String()).Hash()
+	return 0, errors.New("module_extension_proxy cannot be hashed")
 }
 
-func (v *moduleExtensionProxyValue) Attr(name string) (starlark.Value, error) {
+func (v *moduleExtensionProxyValue) Attr(thread *starlark.Thread, name string) (starlark.Value, error) {
 	return starlark.NewBuiltin(name, func(thread *starlark.Thread, b *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
 		if len(args) > 0 {
 			return nil, errors.New("module tags do not take positional arguments")
@@ -145,10 +145,15 @@ func (v *moduleExtensionProxyValue) AttrNames() []string {
 	return nil
 }
 
+var (
+	targetIdentifierHTTPArchive   = label.MustNewCanonicalStarlarkIdentifier("@@bazel_tools+//tools/build_defs/repo:http.bzl%http_archive")
+	targetIdentifierGitRepository = label.MustNewCanonicalStarlarkIdentifier("@@bazel_tools+//tools/build_defs/repo:git.bzl%git_repository")
+)
+
 // Parse a MODULE.bazel file, and call into ModuleDotBazelHandler for
 // every observed declaration.
 func ParseModuleDotBazel(contents string, filename label.CanonicalLabel, localPathFormat path.Format, handler RootModuleDotBazelHandler) error {
-	repositoryRuleOverrideFunc := func(targetIdentifier string) func(thread *starlark.Thread, b *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
+	repositoryRuleOverrideFunc := func(targetIdentifier label.CanonicalStarlarkIdentifier) func(thread *starlark.Thread, b *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
 		return func(thread *starlark.Thread, b *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
 			if len(args) > 0 {
 				return nil, fmt.Errorf("%s: got %d positional arguments, want 0", b.Name(), len(args))
@@ -171,7 +176,7 @@ func ParseModuleDotBazel(contents string, filename label.CanonicalLabel, localPa
 			}
 			return starlark.None, handler.RepositoryRuleOverride(
 				*moduleName,
-				label.MustNewCanonicalStarlarkIdentifier(targetIdentifier),
+				targetIdentifier,
 				attrs,
 			)
 		}
@@ -188,7 +193,7 @@ func ParseModuleDotBazel(contents string, filename label.CanonicalLabel, localPa
 		filename.String(),
 		contents,
 		starlark.StringDict{
-			"archive_override": starlark.NewBuiltin("archive_override", repositoryRuleOverrideFunc("@@bazel_tools+//tools/build_defs/repo:http.bzl%http_archive")),
+			"archive_override": starlark.NewBuiltin("archive_override", repositoryRuleOverrideFunc(targetIdentifierHTTPArchive)),
 			"bazel_dep": starlark.NewBuiltin("bazel_dep", func(thread *starlark.Thread, b *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
 				var name label.Module
 				var version *label.ModuleVersion
@@ -217,7 +222,7 @@ func ParseModuleDotBazel(contents string, filename label.CanonicalLabel, localPa
 					devDependency,
 				)
 			}),
-			"git_override": starlark.NewBuiltin("git_override", repositoryRuleOverrideFunc("@@bazel_tools+//tools/build_defs/repo:git.bzl%git_repository")),
+			"git_override": starlark.NewBuiltin("git_override", repositoryRuleOverrideFunc(targetIdentifierGitRepository)),
 			"include": starlark.NewBuiltin("include", func(thread *starlark.Thread, b *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
 				return nil, errors.New("include() is not permitted, as it prevents modules from being reused")
 			}),

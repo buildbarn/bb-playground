@@ -52,7 +52,7 @@ func TestCreateFileMerkleTree(t *testing.T) {
 
 	t.Run("Hello", func(t *testing.T) {
 		// Small files should be represented as single objects.
-		// There should be no FileContentsList, as those are
+		// There should be no FileContents list, as those are
 		// only used to join multiple objects together.
 		capturer := NewMockFileMerkleTreeCapturerForTesting(ctrl)
 		metadata1 := NewMockReferenceMetadata(ctrl)
@@ -106,7 +106,7 @@ func TestCreateFileMerkleTree(t *testing.T) {
 			TotalSizeBytes: 1 << 30,
 		}, rootFileContents.Message)
 		require.Equal(t, object.OutgoingReferencesList{
-			object.MustNewSHA256V1LocalReference("cfb15adeab3feef45c4a0c61c10b9fc9f57aef228613276ab96ec2b6ebd69491", 1674, 2, 31, 15584),
+			object.MustNewSHA256V1LocalReference("55147d913a3232c6bff657d445446977a4bfaf02795e08f44b35baa8babf0083", 1643, 2, 31, 15288),
 		}, references)
 	})
 }

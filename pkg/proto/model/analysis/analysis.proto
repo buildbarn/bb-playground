@@ -3,6 +3,7 @@ syntax = "proto3";
 package buildbarn.playground.model.analysis;
 
 import "google/protobuf/duration.proto";
+import "google/protobuf/empty.proto";
 import "pkg/proto/model/build/build.proto";
 import "pkg/proto/model/core/core.proto";
 import "pkg/proto/model/encoding/encoding.proto";
@@ -73,6 +74,8 @@ message CanonicalRepoName {
 
   message Value {
     // The resolved canonical name of the repo which is being accessed.
+    // This may be set to the empty string if no repo exists under the
+    // provided apparent repo name.
     string to_canonical_repo = 1;
   }
 }
@@ -116,11 +119,11 @@ message CompatibleToolchainsForType {
     // requested.
     string toolchain_type = 1;
 
-    // The constraints that are present on the target.
+    // Platform constraints and build settings that are currently active.
     //
-    // Constraints for which the value is equal to the default value of
-    // the setting are omitted.
-    repeated Constraint target_constraints = 2;
+    // If this reference is not set, toolchains need to be selected
+    // without any platform constraints and build settings in place.
+    buildbarn.playground.model.core.Reference configuration_reference = 2;
   }
 
   message Value {
@@ -176,52 +179,43 @@ message CompiledBzlFileGlobal {
   }
 }
 
-message ConfiguredRule {
-  message Key {
-    // The canonical Starlark identifier of the rule whose
-    string identifier = 1;
+// TODO: Maybe this message should be removed? It may be sufficient to
+// purely express the configuration in the form of a B-tree of build
+// settings?
+message Configuration {
+  message BuildSettingOverride {
+    message Leaf {
+      // The canonical label of the build setting target.
+      string label = 1;
 
-    // TODO: Add a configuration ID field.
-  }
-
-  message Value {
-    message ExecGroup {
-      message Toolchain {
-        // Starlark identifier of the toolchain type.
-        string toolchain_type = 1;
-
-        repeated buildbarn.playground.model.starlark.NamedValue
-            toolchain_info_fields = 2;
-      }
-
-      // The name of the execution group. The empty string is used to
-      // denote the rule's default execution group.
-      string name = 1;
-
-      // Resolved toolchains that are used by actions running in this
-      // execution group.
-      repeated Toolchain Toolchains = 2;
-
-      // TODO: Add the actual execution platform here as well.
+      // The value that is assigned to the build setting.
+      buildbarn.playground.model.starlark.Value value = 2;
     }
 
-    // Execution groups that are declared by the rule, with their
-    // resolved execution platforms and toolchains. Execution groups
-    // are sorted by name.
-    repeated ExecGroup exec_groups = 1;
+    message Parent {
+      // Reference to an object of type RepoList that contains
+      // properties of repos in the module extension.
+      buildbarn.playground.model.core.Reference reference = 1;
 
-    // TODO: Expose the values of private attributes.
+      // The name of the first repo contained in this B-tree.
+      // This field can be used to efficiently look up repos
+      // contained in the B-tree.
+      string first_label = 2;
+    }
+
+    oneof level {
+      // Properties of a single build setting for which an override is
+      // in place.
+      Leaf leaf = 1;
+
+      // More build setting overrides are stored in another object.
+      Parent parent = 2;
+    }
   }
-}
 
-message ConfiguredRuleObject {
-  message Key {
-    // The canonical Starlark identifier of the rule whose properties
-    // need to be obtained.
-    string identifier = 1;
-
-    // TODO: Add a configuration ID field.
-  }
+  // Build settings that are currently assigned to a value that differs
+  // from their default value.
+  repeated BuildSettingOverride build_setting_overrides = 1;
 }
 
 message ConfiguredTarget {
@@ -230,6 +224,12 @@ message ConfiguredTarget {
     // name, and MUST NOT include a target name if it matches the last
     // component of the package path.
     string label = 1;
+
+    // Platform constraints and build settings that are currently active.
+    //
+    // If this reference is not set, the target is configured without
+    // any platform constraints and build settings in place.
+    buildbarn.playground.model.core.Reference configuration_reference = 2;
   }
 
   message Value {
@@ -450,36 +450,30 @@ message ModuleExtensionRepos {
   }
 
   message Value {
-    message RepoList {
-      message Element {
-        message Parent {
-          // Reference to an object of type RepoList that contains
-          // properties of repos in the module extension.
-          buildbarn.playground.model.core.Reference reference = 1;
+    message Repo {
+      message Parent {
+        // Reference to an object with a list of Repo messages that
+        // contains properties of repos in the module extension.
+        buildbarn.playground.model.core.Reference reference = 1;
 
-          // The name of the first repo contained in this B-tree.
-          // This field can be used to efficiently look up repos
-          // contained in the B-tree.
-          string first_name = 2;
-        }
-
-        oneof level {
-          // Properties of a single repo.
-          buildbarn.playground.model.starlark.Repo leaf = 1;
-
-          // More repos are stored in another object.
-          Parent parent = 2;
-        }
+        // The name of the first repo contained in this B-tree.
+        // This field can be used to efficiently look up repos
+        // contained in the B-tree.
+        string first_name = 2;
       }
 
-      // B-tree of repos declared by the module extension. Repos are
-      // sorted by name.
-      repeated Element elements = 1;
+      oneof level {
+        // Properties of a single repo.
+        buildbarn.playground.model.starlark.Repo leaf = 1;
+
+        // More repos are stored in another object.
+        Parent parent = 2;
+      }
     }
 
     // Successfully executed the module extension's implementation
     // function, and extracted the repos declared by it.
-    repeated RepoList.Element repos = 1;
+    repeated Repo repos = 1;
   }
 }
 
@@ -554,6 +548,61 @@ message ModulesWithOverrides {
   }
 }
 
+message ModuleOverride {
+  // Name of the module.
+  string name = 1;
+
+  message SingleVersion {
+    // Version of the module to use.
+    string version = 1;
+
+    // Registry to pull the version from.
+    string registry = 2;
+
+    // Patch labels are not sorted as they are applied in order.
+    repeated string patch_labels = 4;
+
+    // Patch commands are not sorted as they are applied in order.
+    repeated string patch_commands = 5;
+
+    // Strip is the same as the -p argument of Unix patch.
+    int64 patch_strip = 6;
+  }
+
+  message MultipleVersions {
+    // Versions is a list of sorted versions allowed to explicitly coexist.
+    repeated string versions = 1;
+
+    // Registry to pull the versions from.
+    string registry = 2;
+  }
+
+  // Kind of the override for the module name.
+  oneof kind {
+    // See: https://bazel.build/rules/lib/globals/module#single_version_override
+    SingleVersion single_version = 2;
+
+    // See:
+    // https://bazel.build/rules/lib/globals/module#multiple_version_override
+    MultipleVersions multiple_versions = 3;
+
+    // Repository rule is the definition for the rule.
+    // See: https://bazel.build/rules/lib/globals/module#archive_override
+    // See: https://bazel.build/rules/lib/globals/module#git_override
+    buildbarn.playground.model.starlark.Repo.Definition repository_rule = 4;
+  }
+}
+
+message ModulesWithRemoteOverrides {
+  message Key {}
+
+  message Value {
+    // Alphabetically sorted list of modules for which remote overrides are in
+    // place.
+    repeated ModuleOverride module_overrides = 1;
+  }
+}
+
 message Package {
   message Key {
     // The label of the package. The label MUST include a canonical repo
@@ -562,36 +611,30 @@ message Package {
   }
 
   message Value {
-    message TargetList {
-      message Element {
-        message Parent {
-          // Reference to an object of type TargetList that contains
-          // properties of targets in the package.
-          buildbarn.playground.model.core.Reference reference = 1;
+    message Target {
+      message Parent {
+        // Reference to an object with a list of Target messages that
+        // contain properties of targets in the package.
+        buildbarn.playground.model.core.Reference reference = 1;
 
-          // The name of the first target contained in this B-tree.
-          // This field can be used to efficiently look up targets
-          // contained in the B-tree.
-          string first_name = 2;
-        }
-
-        oneof level {
-          // Properties of a single target.
-          buildbarn.playground.model.starlark.Target leaf = 1;
-
-          // More targets are stored in another object.
-          Parent parent = 2;
-        }
+        // The name of the first target contained in this B-tree.
+        // This field can be used to efficiently look up targets
+        // contained in the B-tree.
+        string first_name = 2;
       }
 
-      // B-tree of targets contained within the package. Targets are
-      // sorted by name.
-      repeated Element elements = 1;
+      oneof level {
+        // Properties of a single target.
+        buildbarn.playground.model.starlark.Target leaf = 1;
+
+        // More targets are stored in another object.
+        Parent parent = 2;
+      }
     }
 
     // Successfully processed the package's BUILD.bazel file, and
     // extracted the targets contained within.
-    repeated TargetList.Element targets = 1;
+    repeated Target targets = 1;
   }
 }
 
@@ -775,11 +818,11 @@ message ResolvedToolchains {
     // the setting have their value set to the empty string.
     repeated Constraint exec_compatible_with = 1;
 
-    // List of constraints that are present on the target platform.
+    // Platform constraints and build settings that are currently active.
     //
-    // Constraints for which the value is equal to the default value of
-    // the setting are omitted.
-    repeated Constraint target_constraints = 2;
+    // If this reference is not set, toolchains needd to be resolved
+    // without any platform constraints and build settings in place.
+    buildbarn.playground.model.core.Reference configuration_reference = 2;
 
     // The set of toolchains to resolve, and any constraints placed on
     // the execution platform.
@@ -866,6 +909,12 @@ message TargetCompletion {
     // name, and MUST NOT include a target name if it matches the last
     // component of the package path.
     string label = 1;
+
+    // Platform constraints and build settings that are currently active.
+    //
+    // If this reference is not set, the target is built without any
+    // platform constraints and build settings in place.
+    buildbarn.playground.model.core.Reference configuration_reference = 2;
   }
 
   message Value {}
@@ -879,31 +928,26 @@ message TargetPatternExpansion {
   }
 
   message Value {
-    message TargetLabelList {
-      message Element {
-        message Parent {
-          // Reference to an object of type TargetLabelList that
-          // contains a list of labels of targets matched by the
-          // target pattern.
-          buildbarn.playground.model.core.Reference reference = 1;
-        }
-
-        oneof level {
-          // Label of a single target matched by the target pattern.
-          string leaf = 1;
-
-          // More labels of targets are stored in another object.
-          Parent parent = 2;
-        }
+    message TargetLabel {
+      message Parent {
+        // Reference to an object of type TargetLabelList that
+        // contains a list of labels of targets matched by the
+        // target pattern.
+        buildbarn.playground.model.core.Reference reference = 1;
       }
 
-      // B-tree of labels of targets matched by the target pattern.
-      repeated Element elements = 1;
+      oneof level {
+        // Label of a single target matched by the target pattern.
+        string leaf = 1;
+
+        // More labels of targets are stored in another object.
+        Parent parent = 2;
+      }
     }
 
     // Successfully processed the target pattern, and extracted the
     // labels of targets matched by the target pattern.
-    repeated TargetLabelList.Element target_labels = 1;
+    repeated TargetLabel target_labels = 1;
   }
 }
 
@@ -929,14 +973,13 @@ message ModuleExtension {
   }
 
   message Tag {
-    // Attributes that are provided to this tag, sorted alphabetically
-    // by name.
+    // Attributes that are provided to this tag.
     //
     // No attempts have been performed to canonicalize the values of
     // these attributes. For example, this means that labels may be
     // stored as plain strings that later on need to be resolved to the
     // proper canonical target.
-    repeated buildbarn.playground.model.starlark.NamedValue attrs = 1;
+    buildbarn.playground.model.starlark.Struct.Fields attrs = 1;
 
     // Whether the tag was specified on the result of a use_extension()
     // call with dev_dependency = True.
@@ -982,6 +1025,45 @@ message UsedModuleExtensions {
   }
 }
 
+message UserDefinedTransition {
+  message Key {
+    // The Starlark identifier of the transition to apply.
+    string transition_identifier = 1;
+
+    // The configuration from which inputs need to be sourced.
+    buildbarn.playground.model.core.Reference input_configuration_reference = 2;
+  }
+
+  message Value {
+    message Success {
+      message Entry {
+        // Key by which the output configuration is identified.
+        string key = 1;
+
+        // Output configuration that is identified by this key.
+        buildbarn.playground.model.core.Reference
+            output_configuration_reference = 2;
+      }
+
+      // Dictionary of output configurations yielded by the transition.
+      // Entries are sorted alphabetically by key.
+      repeated Entry entries = 1;
+    }
+
+    oneof result {
+      // The transition could not be computed, because the transition is
+      // an outgoing edge transition that depends on attrs of the target
+      // to which the transition is attached. The caller is responsible
+      // for computing the transition manually.
+      google.protobuf.Empty transition_depends_on_attrs = 1;
+
+      // The transition yielded a dictionary of configurations, where
+      // each configuration is identified by a string.
+      Success success = 2;
+    }
+  }
+}
+
 message VisibleTarget {
   message Key {
     // The package that references the label.
@@ -999,11 +1081,26 @@ message VisibleTarget {
     // targets should be ignored, (e.g., as part of
     // register_toolchains()).
     bool permit_alias_no_match = 3;
+
+    // Platform constraints and build settings that are currently active.
+    //
+    // If this reference is not set, the alias is resolved without any
+    // platform constraints and build settings into account.
+    buildbarn.playground.model.core.Reference configuration_reference = 4;
+
+    // Instead expanding targets of type label_setting() taking the
+    // configuration into account, return the label identifier of the
+    // label_setting() itself.
+    bool stop_at_label_setting = 5;
   }
 
   message Value {
     // The label of the target after aliases are expanded and visibility
     // is checked.
+    //
+    // Even if permit_alias_no_match is not set, this value may be left
+    // empty if the target is a label setting for which no explicit
+    // default value is set.
     string label = 1;
   }
 }

@@ -21,8 +21,8 @@ func TestNewPackageGroupFromVisibility(t *testing.T) {
 	t.Run("private", func(t *testing.T) {
 		t.Run("Success", func(t *testing.T) {
 			packageGroup, err := model_starlark.NewPackageGroupFromVisibility(
-				[]label.CanonicalLabel{
-					label.MustNewCanonicalLabel("@@foo+//visibility:private"),
+				[]label.ResolvedLabel{
+					label.MustNewResolvedLabel("@@foo+//visibility:private"),
 				},
 				&inlinedtree.Options{
 					ReferenceFormat:  object.MustNewReferenceFormat(object_pb.ReferenceFormat_SHA256_V1),
@@ -38,9 +38,9 @@ func TestNewPackageGroupFromVisibility(t *testing.T) {
 
 		t.Run("Duplicate", func(t *testing.T) {
 			_, err := model_starlark.NewPackageGroupFromVisibility(
-				[]label.CanonicalLabel{
-					label.MustNewCanonicalLabel("@@foo+//visibility:private"),
-					label.MustNewCanonicalLabel("@@foo+//visibility:private"),
+				[]label.ResolvedLabel{
+					label.MustNewResolvedLabel("@@foo+//visibility:private"),
+					label.MustNewResolvedLabel("@@foo+//visibility:private"),
 				},
 				&inlinedtree.Options{
 					ReferenceFormat:  object.MustNewReferenceFormat(object_pb.ReferenceFormat_SHA256_V1),
@@ -55,8 +55,8 @@ func TestNewPackageGroupFromVisibility(t *testing.T) {
 	t.Run("public", func(t *testing.T) {
 		t.Run("Success", func(t *testing.T) {
 			packageGroup, err := model_starlark.NewPackageGroupFromVisibility(
-				[]label.CanonicalLabel{
-					label.MustNewCanonicalLabel("@@foo+//visibility:public"),
+				[]label.ResolvedLabel{
+					label.MustNewResolvedLabel("@@foo+//visibility:public"),
 				},
 				&inlinedtree.Options{
 					ReferenceFormat:  object.MustNewReferenceFormat(object_pb.ReferenceFormat_SHA256_V1),
@@ -74,9 +74,9 @@ func TestNewPackageGroupFromVisibility(t *testing.T) {
 
 		t.Run("Duplicate", func(t *testing.T) {
 			_, err := model_starlark.NewPackageGroupFromVisibility(
-				[]label.CanonicalLabel{
-					label.MustNewCanonicalLabel("@@foo+//visibility:public"),
-					label.MustNewCanonicalLabel("@@foo+//visibility:public"),
+				[]label.ResolvedLabel{
+					label.MustNewResolvedLabel("@@foo+//visibility:public"),
+					label.MustNewResolvedLabel("@@foo+//visibility:public"),
 				},
 				&inlinedtree.Options{
 					ReferenceFormat:  object.MustNewReferenceFormat(object_pb.ReferenceFormat_SHA256_V1),
@@ -90,35 +90,35 @@ func TestNewPackageGroupFromVisibility(t *testing.T) {
 
 	t.Run("Mix", func(t *testing.T) {
 		packageGroup, err := model_starlark.NewPackageGroupFromVisibility(
-			[]label.CanonicalLabel{
+			[]label.ResolvedLabel{
 				// Inclusion of the root package.
-				label.MustNewCanonicalLabel("@@toplevel1+//:__pkg__"),
-				label.MustNewCanonicalLabel("@@toplevel2+//:__subpackages__"),
+				label.MustNewResolvedLabel("@@toplevel1+//:__pkg__"),
+				label.MustNewResolvedLabel("@@toplevel2+//:__subpackages__"),
 				// If directories are nested, they should both
 				// be represented in the resulting message.
-				label.MustNewCanonicalLabel("@@nested+//foo:__pkg__"),
-				label.MustNewCanonicalLabel("@@nested+//foo/bar:__pkg__"),
+				label.MustNewResolvedLabel("@@nested+//foo:__pkg__"),
+				label.MustNewResolvedLabel("@@nested+//foo/bar:__pkg__"),
 				// If a parent directory uses __subpackages__,
 				// there is no need to preserve any children.
-				label.MustNewCanonicalLabel("@@collapse1+//foo:__subpackages__"),
-				label.MustNewCanonicalLabel("@@collapse1+//foo/bar:__pkg__"),
-				label.MustNewCanonicalLabel("@@collapse1+//foo/bar/baz:__pkg__"),
+				label.MustNewResolvedLabel("@@collapse1+//foo:__subpackages__"),
+				label.MustNewResolvedLabel("@@collapse1+//foo/bar:__pkg__"),
+				label.MustNewResolvedLabel("@@collapse1+//foo/bar/baz:__pkg__"),
 				// If the children are created before the
 				// parent, the children should be removed from
 				// the resulting tree.
-				label.MustNewCanonicalLabel("@@collapse2+//foo/bar/baz:__pkg__"),
-				label.MustNewCanonicalLabel("@@collapse2+//foo/bar:__pkg__"),
-				label.MustNewCanonicalLabel("@@collapse2+//foo:__subpackages__"),
+				label.MustNewResolvedLabel("@@collapse2+//foo/bar/baz:__pkg__"),
+				label.MustNewResolvedLabel("@@collapse2+//foo/bar:__pkg__"),
+				label.MustNewResolvedLabel("@@collapse2+//foo:__subpackages__"),
 				// If "foo" is not provided, it should still be
 				// created, because "bar" should go inside it.
-				label.MustNewCanonicalLabel("@@skip+//foo/bar:__pkg__"),
+				label.MustNewResolvedLabel("@@skip+//foo/bar:__pkg__"),
 				// As the order of package groups is irrelevant,
 				// they should be deduplicated and sorted.
-				label.MustNewCanonicalLabel("@@packagegroups+//:group1"),
-				label.MustNewCanonicalLabel("@@packagegroups+//:group3"),
-				label.MustNewCanonicalLabel("@@packagegroups+//:group2"),
-				label.MustNewCanonicalLabel("@@packagegroups+//:group4"),
-				label.MustNewCanonicalLabel("@@packagegroups+//:group4"),
+				label.MustNewResolvedLabel("@@packagegroups+//:group1"),
+				label.MustNewResolvedLabel("@@packagegroups+//:group3"),
+				label.MustNewResolvedLabel("@@packagegroups+//:group2"),
+				label.MustNewResolvedLabel("@@packagegroups+//:group4"),
+				label.MustNewResolvedLabel("@@packagegroups+//:group4"),
 			},
 			&inlinedtree.Options{
 				ReferenceFormat:  object.MustNewReferenceFormat(object_pb.ReferenceFormat_SHA256_V1),

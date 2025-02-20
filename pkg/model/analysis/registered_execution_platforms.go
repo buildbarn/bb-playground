@@ -13,6 +13,7 @@ import (
 	model_parser "github.com/buildbarn/bb-playground/pkg/model/parser"
 	model_starlark "github.com/buildbarn/bb-playground/pkg/model/starlark"
 	model_analysis_pb "github.com/buildbarn/bb-playground/pkg/proto/model/analysis"
+	model_core_pb "github.com/buildbarn/bb-playground/pkg/proto/model/core"
 	model_starlark_pb "github.com/buildbarn/bb-playground/pkg/proto/model/starlark"
 	pg_starlark "github.com/buildbarn/bb-playground/pkg/starlark"
 	"github.com/buildbarn/bb-playground/pkg/storage/dag"
@@ -40,6 +41,49 @@ func (registeredExecutionPlatformExtractingModuleDotBazelHandler) Module(name la
 	return nil
 }
 
+func (c *baseComputer) extractFromPlatformInfoConstraints(ctx context.Context, value model_core.Message[*model_starlark_pb.Value]) ([]*model_analysis_pb.Constraint, error) {
+	dict, ok := value.Message.Kind.(*model_starlark_pb.Value_Dict)
+	if !ok {
+		return nil, errors.New("constraints field of PlatformInfo")
+	}
+	var iterErr error
+	constraints := map[string]string{}
+	for entry := range model_starlark.AllDictLeafEntries(
+		ctx,
+		model_parser.NewStorageBackedParsedObjectReader(
+			c.objectDownloader,
+			c.getValueObjectEncoder(),
+			model_parser.NewMessageListObjectParser[object.LocalReference, model_starlark_pb.Dict_Entry](),
+		),
+		model_core.Message[*model_starlark_pb.Dict]{
+			Message:            dict.Dict,
+			OutgoingReferences: value.OutgoingReferences,
+		},
+		&iterErr,
+	) {
+		key, ok := entry.Message.Key.GetKind().(*model_starlark_pb.Value_Label)
+		if !ok {
+			return nil, errors.New("key of constraints field of PlatformInfo is not a label")
+		}
+		value, ok := entry.Message.Value.GetKind().(*model_starlark_pb.Value_Label)
+		if !ok {
+			return nil, errors.New("value of constraints field of PlatformInfo is not a label")
+		}
+		constraints[key.Label] = value.Label
+	}
+	if iterErr != nil {
+		return nil, fmt.Errorf("failed to iterate dict of constraints field of PlatformInfo: %w", iterErr)
+	}
+	sortedConstraints := make([]*model_analysis_pb.Constraint, 0, len(constraints))
+	for _, setting := range slices.Sorted(maps.Keys(constraints)) {
+		sortedConstraints = append(sortedConstraints, &model_analysis_pb.Constraint{
+			Setting: setting,
+			Value:   constraints[setting],
+		})
+	}
+	return sortedConstraints, nil
+}
+
 func (h *registeredExecutionPlatformExtractingModuleDotBazelHandler) RegisterExecutionPlatforms(platformTargetPatterns []label.ApparentTargetPattern, devDependency bool) error {
 	if !devDependency || !h.ignoreDevDependencies {
 		for _, apparentPlatformTargetPattern := range platformTargetPatterns {
@@ -50,7 +94,12 @@ func (h *registeredExecutionPlatformExtractingModuleDotBazelHandler) RegisterExe
 			var iterErr error
 			for canonicalPlatformLabel := range h.computer.expandCanonicalTargetPattern(h.context, h.environment, canonicalPlatformTargetPattern, &iterErr) {
 				canonicalPlatformLabelStr := canonicalPlatformLabel.String()
-				platformInfoProvider, err := getProviderFromConfiguredTarget(h.environment, canonicalPlatformLabelStr, platformInfoProviderIdentifier)
+				platformInfoProvider, err := getProviderFromConfiguredTarget(
+					h.environment,
+					canonicalPlatformLabelStr,
+					model_core.NewSimplePatchedMessage[dag.ObjectContentsWalker, *model_core_pb.Reference](nil),
+					platformInfoProviderIdentifier,
+				)
 				if err != nil {
 					return fmt.Errorf("failed to obtain PlatformInfo provider for target %#v: %w", canonicalPlatformLabelStr, err)
 				}
@@ -62,50 +111,25 @@ func (h *registeredExecutionPlatformExtractingModuleDotBazelHandler) RegisterExe
 				// actions.
 				var constraints []*model_analysis_pb.Constraint
 				var execPKIXPublicKey []byte
-				for _, field := range platformInfoProvider.Message {
-					switch field.Name {
+				var errIter error
+				for key, value := range model_starlark.AllStructFields(
+					h.context,
+					model_parser.NewStorageBackedParsedObjectReader(
+						h.computer.objectDownloader,
+						h.computer.getValueObjectEncoder(),
+						model_parser.NewMessageListObjectParser[object.LocalReference, model_starlark_pb.List_Element](),
+					),
+					platformInfoProvider,
+					&errIter,
+				) {
+					switch key {
 					case "constraints":
-						dict, ok := field.Value.GetKind().(*model_starlark_pb.Value_Dict)
-						if !ok {
-							return fmt.Errorf("constraints field of PlatformInfo of execution platform %#v is not a dict", canonicalPlatformLabelStr)
-						}
-						var iterErr error
-						c := map[string]string{}
-						for entry := range model_starlark.AllDictLeafEntries(
-							h.context,
-							model_parser.NewStorageBackedParsedObjectReader(
-								h.computer.objectDownloader,
-								h.computer.getValueObjectEncoder(),
-								model_parser.NewMessageObjectParser[object.LocalReference, model_starlark_pb.Dict](),
-							),
-							model_core.Message[*model_starlark_pb.Dict]{
-								Message:            dict.Dict,
-								OutgoingReferences: platformInfoProvider.OutgoingReferences,
-							},
-							&iterErr,
-						) {
-							key, ok := entry.Message.Key.GetKind().(*model_starlark_pb.Value_Label)
-							if !ok {
-								return fmt.Errorf("key of constraints field of PlatformInfo of execution platform %#v is not a label", canonicalPlatformLabelStr)
-							}
-							value, ok := entry.Message.Value.GetKind().(*model_starlark_pb.Value_Label)
-							if !ok {
-								return fmt.Errorf("value of constraints field of PlatformInfo of execution platform %#v is not a label", canonicalPlatformLabelStr)
-							}
-							c[key.Label] = value.Label
-						}
-						if iterErr != nil {
-							return fmt.Errorf("failed to iterate dict of constraints field of PlatformInfo of execution platform %#v: %w", canonicalPlatformLabelStr, iterErr)
-						}
-						constraints = make([]*model_analysis_pb.Constraint, 0, len(c))
-						for _, setting := range slices.Sorted(maps.Keys(c)) {
-							constraints = append(constraints, &model_analysis_pb.Constraint{
-								Setting: setting,
-								Value:   c[setting],
-							})
+						constraints, err = h.computer.extractFromPlatformInfoConstraints(h.context, value)
+						if err != nil {
+							return fmt.Errorf("failed to extract constraints from execution platform %#v: %w", err)
 						}
 					case "exec_pkix_public_key":
-						str, ok := field.Value.GetKind().(*model_starlark_pb.Value_Str)
+						str, ok := value.Message.Kind.(*model_starlark_pb.Value_Str)
 						if !ok {
 							return fmt.Errorf("exec_pkix_public_key field of PlatformInfo of execution platform %#v is not a string", canonicalPlatformLabelStr)
 						}
@@ -114,6 +138,9 @@ func (h *registeredExecutionPlatformExtractingModuleDotBazelHandler) RegisterExe
 							return fmt.Errorf("exec_pkix_public_key field of PlatformInfo of execution platform %#v: %w", canonicalPlatformLabelStr, err)
 						}
 					}
+				}
+				if errIter != nil {
+					return errIter
 				}
 				if constraints == nil {
 					return fmt.Errorf("PlatformInfo of execution platform %#v does not contain field constraints", canonicalPlatformLabelStr)

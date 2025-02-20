@@ -3,9 +3,9 @@ package btree
 import (
 	"hash/fnv"
 
+	"github.com/buildbarn/bb-playground/pkg/encoding/varint"
 	model_core "github.com/buildbarn/bb-playground/pkg/model/core"
 
-	"google.golang.org/protobuf/encoding/protowire"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -28,11 +28,8 @@ type prollyChunkerFactory[TNode proto.Message, TMetadata model_core.ReferenceMet
 // after the node where the hash is maximal.
 //
 // The size computation that is used by this type assumes that the
-// resulting nodes are stored in a message having the following schema:
-//
-//	message TNodeList {
-//	  repeated TNode nodes = 1;
-//	}
+// resulting nodes are stored in an object where each node is prefixed
+// with a variable length integer indicating the node's size.
 func NewProllyChunkerFactory[TNode proto.Message, TMetadata model_core.ReferenceMetadata](
 	minimumCount, minimumSizeBytes, maximumSizeBytes int,
 ) ChunkerFactory[TNode, TMetadata] {
@@ -70,7 +67,8 @@ func (c *prollyChunker[TNode, TMetadata]) PushSingle(node model_core.PatchedMess
 	// them immediately, as we need to keep some at hand to ensure
 	// the final object on this level respects the minimum number of
 	// objects and size.
-	sizeBytes := node.Patcher.GetReferencesSizeBytes() + 1 + protowire.SizeBytes(proto.Size(node.Message))
+	messageSizeBytes := marshalOptions.Size(node.Message)
+	sizeBytes := node.Patcher.GetReferencesSizeBytes() + varint.SizeBytes(messageSizeBytes) + messageSizeBytes
 	c.nodes = append(c.nodes, node)
 	c.uncutSizesBytes = append(c.uncutSizesBytes, sizeBytes)
 	c.totalUncutSizeBytes += sizeBytes

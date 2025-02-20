@@ -44,8 +44,8 @@ func (c *baseComputer) ComputeRepositoryRuleObjectValue(ctx context.Context, key
 			Message:            d.Definition.Attrs,
 			OutgoingReferences: repositoryRuleValue.OutgoingReferences,
 		},
-		func(canonicalLabel label.CanonicalLabel) (starlark.Value, error) {
-			return model_starlark.NewLabel(canonicalLabel), nil
+		func(resolvedLabel label.ResolvedLabel) (starlark.Value, error) {
+			return model_starlark.NewLabel(resolvedLabel), nil
 		},
 	)
 	if err != nil {
@@ -74,7 +74,7 @@ type AttrsDict struct {
 	Private starlark.StringDict
 }
 
-func (c *baseComputer) decodeAttrsDict(ctx context.Context, encodedAttrs model_core.Message[[]*model_starlark_pb.NamedAttr], labelCreator func(label.CanonicalLabel) (starlark.Value, error)) (AttrsDict, error) {
+func (c *baseComputer) decodeAttrsDict(ctx context.Context, encodedAttrs model_core.Message[[]*model_starlark_pb.NamedAttr], labelCreator func(label.ResolvedLabel) (starlark.Value, error)) (AttrsDict, error) {
 	attrsDict := AttrsDict{
 		Private: starlark.StringDict{},
 	}

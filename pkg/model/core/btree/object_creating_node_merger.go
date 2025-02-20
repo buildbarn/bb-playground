@@ -1,6 +1,7 @@
 package btree
 
 import (
+	"github.com/buildbarn/bb-playground/pkg/encoding/varint"
 	model_core "github.com/buildbarn/bb-playground/pkg/model/core"
 	model_encoding "github.com/buildbarn/bb-playground/pkg/model/encoding"
 	model_filesystem_pb "github.com/buildbarn/bb-playground/pkg/proto/model/filesystem"
@@ -8,7 +9,6 @@ import (
 	"github.com/buildbarn/bb-storage/pkg/util"
 
 	"google.golang.org/grpc/codes"
-	"google.golang.org/protobuf/encoding/protowire"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -27,15 +27,11 @@ type ParentNodeComputer[TNode proto.Message, TMetadata model_core.ReferenceMetad
 // storage objects that reference each other.
 func NewObjectCreatingNodeMerger[TNode proto.Message, TMetadata model_core.ReferenceMetadata](encoder model_encoding.BinaryEncoder, referenceFormat object.ReferenceFormat, parentNodeComputer ParentNodeComputer[TNode, TMetadata]) NodeMerger[TNode, TMetadata] {
 	return func(list model_core.PatchedMessage[[]TNode, TMetadata]) (model_core.PatchedMessage[TNode, TMetadata], error) {
-		// Marshal each of the messages, preprending a tag and
-		// size. This allows the resulting objects to be
-		// unmarshaled as a single Protobuf message containing a
-		// repeated field.
+		// Marshal each of the messages, prepending its size.
 		references, metadata := list.Patcher.SortAndSetReferences()
 		var data []byte
 		for i, node := range list.Message {
-			data = protowire.AppendTag(data, 1, protowire.BytesType)
-			data = protowire.AppendVarint(data, uint64(proto.Size(node)))
+			data = varint.AppendForward(data, proto.Size(node))
 			var err error
 			data, err = marshalOptions.MarshalAppend(data, node)
 			if err != nil {

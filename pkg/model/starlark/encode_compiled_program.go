@@ -15,16 +15,15 @@ import (
 	"github.com/buildbarn/bb-playground/pkg/model/core/btree"
 	model_encoding "github.com/buildbarn/bb-playground/pkg/model/encoding"
 	model_parser "github.com/buildbarn/bb-playground/pkg/model/parser"
+	model_core_pb "github.com/buildbarn/bb-playground/pkg/proto/model/core"
 	model_starlark_pb "github.com/buildbarn/bb-playground/pkg/proto/model/starlark"
 	"github.com/buildbarn/bb-playground/pkg/storage/dag"
 	"github.com/buildbarn/bb-playground/pkg/storage/object"
 
-	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/emptypb"
 
 	"go.starlark.net/starlark"
-	"go.starlark.net/starlarkstruct"
 	"go.starlark.net/syntax"
 )
 
@@ -56,38 +55,63 @@ func newSplitBTreeBuilder[T proto.Message](options *ValueEncodingOptions, parent
 	)
 }
 
+func newListBuilder(options *ValueEncodingOptions) btree.Builder[*model_starlark_pb.List_Element, dag.ObjectContentsWalker] {
+	return newSplitBTreeBuilder(
+		options,
+		/* parentNodeComputer = */ func(contents *object.Contents, childNodes []*model_starlark_pb.List_Element, outgoingReferences object.OutgoingReferences, metadata []dag.ObjectContentsWalker) (model_core.PatchedMessage[*model_starlark_pb.List_Element, dag.ObjectContentsWalker], error) {
+			patcher := model_core.NewReferenceMessagePatcher[dag.ObjectContentsWalker]()
+			return model_core.NewPatchedMessage(
+				&model_starlark_pb.List_Element{
+					Level: &model_starlark_pb.List_Element_Parent_{
+						Parent: &model_starlark_pb.List_Element_Parent{
+							Reference: patcher.AddReference(contents.GetReference(), dag.NewSimpleObjectContentsWalker(contents, metadata)),
+						},
+					},
+				},
+				patcher,
+			), nil
+		},
+	)
+}
+
 type EncodableValue interface {
 	EncodeValue(path map[starlark.Value]struct{}, currentIdentifier *pg_label.CanonicalStarlarkIdentifier, options *ValueEncodingOptions) (model_core.PatchedMessage[*model_starlark_pb.Value, dag.ObjectContentsWalker], bool, error)
 }
 
 func EncodeCompiledProgram(program *starlark.Program, globals starlark.StringDict, options *ValueEncodingOptions) (model_core.PatchedMessage[*model_starlark_pb.CompiledProgram, dag.ObjectContentsWalker], error) {
-	referencedGlobals := make(map[string]model_core.PatchedMessage[*model_starlark_pb.Value, dag.ObjectContentsWalker], len(globals))
-	patcher := model_core.NewReferenceMessagePatcher[dag.ObjectContentsWalker]()
 	needsCode := false
-	for name, value := range globals {
+	var globalsKeys []string
+	globalsValuesBuilder := newListBuilder(options)
+	for _, name := range slices.Sorted(maps.Keys(globals)) {
 		identifier, err := pg_label.NewStarlarkIdentifier(name)
 		if err != nil {
 			return model_core.PatchedMessage[*model_starlark_pb.CompiledProgram, dag.ObjectContentsWalker]{}, err
 		}
 		currentIdentifier := options.CurrentFilename.AppendStarlarkIdentifier(identifier)
+		value := globals[name]
 		if _, ok := value.(NamedGlobal); ok || identifier.IsPublic() {
 			encodedValue, valueNeedsCode, err := EncodeValue(value, map[starlark.Value]struct{}{}, &currentIdentifier, options)
 			if err != nil {
 				return model_core.PatchedMessage[*model_starlark_pb.CompiledProgram, dag.ObjectContentsWalker]{}, fmt.Errorf("global %#v: %w", name, err)
 			}
-			referencedGlobals[name] = encodedValue
 			needsCode = needsCode || valueNeedsCode
+			globalsKeys = append(globalsKeys, name)
+			if err := globalsValuesBuilder.PushChild(model_core.NewPatchedMessage(
+				&model_starlark_pb.List_Element{
+					Level: &model_starlark_pb.List_Element_Leaf{
+						Leaf: encodedValue.Message,
+					},
+				},
+				encodedValue.Patcher,
+			)); err != nil {
+				return model_core.PatchedMessage[*model_starlark_pb.CompiledProgram, dag.ObjectContentsWalker]{}, err
+			}
 		}
 	}
 
-	encodedGlobals := make([]*model_starlark_pb.NamedValue, 0, len(referencedGlobals))
-	for _, name := range slices.Sorted(maps.Keys(referencedGlobals)) {
-		encodedValue := referencedGlobals[name]
-		encodedGlobals = append(encodedGlobals, &model_starlark_pb.NamedValue{
-			Name:  name,
-			Value: encodedValue.Message,
-		})
-		patcher.Merge(encodedValue.Patcher)
+	globalsValues, err := globalsValuesBuilder.FinalizeList()
+	if err != nil {
+		return model_core.PatchedMessage[*model_starlark_pb.CompiledProgram, dag.ObjectContentsWalker]{}, err
 	}
 
 	var code bytes.Buffer
@@ -99,10 +123,13 @@ func EncodeCompiledProgram(program *starlark.Program, globals starlark.StringDic
 
 	return model_core.NewPatchedMessage(
 		&model_starlark_pb.CompiledProgram{
-			Globals: encodedGlobals,
-			Code:    code.Bytes(),
+			Globals: &model_starlark_pb.Struct_Fields{
+				Keys:   globalsKeys,
+				Values: globalsValues.Message,
+			},
+			Code: code.Bytes(),
 		},
-		patcher,
+		globalsValues.Patcher,
 	), nil
 }
 
@@ -158,7 +185,7 @@ func EncodeValue(value starlark.Value, path map[starlark.Value]struct{}, current
 		)
 
 		needsCode := false
-		for key, value := range starlark.Entries(typedValue) {
+		for key, value := range starlark.Entries(nil, typedValue) {
 			encodedKey, keyNeedsCode, err := EncodeValue(key, path, nil, options)
 			if err != nil {
 				return model_core.PatchedMessage[*model_starlark_pb.Value, dag.ObjectContentsWalker]{}, false, fmt.Errorf("in key: %w", err)
@@ -217,23 +244,7 @@ func EncodeValue(value starlark.Value, path map[starlark.Value]struct{}, current
 		path[value] = struct{}{}
 		defer delete(path, value)
 
-		treeBuilder := newSplitBTreeBuilder(
-			options,
-			/* parentNodeComputer = */ func(contents *object.Contents, childNodes []*model_starlark_pb.List_Element, outgoingReferences object.OutgoingReferences, metadata []dag.ObjectContentsWalker) (model_core.PatchedMessage[*model_starlark_pb.List_Element, dag.ObjectContentsWalker], error) {
-				patcher := model_core.NewReferenceMessagePatcher[dag.ObjectContentsWalker]()
-				return model_core.NewPatchedMessage(
-					&model_starlark_pb.List_Element{
-						Level: &model_starlark_pb.List_Element_Parent_{
-							Parent: &model_starlark_pb.List_Element_Parent{
-								Reference: patcher.AddReference(contents.GetReference(), dag.NewSimpleObjectContentsWalker(contents, metadata)),
-							},
-						},
-					},
-					patcher,
-				), nil
-			},
-		)
-
+		listBuilder := newListBuilder(options)
 		needsCode := false
 		for value := range starlark.Elements(typedValue) {
 			encodedValue, valueNeedsCode, err := EncodeValue(value, path, nil, options)
@@ -241,7 +252,7 @@ func EncodeValue(value starlark.Value, path map[starlark.Value]struct{}, current
 				return model_core.PatchedMessage[*model_starlark_pb.Value, dag.ObjectContentsWalker]{}, false, err
 			}
 			needsCode = needsCode || valueNeedsCode
-			if err := treeBuilder.PushChild(model_core.NewPatchedMessage(
+			if err := listBuilder.PushChild(model_core.NewPatchedMessage(
 				&model_starlark_pb.List_Element{
 					Level: &model_starlark_pb.List_Element_Leaf{
 						Leaf: encodedValue.Message,
@@ -253,7 +264,7 @@ func EncodeValue(value starlark.Value, path map[starlark.Value]struct{}, current
 			}
 		}
 
-		elements, err := treeBuilder.FinalizeList()
+		elements, err := listBuilder.FinalizeList()
 		if err != nil {
 			return model_core.PatchedMessage[*model_starlark_pb.Value, dag.ObjectContentsWalker]{}, false, err
 		}
@@ -276,19 +287,6 @@ func EncodeValue(value starlark.Value, path map[starlark.Value]struct{}, current
 				Str: string(typedValue),
 			},
 		}), false, nil
-	case *starlarkstruct.Struct:
-		encodedStruct, needsCode, err := encodeStruct(typedValue, path, "", options)
-		if err != nil {
-			return model_core.PatchedMessage[*model_starlark_pb.Value, dag.ObjectContentsWalker]{}, false, err
-		}
-		return model_core.NewPatchedMessage(
-			&model_starlark_pb.Value{
-				Kind: &model_starlark_pb.Value_Struct{
-					Struct: encodedStruct.Message,
-				},
-			},
-			encodedStruct.Patcher,
-		), needsCode, nil
 	case starlark.Tuple:
 		encodedValues := make([]*model_starlark_pb.Value, 0, len(typedValue))
 		patcher := model_core.NewReferenceMessagePatcher[dag.ObjectContentsWalker]()
@@ -321,60 +319,44 @@ func EncodeValue(value starlark.Value, path map[starlark.Value]struct{}, current
 	}
 }
 
-func encodeStruct(strukt *starlarkstruct.Struct, path map[starlark.Value]struct{}, providerIdentifier string, options *ValueEncodingOptions) (model_core.PatchedMessage[*model_starlark_pb.Struct, dag.ObjectContentsWalker], bool, error) {
-	keys := strukt.AttrNames()
-	fields := make([]*model_starlark_pb.NamedValue, 0, len(keys))
-	patcher := model_core.NewReferenceMessagePatcher[dag.ObjectContentsWalker]()
-	needsCode := false
-	for _, name := range keys {
-		value, _ := strukt.Attr(name)
-		encodedValue, valueNeedsCode, err := EncodeValue(value, path, nil, options)
-		if err != nil {
-			return model_core.PatchedMessage[*model_starlark_pb.Struct, dag.ObjectContentsWalker]{}, false, fmt.Errorf("field %#v: %w", name, err)
-		}
-		fields = append(fields, &model_starlark_pb.NamedValue{
-			Name:  name,
-			Value: encodedValue.Message,
-		})
-		patcher.Merge(encodedValue.Patcher)
-		needsCode = needsCode || valueNeedsCode
-	}
-
-	return model_core.NewPatchedMessage(
-		&model_starlark_pb.Struct{
-			Fields:             fields,
-			ProviderIdentifier: providerIdentifier,
-		},
-		patcher,
-	), needsCode, nil
-}
-
-func DecodeGlobals(encodedGlobals model_core.Message[[]*model_starlark_pb.NamedValue], currentFilename pg_label.CanonicalLabel, options *ValueDecodingOptions) (starlark.StringDict, error) {
-	globals := make(map[string]starlark.Value, len(encodedGlobals.Message))
-	for _, encodedGlobal := range encodedGlobals.Message {
-		identifier, err := pg_label.NewStarlarkIdentifier(encodedGlobal.Name)
+func DecodeGlobals(encodedGlobals model_core.Message[*model_starlark_pb.Struct_Fields], currentFilename pg_label.CanonicalLabel, options *ValueDecodingOptions) (starlark.StringDict, error) {
+	globals := map[string]starlark.Value{}
+	var errIter error
+	for key, encodedValue := range AllStructFields(
+		options.Context,
+		model_parser.NewStorageBackedParsedObjectReader(
+			options.ObjectDownloader,
+			options.ObjectEncoder,
+			model_parser.NewMessageListObjectParser[object.LocalReference, model_starlark_pb.List_Element](),
+		),
+		encodedGlobals,
+		&errIter,
+	) {
+		identifier, err := pg_label.NewStarlarkIdentifier(key)
 		if err != nil {
 			return nil, err
 		}
 		currentIdentifier := currentFilename.AppendStarlarkIdentifier(identifier)
-		value, err := DecodeValue(model_core.Message[*model_starlark_pb.Value]{
-			Message:            encodedGlobal.Value,
-			OutgoingReferences: encodedGlobals.OutgoingReferences,
-		}, &currentIdentifier, options)
+		value, err := DecodeValue(encodedValue, &currentIdentifier, options)
 		if err != nil {
 			return nil, err
 		}
 		value.Freeze()
-		globals[encodedGlobal.Name] = value
+		globals[key] = value
+	}
+	if errIter != nil {
+		return nil, errIter
 	}
 	return globals, nil
 }
+
+const ValueDecodingOptionsKey = "value_decoding_options"
 
 type ValueDecodingOptions struct {
 	Context          context.Context
 	ObjectDownloader object.Downloader[object.LocalReference]
 	ObjectEncoder    model_encoding.BinaryEncoder
-	LabelCreator     func(pg_label.CanonicalLabel) (starlark.Value, error)
+	LabelCreator     func(pg_label.ResolvedLabel) (starlark.Value, error)
 }
 
 func DecodeValue(encodedValue model_core.Message[*model_starlark_pb.Value], currentIdentifier *pg_label.CanonicalStarlarkIdentifier, options *ValueDecodingOptions) (starlark.Value, error) {
@@ -432,7 +414,7 @@ func DecodeValue(encodedValue model_core.Message[*model_starlark_pb.Value], curr
 				return nil, fmt.Errorf("builtin %#v does have attributes", strings.Join(parts[:i], "."))
 			}
 			var err error
-			value, err = hasAttrs.Attr(parts[i])
+			value, err = hasAttrs.Attr(nil, parts[i])
 			if err != nil {
 				return nil, fmt.Errorf("builtin %#v does not exist", strings.Join(parts[:i+1], "."))
 			}
@@ -440,6 +422,11 @@ func DecodeValue(encodedValue model_core.Message[*model_starlark_pb.Value], curr
 		return value, nil
 	case *model_starlark_pb.Value_Bytes:
 		return starlark.Bytes(typedValue.Bytes), nil
+	case *model_starlark_pb.Value_Depset:
+		return decodeDepset(model_core.Message[*model_starlark_pb.Depset]{
+			Message:            typedValue.Depset,
+			OutgoingReferences: encodedValue.OutgoingReferences,
+		}), nil
 	case *model_starlark_pb.Value_Dict:
 		dict := starlark.NewDict(len(typedValue.Dict.Entries))
 		if err := decodeDictEntries(
@@ -452,7 +439,7 @@ func DecodeValue(encodedValue model_core.Message[*model_starlark_pb.Value], curr
 				reader: model_parser.NewStorageBackedParsedObjectReader(
 					options.ObjectDownloader,
 					options.ObjectEncoder,
-					model_parser.NewMessageObjectParser[object.LocalReference, model_starlark_pb.Dict](),
+					model_parser.NewMessageListObjectParser[object.LocalReference, model_starlark_pb.Dict_Entry](),
 				),
 				out: dict,
 			},
@@ -460,6 +447,28 @@ func DecodeValue(encodedValue model_core.Message[*model_starlark_pb.Value], curr
 			return nil, err
 		}
 		return dict, nil
+	case *model_starlark_pb.Value_ExecGroup:
+		execCompatibleWith := make([]pg_label.ResolvedLabel, 0, len(typedValue.ExecGroup.ExecCompatibleWith))
+		for _, labelStr := range typedValue.ExecGroup.ExecCompatibleWith {
+			label, err := pg_label.NewResolvedLabel(labelStr)
+			if err != nil {
+				return nil, fmt.Errorf("invalid label %#v: %w", labelStr, err)
+			}
+			execCompatibleWith = append(execCompatibleWith, label)
+		}
+
+		toolchains := make([]*ToolchainType, 0, len(typedValue.ExecGroup.Toolchains))
+		for i, toolchain := range typedValue.ExecGroup.Toolchains {
+			toolchainType, err := decodeToolchainType(toolchain)
+			if err != nil {
+				return nil, fmt.Errorf("toolchain %d: %w", i, err)
+			}
+			toolchains = append(toolchains, toolchainType)
+		}
+
+		return NewExecGroup(execCompatibleWith, toolchains), nil
+	case *model_starlark_pb.Value_File:
+		return NewFile(typedValue.File), nil
 	case *model_starlark_pb.Value_Function:
 		return NewNamedFunction(NewProtoNamedFunctionDefinition(
 			model_core.Message[*model_starlark_pb.Function]{
@@ -471,13 +480,17 @@ func DecodeValue(encodedValue model_core.Message[*model_starlark_pb.Value], curr
 		var i big.Int
 		return starlark.MakeBigInt(i.SetBytes(typedValue.Int)), nil
 	case *model_starlark_pb.Value_Label:
-		canonicalLabel, err := pg_label.NewCanonicalLabel(typedValue.Label)
+		resolvedLabel, err := pg_label.NewResolvedLabel(typedValue.Label)
 		if err != nil {
 			return nil, err
 		}
-		return options.LabelCreator(canonicalLabel)
+		return options.LabelCreator(resolvedLabel)
 	case *model_starlark_pb.Value_Provider:
-		providerIdentifier, err := pg_label.NewCanonicalStarlarkIdentifier(typedValue.Provider.ProviderIdentifier)
+		instanceProperties := typedValue.Provider.InstanceProperties
+		if instanceProperties == nil {
+			return nil, errors.New("provider instance properties are missing")
+		}
+		providerIdentifier, err := pg_label.NewCanonicalStarlarkIdentifier(instanceProperties.ProviderIdentifier)
 		if err != nil {
 			return nil, err
 		}
@@ -491,7 +504,11 @@ func DecodeValue(encodedValue model_core.Message[*model_starlark_pb.Value], curr
 			))
 			initFunction = &f
 		}
-		return NewProvider(&providerIdentifier, initFunction), nil
+		return NewProvider(
+			NewProviderInstanceProperties(&providerIdentifier, instanceProperties.DictLike),
+			typedValue.Provider.Fields,
+			initFunction,
+		), nil
 	case *model_starlark_pb.Value_List:
 		list := starlark.NewList(nil)
 		if err := decodeList_Elements(
@@ -504,7 +521,7 @@ func DecodeValue(encodedValue model_core.Message[*model_starlark_pb.Value], curr
 				reader: model_parser.NewStorageBackedParsedObjectReader(
 					options.ObjectDownloader,
 					options.ObjectEncoder,
-					model_parser.NewMessageObjectParser[object.LocalReference, model_starlark_pb.List](),
+					model_parser.NewMessageListObjectParser[object.LocalReference, model_starlark_pb.List_Element](),
 				),
 				out: list,
 			}); err != nil {
@@ -562,15 +579,33 @@ func DecodeValue(encodedValue model_core.Message[*model_starlark_pb.Value], curr
 		default:
 			return nil, errors.New("encoded rule does not have a reference or definition")
 		}
+	case *model_starlark_pb.Value_Runfiles:
+		if typedValue.Runfiles.Files == nil || typedValue.Runfiles.RootSymlinks == nil || typedValue.Runfiles.Symlinks == nil {
+			return nil, errors.New("runfiles is missing one or more depsets")
+		}
+		return NewRunfiles(
+			decodeDepset(model_core.Message[*model_starlark_pb.Depset]{
+				Message:            typedValue.Runfiles.Files,
+				OutgoingReferences: encodedValue.OutgoingReferences,
+			}),
+			decodeDepset(model_core.Message[*model_starlark_pb.Depset]{
+				Message:            typedValue.Runfiles.RootSymlinks,
+				OutgoingReferences: encodedValue.OutgoingReferences,
+			}),
+			decodeDepset(model_core.Message[*model_starlark_pb.Depset]{
+				Message:            typedValue.Runfiles.Symlinks,
+				OutgoingReferences: encodedValue.OutgoingReferences,
+			}),
+		), nil
 	case *model_starlark_pb.Value_Select:
 		if len(typedValue.Select.Groups) < 1 {
 			return nil, errors.New("select does not contain any groups")
 		}
 		groups := make([]SelectGroup, 0, len(typedValue.Select.Groups))
 		for groupIndex, group := range typedValue.Select.Groups {
-			conditions := make(map[pg_label.CanonicalLabel]starlark.Value, len(group.Conditions))
+			conditions := make(map[pg_label.ResolvedLabel]starlark.Value, len(group.Conditions))
 			for _, condition := range group.Conditions {
-				conditionIdentifier, err := pg_label.NewCanonicalLabel(condition.ConditionIdentifier)
+				conditionIdentifier, err := pg_label.NewResolvedLabel(condition.ConditionIdentifier)
 				if err != nil {
 					return nil, fmt.Errorf("invalid condition identifier %#v in group %d: %w", condition.ConditionIdentifier, groupIndex, err)
 				}
@@ -625,13 +660,6 @@ func DecodeValue(encodedValue model_core.Message[*model_starlark_pb.Value], curr
 		if err != nil {
 			return nil, err
 		}
-		if providerIdentifier := typedValue.Struct.ProviderIdentifier; providerIdentifier != "" {
-			i, err := pg_label.NewCanonicalStarlarkIdentifier(providerIdentifier)
-			if err != nil {
-				return nil, err
-			}
-			return NewProviderInstance(strukt, i), nil
-		}
 		return strukt, nil
 	case *model_starlark_pb.Value_Subrule:
 		switch subruleKind := typedValue.Subrule.Kind.(type) {
@@ -645,10 +673,27 @@ func DecodeValue(encodedValue model_core.Message[*model_starlark_pb.Value], curr
 			if currentIdentifier == nil {
 				return nil, errors.New("encoded subrule does not have a name")
 			}
-			return NewSubrule(currentIdentifier, subruleKind.Definition), nil
+			return NewSubrule(currentIdentifier, NewProtoSubruleDefinition(
+				model_core.Message[*model_starlark_pb.Subrule_Definition]{
+					Message:            subruleKind.Definition,
+					OutgoingReferences: encodedValue.OutgoingReferences,
+				},
+			)), nil
 		default:
 			return nil, errors.New("encoded subrule does not have a reference or definition")
 		}
+	case *model_starlark_pb.Value_TargetReference:
+		label, err := pg_label.NewResolvedLabel(typedValue.TargetReference.Label)
+		if err != nil {
+			return nil, fmt.Errorf("invalid label %#v: %w", typedValue.TargetReference.Label, err)
+		}
+		return NewTargetReference(
+			label,
+			model_core.Message[[]*model_starlark_pb.Struct]{
+				Message:            typedValue.TargetReference.Providers,
+				OutgoingReferences: encodedValue.OutgoingReferences,
+			},
+		), nil
 	case *model_starlark_pb.Value_TagClass:
 		return NewTagClass(NewProtoTagClassDefinition(
 			model_core.Message[*model_starlark_pb.TagClass]{
@@ -657,24 +702,30 @@ func DecodeValue(encodedValue model_core.Message[*model_starlark_pb.Value], curr
 			},
 		)), nil
 	case *model_starlark_pb.Value_ToolchainType:
-		toolchainType, err := pg_label.NewCanonicalLabel(typedValue.ToolchainType.ToolchainType)
-		if err != nil {
-			return nil, err
-		}
-		return NewToolchainType(toolchainType, typedValue.ToolchainType.Mandatory), nil
+		return decodeToolchainType(typedValue.ToolchainType)
 	case *model_starlark_pb.Value_Transition:
 		switch transitionKind := typedValue.Transition.Kind.(type) {
-		case *model_starlark_pb.Transition_Reference:
-			identifier, err := pg_label.NewCanonicalStarlarkIdentifier(transitionKind.Reference)
-			if err != nil {
-				return nil, err
-			}
-			return NewTransition(&identifier, nil), nil
+		case *model_starlark_pb.Transition_Reference_:
+			return NewTransition(
+				NewReferenceTransitionDefinition(transitionKind.Reference),
+			), nil
 		case *model_starlark_pb.Transition_Definition_:
+			// As transitions can't be invoked directly and
+			// are only used as part of the analysis
+			// process, there is no need to reload its
+			// definition. Convert it to a reference.
 			if currentIdentifier == nil {
 				return nil, errors.New("encoded transition does not have a name")
 			}
-			return NewTransition(currentIdentifier, transitionKind.Definition), nil
+			return NewTransition(
+				NewReferenceTransitionDefinition(
+					&model_starlark_pb.Transition_Reference{
+						Kind: &model_starlark_pb.Transition_Reference_UserDefined{
+							UserDefined: currentIdentifier.String(),
+						},
+					},
+				),
+			), nil
 		default:
 			return nil, errors.New("encoded transition does not have a reference or definition")
 		}
@@ -693,7 +744,7 @@ func DecodeValue(encodedValue model_core.Message[*model_starlark_pb.Value], curr
 		}
 		return tuple, nil
 	default:
-		panic("UNKNOWN VALUE: " + protojson.Format(encodedValue.Message))
+		return nil, errors.New("unknown value kind")
 	}
 }
 
@@ -706,15 +757,32 @@ func DecodeAttrType(attr *model_starlark_pb.Attr) (AttrType, error) {
 	case *model_starlark_pb.Attr_IntList:
 		return NewIntListAttrType(), nil
 	case *model_starlark_pb.Attr_Label:
+		if attrTypeInfo.Label.ValueOptions == nil || attrTypeInfo.Label.ValueOptions.Cfg == nil {
+			return nil, errors.New("missing value options")
+		}
 		return NewLabelAttrType(
 			attrTypeInfo.Label.AllowNone,
 			attrTypeInfo.Label.AllowSingleFile,
 			attrTypeInfo.Label.Executable,
+			attrTypeInfo.Label.ValueOptions.AllowFiles,
+			NewReferenceTransitionDefinition(attrTypeInfo.Label.ValueOptions.Cfg),
 		), nil
 	case *model_starlark_pb.Attr_LabelKeyedStringDict:
-		return NewLabelKeyedStringDictAttrType(), nil
+		if attrTypeInfo.LabelKeyedStringDict.DictKeyOptions == nil || attrTypeInfo.LabelKeyedStringDict.DictKeyOptions.Cfg == nil {
+			return nil, errors.New("missing dict key options")
+		}
+		return NewLabelKeyedStringDictAttrType(
+			attrTypeInfo.LabelKeyedStringDict.DictKeyOptions.AllowFiles,
+			NewReferenceTransitionDefinition(attrTypeInfo.LabelKeyedStringDict.DictKeyOptions.Cfg),
+		), nil
 	case *model_starlark_pb.Attr_LabelList:
-		return NewLabelListAttrType(), nil
+		if attrTypeInfo.LabelList.ListValueOptions == nil || attrTypeInfo.LabelList.ListValueOptions.Cfg == nil {
+			return nil, errors.New("missing list value options")
+		}
+		return NewLabelListAttrType(
+			attrTypeInfo.LabelList.ListValueOptions.AllowFiles,
+			NewReferenceTransitionDefinition(attrTypeInfo.LabelList.ListValueOptions.Cfg),
+		), nil
 	case *model_starlark_pb.Attr_Output:
 		return OutputAttrType, nil
 	case *model_starlark_pb.Attr_OutputList:
@@ -732,65 +800,103 @@ func DecodeAttrType(attr *model_starlark_pb.Attr) (AttrType, error) {
 	}
 }
 
-func decodeBuildSetting(buildSetting *model_starlark_pb.BuildSetting) (*BuildSetting, error) {
-	var buildSettingType BuildSettingType
+func DecodeBuildSettingType(buildSetting *model_starlark_pb.BuildSetting) (BuildSettingType, error) {
 	switch buildSettingTypeInfo := buildSetting.Type.(type) {
 	case *model_starlark_pb.BuildSetting_Bool:
-		buildSettingType = BoolBuildSettingType
+		return BoolBuildSettingType, nil
 	case *model_starlark_pb.BuildSetting_Int:
-		buildSettingType = IntBuildSettingType
+		return IntBuildSettingType, nil
 	case *model_starlark_pb.BuildSetting_String_:
-		buildSettingType = StringBuildSettingType
+		return StringBuildSettingType, nil
 	case *model_starlark_pb.BuildSetting_StringList:
-		buildSettingType = NewStringListBuildSettingType(buildSettingTypeInfo.StringList.Repeatable)
+		return NewStringListBuildSettingType(buildSettingTypeInfo.StringList.Repeatable), nil
 	default:
 		return nil, errors.New("unknown build setting type")
 	}
+}
 
+func decodeBuildSetting(buildSetting *model_starlark_pb.BuildSetting) (*BuildSetting, error) {
+	buildSettingType, err := DecodeBuildSettingType(buildSetting)
+	if err != nil {
+		return nil, err
+	}
 	return NewBuildSetting(buildSettingType, buildSetting.Flag), nil
 }
 
-func DecodeStruct(m model_core.Message[*model_starlark_pb.Struct], options *ValueDecodingOptions) (*starlarkstruct.Struct, error) {
-	encodedFields := m.Message.Fields
-	fields := make(map[string]starlark.Value, len(encodedFields))
-	for _, encodedField := range encodedFields {
-		fieldValue, err := DecodeValue(model_core.Message[*model_starlark_pb.Value]{
-			Message:            encodedField.Value,
-			OutgoingReferences: m.OutgoingReferences,
-		}, nil, options)
-		if err != nil {
-			return nil, err
-		}
-		fields[encodedField.Name] = fieldValue
+func decodeDepset(depset model_core.Message[*model_starlark_pb.Depset]) *Depset {
+	children := make([]any, 0, len(depset.Message.Elements))
+	for _, element := range depset.Message.Elements {
+		children = append(children, model_core.Message[*model_starlark_pb.List_Element]{
+			Message:            element,
+			OutgoingReferences: depset.OutgoingReferences,
+		})
 	}
-	return starlarkstruct.FromStringDict(starlarkstruct.Default, fields), nil
+	return NewDepsetFromList(children, depset.Message.Order)
 }
 
-func DecodeProviderInstance(m model_core.Message[*model_starlark_pb.Struct], options *ValueDecodingOptions) (ProviderInstance, error) {
-	strukt, err := DecodeStruct(m, options)
+func decodeToolchainType(toolchainType *model_starlark_pb.ToolchainType) (*ToolchainType, error) {
+	toolchainTypeLabel, err := pg_label.NewResolvedLabel(toolchainType.ToolchainType)
 	if err != nil {
-		return ProviderInstance{}, err
+		return nil, err
 	}
-	providerIdentifier, err := pg_label.NewCanonicalStarlarkIdentifier(m.Message.ProviderIdentifier)
-	if err != nil {
-		return ProviderInstance{}, err
+	return NewToolchainType(toolchainTypeLabel, toolchainType.Mandatory), nil
+}
+
+func DecodeStruct(m model_core.Message[*model_starlark_pb.Struct], options *ValueDecodingOptions) (*Struct, error) {
+	var providerInstanceProperties *ProviderInstanceProperties
+	if pip := m.Message.ProviderInstanceProperties; pip != nil {
+		providerIdentifier, err := pg_label.NewCanonicalStarlarkIdentifier(pip.ProviderIdentifier)
+		if err != nil {
+			return nil, fmt.Errorf("invalid provider identifier %#v: %w", providerIdentifier, err)
+		}
+		providerInstanceProperties = NewProviderInstanceProperties(&providerIdentifier, pip.DictLike)
 	}
-	return NewProviderInstance(strukt, providerIdentifier), nil
+
+	var keys []string
+	var values []any
+	var errIter error
+	for key, value := range AllStructFields(
+		options.Context,
+		model_parser.NewStorageBackedParsedObjectReader(
+			options.ObjectDownloader,
+			options.ObjectEncoder,
+			model_parser.NewMessageListObjectParser[object.LocalReference, model_starlark_pb.List_Element](),
+		),
+		model_core.Message[*model_starlark_pb.Struct_Fields]{
+			Message:            m.Message.Fields,
+			OutgoingReferences: m.OutgoingReferences,
+		},
+		&errIter,
+	) {
+		keys = append(keys, key)
+		values = append(values, value)
+	}
+	if errIter != nil {
+		return nil, errIter
+	}
+
+	return newStructFromLists(providerInstanceProperties, keys, values), nil
 }
 
 type dictEntriesDecodingOptions struct {
 	valueDecodingOptions *ValueDecodingOptions
-	reader               model_parser.ParsedObjectReader[object.LocalReference, model_core.Message[*model_starlark_pb.Dict]]
+	reader               model_parser.ParsedObjectReader[object.LocalReference, model_core.Message[[]*model_starlark_pb.Dict_Entry]]
 	out                  *starlark.Dict
 }
 
 func decodeDictEntries(in model_core.Message[*model_starlark_pb.Dict], options *dictEntriesDecodingOptions) error {
-	var iterErr error
+	// Adding entries to the dict may require binary comparisons
+	// against keys. This may require having the value decoding
+	// options.
+	thread := &starlark.Thread{}
+	thread.SetLocal(ValueDecodingOptionsKey, options.valueDecodingOptions)
+
+	var errIter error
 	for entry := range AllDictLeafEntries(
 		options.valueDecodingOptions.Context,
 		options.reader,
 		in,
-		&iterErr,
+		&errIter,
 	) {
 		key, err := DecodeValue(
 			model_core.Message[*model_starlark_pb.Value]{
@@ -814,42 +920,54 @@ func decodeDictEntries(in model_core.Message[*model_starlark_pb.Dict], options *
 		if err != nil {
 			return err
 		}
-		if err := options.out.SetKey(key, value); err != nil {
+		if err := options.out.SetKey(thread, key, value); err != nil {
 			return err
 		}
 	}
-	return iterErr
+	return errIter
 }
 
 type listElementsDecodingOptions struct {
 	valueDecodingOptions *ValueDecodingOptions
-	reader               model_parser.ParsedObjectReader[object.LocalReference, model_core.Message[*model_starlark_pb.List]]
+	reader               model_parser.ParsedObjectReader[object.LocalReference, model_core.Message[[]*model_starlark_pb.List_Element]]
 	out                  *starlark.List
 }
 
 func decodeList_Elements(in model_core.Message[*model_starlark_pb.List], options *listElementsDecodingOptions) error {
-	for _, element := range in.Message.Elements {
-		switch typedEntry := element.Level.(type) {
-		case *model_starlark_pb.List_Element_Leaf:
-			value, err := DecodeValue(
-				model_core.Message[*model_starlark_pb.Value]{
-					Message:            typedEntry.Leaf,
-					OutgoingReferences: in.OutgoingReferences,
-				},
-				nil,
-				options.valueDecodingOptions,
-			)
-			if err != nil {
-				return err
+	var errIter error
+	for element := range btree.AllLeaves(
+		options.valueDecodingOptions.Context,
+		options.reader,
+		model_core.Message[[]*model_starlark_pb.List_Element]{
+			Message:            in.Message.Elements,
+			OutgoingReferences: in.OutgoingReferences,
+		},
+		func(element *model_starlark_pb.List_Element) *model_core_pb.Reference {
+			if level, ok := element.Level.(*model_starlark_pb.List_Element_Parent_); ok {
+				return level.Parent.Reference
 			}
-			if err := options.out.Append(value); err != nil {
-				return err
-			}
-		case *model_starlark_pb.List_Element_Parent_:
-			panic("TODO: Recurse into lists")
-		default:
-			return errors.New("list element is of an unknown type")
+			return nil
+		},
+		&errIter,
+	) {
+		level, ok := element.Message.Level.(*model_starlark_pb.List_Element_Leaf)
+		if !ok {
+			return errors.New("not a valid leaf entry")
+		}
+		value, err := DecodeValue(
+			model_core.Message[*model_starlark_pb.Value]{
+				Message:            level.Leaf,
+				OutgoingReferences: element.OutgoingReferences,
+			},
+			nil,
+			options.valueDecodingOptions,
+		)
+		if err != nil {
+			return err
+		}
+		if err := options.out.Append(value); err != nil {
+			return err
 		}
 	}
-	return nil
+	return errIter
 }

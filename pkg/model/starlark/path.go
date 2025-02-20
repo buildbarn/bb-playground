@@ -1,6 +1,7 @@
 package starlark
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 
@@ -59,6 +60,47 @@ func (bp *BarePath) writeToStringBuilder(sb *strings.Builder) {
 	sb.WriteString(bp.component.String())
 }
 
+func (bp *BarePath) getLength() int {
+	length := 0
+	for bp != nil {
+		length++
+		bp = bp.parent
+	}
+	return length
+}
+
+// GetRelativeTo returns whether the receiving path is below another
+// path. If so, it returns a non-nil slice of the components of the
+// trailing part of the path that is below the other. If not, it returns
+// nil.
+func (bp *BarePath) GetRelativeTo(other *BarePath) []bb_path.Component {
+	// 'bp' can only be below 'other' if it has at least as many
+	// components.
+	bpLength, otherLength := bp.getLength(), other.getLength()
+	if bpLength < otherLength {
+		return nil
+	}
+
+	// Extract trailing components of 'bp', so that both 'bp' and
+	// 'other' become the same length.
+	delta := bpLength - otherLength
+	trailingComponents := make([]bb_path.Component, delta)
+	for delta > 0 {
+		trailingComponents[delta-1] = bp.component
+		bp = bp.parent
+		delta--
+	}
+
+	// All remaining components must be equal to each other.
+	for bp != nil {
+		if bp.component != other.component {
+			return nil
+		}
+		bp, other = bp.parent, other.parent
+	}
+	return trailingComponents
+}
+
 func (bp *BarePath) GetUNIXString() string {
 	if bp == nil {
 		return "/"
@@ -107,10 +149,10 @@ func (*path) Truth() starlark.Bool {
 }
 
 func (*path) Hash() (uint32, error) {
-	return 0, nil
+	return 0, errors.New("path cannot be hashed")
 }
 
-func (p *path) Attr(name string) (starlark.Value, error) {
+func (p *path) Attr(thread *starlark.Thread, name string) (starlark.Value, error) {
 	bp := p.bare
 	switch name {
 	case "basename":
@@ -293,11 +335,15 @@ func (ui *pathOrLabelOrStringUnpackerInto) UnpackInto(thread *starlark.Thread, v
 		*dst = r.CurrentPath
 		return nil
 	case label:
-		bp, err := ui.repoPathResolver(typedV.value.GetCanonicalRepo())
+		canonicalLabel, err := typedV.value.AsCanonical()
 		if err != nil {
 			return err
 		}
-		for _, component := range strings.Split(typedV.value.GetRepoRelativePath(), "/") {
+		bp, err := ui.repoPathResolver(canonicalLabel.GetCanonicalRepo())
+		if err != nil {
+			return err
+		}
+		for _, component := range strings.Split(canonicalLabel.GetRepoRelativePath(), "/") {
 			bp = bp.Append(bb_path.MustNewComponent(component))
 		}
 		*dst = bp

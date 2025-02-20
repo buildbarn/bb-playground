@@ -1,0 +1,234 @@
+load("@bazel_skylib//rules:common_settings.bzl", "bool_flag", "string_flag", "string_list_flag")
+
+bool_flag(
+    name = "experimental_prefer_mutual_xcode",
+    build_setting_default = True,
+    visibility = ["//visibility:public"],
+)
+
+string_flag(
+    name = "apple_platform_type",
+    # TODO: This should be inferred from the platform somehow.
+    build_setting_default = "macos",
+    visibility = ["//visibility:public"],
+)
+
+string_flag(
+    name = "compilation_mode",
+    build_setting_default = "fastbuild",
+    values = [
+        "dbg",
+        "fastbuild",
+        "opt",
+    ],
+    visibility = ["//visibility:public"],
+)
+
+string_list_flag(
+    name = "conlyopt",
+    build_setting_default = [],
+    visibility = ["//visibility:public"],
+)
+
+string_list_flag(
+    name = "copt",
+    build_setting_default = [],
+    visibility = ["//visibility:public"],
+)
+
+label_flag(
+    name = "cs_fdo_profile",
+    build_setting_default = None,
+    visibility = ["//visibility:public"],
+)
+
+string_list_flag(
+    name = "cxxopt",
+    build_setting_default = [],
+    visibility = ["//visibility:public"],
+)
+
+string_flag(
+    name = "dynamic_mode",
+    build_setting_default = "default",
+    values = [
+        "default",
+        "fully",
+        "off",
+    ],
+    visibility = ["//visibility:public"],
+)
+
+bool_flag(
+    name = "experimental_cc_implementation_deps",
+    build_setting_default = True,
+    visibility = ["//visibility:public"],
+)
+
+bool_flag(
+    name = "experimental_include_xcode_exec_requirements",
+    build_setting_default = False,
+    visibility = ["//visibility:public"],
+)
+
+bool_flag(
+    name = "experimental_save_feature_state",
+    build_setting_default = False,
+    visibility = ["//visibility:public"],
+)
+
+label_flag(
+    name = "fdo_optimize",
+    build_setting_default = None,
+    visibility = ["//visibility:public"],
+)
+
+label_flag(
+    name = "fdo_prefetch_hints",
+    build_setting_default = None,
+    visibility = ["//visibility:public"],
+)
+
+label_flag(
+    name = "fdo_profile",
+    build_setting_default = None,
+    visibility = ["//visibility:public"],
+)
+
+string_flag(
+    name = "fission",
+    build_setting_default = "no",
+    visibility = ["//visibility:public"],
+)
+
+bool_flag(
+    name = "force_pic",
+    build_setting_default = False,
+    visibility = ["//visibility:public"],
+)
+
+label_flag(
+    name = "grte_top",
+    build_setting_default = None,
+    visibility = ["//visibility:public"],
+)
+
+bool_flag(
+    name = "incompatible_macos_set_install_name",
+    build_setting_default = True,
+    visibility = ["//visibility:public"],
+)
+
+string_flag(
+    name = "ios_minimum_os",
+    build_setting_default = "",
+    visibility = ["//visibility:public"],
+)
+
+string_flag(
+    name = "ios_sdk_version",
+    build_setting_default = "",
+    visibility = ["//visibility:public"],
+)
+
+string_list_flag(
+    name = "linkopt",
+    build_setting_default = [],
+    visibility = ["//visibility:public"],
+)
+
+string_flag(
+    name = "macos_minimum_os",
+    build_setting_default = "",
+    visibility = ["//visibility:public"],
+)
+
+string_flag(
+    name = "macos_sdk_version",
+    build_setting_default = "",
+    visibility = ["//visibility:public"],
+)
+
+label_flag(
+    name = "memprof_profile",
+    build_setting_default = None,
+    visibility = ["//visibility:public"],
+)
+
+string_flag(
+    name = "minimum_os_version",
+    build_setting_default = "",
+    visibility = ["//visibility:public"],
+)
+
+label_flag(
+    name = "platforms",
+    build_setting_default = "@platforms//host",
+    visibility = ["//visibility:public"],
+)
+
+bool_flag(
+    name = "process_headers_in_dependencies",
+    build_setting_default = False,
+    visibility = ["//visibility:public"],
+)
+
+label_flag(
+    name = "propeller_optimize",
+    build_setting_default = None,
+    visibility = ["//visibility:public"],
+)
+
+label_flag(
+    name = "proto_compiler",
+    build_setting_default = "//tools/proto:protoc",
+    visibility = ["//visibility:public"],
+)
+
+label_flag(
+    name = "proto_profile_path",
+    build_setting_default = None,
+    visibility = ["//visibility:public"],
+)
+
+string_flag(
+    name = "tvos_minimum_os",
+    build_setting_default = "",
+    visibility = ["//visibility:public"],
+)
+
+string_flag(
+    name = "tvos_sdk_version",
+    build_setting_default = "",
+    visibility = ["//visibility:public"],
+)
+
+string_flag(
+    name = "watchos_minimum_os",
+    build_setting_default = "",
+    visibility = ["//visibility:public"],
+)
+
+string_flag(
+    name = "watchos_sdk_version",
+    build_setting_default = "",
+    visibility = ["//visibility:public"],
+)
+
+label_flag(
+    name = "xbinary_fdo",
+    build_setting_default = None,
+    visibility = ["//visibility:public"],
+)
+
+string_flag(
+    name = "xcode_version",
+    build_setting_default = "",
+    visibility = ["//visibility:public"],
+)
+
+label_flag(
+    name = "xcode_version_config",
+    build_setting_default = "//tools/cpp:host_xcodes",
+    visibility = ["//visibility:public"],
+)

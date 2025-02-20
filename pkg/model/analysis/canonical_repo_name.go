@@ -2,7 +2,6 @@ package analysis
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"sort"
 	"strings"
@@ -63,5 +62,6 @@ func (c *baseComputer) ComputeCanonicalRepoNameValue(ctx context.Context, key *m
 		}), nil
 	}
 
-	return PatchedCanonicalRepoNameValue{}, errors.New("unknown repo")
+	// Unknown repo.
+	return model_core.NewSimplePatchedMessage[dag.ObjectContentsWalker](&model_analysis_pb.CanonicalRepoName_Value{}), nil
 }

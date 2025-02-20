@@ -6,8 +6,6 @@ import (
 	"fmt"
 	"maps"
 	"slices"
-	"sort"
-	"strings"
 
 	"github.com/buildbarn/bb-playground/pkg/evaluation"
 	"github.com/buildbarn/bb-playground/pkg/label"
@@ -15,6 +13,7 @@ import (
 	"github.com/buildbarn/bb-playground/pkg/model/core/btree"
 	model_encoding "github.com/buildbarn/bb-playground/pkg/model/encoding"
 	model_filesystem "github.com/buildbarn/bb-playground/pkg/model/filesystem"
+	model_parser "github.com/buildbarn/bb-playground/pkg/model/parser"
 	model_starlark "github.com/buildbarn/bb-playground/pkg/model/starlark"
 	model_analysis_pb "github.com/buildbarn/bb-playground/pkg/proto/model/analysis"
 	model_filesystem_pb "github.com/buildbarn/bb-playground/pkg/proto/model/filesystem"
@@ -48,7 +47,8 @@ func (c *baseComputer) ComputePackageValue(ctx context.Context, key *model_analy
 	}
 
 	builtinsModuleNames := allBuiltinsModulesNames.Message.BuiltinsModuleNames
-	buildFileBuiltins, err := c.getBuildFileBuiltins(e, builtinsModuleNames)
+	thread := c.newStarlarkThread(ctx, e, builtinsModuleNames)
+	buildFileBuiltins, err := c.getBuildFileBuiltins(thread, e, builtinsModuleNames)
 	if err != nil {
 		return PatchedPackageValue{}, err
 	}
@@ -82,7 +82,9 @@ func (c *baseComputer) ComputePackageValue(ctx context.Context, key *model_analy
 		}
 
 		_, program, err := starlark.SourceProgramOptions(
-			&syntax.FileOptions{},
+			&syntax.FileOptions{
+				Set: true,
+			},
 			buildFileLabel.String(),
 			buildFileData,
 			buildFileBuiltins.Has,
@@ -95,7 +97,6 @@ func (c *baseComputer) ComputePackageValue(ctx context.Context, key *model_analy
 			return PatchedPackageValue{}, err
 		}
 
-		thread := c.newStarlarkThread(ctx, e, builtinsModuleNames)
 		thread.SetLocal(model_starlark.CanonicalPackageKey, canonicalPackage)
 		thread.SetLocal(model_starlark.ValueEncodingOptionsKey, c.getValueEncodingOptions(buildFileLabel))
 		thread.SetLocal(model_starlark.GlobExpanderKey, func(include, exclude []string, includeDirectories bool) ([]label.TargetName, error) {
@@ -120,22 +121,19 @@ func (c *baseComputer) ComputePackageValue(ctx context.Context, key *model_analy
 			if !compiledBzlFile.IsSet() {
 				return model_core.Message[*model_starlark_pb.Value]{}, evaluation.ErrMissingDependency
 			}
-			identifierStr := identifier.GetStarlarkIdentifier().String()
-			globals := compiledBzlFile.Message.CompiledProgram.GetGlobals()
-			if i, ok := sort.Find(
-				len(globals),
-				func(i int) int { return strings.Compare(identifierStr, globals[i].Name) },
-			); ok {
-				global := globals[i]
-				if global.Value == nil {
-					return model_core.Message[*model_starlark_pb.Value]{}, fmt.Errorf("global %#v has no value", identifier.String())
-				}
-				return model_core.Message[*model_starlark_pb.Value]{
-					Message:            global.Value,
+			return model_starlark.GetStructFieldValue(
+				ctx,
+				model_parser.NewStorageBackedParsedObjectReader(
+					c.objectDownloader,
+					c.getValueObjectEncoder(),
+					model_parser.NewMessageListObjectParser[object.LocalReference, model_starlark_pb.List_Element](),
+				),
+				model_core.Message[*model_starlark_pb.Struct_Fields]{
+					Message:            compiledBzlFile.Message.CompiledProgram.GetGlobals(),
 					OutgoingReferences: compiledBzlFile.OutgoingReferences,
-				}, nil
-			}
-			return model_core.Message[*model_starlark_pb.Value]{}, fmt.Errorf("global %#v does not exist", identifier.String())
+				},
+				identifier.GetStarlarkIdentifier().String(),
+			)
 		})
 
 		// Execute the BUILD.bazel file, so that all targets
@@ -156,19 +154,19 @@ func (c *baseComputer) ComputePackageValue(ctx context.Context, key *model_analy
 			btree.NewObjectCreatingNodeMerger(
 				model_encoding.NewChainedBinaryEncoder(nil),
 				c.buildSpecificationReference.GetReferenceFormat(),
-				/* parentNodeComputer = */ func(contents *object.Contents, childNodes []*model_analysis_pb.Package_Value_TargetList_Element, outgoingReferences object.OutgoingReferences, metadata []dag.ObjectContentsWalker) (model_core.PatchedMessage[*model_analysis_pb.Package_Value_TargetList_Element, dag.ObjectContentsWalker], error) {
+				/* parentNodeComputer = */ func(contents *object.Contents, childNodes []*model_analysis_pb.Package_Value_Target, outgoingReferences object.OutgoingReferences, metadata []dag.ObjectContentsWalker) (model_core.PatchedMessage[*model_analysis_pb.Package_Value_Target, dag.ObjectContentsWalker], error) {
 					var firstName string
 					switch firstElement := childNodes[0].Level.(type) {
-					case *model_analysis_pb.Package_Value_TargetList_Element_Leaf:
+					case *model_analysis_pb.Package_Value_Target_Leaf:
 						firstName = firstElement.Leaf.Name
-					case *model_analysis_pb.Package_Value_TargetList_Element_Parent_:
+					case *model_analysis_pb.Package_Value_Target_Parent_:
 						firstName = firstElement.Parent.FirstName
 					}
 					patcher := model_core.NewReferenceMessagePatcher[dag.ObjectContentsWalker]()
 					return model_core.NewPatchedMessage(
-						&model_analysis_pb.Package_Value_TargetList_Element{
-							Level: &model_analysis_pb.Package_Value_TargetList_Element_Parent_{
-								Parent: &model_analysis_pb.Package_Value_TargetList_Element_Parent{
+						&model_analysis_pb.Package_Value_Target{
+							Level: &model_analysis_pb.Package_Value_Target_Parent_{
+								Parent: &model_analysis_pb.Package_Value_Target_Parent{
 									Reference: patcher.AddReference(contents.GetReference(), dag.NewSimpleObjectContentsWalker(contents, metadata)),
 									FirstName: firstName,
 								},
@@ -201,8 +199,8 @@ func (c *baseComputer) ComputePackageValue(ctx context.Context, key *model_analy
 				)
 			}
 			if err := treeBuilder.PushChild(model_core.NewPatchedMessage(
-				&model_analysis_pb.Package_Value_TargetList_Element{
-					Level: &model_analysis_pb.Package_Value_TargetList_Element_Leaf{
+				&model_analysis_pb.Package_Value_Target{
+					Level: &model_analysis_pb.Package_Value_Target_Leaf{
 						Leaf: &model_starlark_pb.Target{
 							Name:       name,
 							Definition: target.Message,

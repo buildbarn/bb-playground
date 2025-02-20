@@ -13,6 +13,7 @@ import (
 	model_encoding "github.com/buildbarn/bb-playground/pkg/model/encoding"
 	model_parser "github.com/buildbarn/bb-playground/pkg/model/parser"
 	model_analysis_pb "github.com/buildbarn/bb-playground/pkg/proto/model/analysis"
+	model_core_pb "github.com/buildbarn/bb-playground/pkg/proto/model/core"
 	model_starlark_pb "github.com/buildbarn/bb-playground/pkg/proto/model/starlark"
 	"github.com/buildbarn/bb-playground/pkg/storage/dag"
 	"github.com/buildbarn/bb-playground/pkg/storage/object"
@@ -47,56 +48,38 @@ func (c *baseComputer) expandCanonicalTargetPattern(
 			return
 		}
 
-		reader := model_parser.NewStorageBackedParsedObjectReader(
-			c.objectDownloader,
-			c.getValueObjectEncoder(),
-			model_parser.NewMessageObjectParser[object.LocalReference, model_analysis_pb.TargetPatternExpansion_Value_TargetLabelList](),
-		)
-
-		lists := []model_core.Message[[]*model_analysis_pb.TargetPatternExpansion_Value_TargetLabelList_Element]{{
-			Message:            targetPatternExpansion.Message.TargetLabels,
-			OutgoingReferences: targetPatternExpansion.OutgoingReferences,
-		}}
-		for len(lists) > 0 {
-			lastList := &lists[len(lists)-1]
-			if len(lastList.Message) == 0 {
-				lists = lists[:len(lists)-1]
-			} else {
-				entry := lastList.Message[0]
-				lastList.Message = lastList.Message[1:]
-				switch level := entry.Level.(type) {
-				case *model_analysis_pb.TargetPatternExpansion_Value_TargetLabelList_Element_Leaf:
-					targetLabel, err := label.NewCanonicalLabel(level.Leaf)
-					if err != nil {
-						*errOut = fmt.Errorf("invalid target label %#v: %w", level.Leaf, err)
-						return
-					}
-					if !yield(targetLabel) {
-						*errOut = nil
-						return
-					}
-				case *model_analysis_pb.TargetPatternExpansion_Value_TargetLabelList_Element_Parent_:
-					index, err := model_core.GetIndexFromReferenceMessage(level.Parent.Reference, lastList.OutgoingReferences.GetDegree())
-					if err != nil {
-						*errOut = err
-						return
-					}
-					child, _, err := reader.ReadParsedObject(
-						ctx,
-						lastList.OutgoingReferences.GetOutgoingReference(index),
-					)
-					if err != nil {
-						*errOut = err
-						return
-					}
-					lists = append(lists, model_core.Message[[]*model_analysis_pb.TargetPatternExpansion_Value_TargetLabelList_Element]{
-						Message:            child.Message.Elements,
-						OutgoingReferences: child.OutgoingReferences,
-					})
-				default:
-					*errOut = errors.New("list entry is of an unknown type")
-					return
+		for entry := range btree.AllLeaves(
+			ctx,
+			model_parser.NewStorageBackedParsedObjectReader(
+				c.objectDownloader,
+				c.getValueObjectEncoder(),
+				model_parser.NewMessageListObjectParser[object.LocalReference, model_analysis_pb.TargetPatternExpansion_Value_TargetLabel](),
+			),
+			model_core.Message[[]*model_analysis_pb.TargetPatternExpansion_Value_TargetLabel]{
+				Message:            targetPatternExpansion.Message.TargetLabels,
+				OutgoingReferences: targetPatternExpansion.OutgoingReferences,
+			},
+			func(entry *model_analysis_pb.TargetPatternExpansion_Value_TargetLabel) *model_core_pb.Reference {
+				if level, ok := entry.Level.(*model_analysis_pb.TargetPatternExpansion_Value_TargetLabel_Parent_); ok {
+					return level.Parent.Reference
 				}
+				return nil
+			},
+			errOut,
+		) {
+			level, ok := entry.Message.Level.(*model_analysis_pb.TargetPatternExpansion_Value_TargetLabel_Leaf)
+			if !ok {
+				*errOut = errors.New("not a valid leaf entry")
+				return
+			}
+			targetLabel, err := label.NewCanonicalLabel(level.Leaf)
+			if err != nil {
+				*errOut = fmt.Errorf("invalid target label %#v: %w", level.Leaf, err)
+				return
+			}
+			if !yield(targetLabel) {
+				*errOut = nil
+				return
 			}
 		}
 	}
@@ -121,7 +104,7 @@ func (c *baseComputer) ComputeTargetPatternExpansionValue(ctx context.Context, k
 
 		definition, err := c.lookupTargetDefinitionInTargetList(
 			ctx,
-			model_core.Message[[]*model_analysis_pb.Package_Value_TargetList_Element]{
+			model_core.Message[[]*model_analysis_pb.Package_Value_Target]{
 				Message:            packageValue.Message.Targets,
 				OutgoingReferences: packageValue.OutgoingReferences,
 			},
@@ -136,8 +119,8 @@ func (c *baseComputer) ComputeTargetPatternExpansionValue(ctx context.Context, k
 			// matching just that target, as opposed to
 			// performing actual wildcard expansion.
 			return model_core.NewSimplePatchedMessage[dag.ObjectContentsWalker](&model_analysis_pb.TargetPatternExpansion_Value{
-				TargetLabels: []*model_analysis_pb.TargetPatternExpansion_Value_TargetLabelList_Element{{
-					Level: &model_analysis_pb.TargetPatternExpansion_Value_TargetLabelList_Element_Leaf{
+				TargetLabels: []*model_analysis_pb.TargetPatternExpansion_Value_TargetLabel{{
+					Level: &model_analysis_pb.TargetPatternExpansion_Value_TargetLabel_Leaf{
 						Leaf: initialTarget.String(),
 					},
 				}},
@@ -150,12 +133,12 @@ func (c *baseComputer) ComputeTargetPatternExpansionValue(ctx context.Context, k
 			btree.NewObjectCreatingNodeMerger(
 				model_encoding.NewChainedBinaryEncoder(nil),
 				c.buildSpecificationReference.GetReferenceFormat(),
-				/* parentNodeComputer = */ func(contents *object.Contents, childNodes []*model_analysis_pb.TargetPatternExpansion_Value_TargetLabelList_Element, outgoingReferences object.OutgoingReferences, metadata []dag.ObjectContentsWalker) (model_core.PatchedMessage[*model_analysis_pb.TargetPatternExpansion_Value_TargetLabelList_Element, dag.ObjectContentsWalker], error) {
+				/* parentNodeComputer = */ func(contents *object.Contents, childNodes []*model_analysis_pb.TargetPatternExpansion_Value_TargetLabel, outgoingReferences object.OutgoingReferences, metadata []dag.ObjectContentsWalker) (model_core.PatchedMessage[*model_analysis_pb.TargetPatternExpansion_Value_TargetLabel, dag.ObjectContentsWalker], error) {
 					patcher := model_core.NewReferenceMessagePatcher[dag.ObjectContentsWalker]()
 					return model_core.NewPatchedMessage(
-						&model_analysis_pb.TargetPatternExpansion_Value_TargetLabelList_Element{
-							Level: &model_analysis_pb.TargetPatternExpansion_Value_TargetLabelList_Element_Parent_{
-								Parent: &model_analysis_pb.TargetPatternExpansion_Value_TargetLabelList_Element_Parent{
+						&model_analysis_pb.TargetPatternExpansion_Value_TargetLabel{
+							Level: &model_analysis_pb.TargetPatternExpansion_Value_TargetLabel_Parent_{
+								Parent: &model_analysis_pb.TargetPatternExpansion_Value_TargetLabel_Parent{
 									Reference: patcher.AddReference(contents.GetReference(), dag.NewSimpleObjectContentsWalker(contents, metadata)),
 								},
 							},
@@ -166,71 +149,61 @@ func (c *baseComputer) ComputeTargetPatternExpansionValue(ctx context.Context, k
 			),
 		)
 
-		reader := model_parser.NewStorageBackedParsedObjectReader(
-			c.objectDownloader,
-			c.getValueObjectEncoder(),
-			model_parser.NewMessageObjectParser[object.LocalReference, model_analysis_pb.Package_Value_TargetList](),
-		)
-
-		targetLists := []model_core.Message[[]*model_analysis_pb.Package_Value_TargetList_Element]{{
-			Message:            packageValue.Message.Targets,
-			OutgoingReferences: packageValue.OutgoingReferences,
-		}}
-		for len(targetLists) > 0 {
-			lastList := &targetLists[len(targetLists)-1]
-			if len(lastList.Message) == 0 {
-				targetLists = targetLists[:len(targetLists)-1]
-			} else {
-				entry := lastList.Message[0]
-				lastList.Message = lastList.Message[1:]
-				switch level := entry.Level.(type) {
-				case *model_analysis_pb.Package_Value_TargetList_Element_Leaf:
-					reportTarget := false
-					switch level.Leaf.Definition.GetKind().(type) {
-					case *model_starlark_pb.Target_Definition_Alias:
-						reportTarget = true
-					case *model_starlark_pb.Target_Definition_RuleTarget:
-						reportTarget = true
-					case *model_starlark_pb.Target_Definition_SourceFileTarget:
-						if includeFileTargets {
-							reportTarget = true
-						}
-					}
-					if reportTarget {
-						targetName, err := label.NewTargetName(level.Leaf.Name)
-						if err != nil {
-							return PatchedTargetPatternExpansionValue{}, fmt.Errorf("invalid target name %#v: %w", level.Leaf.Name, err)
-						}
-						if err := treeBuilder.PushChild(model_core.NewSimplePatchedMessage[dag.ObjectContentsWalker](
-							&model_analysis_pb.TargetPatternExpansion_Value_TargetLabelList_Element{
-								Level: &model_analysis_pb.TargetPatternExpansion_Value_TargetLabelList_Element_Leaf{
-									Leaf: canonicalPackage.AppendTargetName(targetName).String(),
-								},
-							},
-						)); err != nil {
-							return PatchedTargetPatternExpansionValue{}, err
-						}
-					}
-				case *model_analysis_pb.Package_Value_TargetList_Element_Parent_:
-					index, err := model_core.GetIndexFromReferenceMessage(level.Parent.Reference, lastList.OutgoingReferences.GetDegree())
-					if err != nil {
-						return PatchedTargetPatternExpansionValue{}, err
-					}
-					child, _, err := reader.ReadParsedObject(
-						ctx,
-						lastList.OutgoingReferences.GetOutgoingReference(index),
-					)
-					if err != nil {
-						return PatchedTargetPatternExpansionValue{}, err
-					}
-					targetLists = append(targetLists, model_core.Message[[]*model_analysis_pb.Package_Value_TargetList_Element]{
-						Message:            child.Message.Elements,
-						OutgoingReferences: child.OutgoingReferences,
-					})
-				default:
-					return PatchedTargetPatternExpansionValue{}, errors.New("list entry is of an unknown type")
+		var errIter error
+		for entry := range btree.AllLeaves(
+			ctx,
+			model_parser.NewStorageBackedParsedObjectReader(
+				c.objectDownloader,
+				c.getValueObjectEncoder(),
+				model_parser.NewMessageListObjectParser[object.LocalReference, model_analysis_pb.Package_Value_Target](),
+			),
+			model_core.Message[[]*model_analysis_pb.Package_Value_Target]{
+				Message:            packageValue.Message.Targets,
+				OutgoingReferences: packageValue.OutgoingReferences,
+			},
+			func(entry *model_analysis_pb.Package_Value_Target) *model_core_pb.Reference {
+				if level, ok := entry.Level.(*model_analysis_pb.Package_Value_Target_Parent_); ok {
+					return level.Parent.Reference
+				}
+				return nil
+			},
+			&errIter,
+		) {
+			level, ok := entry.Message.Level.(*model_analysis_pb.Package_Value_Target_Leaf)
+			if !ok {
+				return PatchedTargetPatternExpansionValue{}, errors.New("not a valid leaf entry")
+			}
+			reportTarget := false
+			switch level.Leaf.Definition.GetKind().(type) {
+			case *model_starlark_pb.Target_Definition_Alias:
+				reportTarget = true
+			case *model_starlark_pb.Target_Definition_LabelSetting:
+				reportTarget = true
+			case *model_starlark_pb.Target_Definition_RuleTarget:
+				reportTarget = true
+			case *model_starlark_pb.Target_Definition_SourceFileTarget:
+				if includeFileTargets {
+					reportTarget = true
 				}
 			}
+			if reportTarget {
+				targetName, err := label.NewTargetName(level.Leaf.Name)
+				if err != nil {
+					return PatchedTargetPatternExpansionValue{}, fmt.Errorf("invalid target name %#v: %w", level.Leaf.Name, err)
+				}
+				if err := treeBuilder.PushChild(model_core.NewSimplePatchedMessage[dag.ObjectContentsWalker](
+					&model_analysis_pb.TargetPatternExpansion_Value_TargetLabel{
+						Level: &model_analysis_pb.TargetPatternExpansion_Value_TargetLabel_Leaf{
+							Leaf: canonicalPackage.AppendTargetName(targetName).String(),
+						},
+					},
+				)); err != nil {
+					return PatchedTargetPatternExpansionValue{}, err
+				}
+			}
+		}
+		if errIter != nil {
+			return PatchedTargetPatternExpansionValue{}, errIter
 		}
 
 		targetLabelsList, err := treeBuilder.FinalizeList()

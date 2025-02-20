@@ -4,8 +4,10 @@ load("@rules_go//go:def.bzl", "go_library", "go_test")
 go_library(
     name = "btree",
     srcs = [
+        "all_leaves.go",
         "builder.go",
         "chunker_factory.go",
+        "find.go",
         "node_merger.go",
         "object_creating_node_merger.go",
         "prolly_builder.go",
@@ -16,13 +18,15 @@ go_library(
     importpath = "github.com/buildbarn/bb-playground/pkg/model/core/btree",
     visibility = ["//visibility:public"],
     deps = [
+        "//pkg/encoding/varint",
         "//pkg/model/core",
         "//pkg/model/encoding",
+        "//pkg/model/parser",
+        "//pkg/proto/model/core",
         "//pkg/proto/model/filesystem",
         "//pkg/storage/object",
         "@com_github_buildbarn_bb_storage//pkg/util",
         "@org_golang_google_grpc//codes",
-        "@org_golang_google_protobuf//encoding/protowire",
         "@org_golang_google_protobuf//proto",
     ],
 )

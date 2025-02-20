@@ -59,8 +59,8 @@ message BuildSpecification {
   buildbarn.playground.model.filesystem.DirectoryCreationParameters
       directory_creation_parameters = 4;
 
-  // Parameters that the client used to create objects containing
-  // FileContentsList messages and file chunks. The server MUST also use
+  // Parameters that the client used to create objects containing lists
+  // of FileContents messages and file chunks. The server MUST also use
   // these parameters when creating output files.
   buildbarn.playground.model.filesystem.FileCreationParameters
       file_creation_parameters = 5;

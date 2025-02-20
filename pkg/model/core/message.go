@@ -2,6 +2,8 @@ package core
 
 import (
 	"github.com/buildbarn/bb-playground/pkg/storage/object"
+
+	"google.golang.org/protobuf/proto"
 )
 
 type Message[T any] struct {
@@ -24,4 +26,17 @@ func (m Message[T]) IsSet() bool {
 
 func (m *Message[T]) Clear() {
 	*m = Message[T]{}
+}
+
+func MessagesEqual[T proto.Message](m1, m2 Message[T]) bool {
+	degree1, degree2 := m1.OutgoingReferences.GetDegree(), m2.OutgoingReferences.GetDegree()
+	if degree1 != degree2 {
+		return false
+	}
+	for i := 0; i < degree1; i++ {
+		if m1.OutgoingReferences.GetOutgoingReference(i) != m2.OutgoingReferences.GetOutgoingReference(i) {
+			return false
+		}
+	}
+	return proto.Equal(m1.Message, m2.Message)
 }

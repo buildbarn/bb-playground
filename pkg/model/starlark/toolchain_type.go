@@ -1,6 +1,7 @@
 package starlark
 
 import (
+	"errors"
 	"fmt"
 
 	pg_label "github.com/buildbarn/bb-playground/pkg/label"
@@ -14,7 +15,7 @@ import (
 )
 
 type ToolchainType struct {
-	toolchainType pg_label.CanonicalLabel
+	toolchainType pg_label.ResolvedLabel
 	mandatory     bool
 }
 
@@ -24,7 +25,7 @@ var (
 	_ EncodableValue    = &ToolchainType{}
 )
 
-func NewToolchainType(toolchainType pg_label.CanonicalLabel, mandatory bool) *ToolchainType {
+func NewToolchainType(toolchainType pg_label.ResolvedLabel, mandatory bool) *ToolchainType {
 	return &ToolchainType{
 		toolchainType: toolchainType,
 		mandatory:     mandatory,
@@ -46,11 +47,10 @@ func (ToolchainType) Truth() starlark.Bool {
 }
 
 func (ToolchainType) Hash() (uint32, error) {
-	// TODO!
-	return 0, nil
+	return 0, errors.New("config_common.toolchain_type cannot be hashed")
 }
 
-func (tt *ToolchainType) Attr(name string) (starlark.Value, error) {
+func (tt *ToolchainType) Attr(thread *starlark.Thread, name string) (starlark.Value, error) {
 	switch name {
 	case "mandatory":
 		return starlark.Bool(tt.mandatory), nil
@@ -101,7 +101,7 @@ var ToolchainTypeUnpackerInto unpack.UnpackerInto[*ToolchainType] = toolchainTyp
 func (toolchainTypeUnpackerInto) UnpackInto(thread *starlark.Thread, v starlark.Value, dst **ToolchainType) error {
 	switch typedV := v.(type) {
 	case starlark.String, label:
-		var l pg_label.CanonicalLabel
+		var l pg_label.ResolvedLabel
 		if err := NewLabelOrStringUnpackerInto(CurrentFilePackage(thread, 1)).UnpackInto(thread, v, &l); err != nil {
 			return err
 		}

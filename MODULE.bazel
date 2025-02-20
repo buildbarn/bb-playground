@@ -58,6 +58,7 @@ use_repo(
     "com_github_bluekeyes_go_gitdiff",
     "com_github_buildbarn_go_cdc",
     "com_github_google_uuid",
+    "com_github_kballard_go_shellquote",
     "com_github_prometheus_client_golang",
     "com_github_secure_io_siv_go",
     "com_github_seehuhn_mt19937",
@@ -93,8 +94,10 @@ go_deps_dev.module_override(
 )
 go_deps_dev.module_override(
     patches = [
+        "//:patches/net_starlark_go/thread.diff",
         "//:patches/net_starlark_go/dict-get-pop.diff",
         "//:patches/net_starlark_go/function-saving.diff",
+        "//:patches/net_starlark_go/getattr-error-checking.diff",
         "//:patches/net_starlark_go/octal.diff",
         "//:patches/net_starlark_go/unwrap.diff",
     ],

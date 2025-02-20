@@ -15,6 +15,7 @@ go_library(
         "module_extension.go",
         "module_instance.go",
         "module_version.go",
+        "resolved_label.go",
         "starlark_identifier.go",
         "target_name.go",
     ],
@@ -32,6 +33,7 @@ go_test(
         "canonical_starlark_identifier_test.go",
         "canonical_target_pattern_test.go",
         "module_version_test.go",
+        "resolved_label_test.go",
     ],
     deps = [
         ":label",

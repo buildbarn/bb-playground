@@ -16,7 +16,7 @@ type fileDiscardingDirectoryMerkleTreeCapturer struct{}
 
 // FileDiscardingDirectoryMerkleTreeCapturer is an instance of
 // DirectoryMerkleTreeCapturer that keeps any Directory and Leaves
-// objects, but discards FileContentsList and file chunk objects.
+// objects, but discards FileContents list and file chunk objects.
 //
 // Discarding the contents of files is typically the right approach for
 // uploading directory structures with changes to only a small number of

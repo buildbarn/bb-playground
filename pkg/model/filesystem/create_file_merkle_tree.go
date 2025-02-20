@@ -18,8 +18,7 @@ import (
 // CreateFileMerkleTree creates a Merkle tree structure that corresponds
 // to the contents of a single file. If a file is small, it stores all
 // of its contents in a single object. If a file is large, it creates a
-// B-tree, where chunks of data are joined together using a
-// FileContentsList message.
+// B-tree.
 //
 // Chunking of large files is performed using the MaxCDC algorithm. The
 // resulting B-tree is a Prolly tree. This ensures that minor changes to
@@ -68,7 +67,7 @@ func CreateFileMerkleTree[T model_core.ReferenceMetadata](ctx context.Context, p
 		chunk, err := chunker.ReadNextChunk()
 		if err != nil {
 			if err == io.EOF {
-				// Emit the final FileContentsList
+				// Emit the final lists of FileContents
 				// messages and return the FileContents
 				// message of the file's root.
 				return treeBuilder.FinalizeSingle()

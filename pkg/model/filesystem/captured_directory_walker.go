@@ -333,7 +333,7 @@ func (w *computedConcatenatedFileWalker) GetContents(ctx context.Context) (*obje
 	reference := w.object.Contents.GetReference()
 	walkers := make([]dag.ObjectContentsWalker, reference.GetDegree())
 	offsetBytes := w.offsetBytes
-	for _, part := range fileContentsList.Parts {
+	for _, part := range fileContentsList {
 		index, err := model_core.GetIndexFromReferenceMessage(part.Reference, len(walkers))
 		if err != nil {
 			return nil, nil, util.StatusWrapf(err, "Invalid reference index for part of file %#v at offset %d", w.options.pathTrace.GetUNIXString(), offsetBytes)

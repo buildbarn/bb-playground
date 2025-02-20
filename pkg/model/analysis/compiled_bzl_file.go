@@ -5,21 +5,21 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"sort"
 	"strings"
 
 	"github.com/buildbarn/bb-playground/pkg/evaluation"
 	"github.com/buildbarn/bb-playground/pkg/label"
 	model_core "github.com/buildbarn/bb-playground/pkg/model/core"
 	model_filesystem "github.com/buildbarn/bb-playground/pkg/model/filesystem"
+	model_parser "github.com/buildbarn/bb-playground/pkg/model/parser"
 	model_starlark "github.com/buildbarn/bb-playground/pkg/model/starlark"
 	model_analysis_pb "github.com/buildbarn/bb-playground/pkg/proto/model/analysis"
 	model_filesystem_pb "github.com/buildbarn/bb-playground/pkg/proto/model/filesystem"
 	model_starlark_pb "github.com/buildbarn/bb-playground/pkg/proto/model/starlark"
 	"github.com/buildbarn/bb-playground/pkg/storage/dag"
+	"github.com/buildbarn/bb-playground/pkg/storage/object"
 
 	"go.starlark.net/starlark"
-	"go.starlark.net/starlarkstruct"
 	"go.starlark.net/syntax"
 )
 
@@ -31,12 +31,14 @@ func (c *baseComputer) ComputeCompiledBzlFileValue(ctx context.Context, key *mod
 	canonicalPackage := canonicalLabel.GetCanonicalPackage()
 	canonicalRepo := canonicalPackage.GetCanonicalRepo()
 
+	thread := c.newStarlarkThread(ctx, e, key.BuiltinsModuleNames)
+
 	bzlFileProperties := e.GetFilePropertiesValue(&model_analysis_pb.FileProperties_Key{
 		CanonicalRepo: canonicalRepo.String(),
 		Path:          canonicalLabel.GetRepoRelativePath(),
 	})
 	fileReader, gotFileReader := e.GetFileReaderValue(&model_analysis_pb.FileReader_Key{})
-	bzlFileBuiltins, bzlFileBuiltinsErr := c.getBzlFileBuiltins(e, key.BuiltinsModuleNames)
+	bzlFileBuiltins, bzlFileBuiltinsErr := c.getBzlFileBuiltins(thread, e, key.BuiltinsModuleNames)
 	if !bzlFileProperties.IsSet() || !gotFileReader {
 		return PatchedCompiledBzlFileValue{}, evaluation.ErrMissingDependency
 	}
@@ -63,7 +65,9 @@ func (c *baseComputer) ComputeCompiledBzlFileValue(ctx context.Context, key *mod
 	}
 
 	_, program, err := starlark.SourceProgramOptions(
-		&syntax.FileOptions{},
+		&syntax.FileOptions{
+			Set: true,
+		},
 		canonicalLabel.String(),
 		bzlFileData,
 		bzlFileBuiltins.Has,
@@ -76,7 +80,6 @@ func (c *baseComputer) ComputeCompiledBzlFileValue(ctx context.Context, key *mod
 		return PatchedCompiledBzlFileValue{}, err
 	}
 
-	thread := c.newStarlarkThread(ctx, e, key.BuiltinsModuleNames)
 	globals, err := program.Init(thread, bzlFileBuiltins)
 	if err != nil {
 		if !errors.Is(err, evaluation.ErrMissingDependency) {
@@ -115,13 +118,13 @@ func (c *baseComputer) ComputeCompiledBzlFileDecodedGlobalsValue(ctx context.Con
 		return nil, evaluation.ErrMissingDependency
 	}
 	return model_starlark.DecodeGlobals(
-		model_core.Message[[]*model_starlark_pb.NamedValue]{
+		model_core.Message[*model_starlark_pb.Struct_Fields]{
 			Message:            compiledBzlFile.Message.CompiledProgram.GetGlobals(),
 			OutgoingReferences: compiledBzlFile.OutgoingReferences,
 		},
 		currentFilename,
-		c.getValueDecodingOptions(ctx, func(canonicalLabel label.CanonicalLabel) (starlark.Value, error) {
-			return model_starlark.NewLabel(canonicalLabel), nil
+		c.getValueDecodingOptions(ctx, func(resolvedLabel label.ResolvedLabel) (starlark.Value, error) {
+			return model_starlark.NewLabel(resolvedLabel), nil
 		}),
 	)
 }
@@ -131,11 +134,13 @@ func (c *baseComputer) ComputeCompiledBzlFileFunctionFactoryValue(ctx context.Co
 	if err != nil {
 		return nil, err
 	}
+	thread := c.newStarlarkThread(ctx, e, key.BuiltinsModuleNames)
+
 	compiledBzlFile := e.GetCompiledBzlFileValue(&model_analysis_pb.CompiledBzlFile_Key{
 		Label:               canonicalLabel.String(),
 		BuiltinsModuleNames: key.BuiltinsModuleNames,
 	})
-	bzlFileBuiltins, bzlFileBuiltinsErr := c.getBzlFileBuiltins(e, key.BuiltinsModuleNames)
+	bzlFileBuiltins, bzlFileBuiltinsErr := c.getBzlFileBuiltins(thread, e, key.BuiltinsModuleNames)
 	if !compiledBzlFile.IsSet() {
 		return nil, evaluation.ErrMissingDependency
 	}
@@ -151,7 +156,6 @@ func (c *baseComputer) ComputeCompiledBzlFileFunctionFactoryValue(ctx context.Co
 		return nil, err
 	}
 
-	thread := c.newStarlarkThread(ctx, e, key.BuiltinsModuleNames)
 	functionFactory, globals, err := program.NewFunctionFactory(thread, bzlFileBuiltins)
 	if err != nil {
 		return nil, err
@@ -180,29 +184,35 @@ func (c *baseComputer) ComputeCompiledBzlFileGlobalValue(ctx context.Context, ke
 		return PatchedCompiledBzlFileGlobalValue{}, evaluation.ErrMissingDependency
 	}
 
-	globals := compiledBzlFile.Message.CompiledProgram.GetGlobals()
-	name := identifier.GetStarlarkIdentifier().String()
-	if i, ok := sort.Find(
-		len(globals),
-		func(i int) int { return strings.Compare(name, globals[i].Name) },
-	); ok {
-		global := model_core.NewPatchedMessageFromExisting(
-			model_core.Message[*model_starlark_pb.Value]{
-				Message:            globals[i].Value,
-				OutgoingReferences: compiledBzlFile.OutgoingReferences,
-			},
-			func(index int) dag.ObjectContentsWalker {
-				return dag.ExistingObjectContentsWalker
-			},
-		)
-		return PatchedCompiledBzlFileGlobalValue{
-			Message: &model_analysis_pb.CompiledBzlFileGlobal_Value{
-				Global: global.Message,
-			},
-			Patcher: global.Patcher,
-		}, nil
+	global, err := model_starlark.GetStructFieldValue(
+		ctx,
+		model_parser.NewStorageBackedParsedObjectReader(
+			c.objectDownloader,
+			c.getValueObjectEncoder(),
+			model_parser.NewMessageListObjectParser[object.LocalReference, model_starlark_pb.List_Element](),
+		),
+		model_core.Message[*model_starlark_pb.Struct_Fields]{
+			Message:            compiledBzlFile.Message.CompiledProgram.GetGlobals(),
+			OutgoingReferences: compiledBzlFile.OutgoingReferences,
+		},
+		identifier.GetStarlarkIdentifier().String(),
+	)
+	if err != nil {
+		return PatchedCompiledBzlFileGlobalValue{}, err
 	}
-	return PatchedCompiledBzlFileGlobalValue{}, errors.New("global does not exist")
+
+	patchedGlobal := model_core.NewPatchedMessageFromExisting(
+		global,
+		func(index int) dag.ObjectContentsWalker {
+			return dag.ExistingObjectContentsWalker
+		},
+	)
+	return PatchedCompiledBzlFileGlobalValue{
+		Message: &model_analysis_pb.CompiledBzlFileGlobal_Value{
+			Global: patchedGlobal.Message,
+		},
+		Patcher: patchedGlobal.Patcher,
+	}, nil
 }
 
 var exportsBzlTargetName = label.MustNewTargetName("exports.bzl")
@@ -211,13 +221,13 @@ type getBzlFileBuiltinsEnvironment interface {
 	GetCompiledBzlFileDecodedGlobalsValue(key *model_analysis_pb.CompiledBzlFileDecodedGlobals_Key) (starlark.StringDict, bool)
 }
 
-func (c *baseComputer) getBzlFileBuiltins(e getBzlFileBuiltinsEnvironment, builtinsModuleNames []string) (starlark.StringDict, error) {
+func (c *baseComputer) getBzlFileBuiltins(thread *starlark.Thread, e getBzlFileBuiltinsEnvironment, builtinsModuleNames []string) (starlark.StringDict, error) {
 	allToplevels := starlark.StringDict{}
 	for name, value := range model_starlark.BzlFileBuiltins {
 		allToplevels[name] = value
 	}
-	newNative := starlark.StringDict{}
 
+	newNative := map[string]any{}
 	gotAllGlobals := true
 	for i, builtinsModuleNameStr := range builtinsModuleNames {
 		builtinsModuleName, err := label.NewModule(builtinsModuleNameStr)
@@ -240,7 +250,7 @@ func (c *baseComputer) getBzlFileBuiltins(e getBzlFileBuiltinsEnvironment, built
 			if !ok {
 				return nil, fmt.Errorf("file %#v does not declare \"exported_toplevels\"", exportsFile)
 			}
-			for name, value := range starlark.Entries(exportedToplevels) {
+			for name, value := range starlark.Entries(thread, exportedToplevels) {
 				nameStr, ok := starlark.AsString(name)
 				if !ok {
 					return nil, fmt.Errorf("file %#v exports builtins with non-string names", exportsFile)
@@ -252,7 +262,7 @@ func (c *baseComputer) getBzlFileBuiltins(e getBzlFileBuiltinsEnvironment, built
 			if !ok {
 				return nil, fmt.Errorf("file %#v does not declare \"exported_rules\"", exportsFile)
 			}
-			for name, value := range starlark.Entries(exportedRules) {
+			for name, value := range starlark.Entries(thread, exportedRules) {
 				nameStr, ok := starlark.AsString(name)
 				if !ok {
 					return nil, fmt.Errorf("file %#v exports builtins with non-string names", exportsFile)
@@ -266,23 +276,21 @@ func (c *baseComputer) getBzlFileBuiltins(e getBzlFileBuiltinsEnvironment, built
 	}
 
 	// Expose all rules via native.${name}().
-	existingNativeStruct, ok := allToplevels["native"].(*starlarkstruct.Struct)
+	existingNative, ok := allToplevels["native"].(*model_starlark.Struct)
 	if !ok {
 		return nil, errors.New("exported builtins do not declare \"native\"")
 	}
-	existingNative := starlark.StringDict{}
-	existingNativeStruct.ToStringDict(existingNative)
-	for name, value := range existingNative {
+	for name, value := range existingNative.ToDict() {
 		if _, ok := newNative[name]; !ok {
 			newNative[name] = value
 		}
 	}
-	allToplevels["native"] = starlarkstruct.FromStringDict(starlarkstruct.Default, newNative)
+	allToplevels["native"] = model_starlark.NewStructFromDict(nil, newNative)
 
 	return allToplevels, nil
 }
 
-func (c *baseComputer) getBuildFileBuiltins(e getBzlFileBuiltinsEnvironment, builtinsModuleNames []string) (starlark.StringDict, error) {
+func (c *baseComputer) getBuildFileBuiltins(thread *starlark.Thread, e getBzlFileBuiltinsEnvironment, builtinsModuleNames []string) (starlark.StringDict, error) {
 	allRules := starlark.StringDict{}
 	for name, value := range model_starlark.BuildFileBuiltins {
 		allRules[name] = value
@@ -310,7 +318,7 @@ func (c *baseComputer) getBuildFileBuiltins(e getBzlFileBuiltinsEnvironment, bui
 			if !ok {
 				return nil, fmt.Errorf("file %#v does not declare \"exported_rules\"", exportsFile)
 			}
-			for name, value := range starlark.Entries(exportedRules) {
+			for name, value := range starlark.Entries(thread, exportedRules) {
 				nameStr, ok := starlark.AsString(name)
 				if !ok {
 					return nil, fmt.Errorf("file %#v exports builtins with non-string names", exportsFile)

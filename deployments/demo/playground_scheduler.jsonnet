@@ -12,7 +12,7 @@ local statePath = std.extVar('STATE_PATH');
   actionRouter: {
     simple: {
       initialSizeClassAnalyzer: {
-        maximumExecutionTimeout: '7200s',
+        maximumExecutionTimeout: '86400s',
       },
     },
   },

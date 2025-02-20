@@ -17,6 +17,7 @@ import (
 	model_starlark "github.com/buildbarn/bb-playground/pkg/model/starlark"
 	model_analysis_pb "github.com/buildbarn/bb-playground/pkg/proto/model/analysis"
 	model_build_pb "github.com/buildbarn/bb-playground/pkg/proto/model/build"
+	model_core_pb "github.com/buildbarn/bb-playground/pkg/proto/model/core"
 	model_filesystem_pb "github.com/buildbarn/bb-playground/pkg/proto/model/filesystem"
 	remoteexecution_pb "github.com/buildbarn/bb-playground/pkg/proto/remoteexecution"
 	"github.com/buildbarn/bb-playground/pkg/storage/dag"
@@ -78,7 +79,7 @@ func (c *baseComputer) getValueEncodingOptions(currentFilename label.CanonicalLa
 	}
 }
 
-func (c *baseComputer) getValueDecodingOptions(ctx context.Context, labelCreator func(label.CanonicalLabel) (starlark.Value, error)) *model_starlark.ValueDecodingOptions {
+func (c *baseComputer) getValueDecodingOptions(ctx context.Context, labelCreator func(label.ResolvedLabel) (starlark.Value, error)) *model_starlark.ValueDecodingOptions {
 	return &model_starlark.ValueDecodingOptions{
 		Context:          ctx,
 		ObjectDownloader: c.objectDownloader,
@@ -218,16 +219,22 @@ func (c *baseComputer) newStarlarkThread(ctx context.Context, e starlarkThreadEn
 		Steps: 1000,
 	}
 
-	thread.SetLocal(model_starlark.CanonicalRepoResolverKey, func(fromCanonicalRepo label.CanonicalRepo, toApparentRepo label.ApparentRepo) (label.CanonicalRepo, error) {
+	thread.SetLocal(model_starlark.CanonicalRepoResolverKey, func(fromCanonicalRepo label.CanonicalRepo, toApparentRepo label.ApparentRepo) (*label.CanonicalRepo, error) {
 		v := e.GetCanonicalRepoNameValue(&model_analysis_pb.CanonicalRepoName_Key{
 			FromCanonicalRepo: fromCanonicalRepo.String(),
 			ToApparentRepo:    toApparentRepo.String(),
 		})
-		var badRepo label.CanonicalRepo
 		if !v.IsSet() {
-			return badRepo, evaluation.ErrMissingDependency
+			return nil, evaluation.ErrMissingDependency
 		}
-		return label.NewCanonicalRepo(v.Message.ToCanonicalRepo)
+		if v.Message.ToCanonicalRepo == "" {
+			return nil, nil
+		}
+		canonicalRepo, err := label.NewCanonicalRepo(v.Message.ToCanonicalRepo)
+		if err != nil {
+			return nil, err
+		}
+		return &canonicalRepo, nil
 	})
 
 	thread.SetLocal(model_starlark.RootModuleResolverKey, func() (label.Module, error) {
@@ -238,11 +245,7 @@ func (c *baseComputer) newStarlarkThread(ctx context.Context, e starlarkThreadEn
 		}
 		return label.NewModule(v.Message.RootModuleName)
 	})
-
-	valueDecodingOptions := c.getValueDecodingOptions(ctx, func(canonicalLabel label.CanonicalLabel) (starlark.Value, error) {
-		return model_starlark.NewLabel(canonicalLabel), nil
-	})
-	thread.SetLocal(model_starlark.FunctionFactoryResolverKey, func(filename label.CanonicalLabel) (*starlark.FunctionFactory, *model_starlark.ValueDecodingOptions, error) {
+	thread.SetLocal(model_starlark.FunctionFactoryResolverKey, func(filename label.CanonicalLabel) (*starlark.FunctionFactory, error) {
 		// Prevent modules containing builtin Starlark code from
 		// depending on itself.
 		functionFactory, gotFunctionFactory := e.GetCompiledBzlFileFunctionFactoryValue(&model_analysis_pb.CompiledBzlFileFunctionFactory_Key{
@@ -250,10 +253,16 @@ func (c *baseComputer) newStarlarkThread(ctx context.Context, e starlarkThreadEn
 			BuiltinsModuleNames: trimBuiltinModuleNames(builtinsModuleNames, filename.GetCanonicalRepo().GetModuleInstance().GetModule()),
 		})
 		if !gotFunctionFactory {
-			return nil, nil, evaluation.ErrMissingDependency
+			return nil, evaluation.ErrMissingDependency
 		}
-		return functionFactory, valueDecodingOptions, nil
+		return functionFactory, nil
 	})
+	thread.SetLocal(
+		model_starlark.ValueDecodingOptionsKey,
+		c.getValueDecodingOptions(ctx, func(resolvedLabel label.ResolvedLabel) (starlark.Value, error) {
+			return model_starlark.NewLabel(resolvedLabel), nil
+		}),
+	)
 	return thread
 }
 
@@ -270,6 +279,7 @@ func (c *baseComputer) ComputeBuildResultValue(ctx context.Context, key *model_a
 	rootRepo := rootModule.ToModuleInstance(nil).GetBareCanonicalRepo()
 	rootPackage := rootRepo.GetRootPackage()
 
+	// TODO: Obtain platform constraints from --platforms.
 	missingDependencies := false
 	for _, targetPattern := range buildSpecification.Message.BuildSpecification.TargetPatterns {
 		apparentTargetPattern, err := rootPackage.AppendTargetPattern(targetPattern)
@@ -283,18 +293,31 @@ func (c *baseComputer) ComputeBuildResultValue(ctx context.Context, key *model_a
 
 		var iterErr error
 		for canonicalTargetLabel := range c.expandCanonicalTargetPattern(ctx, e, canonicalTargetPattern, &iterErr) {
-			visibleTargetValue := e.GetVisibleTargetValue(&model_analysis_pb.VisibleTarget_Key{
-				FromPackage: canonicalTargetLabel.GetCanonicalPackage().String(),
-				ToLabel:     canonicalTargetLabel.String(),
-			})
+			visibleTargetPatcher := model_core.NewReferenceMessagePatcher[dag.ObjectContentsWalker]()
+			visibleTargetValue := e.GetVisibleTargetValue(
+				model_core.PatchedMessage[*model_analysis_pb.VisibleTarget_Key, dag.ObjectContentsWalker]{
+					Message: &model_analysis_pb.VisibleTarget_Key{
+						FromPackage: canonicalTargetLabel.GetCanonicalPackage().String(),
+						ToLabel:     canonicalTargetLabel.String(),
+					},
+					Patcher: visibleTargetPatcher,
+				},
+			)
 			if !visibleTargetValue.IsSet() {
 				missingDependencies = true
 				continue
 			}
-			targetCompletion := e.GetTargetCompletionValue(&model_analysis_pb.TargetCompletion_Key{
-				Label: visibleTargetValue.Message.Label,
-			})
-			if !targetCompletion.IsSet() {
+
+			targetCompletionPatcher := model_core.NewReferenceMessagePatcher[dag.ObjectContentsWalker]()
+			targetCompletionValue := e.GetTargetCompletionValue(
+				model_core.PatchedMessage[*model_analysis_pb.TargetCompletion_Key, dag.ObjectContentsWalker]{
+					Message: &model_analysis_pb.TargetCompletion_Key{
+						Label: visibleTargetValue.Message.Label,
+					},
+					Patcher: targetCompletionPatcher,
+				},
+			)
+			if !targetCompletionValue.IsSet() {
 				missingDependencies = true
 			}
 		}
@@ -439,10 +462,25 @@ func (c *baseComputer) ComputeRepoDefaultAttrsValue(ctx context.Context, key *mo
 	), nil
 }
 
-func (c *baseComputer) ComputeTargetCompletionValue(ctx context.Context, key *model_analysis_pb.TargetCompletion_Key, e TargetCompletionEnvironment) (PatchedTargetCompletionValue, error) {
-	configuredTarget := e.GetConfiguredTargetValue(&model_analysis_pb.ConfiguredTarget_Key{
-		Label: key.Label,
-	})
+func (c *baseComputer) ComputeTargetCompletionValue(ctx context.Context, key model_core.Message[*model_analysis_pb.TargetCompletion_Key], e TargetCompletionEnvironment) (PatchedTargetCompletionValue, error) {
+	configurationReference := model_core.NewPatchedMessageFromExisting(
+		model_core.Message[*model_core_pb.Reference]{
+			Message:            key.Message.ConfigurationReference,
+			OutgoingReferences: key.OutgoingReferences,
+		},
+		func(index int) dag.ObjectContentsWalker {
+			return dag.ExistingObjectContentsWalker
+		},
+	)
+	configuredTarget := e.GetConfiguredTargetValue(
+		model_core.PatchedMessage[*model_analysis_pb.ConfiguredTarget_Key, dag.ObjectContentsWalker]{
+			Message: &model_analysis_pb.ConfiguredTarget_Key{
+				Label:                  key.Message.Label,
+				ConfigurationReference: configurationReference.Message,
+			},
+			Patcher: configurationReference.Patcher,
+		},
+	)
 	if !configuredTarget.IsSet() {
 		return PatchedTargetCompletionValue{}, evaluation.ErrMissingDependency
 	}

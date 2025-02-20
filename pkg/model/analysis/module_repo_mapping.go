@@ -168,9 +168,8 @@ func (c *baseComputer) ComputeModuleRepoMappingValue(ctx context.Context, key *m
 	}
 
 	rootModuleValue := e.GetRootModuleValue(&model_analysis_pb.RootModule_Key{})
-	fileReader, gotFileReader := e.GetFileReaderValue(&model_analysis_pb.FileReader_Key{})
 	modulesWithMultipleVersions, gotModulesWithMultipleVersions := e.GetModulesWithMultipleVersionsObjectValue(&model_analysis_pb.ModulesWithMultipleVersionsObject_Key{})
-	if !rootModuleValue.IsSet() || !gotFileReader || !gotModulesWithMultipleVersions {
+	if !rootModuleValue.IsSet() || !gotModulesWithMultipleVersions {
 		return PatchedModuleRepoMappingValue{}, evaluation.ErrMissingDependency
 	}
 
@@ -182,7 +181,7 @@ func (c *baseComputer) ComputeModuleRepoMappingValue(ctx context.Context, key *m
 
 		repos: map[label.ApparentRepo]repoMapping{},
 	}
-	if err := c.parseModuleInstanceModuleDotBazel(ctx, moduleInstance, e, fileReader, &handler); err != nil {
+	if err := c.parseActiveModuleInstanceModuleDotBazel(ctx, moduleInstance, e, pg_starlark.NewOverrideIgnoringRootModuleDotBazelHandler(&handler)); err != nil {
 		return PatchedModuleRepoMappingValue{}, err
 	}
 

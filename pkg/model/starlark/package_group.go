@@ -129,16 +129,29 @@ func (n *packageGroupNode) toProto(inlinedTreeOptions *inlinedtree.Options) (mod
 // NewPackageGroupFromVisibility generates a PackageGroup message based
 // on a sequence of "visibility" labels provided to repo(), package(),
 // or rule targets.
-func NewPackageGroupFromVisibility(visibility []pg_label.CanonicalLabel, inlinedTreeOptions *inlinedtree.Options) (model_core.PatchedMessage[*model_starlark_pb.PackageGroup, dag.ObjectContentsWalker], error) {
+func NewPackageGroupFromVisibility(visibility []pg_label.ResolvedLabel, inlinedTreeOptions *inlinedtree.Options) (model_core.PatchedMessage[*model_starlark_pb.PackageGroup, dag.ObjectContentsWalker], error) {
 	tree := packageGroupNode{
 		subpackages: map[string]*packageGroupNode{},
 	}
 	var includePackageGroups []string
 
-	for _, label := range visibility {
-		canonicalPackage := label.GetCanonicalPackage()
+	for _, resolvedLabel := range visibility {
+		canonicalLabel, err := resolvedLabel.AsCanonical()
+		if err != nil {
+			// Label points to an invalid repo. For
+			// consistency with Bazel, discard the entry.
+			//
+			// TODO: Maybe we should record that this
+			// happened as part of the resulting
+			// PackageGroup? That way we can improve
+			// visibility related error messages to state
+			// that this may be caused by invalid labels.
+			continue
+		}
+
+		canonicalPackage := canonicalLabel.GetCanonicalPackage()
 		packagePath := canonicalPackage.GetPackagePath()
-		targetName := label.GetTargetName().String()
+		targetName := canonicalLabel.GetTargetName().String()
 		if packagePath == "visibility" {
 			// Special labels under //visibility:*.
 			switch targetName {
@@ -178,7 +191,7 @@ func NewPackageGroupFromVisibility(visibility []pg_label.CanonicalLabel, inlined
 		default:
 			// Reference to another package group that
 			// should be merged into this set of packages.
-			includePackageGroups = append(includePackageGroups, label.String())
+			includePackageGroups = append(includePackageGroups, canonicalLabel.String())
 		}
 	}
 

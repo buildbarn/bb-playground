@@ -20,6 +20,7 @@ func TestForward(t *testing.T) {
 			for i := 0; i < 100; i++ {
 				before := int8(rand.Int32())
 				buf := varint.AppendForward(nil, before)
+				require.Len(t, buf, varint.SizeBytes(before))
 
 				after, n := varint.ConsumeForward[int8](buf)
 				require.Less(t, 0, n)
@@ -61,6 +62,7 @@ func TestForward(t *testing.T) {
 			for i := 0; i < 100; i++ {
 				before := uint8(rand.Uint32())
 				buf := varint.AppendForward(nil, before)
+				require.Len(t, buf, varint.SizeBytes(before))
 
 				after, n := varint.ConsumeForward[uint8](buf)
 				require.Less(t, 0, n)
@@ -102,6 +104,7 @@ func TestForward(t *testing.T) {
 			for i := 0; i < 1000; i++ {
 				before := int16(rand.Int32())
 				buf := varint.AppendForward(nil, before)
+				require.Len(t, buf, varint.SizeBytes(before))
 
 				after, n := varint.ConsumeForward[int16](buf)
 				require.Less(t, 0, n)
@@ -143,6 +146,7 @@ func TestForward(t *testing.T) {
 			for i := 0; i < 1000; i++ {
 				before := uint16(rand.Uint32())
 				buf := varint.AppendForward(nil, before)
+				require.Len(t, buf, varint.SizeBytes(before))
 
 				after, n := varint.ConsumeForward[uint16](buf)
 				require.Less(t, 0, n)
@@ -184,6 +188,7 @@ func TestForward(t *testing.T) {
 			for i := 0; i < 10000; i++ {
 				before := rand.Int32()
 				buf := varint.AppendForward(nil, before)
+				require.Len(t, buf, varint.SizeBytes(before))
 
 				after, n := varint.ConsumeForward[int32](buf)
 				require.Less(t, 0, n)
@@ -225,6 +230,7 @@ func TestForward(t *testing.T) {
 			for i := 0; i < 10000; i++ {
 				before := rand.Uint32()
 				buf := varint.AppendForward(nil, before)
+				require.Len(t, buf, varint.SizeBytes(before))
 
 				after, n := varint.ConsumeForward[uint32](buf)
 				require.Less(t, 0, n)
@@ -266,6 +272,7 @@ func TestForward(t *testing.T) {
 			for i := 0; i < 100000; i++ {
 				before := rand.Int64()
 				buf := varint.AppendForward(nil, before)
+				require.Len(t, buf, varint.SizeBytes(before))
 
 				after, n := varint.ConsumeForward[int64](buf)
 				require.Less(t, 0, n)
@@ -307,6 +314,7 @@ func TestForward(t *testing.T) {
 			for i := 0; i < 100000; i++ {
 				before := rand.Uint64()
 				buf := varint.AppendForward(nil, before)
+				require.Len(t, buf, varint.SizeBytes(before))
 
 				after, n := varint.ConsumeForward[uint64](buf)
 				require.Less(t, 0, n)

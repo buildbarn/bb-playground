@@ -4,6 +4,7 @@ import (
 	"context"
 	"testing"
 
+	"github.com/buildbarn/bb-playground/pkg/encoding/varint"
 	model_filesystem "github.com/buildbarn/bb-playground/pkg/model/filesystem"
 	model_core_pb "github.com/buildbarn/bb-playground/pkg/proto/model/core"
 	model_filesystem_pb "github.com/buildbarn/bb-playground/pkg/proto/model/filesystem"
@@ -16,6 +17,19 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
+func marshalFileContentsList(entries []*model_filesystem_pb.FileContents) []byte {
+	var out []byte
+	for _, entry := range entries {
+		entryData, err := proto.Marshal(entry)
+		if err != nil {
+			panic(err)
+		}
+		out = varint.AppendForward(out, len(entryData))
+		out = append(out, entryData...)
+	}
+	return out
+}
+
 func TestFileContentsListObjectParser(t *testing.T) {
 	ctx := context.Background()
 	objectParser := model_filesystem.NewFileContentsListObjectParser[object.LocalReference]()
@@ -27,23 +41,20 @@ func TestFileContentsListObjectParser(t *testing.T) {
 			object.OutgoingReferencesList{},
 			[]byte("Not a valid Protobuf message"),
 		)
-		testutil.RequirePrefixedStatus(t, status.Error(codes.InvalidArgument, "Failed to parse file contents list: "), err)
+		testutil.RequireEqualStatus(t, status.Error(codes.InvalidArgument, "Length of element at offset 0 is 3695 bytes, which exceeds maximum permitted size of 26 bytes"), err)
 	})
 
 	t.Run("TooFewParts", func(t *testing.T) {
 		// A file contents list should contain at least two
 		// parts. If only a single part were present, the tree
 		// could have been collapsed.
-		data, err := proto.Marshal(&model_filesystem_pb.FileContentsList{
-			Parts: []*model_filesystem_pb.FileContents{{
-				TotalSizeBytes: 42,
-				Reference: &model_core_pb.Reference{
-					Index: 1,
-				},
-			}},
-		})
-		require.NoError(t, err)
-		_, _, err = objectParser.ParseObject(
+		data := marshalFileContentsList([]*model_filesystem_pb.FileContents{{
+			TotalSizeBytes: 42,
+			Reference: &model_core_pb.Reference{
+				Index: 1,
+			},
+		}})
+		_, _, err := objectParser.ParseObject(
 			ctx,
 			object.MustNewSHA256V1LocalReference("d10d524d6144f4b0b0ffed862d43c19181b133bb149a560b2f86e3dc10f155b0", 60, 1, 1, 0),
 			object.OutgoingReferencesList{
@@ -58,30 +69,27 @@ func TestFileContentsListObjectParser(t *testing.T) {
 		// Any part of the file should have a non-zero size.
 		// Otherwise it could have safely been omitted from the
 		// file contents list.
-		data, err := proto.Marshal(&model_filesystem_pb.FileContentsList{
-			Parts: []*model_filesystem_pb.FileContents{
-				{
-					TotalSizeBytes: 12,
-					Reference: &model_core_pb.Reference{
-						Index: 1,
-					},
+		data := marshalFileContentsList([]*model_filesystem_pb.FileContents{
+			{
+				TotalSizeBytes: 12,
+				Reference: &model_core_pb.Reference{
+					Index: 1,
 				},
-				{
-					TotalSizeBytes: 0,
-					Reference: &model_core_pb.Reference{
-						Index: 2,
-					},
+			},
+			{
+				TotalSizeBytes: 0,
+				Reference: &model_core_pb.Reference{
+					Index: 2,
 				},
-				{
-					TotalSizeBytes: 70,
-					Reference: &model_core_pb.Reference{
-						Index: 3,
-					},
+			},
+			{
+				TotalSizeBytes: 70,
+				Reference: &model_core_pb.Reference{
+					Index: 3,
 				},
 			},
 		})
-		require.NoError(t, err)
-		_, _, err = objectParser.ParseObject(
+		_, _, err := objectParser.ParseObject(
 			ctx,
 			object.MustNewSHA256V1LocalReference("d10d524d6144f4b0b0ffed862d43c19181b133bb149a560b2f86e3dc10f155b0", 200, 1, 3, 0),
 			object.OutgoingReferencesList{
@@ -99,24 +107,21 @@ func TestFileContentsListObjectParser(t *testing.T) {
 		// maximum value of uint64, as it wouldn't be possible
 		// to refer to these parts through a single FileContents
 		// message in the parent.
-		data, err := proto.Marshal(&model_filesystem_pb.FileContentsList{
-			Parts: []*model_filesystem_pb.FileContents{
-				{
-					TotalSizeBytes: 0x8000000000000000,
-					Reference: &model_core_pb.Reference{
-						Index: 1,
-					},
+		data := marshalFileContentsList([]*model_filesystem_pb.FileContents{
+			{
+				TotalSizeBytes: 0x8000000000000000,
+				Reference: &model_core_pb.Reference{
+					Index: 1,
 				},
-				{
-					TotalSizeBytes: 0x8000000000000000,
-					Reference: &model_core_pb.Reference{
-						Index: 2,
-					},
+			},
+			{
+				TotalSizeBytes: 0x8000000000000000,
+				Reference: &model_core_pb.Reference{
+					Index: 2,
 				},
 			},
 		})
-		require.NoError(t, err)
-		_, _, err = objectParser.ParseObject(
+		_, _, err := objectParser.ParseObject(
 			ctx,
 			object.MustNewSHA256V1LocalReference("fcabd51173a69aa43814007ecb2ca9dce3ca4e19e2187bf8b464e2ff28c54755", 50000, 5, 1000, 1000000),
 			object.OutgoingReferencesList{
@@ -129,24 +134,21 @@ func TestFileContentsListObjectParser(t *testing.T) {
 	})
 
 	t.Run("InvalidReferenceIndex", func(t *testing.T) {
-		data, err := proto.Marshal(&model_filesystem_pb.FileContentsList{
-			Parts: []*model_filesystem_pb.FileContents{
-				{
-					TotalSizeBytes: 200,
-					Reference: &model_core_pb.Reference{
-						Index: 7,
-					},
+		data := marshalFileContentsList([]*model_filesystem_pb.FileContents{
+			{
+				TotalSizeBytes: 200,
+				Reference: &model_core_pb.Reference{
+					Index: 7,
 				},
-				{
-					TotalSizeBytes: 300,
-					Reference: &model_core_pb.Reference{
-						Index: 2,
-					},
+			},
+			{
+				TotalSizeBytes: 300,
+				Reference: &model_core_pb.Reference{
+					Index: 2,
 				},
 			},
 		})
-		require.NoError(t, err)
-		_, _, err = objectParser.ParseObject(
+		_, _, err := objectParser.ParseObject(
 			ctx,
 			object.MustNewSHA256V1LocalReference("da954e1e6552351c0c522d9329ef8f91837baf4779c569b73df9838d4d5633ab", 100, 1, 2, 0),
 			object.OutgoingReferencesList{
@@ -159,23 +161,20 @@ func TestFileContentsListObjectParser(t *testing.T) {
 	})
 
 	t.Run("Success", func(t *testing.T) {
-		data, err := proto.Marshal(&model_filesystem_pb.FileContentsList{
-			Parts: []*model_filesystem_pb.FileContents{
-				{
-					TotalSizeBytes: 200,
-					Reference: &model_core_pb.Reference{
-						Index: 1,
-					},
+		data := marshalFileContentsList([]*model_filesystem_pb.FileContents{
+			{
+				TotalSizeBytes: 200,
+				Reference: &model_core_pb.Reference{
+					Index: 1,
 				},
-				{
-					TotalSizeBytes: 300,
-					Reference: &model_core_pb.Reference{
-						Index: 2,
-					},
+			},
+			{
+				TotalSizeBytes: 300,
+				Reference: &model_core_pb.Reference{
+					Index: 2,
 				},
 			},
 		})
-		require.NoError(t, err)
 		fileContentsList, sizeBytes, err := objectParser.ParseObject(
 			ctx,
 			object.MustNewSHA256V1LocalReference("da954e1e6552351c0c522d9329ef8f91837baf4779c569b73df9838d4d5633ab", 100, 1, 2, 0),
