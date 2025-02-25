@@ -1,7 +1,7 @@
 package core
 
 import (
-	"github.com/buildbarn/bb-playground/pkg/storage/object"
+	"github.com/buildbarn/bonanza/pkg/storage/object"
 
 	"google.golang.org/protobuf/proto"
 )

@@ -7,12 +7,12 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/buildbarn/bb-playground/pkg/evaluation"
-	"github.com/buildbarn/bb-playground/pkg/label"
-	model_core "github.com/buildbarn/bb-playground/pkg/model/core"
-	model_analysis_pb "github.com/buildbarn/bb-playground/pkg/proto/model/analysis"
-	pg_starlark "github.com/buildbarn/bb-playground/pkg/starlark"
-	"github.com/buildbarn/bb-playground/pkg/storage/dag"
+	"github.com/buildbarn/bonanza/pkg/evaluation"
+	"github.com/buildbarn/bonanza/pkg/label"
+	model_core "github.com/buildbarn/bonanza/pkg/model/core"
+	model_analysis_pb "github.com/buildbarn/bonanza/pkg/proto/model/analysis"
+	pg_starlark "github.com/buildbarn/bonanza/pkg/starlark"
+	"github.com/buildbarn/bonanza/pkg/storage/dag"
 
 	"go.starlark.net/starlark"
 )

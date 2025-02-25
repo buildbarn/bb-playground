@@ -1,9 +1,9 @@
 package filesystem
 
 import (
-	model_core "github.com/buildbarn/bb-playground/pkg/model/core"
-	"github.com/buildbarn/bb-playground/pkg/storage/dag"
-	"github.com/buildbarn/bb-playground/pkg/storage/object"
+	model_core "github.com/buildbarn/bonanza/pkg/model/core"
+	"github.com/buildbarn/bonanza/pkg/storage/dag"
+	"github.com/buildbarn/bonanza/pkg/storage/object"
 )
 
 type DirectoryMerkleTreeCapturer[TDirectory, TFile any] interface {

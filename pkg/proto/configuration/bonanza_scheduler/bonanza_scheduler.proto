@@ -1,0 +1,183 @@
+syntax = "proto3";
+
+package bonanza.configuration.bonanza_scheduler;
+
+import "google/protobuf/duration.proto";
+import "pkg/proto/configuration/global/global.proto";
+import "pkg/proto/configuration/grpc/grpc.proto";
+import "pkg/proto/configuration/scheduler/scheduler.proto";
+
+option go_package = "github.com/buildbarn/bonanza/pkg/proto/configuration/bonanza_scheduler";
+
+message ApplicationConfiguration {
+  // Common configuration options that apply to all Buildbarn binaries.
+  buildbarn.configuration.global.Configuration global = 1;
+
+  // gRPC servers to spawn to listen for requests from clients
+  // (bonanza_builder).
+  repeated buildbarn.configuration.grpc.ServerConfiguration
+      client_grpc_servers = 3;
+
+  // gRPC servers to spawn to listen for requests from workers.
+  repeated buildbarn.configuration.grpc.ServerConfiguration
+      worker_grpc_servers = 4;
+
+  // gRPC servers to spawn to expose the state of the build queue. This
+  // can be used to obtain access to the data shown in the web UI in a
+  // programmatic manner.
+  repeated buildbarn.configuration.grpc.ServerConfiguration
+      build_queue_state_grpc_servers = 5;
+
+  // Create platform queues that are always present, regardless of
+  // whether there are workers synchronizing against the scheduler.
+  //
+  // It is required to use this option to create platform queues that
+  // support multiple worker size classes.
+  repeated PredeclaredPlatformQueueConfiguration predeclared_platform_queues =
+      6;
+
+  // The policy for routing actions.
+  //
+  // Before the scheduler is capable of enqueueing an action, it must
+  // extract some properties from the incoming execution request:
+  //
+  // - The invocation to which the execution request belongs, so that
+  //   may be scheduled fairly with respect to actions queued by other
+  //   users.
+  // - The execution timeout that needs to be applied.
+  // - If the platform has workers partitioned across multiple size
+  //   classes, it must choose a size class on which execution is
+  //   attempted initially.
+  //
+  // The action router is the subsystem that is responsible for
+  // extracting these properties.
+  //
+  // It is possible to write fairly complex action router configurations
+  // (e.g., ones that apply different policies between platforms, or
+  // reroute requests from one platform to another). However, for
+  // typical setups the configuration can remain fairly simple. It is
+  // recommended that a configuration like the one below is used as a
+  // starting point:
+  //
+  // {
+  //   simple: {
+  //     initialSizeClassAnalyzer: {
+  //       maximumExecutionTimeout: '7200s',
+  //     },
+  //   },
+  // }
+  bonanza.configuration.scheduler.ActionRouterConfiguration action_router = 7;
+
+  // Platform queues are removed when no workers have been present
+  // during this time period.
+  //
+  // Recommended value: 900s
+  google.protobuf.Duration platform_queue_with_no_workers_timeout = 8;
+}
+
+message PredeclaredPlatformQueueConfiguration {
+  // Non-empty list of X25519 public keys in PKIX, ASN.1 DER form that
+  // clients can use to obtain a shared secret for encrypting actions.
+  repeated bytes pkix_public_keys = 1;
+
+  // Size classes for which predeclared size class queues are created.
+  // These size class queues will continue to exist, even if they have
+  // no workers that synchronize against the scheduler.
+  //
+  // If workers advertise a size class that is not specified here, a
+  // size class queue will be created on demand. However, this queue
+  // will also disappear if such workers stop synchronizing. Size class
+  // queues will only be created on demand if the advertized size class
+  // is lower than the largest size class specified here. The reason
+  // being that the largest size class is responsible for retrying all
+  // actions that fail on smaller size classes. Altering the largest
+  // size class at runtime would be unsound.
+  //
+  // Size classes must be specified in increasing order. If all workers
+  // belonging to this platform are of the same size, it is recommended
+  // to set this field to [0].
+  repeated uint32 size_classes = 2;
+
+  // Allow workers to continue to execute actions from the same
+  // invocation up to given amount of time, if doing so keeps the number
+  // of workers assigned to an invocation balanced. It is worth setting
+  // this option if there is an inherent overhead when switching between
+  // actions belonging to different invocations.
+  //
+  // For example, consider the case where workers are configured to run
+  // tests inside virtual machines, and that the virtual machine's boot
+  // image is provided as part of the input root. When actions that use
+  // the same boot image run right after each other, the existing
+  // virtual machine may be repurposed. If the boot image is different,
+  // a costly restart needs to be performed, so that a new image may be
+  // loaded. By placing actions that use different boot images in
+  // separate invocations and adding stickiness, the probability of
+  // needing to do virtual machine restarts decreases.
+  //
+  // Because invocations can be nested by using multiple invocation key
+  // extractors, this field contains a list of durations of stickiness
+  // to apply at each level. If the number of invocation keys of an
+  // operation exceeds the configured number of stickiness limits, the
+  // stickiness limit for the remaining invocation keys is assumed to be
+  // zero.
+  //
+  // This option may require custom implementations of
+  // invocation.KeyExtractor to be effective.
+  //
+  // Recommended value: unset
+  repeated google.protobuf.Duration worker_invocation_stickiness_limits = 3;
+
+  // NOTE: The option below only has effect when feedback driven initial
+  // size class analysis is enabled.
+  //
+  // There is a small probability that this implementation runs actions
+  // on size classes even if it is fairly certain that they are
+  // suboptimal (either too small or too large). This is necessary, as
+  // without it there is a chance that previous execution statistics
+  // stored in the ISCC remain permanently outdated. The downside of
+  // this strategy is that it may cause unnecessary delays, especially
+  // when attempted against long-running actions that are part of the
+  // critical path of a build.
+  //
+  // To mitigate this, this implementation uses an alternative execution
+  // strategy in case there is a >50% probability of failure on a
+  // smaller size class. Instead of first executing the action on the
+  // smaller size class, followed by falling back to the largest size
+  // class, it schedules it the other way around. The client is
+  // unblocked as soon as the execution on the largest size class
+  // succeeds, while the execution on the smallest size class is
+  // performed in the background.
+  //
+  // To make sure that operations that are merely created to perform
+  // learning in the background don't starve other builds that are
+  // taking place, all of them are placed in a single fictive
+  // invocation, so that fairness is respected.
+  //
+  // This option determines the maximum number of background learning
+  // operations that may be in the QUEUED execution stage, per size
+  // class. Excessive operations are discarded. Not only is it necessary
+  // to set this value to ensure that the scheduler doesn't run out of
+  // memory due to background actions piling up, it can also put a limit
+  // on how much the cluster is scaled up (in case autoscaling based on
+  // queue sizes is performed).
+  //
+  // Recommended value: 1000
+  int32 maximum_queued_background_learning_operations = 4;
+
+  // NOTE: The option below only has effect when feedback driven initial
+  // size class analysis is enabled.
+  //
+  // The REv2 execution priority that needs to be used for background
+  // learning operations.
+  //
+  // bb_scheduler respects REv2 execution priorities by increasing the
+  // number of actions to run concurrently between invocations by a
+  // factor 2 for every 100 decrease in priority value (i.e., lower
+  // priority value means faster builds).
+  //
+  // This option determines how aggressively background learning
+  // operations should be preferred over operations enqueued by clients.
+  //
+  // Recommended value: 0
+  int32 background_learning_operation_priority = 5;
+}

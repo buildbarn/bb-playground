@@ -11,7 +11,7 @@ go_library(
         "raw_object_parser.go",
         "storage_backed_parsed_object_reader.go",
     ],
-    importpath = "github.com/buildbarn/bb-playground/pkg/model/parser",
+    importpath = "github.com/buildbarn/bonanza/pkg/model/parser",
     visibility = ["//visibility:public"],
     deps = [
         "//pkg/encoding/varint",

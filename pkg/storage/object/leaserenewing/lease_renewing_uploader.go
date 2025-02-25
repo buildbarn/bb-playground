@@ -5,10 +5,10 @@ import (
 	"context"
 	"sync"
 
-	"github.com/buildbarn/bb-playground/pkg/ds"
-	"github.com/buildbarn/bb-playground/pkg/storage/object"
-	pg_sync "github.com/buildbarn/bb-playground/pkg/sync"
 	"github.com/buildbarn/bb-storage/pkg/util"
+	"github.com/buildbarn/bonanza/pkg/ds"
+	"github.com/buildbarn/bonanza/pkg/storage/object"
+	pg_sync "github.com/buildbarn/bonanza/pkg/sync"
 
 	"golang.org/x/sync/semaphore"
 	"google.golang.org/grpc/codes"

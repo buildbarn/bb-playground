@@ -5,7 +5,7 @@ go_library(
     name = "license",
     srcs = ["do_license.go"],
     embedsrcs = ["LICENSE"],
-    importpath = "github.com/buildbarn/bb-playground/pkg/bazelclient/commands/license",
+    importpath = "github.com/buildbarn/bonanza/pkg/bazelclient/commands/license",
     visibility = ["//visibility:public"],
 )
 

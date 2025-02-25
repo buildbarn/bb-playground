@@ -6,11 +6,11 @@ import (
 	"fmt"
 	"sort"
 
-	"github.com/buildbarn/bb-playground/pkg/evaluation"
-	"github.com/buildbarn/bb-playground/pkg/label"
-	model_core "github.com/buildbarn/bb-playground/pkg/model/core"
-	model_analysis_pb "github.com/buildbarn/bb-playground/pkg/proto/model/analysis"
-	"github.com/buildbarn/bb-playground/pkg/storage/dag"
+	"github.com/buildbarn/bonanza/pkg/evaluation"
+	"github.com/buildbarn/bonanza/pkg/label"
+	model_core "github.com/buildbarn/bonanza/pkg/model/core"
+	model_analysis_pb "github.com/buildbarn/bonanza/pkg/proto/model/analysis"
+	"github.com/buildbarn/bonanza/pkg/storage/dag"
 )
 
 func (c *baseComputer) ComputeUsedModuleExtensionValue(ctx context.Context, key *model_analysis_pb.UsedModuleExtension_Key, e UsedModuleExtensionEnvironment) (PatchedUsedModuleExtensionValue, error) {

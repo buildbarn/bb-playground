@@ -3,10 +3,10 @@ package btree_test
 import (
 	"testing"
 
-	model_core "github.com/buildbarn/bb-playground/pkg/model/core"
-	"github.com/buildbarn/bb-playground/pkg/model/core/btree"
-	model_filesystem_pb "github.com/buildbarn/bb-playground/pkg/proto/model/filesystem"
-	"github.com/buildbarn/bb-playground/pkg/storage/object"
+	model_core "github.com/buildbarn/bonanza/pkg/model/core"
+	"github.com/buildbarn/bonanza/pkg/model/core/btree"
+	model_filesystem_pb "github.com/buildbarn/bonanza/pkg/proto/model/filesystem"
+	"github.com/buildbarn/bonanza/pkg/storage/object"
 	"github.com/stretchr/testify/require"
 
 	"go.uber.org/mock/gomock"

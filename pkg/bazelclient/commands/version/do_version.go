@@ -3,7 +3,7 @@ package version
 import (
 	"fmt"
 
-	"github.com/buildbarn/bb-playground/pkg/bazelclient/arguments"
+	"github.com/buildbarn/bonanza/pkg/bazelclient/arguments"
 )
 
 func DoVersion(args *arguments.VersionCommand) {

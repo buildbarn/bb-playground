@@ -4,7 +4,7 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/buildbarn/bb-playground/pkg/label"
+	"github.com/buildbarn/bonanza/pkg/label"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -126,5 +126,72 @@ func TestResolvedLabel(t *testing.T) {
 			resolvedLabel := label.MustNewResolvedLabel(input)
 			assert.Equal(t, output, resolvedLabel.GetTargetName().String())
 		}
+	})
+
+	t.Run("AppendTargetName", func(t *testing.T) {
+		require.Equal(
+			t,
+			"@@example+//:foo",
+			label.MustNewResolvedLabel("@@example+").
+				AppendTargetName(label.MustNewTargetName("foo")).
+				String(),
+		)
+		require.Equal(
+			t,
+			"@@example+",
+			label.MustNewResolvedLabel("@@example+").
+				AppendTargetName(label.MustNewTargetName("example+")).
+				String(),
+		)
+		require.Equal(
+			t,
+			"@@example+//hello_world:foo",
+			label.MustNewResolvedLabel("@@example+//hello_world").
+				AppendTargetName(label.MustNewTargetName("foo")).
+				String(),
+		)
+		require.Equal(
+			t,
+			"@@example+//hello_world",
+			label.MustNewResolvedLabel("@@example+//hello_world").
+				AppendTargetName(label.MustNewTargetName("hello_world")).
+				String(),
+		)
+
+		require.Equal(
+			t,
+			"@@[this is an error message]//:bar",
+			label.MustNewResolvedLabel("@@[this is an error message]//:foo").
+				AppendTargetName(label.MustNewTargetName("bar")).
+				String(),
+		)
+		require.Equal(
+			t,
+			"@@[this is an error message]//pkg:bar",
+			label.MustNewResolvedLabel("@@[this is an error message]//pkg:foo").
+				AppendTargetName(label.MustNewTargetName("bar")).
+				String(),
+		)
+		require.Equal(
+			t,
+			"@@[this is an error message]//pkg:bar",
+			label.MustNewResolvedLabel("@@[this is an error message]//pkg").
+				AppendTargetName(label.MustNewTargetName("bar")).
+				String(),
+		)
+		require.Equal(
+			t,
+			"@@[this is an error message]//pkg",
+			label.MustNewResolvedLabel("@@[this is an error message]//pkg").
+				AppendTargetName(label.MustNewTargetName("pkg")).
+				String(),
+		)
+		require.Equal(
+			t,
+			"@@[this is an error message]//pkg",
+			label.MustNewResolvedLabel("@@[this is an error message]//pkg").
+				AppendTargetName(label.MustNewTargetName("pkg")).
+				String(),
+		)
 	})
 }

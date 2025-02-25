@@ -1,22 +1,22 @@
 syntax = "proto3";
 
-package buildbarn.playground.storage.dag;
+package bonanza.storage.dag;
 
 import "google/protobuf/any.proto";
 import "google/rpc/status.proto";
 import "pkg/proto/storage/object/object.proto";
 
-option go_package = "github.com/buildbarn/bb-playground/pkg/proto/storage/dag";
+option go_package = "github.com/buildbarn/bonanza/pkg/proto/storage/dag";
 
-// Uploader service that wraps buildbarn.playground.storage.object.Uploader and
-// buildbarn.playground.storage.tag.Updater into a more streamlined API. It's
+// Uploader service that wraps bonanza.storage.object.Uploader and
+// bonanza.storage.tag.Updater into a more streamlined API. It's
 // recommended that most clients are built on top of this API, as it completely
 // abstracts away concepts such as lease expiration. It also reduces the
 // latency induced by network roundtrips, assuming the server is run close to
 // the Object & Tag Store servers.
 //
-// For reading objects and tags, buildbarn.playground.storage.object.Downloader
-// and buildbarn.playground.storage.tag.Resolver continue to be the recommended
+// For reading objects and tags, bonanza.storage.object.Downloader
+// and bonanza.storage.tag.Resolver continue to be the recommended
 // APIs.
 service Uploader {
   // Upload DAGs of objects to the server, only transferring objects
@@ -70,7 +70,7 @@ service Uploader {
 message UploadDagsRequest {
   message Handshake {
     // The namespace where to store DAGs.
-    buildbarn.playground.storage.object.Namespace namespace = 1;
+    bonanza.storage.object.Namespace namespace = 1;
 
     // The maximum permitted number of parent objects and their combined
     // size for which the server has one or more child objects for which
@@ -91,8 +91,7 @@ message UploadDagsRequest {
     // 'size_bytes' and 'maximum_total_parents_size_bytes' fields.
     // Conversely, the client SHOULD validate that the traversal order
     // used by the server respects this invariant.
-    buildbarn.playground.storage.object.Limit
-        maximum_unfinalized_parents_limit = 2;
+    bonanza.storage.object.Limit maximum_unfinalized_parents_limit = 2;
   }
 
   message InitiateDag {
@@ -104,7 +103,7 @@ message UploadDagsRequest {
 
     // If set, assign a tag to the root of the DAG, so that it can
     // subsequently be resolved using
-    // buildbarn.playground.storage.object.tag.Resolver.ResolveTag().
+    // bonanza.storage.object.tag.Resolver.ResolveTag().
     // This can for example be used to cache the results of a build
     // action, allowing other clients to look them up by action.
     google.protobuf.Any root_tag = 2;
@@ -129,7 +128,7 @@ message UploadDagsRequest {
     // object. The server SHOULD respond with FinalizeDag messages for
     // each of the DAGs containing the object with
     // UploadDagsResponse.FinalizeDag.status.code set to CANCELLED.
-    buildbarn.playground.storage.object.Contents object_contents = 2;
+    bonanza.storage.object.Contents object_contents = 2;
   }
 
   oneof type {

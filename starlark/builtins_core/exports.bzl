@@ -15,6 +15,7 @@ OutputGroupInfo = provider(dict_like = True)
 PackageSpecificationInfo = provider()
 PlatformInfo = provider()
 ProguardSpecProvider = provider()
+PyInfo = provider()
 RunEnvironmentInfo = provider()
 StaticallyLinkedMarkerProvider = provider()
 ToolchainInfo = provider()
@@ -38,6 +39,13 @@ def _cc_info_init(
 
 CcInfo, _CcInfoRaw = provider(init = _cc_info_init)
 
+def _cc_native_library_info_init(*, libraries_to_link = None):
+    return {
+        "libraries_to_link": libraries_to_link or depset(),
+    }
+
+CcNativeLibraryInfo, _CcNativeLibraryInfoRaw = provider(init = _cc_native_library_info_init)
+
 def _default_info_init(*, data_runfiles = None, default_runfiles = None, executable = None, files = None, runfiles = None):
     if runfiles:
         if data_runfiles or default_runfiles:
@@ -54,13 +62,6 @@ def _default_info_init(*, data_runfiles = None, default_runfiles = None, executa
             runfiles_manifest = None,
         ),
     }
-
-def _cc_native_library_info_init(*, libraries_to_link = None):
-    return {
-        "libraries_to_link": libraries_to_link or depset(),
-    }
-
-CcNativeLibraryInfo, _CcNativeLibraryInfoRaw = provider(init = _cc_native_library_info_init)
 
 DefaultInfo, _DefaultInfoRaw = provider(init = _default_info_init)
 
@@ -337,6 +338,13 @@ sh_test = rule(
     test = True,
 )
 
+def _test_suite_impl(ctx):
+    fail("TODO: implement")
+
+test_suite = rule(
+    _test_suite_impl,
+)
+
 def _toolchain_impl(ctx):
     return [DeclaredToolchainInfo(
         target_settings = [
@@ -404,10 +412,13 @@ def builtins_internal_apple_common_dotted_version(v):
     # TODO: Provide a proper implementation.
     return v
 
+def builtins_internal_cc_common_action_is_enabled(*, feature_configuration, action_name):
+    return action_name in ["c++-link-executable", "strip"]
+
 def builtins_internal_cc_common_check_private_api(allowlist = []):
     pass
 
-def _create_compilation_outputs(objects, pic_objects):
+def _create_compilation_outputs(objects, pic_objects, lto_compilation_context):
     # TODO: Where do we get these from?
     dwo_files = depset()
     pic_dwo_files = depset()
@@ -417,6 +428,7 @@ def _create_compilation_outputs(objects, pic_objects):
         _objects = objects,
         _pic_dwo_files = pic_dwo_files,
         _pic_objects = pic_objects,
+        lto_compilation_context = lambda: lto_compilation_context,
 
         # We unfortunately also need to provide access to these in the
         # form of lists.
@@ -428,6 +440,7 @@ def _create_compilation_outputs(objects, pic_objects):
         # TODO: Where do these come from?
         files_to_compile = lambda parse_headers = False, use_pic = False: depset(),
         gcno_files = lambda: [],
+        header_tokens = lambda: [],
         module_files = lambda: [],
         pic_gcno_files = lambda: [],
         temps = lambda: depset(),
@@ -482,12 +495,13 @@ def builtins_internal_cc_common_compile(
     srcs_compilation_outputs = _create_compilation_outputs(
         objects = depset(),
         pic_objects = depset(),
+        lto_compilation_context = struct(TODO_lto_compilation_context = True),
     )
 
     return compilation_context, srcs_compilation_outputs
 
 def builtins_internal_cc_common_configure_features(
-        ctx = None,
+        ctx,
         cc_toolchain = None,
         language = None,
         requested_features = [],
@@ -518,12 +532,14 @@ def builtins_internal_cc_common_create_cc_toolchain_config_info(
         for tool in tool_paths
     ]
     return CcToolchainConfigInfo(
-        abi_libc_version = lambda: abi_libc_version,
-        abi_version = lambda: abi_version,
-        artifact_name_patterns = {
+        _action_configs = action_configs,
+        _artifact_name_patterns = {
             pattern.category_name: struct(prefix = pattern.prefix, extension = pattern.extension)
             for pattern in artifact_name_patterns
         },
+        _features = features,
+        abi_libc_version = lambda: abi_libc_version,
+        abi_version = lambda: abi_version,
         builtin_sysroot = lambda: builtin_sysroot,
         compiler = lambda: compiler,
         cxx_builtin_include_directories = lambda: cxx_builtin_include_directories,
@@ -533,6 +549,22 @@ def builtins_internal_cc_common_create_cc_toolchain_config_info(
         target_system_name = lambda: target_system_name,
         tool_paths = lambda: tool_paths_tuples,
         toolchain_id = lambda: toolchain_identifier,
+    )
+
+def _create_compilation_context(
+        *,
+        additional_inputs,
+        headers,
+        module_map,
+        transitive_modules):
+    virtual_to_original_headers = depset()
+    return struct(
+        additional_inputs = lambda: additional_inputs,
+        headers = headers,
+        module_map = module_map,
+        transitive_modules = transitive_modules,
+        validation_artifacts = depset(),
+        virtual_to_original_headers = lambda: virtual_to_original_headers,
     )
 
 def builtins_internal_cc_common_create_compilation_context(
@@ -569,8 +601,6 @@ def builtins_internal_cc_common_create_compilation_context(
     additional_inputs_transitive = []
     if non_code_inputs:
         additional_inputs_transitive.append(non_code_inputs)
-    if module_map:
-        fail("we should add module map as well")
     additional_inputs = depset(transitive = additional_inputs_transitive)
 
     modules_direct = []
@@ -587,10 +617,16 @@ def builtins_internal_cc_common_create_compilation_context(
         pic_modules_direct.append(separate_pic_module)
     pic_modules = depset(pic_modules_direct)
 
-    return struct(
-        additional_inputs = lambda: additional_inputs,
+    return _create_compilation_context(
+        additional_inputs = additional_inputs,
         headers = headers or depset(),
+        module_map = module_map,
         transitive_modules = lambda use_pic: pic_modules if use_pic else modules,
+    )
+
+def _create_lto_compilation_context():
+    return struct(
+        lto_bitcode_inputs = lambda: {},
     )
 
 def builtins_internal_cc_common_create_compilation_outputs(
@@ -603,6 +639,7 @@ def builtins_internal_cc_common_create_compilation_outputs(
     return _create_compilation_outputs(
         objects = objects or depset(),
         pic_objects = pic_objects or depset(),
+        lto_compilation_context = lto_compilation_context or _create_lto_compilation_context(),
     )
 
 def builtins_internal_cc_common_create_compile_variables(
@@ -626,8 +663,17 @@ def builtins_internal_cc_common_create_compile_variables(
         input_file = None):
     pass
 
-def builtins_internal_cc_common_create_debug_context(compilation_outputs = None):
+def _create_debug_context(dwo_files, pic_dwo_files):
     return struct(
+        dwo_files = dwo_files,
+        pic_dwo_files = pic_dwo_files,
+        # TODO: How do we set these?
+        files = depset(),
+        pic_files = depset(),
+    )
+
+def builtins_internal_cc_common_create_debug_context(compilation_outputs = None):
+    return _create_debug_context(
         dwo_files = compilation_outputs._dwo_files if compilation_outputs else depset(),
         pic_dwo_files = compilation_outputs._pic_dwo_files if compilation_outputs else depset(),
     )
@@ -635,11 +681,16 @@ def builtins_internal_cc_common_create_debug_context(compilation_outputs = None)
 def builtins_internal_cc_common_create_linker_input(
         *,
         owner,
-        libraries = None,
-        user_link_flags = None,
         additional_inputs = None,
-        linkstamps = None):
-    return struct(TODO_linker_input = True)
+        libraries = None,
+        linkstamps = None,
+        user_link_flags = None):
+    return struct(
+        additional_inputs = tuple(additional_inputs.to_list()) if additional_inputs else (),
+        libraries = tuple(libraries.to_list()) if libraries else (),
+        linkstamps = tuple(linkstamps.to_list()) if linkstamps else (),
+        user_link_flags = tuple(user_link_flags) if user_link_flags else (),
+    )
 
 def builtins_internal_cc_common_create_linking_context(
         *,
@@ -650,7 +701,21 @@ def builtins_internal_cc_common_create_linking_context(
         owner = None,
         user_link_flags = None):
     return struct(
+        extra_link_time_libraries = lambda: struct(
+            # TODO: Return proper depsets.
+            build_libraries = lambda ctx, static_mode, for_dynamic_library: (depset(), depset()),
+        ),
         linker_inputs = linker_inputs or depset(),
+    )
+
+def builtins_internal_cc_common_create_module_map(
+        *,
+        file,
+        name,
+        umbrella_header):
+    return struct(
+        file = lambda: file,
+        umbrella_header = lambda: umbrella_header,
     )
 
 def builtins_internal_cc_common_get_environment_variables(
@@ -658,6 +723,12 @@ def builtins_internal_cc_common_get_environment_variables(
         action_name,
         variables):
     return {}
+
+def builtins_internal_cc_common_get_execution_requirements(
+        *,
+        action_name,
+        feature_configuration):
+    return []
 
 def builtins_internal_cc_common_get_memory_inefficient_command_line(
         feature_configuration,
@@ -667,6 +738,9 @@ def builtins_internal_cc_common_get_memory_inefficient_command_line(
 
 def builtins_internal_cc_common_get_tool_for_action(feature_configuration, action_name):
     return "/TODO/get/tool/for/action"
+
+def builtins_internal_cc_common_get_tool_requirement_for_action(*, action_name, feature_configuration):
+    return []
 
 def builtins_internal_cc_common_merge_compilation_contexts(compilation_contexts = [], non_exported_compilation_contexts = []):
     additional_inputs = depset(transitive = [
@@ -686,9 +760,10 @@ def builtins_internal_cc_common_merge_compilation_contexts(compilation_contexts 
         for cc in compilation_contexts
     ])
 
-    return struct(
-        additional_inputs = lambda: additional_inputs,
+    return _create_compilation_context(
+        additional_inputs = additional_inputs,
         headers = headers,
+        module_map = None,
         transitive_modules = lambda use_pic: pic_modules if use_pic else modules,
     )
 
@@ -706,10 +781,11 @@ def builtins_internal_cc_common_merge_compilation_outputs(*, compilation_outputs
                 for co in compilation_outputs
             ],
         ),
+        lto_compilation_context = _create_lto_compilation_context(),
     )
 
 def builtins_internal_cc_common_merge_debug_context(debug_contexts = []):
-    return struct(
+    return _create_debug_context(
         dwo_files = depset(
             transitive = [
                 dc.dwo_files
@@ -734,18 +810,57 @@ def builtins_internal_cc_common_merge_linking_contexts(linking_contexts = []):
         ),
     )
 
+def builtins_internal_cc_internal_actions2ctx_cheat(actions):
+    return actions._cc_internal_actions2ctx_cheat
+
 def builtins_internal_cc_internal_cc_toolchain_features(*, toolchain_config_info, tools_directory):
     return struct(
-        artifact_name_patterns = toolchain_config_info.artifact_name_patterns,
+        _artifact_name_patterns = toolchain_config_info._artifact_name_patterns,
     )
 
 def builtins_internal_cc_internal_cc_toolchain_variables(vars):
+    return "TODO"
+
+def builtins_internal_cc_internal_collect_libraries_to_link(
+        linker_inputs,
+        cc_toolchain,
+        feature_configuration,
+        output,
+        dynamic_library_solib_symlink_output,
+        link_type,
+        linking_mode,
+        is_native_deps,
+        need_whole_archive,
+        solib_dir,
+        toolchain_libraries_solib_dir,
+        allow_lto_indexing,
+        lto_mapping,
+        workspace_name):
+    return struct(
+        all_runtime_library_search_directories = depset(),
+        expanded_linker_inputs = [],
+        libraries_to_link = [],
+        library_search_directories = depset(),
+    )
+
+def builtins_internal_cc_internal_convert_library_to_link_list_to_linker_input_list(libraries_to_link, static_mode, for_dynamic_library, support_dynamic_linker):
+    # TODO!
+    return []
+
+def builtins_internal_cc_internal_create_cc_launcher_info(*, cc_info, compilation_outputs):
+    return CcLauncherInfo(
+        cc_info = lambda: cc_info,
+        compilation_outputs = lambda: compilation_outputs,
+    )
+
+def builtins_internal_cc_internal_dynamic_library_soname(actions, path, preserve_name):
     return "TODO"
 
 def builtins_internal_cc_internal_empty_compilation_outputs():
     return _create_compilation_outputs(
         objects = depset(),
         pic_objects = depset(),
+        lto_compilation_context = _create_lto_compilation_context(),
     )
 
 def builtins_internal_cc_internal_escape_label(label):
@@ -784,7 +899,7 @@ default_artifact_name_patterns = {
 }
 
 def builtins_internal_cc_internal_get_artifact_name_for_category(cc_toolchain, category, output_name):
-    pattern = cc_toolchain._toolchain_features.artifact_name_patterns.get(category)
+    pattern = cc_toolchain._toolchain_features._artifact_name_patterns.get(category)
     if not pattern:
         pattern = default_artifact_name_patterns[category]
 
@@ -792,8 +907,19 @@ def builtins_internal_cc_internal_get_artifact_name_for_category(cc_toolchain, c
     output_parts[-1] = pattern.prefix + output_parts[-1] + pattern.extension
     return "/".join(output_parts)
 
+def builtins_internal_cc_internal_get_link_args(
+        *,
+        action_name,
+        build_variables,
+        feature_configuration,
+        parameter_file_type):
+    return struct()
+
 def builtins_internal_cc_internal_licenses(ctx):
     return None
+
+def builtins_internal_cc_internal_wrap_link_actions(actions, build_config = None, use_shareable_artifact_factory = False):
+    return actions
 
 def builtins_internal_java_common_internal_do_not_use__check_java_toolchain_is_declared_on_rule():
     return "TODO"
@@ -855,6 +981,7 @@ exported_rules = {
     "package_group": native.package_group,
     "platform": platform,
     "sh_test": sh_test,
+    "test_suite": test_suite,
     "toolchain": toolchain,
     "toolchain_type": toolchain_type,
 }
@@ -870,6 +997,7 @@ exported_toplevels = {
     "InstrumentedFilesInfo": InstrumentedFilesInfo,
     "PackageSpecificationInfo": PackageSpecificationInfo,
     "ProguardSpecProvider": ProguardSpecProvider,
+    "PyInfo": PyInfo,
     "config_common": struct(
         toolchain_type = config_common.toolchain_type,
     ),
@@ -906,6 +1034,7 @@ exported_toplevels["_builtins"] = struct(
         ),
         cc_common = struct(
             CcToolchainInfo = CcToolchainInfo,
+            action_is_enabled = builtins_internal_cc_common_action_is_enabled,
             check_private_api = builtins_internal_cc_common_check_private_api,
             compile = builtins_internal_cc_common_compile,
             configure_features = builtins_internal_cc_common_configure_features,
@@ -916,23 +1045,33 @@ exported_toplevels["_builtins"] = struct(
             create_debug_context = builtins_internal_cc_common_create_debug_context,
             create_linker_input = builtins_internal_cc_common_create_linker_input,
             create_linking_context = builtins_internal_cc_common_create_linking_context,
+            create_module_map = builtins_internal_cc_common_create_module_map,
             do_not_use_tools_cpp_compiler_present = None,
             get_environment_variables = builtins_internal_cc_common_get_environment_variables,
+            get_execution_requirements = builtins_internal_cc_common_get_execution_requirements,
             get_memory_inefficient_command_line = builtins_internal_cc_common_get_memory_inefficient_command_line,
             get_tool_for_action = builtins_internal_cc_common_get_tool_for_action,
+            get_tool_requirement_for_action = builtins_internal_cc_common_get_tool_requirement_for_action,
             merge_compilation_contexts = builtins_internal_cc_common_merge_compilation_contexts,
             merge_compilation_outputs = builtins_internal_cc_common_merge_compilation_outputs,
             merge_debug_context = builtins_internal_cc_common_merge_debug_context,
             merge_linking_contexts = builtins_internal_cc_common_merge_linking_contexts,
         ),
         cc_internal = struct(
+            actions2ctx_cheat = builtins_internal_cc_internal_actions2ctx_cheat,
             cc_toolchain_features = builtins_internal_cc_internal_cc_toolchain_features,
             cc_toolchain_variables = builtins_internal_cc_internal_cc_toolchain_variables,
+            collect_libraries_to_link = builtins_internal_cc_internal_collect_libraries_to_link,
+            convert_library_to_link_list_to_linker_input_list = builtins_internal_cc_internal_convert_library_to_link_list_to_linker_input_list,
+            create_cc_launcher_info = builtins_internal_cc_internal_create_cc_launcher_info,
+            dynamic_library_soname = builtins_internal_cc_internal_dynamic_library_soname,
             empty_compilation_outputs = builtins_internal_cc_internal_empty_compilation_outputs,
             escape_label = builtins_internal_cc_internal_escape_label,
             get_artifact_name_for_category = builtins_internal_cc_internal_get_artifact_name_for_category,
-            licenses = builtins_internal_cc_internal_licenses,
+            get_link_args = builtins_internal_cc_internal_get_link_args,
             launcher_provider = CcLauncherInfo,
+            licenses = builtins_internal_cc_internal_licenses,
+            wrap_link_actions = builtins_internal_cc_internal_wrap_link_actions,
         ),
         java_common_internal_do_not_use = struct(
             _check_java_toolchain_is_declared_on_rule = builtins_internal_java_common_internal_do_not_use__check_java_toolchain_is_declared_on_rule,

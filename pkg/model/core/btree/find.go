@@ -3,10 +3,10 @@ package btree
 import (
 	"context"
 
-	model_core "github.com/buildbarn/bb-playground/pkg/model/core"
-	model_parser "github.com/buildbarn/bb-playground/pkg/model/parser"
-	model_core_pb "github.com/buildbarn/bb-playground/pkg/proto/model/core"
-	"github.com/buildbarn/bb-playground/pkg/storage/object"
+	model_core "github.com/buildbarn/bonanza/pkg/model/core"
+	model_parser "github.com/buildbarn/bonanza/pkg/model/parser"
+	model_core_pb "github.com/buildbarn/bonanza/pkg/proto/model/core"
+	"github.com/buildbarn/bonanza/pkg/storage/object"
 
 	"google.golang.org/protobuf/proto"
 )

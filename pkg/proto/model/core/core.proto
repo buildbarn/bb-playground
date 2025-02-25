@@ -1,8 +1,8 @@
 syntax = "proto3";
 
-package buildbarn.playground.model.core;
+package bonanza.model.core;
 
-option go_package = "github.com/buildbarn/bb-playground/pkg/proto/model/core";
+option go_package = "github.com/buildbarn/bonanza/pkg/proto/model/core";
 
 // Reference to another object contained in the same namespace.
 message Reference {

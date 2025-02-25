@@ -4,7 +4,7 @@ exports_files(["LICENSE"])
 
 # gazelle:go_grpc_compilers @rules_go//proto:go_proto,@rules_go//proto:go_grpc_v2
 # gazelle:go_naming_convention_external import
-# gazelle:prefix github.com/buildbarn/bb-playground
+# gazelle:prefix github.com/buildbarn/bonanza
 # gazelle:resolve proto go google/rpc/status.proto @org_golang_google_genproto_googleapis_rpc//status
 # gazelle:resolve proto go pkg/proto/configuration/eviction/eviction.proto @com_github_buildbarn_bb_storage//pkg/proto/configuration/eviction
 # gazelle:resolve proto go pkg/proto/configuration/filesystem/filesystem.proto @com_github_buildbarn_bb_remote_execution//pkg/proto/configuration/filesystem

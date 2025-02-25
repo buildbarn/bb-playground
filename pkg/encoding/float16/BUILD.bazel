@@ -3,7 +3,7 @@ load("@rules_go//go:def.bzl", "go_library", "go_test")
 go_library(
     name = "float16",
     srcs = ["float16.go"],
-    importpath = "github.com/buildbarn/bb-playground/pkg/encoding/float16",
+    importpath = "github.com/buildbarn/bonanza/pkg/encoding/float16",
     visibility = ["//visibility:public"],
 )
 

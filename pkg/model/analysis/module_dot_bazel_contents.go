@@ -7,14 +7,14 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/buildbarn/bb-playground/pkg/evaluation"
-	"github.com/buildbarn/bb-playground/pkg/label"
-	model_core "github.com/buildbarn/bb-playground/pkg/model/core"
-	model_filesystem "github.com/buildbarn/bb-playground/pkg/model/filesystem"
-	model_analysis_pb "github.com/buildbarn/bb-playground/pkg/proto/model/analysis"
-	model_filesystem_pb "github.com/buildbarn/bb-playground/pkg/proto/model/filesystem"
-	pg_starlark "github.com/buildbarn/bb-playground/pkg/starlark"
-	"github.com/buildbarn/bb-playground/pkg/storage/dag"
+	"github.com/buildbarn/bonanza/pkg/evaluation"
+	"github.com/buildbarn/bonanza/pkg/label"
+	model_core "github.com/buildbarn/bonanza/pkg/model/core"
+	model_filesystem "github.com/buildbarn/bonanza/pkg/model/filesystem"
+	model_analysis_pb "github.com/buildbarn/bonanza/pkg/proto/model/analysis"
+	model_filesystem_pb "github.com/buildbarn/bonanza/pkg/proto/model/filesystem"
+	pg_starlark "github.com/buildbarn/bonanza/pkg/starlark"
+	"github.com/buildbarn/bonanza/pkg/storage/dag"
 )
 
 type parseLocalModuleDotBazelEnvironment interface {

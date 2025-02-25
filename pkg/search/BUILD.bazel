@@ -3,7 +3,7 @@ load("@rules_go//go:def.bzl", "go_library", "go_test")
 go_library(
     name = "search",
     srcs = ["multi_search_and_replacer.go"],
-    importpath = "github.com/buildbarn/bb-playground/pkg/search",
+    importpath = "github.com/buildbarn/bonanza/pkg/search",
     visibility = ["//visibility:public"],
 )
 

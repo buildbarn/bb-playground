@@ -28,7 +28,11 @@ func NewResolvedLabel(value string) (ResolvedLabel, error) {
 	if !validResolvedLabelRegexp.MatchString(value) {
 		return ResolvedLabel{}, invalidResolvedLabelPattern
 	}
-	return ResolvedLabel{value: removeLabelTargetNameIfRedundant(value)}, nil
+	return newValidResolvedLabel(value), nil
+}
+
+func newValidResolvedLabel(value string) ResolvedLabel {
+	return ResolvedLabel{value: removeLabelTargetNameIfRedundant(value)}
 }
 
 func MustNewResolvedLabel(value string) ResolvedLabel {
@@ -58,7 +62,7 @@ func (l ResolvedLabel) AsCanonical() (CanonicalLabel, error) {
 	}
 
 	// Extract the error message out of the label.
-	errorMessage := l.value[3:]
+	errorMessage := l.value[len("@@["):]
 	return CanonicalLabel{}, errors.New(errorMessage[:strings.IndexByte(errorMessage, ']')])
 }
 
@@ -70,8 +74,8 @@ func (l ResolvedLabel) GetPackagePath() string {
 
 	// Label has an error message. Skip past the error message first
 	// before attempting to obtain the package path.
-	errorMessage := l.value[3:]
-	packagePath := errorMessage[strings.IndexByte(errorMessage, ']')+3:]
+	errorMessage := l.value[len("@@["):]
+	packagePath := errorMessage[strings.IndexByte(errorMessage, ']')+len("]//"):]
 	if colonOffset := strings.IndexByte(packagePath, ':'); colonOffset >= 0 {
 		packagePath = packagePath[:colonOffset]
 	}
@@ -86,10 +90,35 @@ func (l ResolvedLabel) GetTargetName() TargetName {
 
 	// Label has an error message. Skip past the error message first
 	// before attempting to obtain the package path.
-	errorMessage := l.value[3:]
-	packagePath := errorMessage[strings.IndexByte(errorMessage, ']')+2:]
+	errorMessage := l.value[len("@@["):]
+	packagePath := errorMessage[strings.IndexByte(errorMessage, ']')+len("]//"):]
 	if colonOffset := strings.IndexByte(packagePath, ':'); colonOffset >= 0 {
 		return TargetName{value: packagePath[colonOffset+1:]}
 	}
 	return TargetName{value: packagePath[strings.LastIndexByte(packagePath, '/')+1:]}
+}
+
+// AppendTargetName appends a target name to the package of the resolved
+// label.
+//
+// TODO: Instead of having this method, should we add a ResolvedPackage
+// for consistency with CanonicalPackage?
+func (l ResolvedLabel) AppendTargetName(targetName TargetName) ResolvedLabel {
+	if canonicalLabel, ok := l.asCanonical(); ok {
+		// Label is canonical. Go through the
+		return canonicalLabel.
+			GetCanonicalPackage().
+			AppendTargetName(targetName).
+			AsResolved()
+	}
+
+	packagePathOffset := len("@@[")
+	packagePathOffset += strings.IndexByte(l.value[packagePathOffset:], ']') + len("]//")
+	if colonOffset := strings.IndexByte(l.value[packagePathOffset:], ':'); colonOffset >= 0 {
+		// @@[message]//a/b:c -> @@[message]//a/b:d.
+		return newValidResolvedLabel(l.value[:packagePathOffset+colonOffset+1] + targetName.String())
+	}
+
+	// @@[message]//a/b -> @@[message]//a/b:d.
+	return newValidResolvedLabel(l.value + ":" + targetName.String())
 }

@@ -11,15 +11,15 @@ import (
 
 	"go.starlark.net/starlark"
 
-	"github.com/buildbarn/bb-playground/pkg/evaluation"
-	"github.com/buildbarn/bb-playground/pkg/label"
-	model_core "github.com/buildbarn/bb-playground/pkg/model/core"
-	model_starlark "github.com/buildbarn/bb-playground/pkg/model/starlark"
-	model_analysis_pb "github.com/buildbarn/bb-playground/pkg/proto/model/analysis"
-	model_starlark_pb "github.com/buildbarn/bb-playground/pkg/proto/model/starlark"
-	pg_starlark "github.com/buildbarn/bb-playground/pkg/starlark"
-	"github.com/buildbarn/bb-playground/pkg/storage/dag"
 	"github.com/buildbarn/bb-storage/pkg/filesystem/path"
+	"github.com/buildbarn/bonanza/pkg/evaluation"
+	"github.com/buildbarn/bonanza/pkg/label"
+	model_core "github.com/buildbarn/bonanza/pkg/model/core"
+	model_starlark "github.com/buildbarn/bonanza/pkg/model/starlark"
+	model_analysis_pb "github.com/buildbarn/bonanza/pkg/proto/model/analysis"
+	model_starlark_pb "github.com/buildbarn/bonanza/pkg/proto/model/starlark"
+	pg_starlark "github.com/buildbarn/bonanza/pkg/starlark"
+	"github.com/buildbarn/bonanza/pkg/storage/dag"
 )
 
 func (c *baseComputer) ComputeModulesWithRemoteOverridesValue(ctx context.Context, key *model_analysis_pb.ModulesWithRemoteOverrides_Key, e ModulesWithRemoteOverridesEnvironment) (PatchedModulesWithRemoteOverridesValue, error) {

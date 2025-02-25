@@ -1,0 +1,65 @@
+syntax = "proto3";
+
+package bonanza.configuration.bonanza_storage_frontend;
+
+import "pkg/proto/configuration/global/global.proto";
+import "pkg/proto/configuration/grpc/grpc.proto";
+import "pkg/proto/storage/object/object.proto";
+
+option go_package = "github.com/buildbarn/bonanza/pkg/proto/configuration/bonanza_storage_frontend";
+
+message ApplicationConfiguration {
+  // Common configuration options that apply to all Buildbarn binaries.
+  buildbarn.configuration.global.Configuration global = 1;
+
+  // gRPC servers to spawn to listen for requests from clients.
+  repeated buildbarn.configuration.grpc.ServerConfiguration grpc_servers = 2;
+
+  // The maximum number of concurrent write operations this process
+  // should issue against object storage.
+  int64 object_store_concurrency = 3;
+
+  // The maximum number of DAGs may be uploaded in parallel as part of a
+  // single call to UploadDags().
+  uint32 maximum_unfinalized_dags_count = 4;
+
+  // The maximum number of parent objects and combined total size this
+  // process is willing to keep in memory as part of a single call to
+  // UploadDags().
+  bonanza.storage.object.Limit maximum_unfinalized_parents_limit = 5;
+
+  message Shard {
+    // gRPC client for connecting to the shard.
+    buildbarn.configuration.grpc.ClientConfiguration client = 1;
+
+    // The weight of this shard relative to others. This controls the
+    // size of the part of the key space assigned to this shard. For
+    // example, if all shards have weight 1, each shard is expected to
+    // receive the same number of requests.
+    uint32 weight = 2;
+  }
+
+  // Shards belonging to replica A.
+  //
+  // This process acts as a frontend for bonanza_storage_node
+  // processes. These storage nodes are placed in a mirrored and sharded
+  // configuration. This list can be used to specify all shards
+  // belonging to the first replica of the mirror.
+  //
+  // Each shard is identified by a string. This string is used to
+  // determine which part of the key space is assigned to this shard. By
+  // using rendezvous hashing, additions and removals of shards only
+  // cause minimal changes to how the key space is partitioned. For
+  // example, when growing storage from n to n+1 shards having the same
+  // weight, each existing shard will have 1/(n+1) of its key space
+  // reassigned to the new shard.
+  map<string, Shard> shards_replica_a = 6;
+
+  // Shards belonging to replica B.
+  //
+  // This process acts as a frontend for bonanza_storage_node
+  // processes. These storage nodes are placed in a mirrored and sharded
+  // configuration. This list can be used to specify all shards
+  // belonging to the second replica of the mirror.
+  map<string, Shard> shards_replica_b = 7;
+}

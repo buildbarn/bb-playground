@@ -5,9 +5,9 @@ import (
 	"fmt"
 	"net/url"
 
-	"github.com/buildbarn/bb-playground/pkg/label"
-	"github.com/buildbarn/bb-playground/pkg/starlark/unpack"
 	"github.com/buildbarn/bb-storage/pkg/filesystem/path"
+	"github.com/buildbarn/bonanza/pkg/label"
+	"github.com/buildbarn/bonanza/pkg/starlark/unpack"
 
 	"go.starlark.net/starlark"
 )
@@ -121,7 +121,7 @@ func (v *moduleExtensionProxyValue) Truth() starlark.Bool {
 	return starlark.True
 }
 
-func (v *moduleExtensionProxyValue) Hash() (uint32, error) {
+func (v *moduleExtensionProxyValue) Hash(thread *starlark.Thread) (uint32, error) {
 	return 0, errors.New("module_extension_proxy cannot be hashed")
 }
 

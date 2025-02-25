@@ -5,7 +5,7 @@ import (
 	"io"
 	"testing"
 
-	"github.com/buildbarn/bb-playground/pkg/bazelclient/arguments"
+	"github.com/buildbarn/bonanza/pkg/bazelclient/arguments"
 	"github.com/stretchr/testify/require"
 )
 

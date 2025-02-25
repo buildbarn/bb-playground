@@ -4,7 +4,7 @@ import (
 	"bytes"
 	"testing"
 
-	"github.com/buildbarn/bb-playground/pkg/search"
+	"github.com/buildbarn/bonanza/pkg/search"
 	"github.com/stretchr/testify/require"
 )
 

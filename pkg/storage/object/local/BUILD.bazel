@@ -6,7 +6,7 @@ go_library(
         "local_lease.go",
         "local_store.go",
     ],
-    importpath = "github.com/buildbarn/bb-playground/pkg/storage/object/local",
+    importpath = "github.com/buildbarn/bonanza/pkg/storage/object/local",
     visibility = ["//visibility:public"],
     deps = [
         "//pkg/encoding/varint",

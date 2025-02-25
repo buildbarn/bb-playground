@@ -18,7 +18,7 @@ go_library(
         "uploader.go",
         "uploader_server.go",
     ],
-    importpath = "github.com/buildbarn/bb-playground/pkg/storage/object",
+    importpath = "github.com/buildbarn/bonanza/pkg/storage/object",
     visibility = ["//visibility:public"],
     deps = [
         "//pkg/encoding/float16",

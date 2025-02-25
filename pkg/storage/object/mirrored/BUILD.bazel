@@ -8,7 +8,7 @@ go_library(
         "mirrored_lease.go",
         "mirrored_uploader.go",
     ],
-    importpath = "github.com/buildbarn/bb-playground/pkg/storage/object/mirrored",
+    importpath = "github.com/buildbarn/bonanza/pkg/storage/object/mirrored",
     visibility = ["//visibility:public"],
     deps = [
         "//pkg/encoding/varint",

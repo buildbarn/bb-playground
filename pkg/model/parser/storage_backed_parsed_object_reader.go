@@ -3,9 +3,9 @@ package parser
 import (
 	"context"
 
-	"github.com/buildbarn/bb-playground/pkg/model/encoding"
-	"github.com/buildbarn/bb-playground/pkg/storage/object"
 	"github.com/buildbarn/bb-storage/pkg/util"
+	"github.com/buildbarn/bonanza/pkg/model/encoding"
+	"github.com/buildbarn/bonanza/pkg/storage/object"
 )
 
 type storageBackedParsedObjectReader[TReference, TParsedObject any] struct {

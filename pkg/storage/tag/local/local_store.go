@@ -3,9 +3,9 @@ package local
 import (
 	"context"
 
-	"github.com/buildbarn/bb-playground/pkg/storage/object"
-	object_local "github.com/buildbarn/bb-playground/pkg/storage/object/local"
-	"github.com/buildbarn/bb-playground/pkg/storage/tag"
+	"github.com/buildbarn/bonanza/pkg/storage/object"
+	object_local "github.com/buildbarn/bonanza/pkg/storage/object/local"
+	"github.com/buildbarn/bonanza/pkg/storage/tag"
 
 	"google.golang.org/protobuf/types/known/anypb"
 )

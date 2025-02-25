@@ -6,7 +6,7 @@ go_library(
         "find_text_fragment_offsets_bytes.go",
         "replace_text_fragments.go",
     ],
-    importpath = "github.com/buildbarn/bb-playground/pkg/diff",
+    importpath = "github.com/buildbarn/bonanza/pkg/diff",
     visibility = ["//visibility:public"],
     deps = ["@com_github_bluekeyes_go_gitdiff//gitdiff"],
 )

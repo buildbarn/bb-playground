@@ -3,7 +3,7 @@ load("@rules_go//go:def.bzl", "go_library")
 go_library(
     name = "sync",
     srcs = ["condition_variable.go"],
-    importpath = "github.com/buildbarn/bb-playground/pkg/sync",
+    importpath = "github.com/buildbarn/bonanza/pkg/sync",
     visibility = ["//visibility:public"],
     deps = ["@com_github_buildbarn_bb_storage//pkg/util"],
 )

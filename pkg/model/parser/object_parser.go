@@ -3,7 +3,7 @@ package parser
 import (
 	"context"
 
-	"github.com/buildbarn/bb-playground/pkg/storage/object"
+	"github.com/buildbarn/bonanza/pkg/storage/object"
 )
 
 type ObjectParser[TReference, TParsedObject any] interface {

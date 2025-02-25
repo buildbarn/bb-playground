@@ -1,0 +1,39 @@
+load("@rules_go//go:def.bzl", "go_binary", "go_library")
+
+go_library(
+    name = "bonanza_storage_frontend_lib",
+    srcs = ["main.go"],
+    importpath = "github.com/buildbarn/bonanza/cmd/bonanza_storage_frontend",
+    visibility = ["//visibility:private"],
+    deps = [
+        "//pkg/proto/configuration/bonanza_storage_frontend",
+        "//pkg/proto/storage/dag",
+        "//pkg/proto/storage/object",
+        "//pkg/proto/storage/tag",
+        "//pkg/storage/dag",
+        "//pkg/storage/object",
+        "//pkg/storage/object/grpc",
+        "//pkg/storage/object/leaserenewing",
+        "//pkg/storage/object/mirrored",
+        "//pkg/storage/object/sharded",
+        "//pkg/storage/tag",
+        "//pkg/storage/tag/grpc",
+        "//pkg/storage/tag/leaserenewing",
+        "//pkg/storage/tag/mirrored",
+        "//pkg/storage/tag/sharded",
+        "@com_github_buildbarn_bb_storage//pkg/global",
+        "@com_github_buildbarn_bb_storage//pkg/grpc",
+        "@com_github_buildbarn_bb_storage//pkg/program",
+        "@com_github_buildbarn_bb_storage//pkg/util",
+        "@org_golang_google_grpc//:grpc",
+        "@org_golang_google_grpc//codes",
+        "@org_golang_google_grpc//status",
+        "@org_golang_x_sync//semaphore",
+    ],
+)
+
+go_binary(
+    name = "bonanza_storage_frontend",
+    embed = [":bonanza_storage_frontend_lib"],
+    visibility = ["//visibility:public"],
+)

@@ -7,7 +7,7 @@ go_library(
         "mirrored_resolver.go",
         "mirrored_updater.go",
     ],
-    importpath = "github.com/buildbarn/bb-playground/pkg/storage/tag/mirrored",
+    importpath = "github.com/buildbarn/bonanza/pkg/storage/tag/mirrored",
     visibility = ["//visibility:public"],
     deps = [
         "//pkg/storage/object",

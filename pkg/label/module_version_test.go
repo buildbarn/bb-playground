@@ -3,7 +3,7 @@ package label_test
 import (
 	"testing"
 
-	"github.com/buildbarn/bb-playground/pkg/label"
+	"github.com/buildbarn/bonanza/pkg/label"
 	"github.com/stretchr/testify/assert"
 )
 

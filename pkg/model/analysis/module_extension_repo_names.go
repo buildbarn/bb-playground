@@ -4,14 +4,14 @@ import (
 	"context"
 	"errors"
 
-	"github.com/buildbarn/bb-playground/pkg/evaluation"
-	model_core "github.com/buildbarn/bb-playground/pkg/model/core"
-	"github.com/buildbarn/bb-playground/pkg/model/core/btree"
-	model_parser "github.com/buildbarn/bb-playground/pkg/model/parser"
-	model_analysis_pb "github.com/buildbarn/bb-playground/pkg/proto/model/analysis"
-	model_core_pb "github.com/buildbarn/bb-playground/pkg/proto/model/core"
-	"github.com/buildbarn/bb-playground/pkg/storage/dag"
-	"github.com/buildbarn/bb-playground/pkg/storage/object"
+	"github.com/buildbarn/bonanza/pkg/evaluation"
+	model_core "github.com/buildbarn/bonanza/pkg/model/core"
+	"github.com/buildbarn/bonanza/pkg/model/core/btree"
+	model_parser "github.com/buildbarn/bonanza/pkg/model/parser"
+	model_analysis_pb "github.com/buildbarn/bonanza/pkg/proto/model/analysis"
+	model_core_pb "github.com/buildbarn/bonanza/pkg/proto/model/core"
+	"github.com/buildbarn/bonanza/pkg/storage/dag"
+	"github.com/buildbarn/bonanza/pkg/storage/object"
 )
 
 func (c *baseComputer) ComputeModuleExtensionRepoNamesValue(ctx context.Context, key *model_analysis_pb.ModuleExtensionRepoNames_Key, e ModuleExtensionRepoNamesEnvironment) (PatchedModuleExtensionRepoNamesValue, error) {
@@ -35,11 +35,11 @@ func (c *baseComputer) ComputeModuleExtensionRepoNamesValue(ctx context.Context,
 			Message:            moduleExtensionReposValue.Message.Repos,
 			OutgoingReferences: moduleExtensionReposValue.OutgoingReferences,
 		},
-		func(entry *model_analysis_pb.ModuleExtensionRepos_Value_Repo) *model_core_pb.Reference {
-			if parent, ok := entry.Level.(*model_analysis_pb.ModuleExtensionRepos_Value_Repo_Parent_); ok {
-				return parent.Parent.Reference
+		func(entry model_core.Message[*model_analysis_pb.ModuleExtensionRepos_Value_Repo]) (*model_core_pb.Reference, error) {
+			if parent, ok := entry.Message.Level.(*model_analysis_pb.ModuleExtensionRepos_Value_Repo_Parent_); ok {
+				return parent.Parent.Reference, nil
 			}
-			return nil
+			return nil, nil
 		},
 		&errIter,
 	) {

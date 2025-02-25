@@ -14,30 +14,30 @@ source "${RUNFILES_DIR:-/dev/null}/$f" 2>/dev/null || \
 
 set -eu
 
-export STATE_PATH="${HOME}/playground_demo"
-mkdir -p "${STATE_PATH}/playground_builder_cache"
-rm -rf "${STATE_PATH}/playground_builder_filepool"
-mkdir -p "${STATE_PATH}/playground_builder_filepool"
-umount "${STATE_PATH}/playground_worker_mount" || true
-mkdir -p "${STATE_PATH}/playground_worker_mount" || true
+export STATE_PATH="${HOME}/bonanza_demo"
+mkdir -p "${STATE_PATH}/bonanza_builder_cache"
+rm -rf "${STATE_PATH}/bonanza_builder_filepool"
+mkdir -p "${STATE_PATH}/bonanza_builder_filepool"
+umount "${STATE_PATH}/bonanza_worker_mount" || true
+mkdir -p "${STATE_PATH}/bonanza_worker_mount" || true
 
 for replica in a b; do
   for shard in 0 1 2 3; do
     REPLICA="${replica}" SHARD="${shard}" \
-    "$(rlocation com_github_buildbarn_bb_playground/cmd/playground_storage_shard/playground_storage_shard_/playground_storage_shard)" \
-        "$(rlocation com_github_buildbarn_bb_playground/deployments/demo/playground_storage_shard.jsonnet)" &
+    "$(rlocation com_github_buildbarn_bonanza/cmd/bonanza_storage_shard/bonanza_storage_shard_/bonanza_storage_shard)" \
+        "$(rlocation com_github_buildbarn_bonanza/deployments/demo/bonanza_storage_shard.jsonnet)" &
   done
 done
 
-"$(rlocation com_github_buildbarn_bb_playground/cmd/playground_storage_frontend/playground_storage_frontend_/playground_storage_frontend)" \
-    "$(rlocation com_github_buildbarn_bb_playground/deployments/demo/playground_storage_frontend.jsonnet)" &
-"$(rlocation com_github_buildbarn_bb_playground/cmd/playground_builder/playground_builder_/playground_builder)" \
-    "$(rlocation com_github_buildbarn_bb_playground/deployments/demo/playground_builder.jsonnet)" &
-"$(rlocation com_github_buildbarn_bb_playground/cmd/playground_scheduler/playground_scheduler_/playground_scheduler)" \
-    "$(rlocation com_github_buildbarn_bb_playground/deployments/demo/playground_scheduler.jsonnet)" &
-"$(rlocation com_github_buildbarn_bb_playground/cmd/playground_worker/playground_worker_/playground_worker)" \
-    "$(rlocation com_github_buildbarn_bb_playground/deployments/demo/playground_worker.jsonnet)" &
+"$(rlocation com_github_buildbarn_bonanza/cmd/bonanza_storage_frontend/bonanza_storage_frontend_/bonanza_storage_frontend)" \
+    "$(rlocation com_github_buildbarn_bonanza/deployments/demo/bonanza_storage_frontend.jsonnet)" &
+"$(rlocation com_github_buildbarn_bonanza/cmd/bonanza_builder/bonanza_builder_/bonanza_builder)" \
+    "$(rlocation com_github_buildbarn_bonanza/deployments/demo/bonanza_builder.jsonnet)" &
+"$(rlocation com_github_buildbarn_bonanza/cmd/bonanza_scheduler/bonanza_scheduler_/bonanza_scheduler)" \
+    "$(rlocation com_github_buildbarn_bonanza/deployments/demo/bonanza_scheduler.jsonnet)" &
+"$(rlocation com_github_buildbarn_bonanza/cmd/bonanza_worker/bonanza_worker_/bonanza_worker)" \
+    "$(rlocation com_github_buildbarn_bonanza/deployments/demo/bonanza_worker.jsonnet)" &
 "$(rlocation com_github_buildbarn_bb_remote_execution/cmd/bb_runner/bb_runner_/bb_runner)" \
-    "$(rlocation com_github_buildbarn_bb_playground/deployments/demo/bb_runner.jsonnet)" &
+    "$(rlocation com_github_buildbarn_bonanza/deployments/demo/bb_runner.jsonnet)" &
 
 wait

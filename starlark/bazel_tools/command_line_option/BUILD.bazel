@@ -42,6 +42,12 @@ label_flag(
     visibility = ["//visibility:public"],
 )
 
+label_flag(
+    name = "custom_malloc",
+    build_setting_default = None,
+    visibility = ["//visibility:public"],
+)
+
 string_list_flag(
     name = "cxxopt",
     build_setting_default = [],
@@ -62,6 +68,12 @@ string_flag(
 bool_flag(
     name = "experimental_cc_implementation_deps",
     build_setting_default = True,
+    visibility = ["//visibility:public"],
+)
+
+bool_flag(
+    name = "experimental_generate_llvm_lcov",
+    build_setting_default = False,
     visibility = ["//visibility:public"],
 )
 
@@ -115,6 +127,12 @@ label_flag(
 
 bool_flag(
     name = "incompatible_macos_set_install_name",
+    build_setting_default = True,
+    visibility = ["//visibility:public"],
+)
+
+bool_flag(
+    name = "incompatible_use_specific_tool_files",
     build_setting_default = True,
     visibility = ["//visibility:public"],
 )
@@ -185,9 +203,32 @@ label_flag(
     visibility = ["//visibility:public"],
 )
 
+string_list_flag(
+    name = "protocopt",
+    build_setting_default = [],
+    visibility = ["//visibility:public"],
+)
+
 label_flag(
     name = "proto_profile_path",
     build_setting_default = None,
+    visibility = ["//visibility:public"],
+)
+
+string_flag(
+    name = "strip",
+    build_setting_default = "sometimes",
+    values = [
+        "always",
+        "never",
+        "sometimes",
+    ],
+    visibility = ["//visibility:public"],
+)
+
+string_list_flag(
+    name = "stripopt",
+    build_setting_default = [],
     visibility = ["//visibility:public"],
 )
 

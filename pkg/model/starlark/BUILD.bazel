@@ -14,6 +14,7 @@ go_library(
         "exec_group.go",
         "file.go",
         "label.go",
+        "list.go",
         "module_extension.go",
         "named_function.go",
         "named_global.go",
@@ -35,7 +36,7 @@ go_library(
         "transition.go",
         "visit_labels.go",
     ],
-    importpath = "github.com/buildbarn/bb-playground/pkg/model/starlark",
+    importpath = "github.com/buildbarn/bonanza/pkg/model/starlark",
     visibility = ["//visibility:public"],
     deps = [
         "//pkg/label",

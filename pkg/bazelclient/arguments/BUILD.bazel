@@ -19,7 +19,7 @@ go_library(
         "parse_bazel_rc_files.go",
         "parse_command_and_arguments.go",
     ],
-    importpath = "github.com/buildbarn/bb-playground/pkg/bazelclient/arguments",
+    importpath = "github.com/buildbarn/bonanza/pkg/bazelclient/arguments",
     visibility = ["//visibility:public"],
     deps = [
         "@com_github_buildbarn_bb_storage//pkg/filesystem",

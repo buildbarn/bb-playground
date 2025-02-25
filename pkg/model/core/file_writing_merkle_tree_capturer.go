@@ -10,8 +10,8 @@ import (
 	"sync"
 	"sync/atomic"
 
-	"github.com/buildbarn/bb-playground/pkg/storage/dag"
-	"github.com/buildbarn/bb-playground/pkg/storage/object"
+	"github.com/buildbarn/bonanza/pkg/storage/dag"
+	"github.com/buildbarn/bonanza/pkg/storage/object"
 )
 
 // FileWritingMerkleTreeCapturer is capable of sequentially writing the

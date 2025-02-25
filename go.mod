@@ -1,4 +1,4 @@
-module github.com/buildbarn/bb-playground
+module github.com/buildbarn/bonanza
 
 go 1.23.0
 

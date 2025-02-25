@@ -119,7 +119,7 @@ var commonFlags = []flag{
 	},
 	{
 		longName:    "remote_cache",
-		description: "A URI of a playground_storage_frontend endpoint. The supported schemas are grpc, grpcs (grpc with TLS enabled) and unix (local UNIX sockets). Specify grpc:// or unix: schema to disable TLS.",
+		description: "A URI of a bonanza_storage_frontend endpoint. The supported schemas are grpc, grpcs (grpc with TLS enabled) and unix (local UNIX sockets). Specify grpc:// or unix: schema to disable TLS.",
 		flagType:    stringFlagType{},
 	},
 	{
@@ -136,7 +136,7 @@ var commonFlags = []flag{
 	},
 	{
 		longName:    "remote_executor",
-		description: "A URI of a playground_blabla endpoint endpoint. The supported schemas are grpc, grpcs (grpc with TLS enabled) and unix (local UNIX sockets). Specify grpc:// or unix: schema to disable TLS.",
+		description: "A URI of a bonanza_blabla endpoint endpoint. The supported schemas are grpc, grpcs (grpc with TLS enabled) and unix (local UNIX sockets). Specify grpc:// or unix: schema to disable TLS.",
 		flagType:    stringFlagType{},
 	},
 	{

@@ -3,8 +3,8 @@ package starlark
 import (
 	"fmt"
 
-	model_starlark_pb "github.com/buildbarn/bb-playground/pkg/proto/model/starlark"
-	"github.com/buildbarn/bb-playground/pkg/starlark/unpack"
+	model_starlark_pb "github.com/buildbarn/bonanza/pkg/proto/model/starlark"
+	"github.com/buildbarn/bonanza/pkg/starlark/unpack"
 
 	"google.golang.org/protobuf/types/known/emptypb"
 
@@ -39,7 +39,7 @@ func (bs *BuildSetting) Truth() starlark.Bool {
 	return starlark.True
 }
 
-func (bs *BuildSetting) Hash() (uint32, error) {
+func (bs *BuildSetting) Hash(thread *starlark.Thread) (uint32, error) {
 	return 0, fmt.Errorf("config.%s cannot be hashed", bs.buildSettingType.Type())
 }
 

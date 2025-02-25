@@ -10,7 +10,7 @@ import (
 	"testing"
 
 	"github.com/bluekeyes/go-gitdiff/gitdiff"
-	"github.com/buildbarn/bb-playground/pkg/diff"
+	"github.com/buildbarn/bonanza/pkg/diff"
 	"github.com/stretchr/testify/require"
 )
 

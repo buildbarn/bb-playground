@@ -1,6 +1,6 @@
 syntax = "proto3";
 
-package buildbarn.playground.remoteworker;
+package bonanza.remoteworker;
 
 import "google/protobuf/any.proto";
 import "google/protobuf/duration.proto";
@@ -9,7 +9,7 @@ import "google/protobuf/timestamp.proto";
 import "google/rpc/status.proto";
 import "pkg/proto/remoteexecution/remoteexecution.proto";
 
-option go_package = "github.com/buildbarn/bb-playground/pkg/proto/remoteworker";
+option go_package = "github.com/buildbarn/bonanza/pkg/proto/remoteworker";
 
 // Buildbarn's workers connect to the scheduler to receive instructions
 // on what they should be doing. They can either be instructed to be
@@ -115,7 +115,7 @@ message CurrentState {
 
     // Event to report to the client, indicating the current state of
     // execution.
-    buildbarn.playground.remoteexecution.ExecutionEvent event = 2;
+    bonanza.remoteexecution.ExecutionEvent event = 2;
   }
 
   message Completed {
@@ -130,7 +130,7 @@ message CurrentState {
     // provided timeout or the worker does not belong to the largest
     // size class, as that would allow the scheduler to return an
     // erroneous failure to the client.
-    buildbarn.playground.remoteexecution.ExecutionEvent event = 2;
+    bonanza.remoteexecution.ExecutionEvent event = 2;
 
     // The amount of time the worker spent executing the action command,
     // potentially computed using a worker-specific virtual clock.
@@ -224,7 +224,7 @@ message DesiredState {
     // Addressable Storage, the scheduler also needs to access this
     // information. It is passed on to prevent duplicate requests
     // against storage.
-    buildbarn.playground.remoteexecution.Action action = 2;
+    bonanza.remoteexecution.Action action = 2;
 
     google.protobuf.Duration effective_execution_timeout = 3;
 

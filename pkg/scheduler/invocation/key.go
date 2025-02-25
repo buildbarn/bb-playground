@@ -3,8 +3,8 @@ package invocation
 import (
 	"fmt"
 
-	buildqueuestate_pb "github.com/buildbarn/bb-playground/pkg/proto/buildqueuestate"
 	"github.com/buildbarn/bb-storage/pkg/util"
+	buildqueuestate_pb "github.com/buildbarn/bonanza/pkg/proto/buildqueuestate"
 
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"

@@ -3,8 +3,8 @@ package initialsizeclass
 import (
 	"time"
 
-	remoteexecution_pb "github.com/buildbarn/bb-playground/pkg/proto/remoteexecution"
 	"github.com/buildbarn/bb-storage/pkg/util"
+	remoteexecution_pb "github.com/buildbarn/bonanza/pkg/proto/remoteexecution"
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"

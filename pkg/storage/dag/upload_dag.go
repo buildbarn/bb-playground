@@ -5,11 +5,11 @@ import (
 	"io"
 	"sync"
 
-	dag_pb "github.com/buildbarn/bb-playground/pkg/proto/storage/dag"
-	"github.com/buildbarn/bb-playground/pkg/storage/object"
-	pg_sync "github.com/buildbarn/bb-playground/pkg/sync"
 	"github.com/buildbarn/bb-storage/pkg/program"
 	"github.com/buildbarn/bb-storage/pkg/util"
+	dag_pb "github.com/buildbarn/bonanza/pkg/proto/storage/dag"
+	"github.com/buildbarn/bonanza/pkg/storage/object"
+	pg_sync "github.com/buildbarn/bonanza/pkg/sync"
 
 	"golang.org/x/sync/semaphore"
 	"google.golang.org/grpc/codes"

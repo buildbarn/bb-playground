@@ -1,7 +1,7 @@
 package encoding
 
 import (
-	"github.com/buildbarn/bb-playground/pkg/compress/simplelzw"
+	"github.com/buildbarn/bonanza/pkg/compress/simplelzw"
 )
 
 type lzwCompressingBinaryEncoder struct {

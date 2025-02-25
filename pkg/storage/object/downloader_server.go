@@ -3,8 +3,8 @@ package object
 import (
 	"context"
 
-	"github.com/buildbarn/bb-playground/pkg/proto/storage/object"
 	"github.com/buildbarn/bb-storage/pkg/util"
+	"github.com/buildbarn/bonanza/pkg/proto/storage/object"
 )
 
 type downloaderServer struct {

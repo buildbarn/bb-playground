@@ -8,11 +8,11 @@ import (
 	"sort"
 	"unicode/utf8"
 
-	pg_label "github.com/buildbarn/bb-playground/pkg/label"
-	model_core "github.com/buildbarn/bb-playground/pkg/model/core"
-	model_starlark_pb "github.com/buildbarn/bb-playground/pkg/proto/model/starlark"
-	"github.com/buildbarn/bb-playground/pkg/starlark/unpack"
-	"github.com/buildbarn/bb-playground/pkg/storage/dag"
+	pg_label "github.com/buildbarn/bonanza/pkg/label"
+	model_core "github.com/buildbarn/bonanza/pkg/model/core"
+	model_starlark_pb "github.com/buildbarn/bonanza/pkg/proto/model/starlark"
+	"github.com/buildbarn/bonanza/pkg/starlark/unpack"
+	"github.com/buildbarn/bonanza/pkg/storage/dag"
 
 	"go.starlark.net/lib/json"
 	"go.starlark.net/starlark"
@@ -555,7 +555,7 @@ func init() {
 						return nil, err
 					}
 
-					return NewAttr(OutputAttrType, nil), nil
+					return NewAttr(NewOutputAttrType(""), nil), nil
 				},
 			),
 			"output_list": starlark.NewBuiltin(
@@ -983,7 +983,7 @@ func init() {
 				default:
 					return nil, fmt.Errorf("unknown order %#v", order)
 				}
-				return NewDepset(direct, transitive, orderValue)
+				return NewDepset(thread, direct, transitive, orderValue)
 			},
 		),
 		"exec_group": starlark.NewBuiltin(
@@ -1092,12 +1092,13 @@ func init() {
 					}
 					patcher.Merge(actualGroups.Patcher)
 
-					actual.VisitLabels(thread, map[starlark.Value]struct{}{}, func(l pg_label.ResolvedLabel) {
+					actual.VisitLabels(thread, map[starlark.Value]struct{}{}, func(l pg_label.ResolvedLabel) error {
 						if canonicalLabel, err := l.AsCanonical(); err == nil {
 							if canonicalLabel.GetCanonicalPackage() == currentPackage {
 								targetRegistrar.registerImplicitTarget(l.GetTargetName().String())
 							}
 						}
+						return nil
 					})
 
 					return starlark.None, targetRegistrar.registerExplicitTarget(
@@ -1400,7 +1401,7 @@ func init() {
 				var fragments []string
 				var hostFragments []string
 				var initializer *NamedFunction
-				outputs := map[string]string{}
+				outputs := map[pg_label.StarlarkIdentifier]string{}
 				var provides []*Provider
 				var subrules []*Subrule
 				test := false
@@ -1420,7 +1421,7 @@ func init() {
 					"fragments?", unpack.Bind(thread, &fragments, unpack.List(unpack.String)),
 					"host_fragments?", unpack.Bind(thread, &hostFragments, unpack.List(unpack.String)),
 					"initializer?", unpack.Bind(thread, &initializer, unpack.IfNotNone(unpack.Pointer(NamedFunctionUnpackerInto))),
-					"outputs?", unpack.Bind(thread, &outputs, unpack.Dict(unpack.String, unpack.String)),
+					"outputs?", unpack.Bind(thread, &outputs, unpack.Dict(unpack.StarlarkIdentifier, unpack.String)),
 					"provides?", unpack.Bind(thread, &provides, unpack.List(unpack.Type[*Provider]("provider"))),
 					"subrules?", unpack.Bind(thread, &subrules, unpack.List(unpack.Type[*Subrule]("subrule"))),
 					"test?", unpack.Bind(thread, &test, unpack.Bool),
@@ -1433,6 +1434,16 @@ func init() {
 					return nil, errors.New("cannot explicitly declare exec_group with name \"\"")
 				}
 				execGroups[""] = NewExecGroup(execCompatibleWith, toolchains)
+
+				// Convert predeclared outputs to
+				// attr.output(), with the filename
+				// template as the attr's default value.
+				for name, template := range outputs {
+					if _, ok := attrs[name]; ok {
+						return nil, fmt.Errorf("predeclared output %#v has the same name as existing attr", name)
+					}
+					attrs[name] = NewAttr(NewOutputAttrType(template), starlark.String(template))
+				}
 
 				return NewRule(nil, NewStarlarkRuleDefinition(
 					attrs,

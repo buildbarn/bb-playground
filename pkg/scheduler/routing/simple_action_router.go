@@ -3,10 +3,10 @@ package routing
 import (
 	"context"
 
-	remoteexecution_pb "github.com/buildbarn/bb-playground/pkg/proto/remoteexecution"
-	"github.com/buildbarn/bb-playground/pkg/scheduler/initialsizeclass"
-	"github.com/buildbarn/bb-playground/pkg/scheduler/invocation"
 	"github.com/buildbarn/bb-storage/pkg/util"
+	remoteexecution_pb "github.com/buildbarn/bonanza/pkg/proto/remoteexecution"
+	"github.com/buildbarn/bonanza/pkg/scheduler/initialsizeclass"
+	"github.com/buildbarn/bonanza/pkg/scheduler/invocation"
 )
 
 type simpleActionRouter struct {

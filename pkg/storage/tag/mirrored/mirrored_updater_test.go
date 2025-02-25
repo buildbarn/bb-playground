@@ -4,10 +4,10 @@ import (
 	"context"
 	"testing"
 
-	"github.com/buildbarn/bb-playground/pkg/storage/object"
-	object_mirrored "github.com/buildbarn/bb-playground/pkg/storage/object/mirrored"
-	tag_mirrored "github.com/buildbarn/bb-playground/pkg/storage/tag/mirrored"
 	"github.com/buildbarn/bb-storage/pkg/testutil"
+	"github.com/buildbarn/bonanza/pkg/storage/object"
+	object_mirrored "github.com/buildbarn/bonanza/pkg/storage/object/mirrored"
+	tag_mirrored "github.com/buildbarn/bonanza/pkg/storage/tag/mirrored"
 	"github.com/stretchr/testify/require"
 
 	"google.golang.org/grpc/codes"

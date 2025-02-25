@@ -19,7 +19,7 @@ go_library(
         "starlark_identifier.go",
         "target_name.go",
     ],
-    importpath = "github.com/buildbarn/bb-playground/pkg/label",
+    importpath = "github.com/buildbarn/bonanza/pkg/label",
     visibility = ["//visibility:public"],
 )
 

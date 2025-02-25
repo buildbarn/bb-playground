@@ -4,7 +4,7 @@ import (
 	"math/rand/v2"
 	"testing"
 
-	"github.com/buildbarn/bb-playground/pkg/encoding/float16"
+	"github.com/buildbarn/bonanza/pkg/encoding/float16"
 	"github.com/stretchr/testify/require"
 )
 

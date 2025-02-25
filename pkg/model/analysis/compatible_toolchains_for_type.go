@@ -6,17 +6,17 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/buildbarn/bb-playground/pkg/evaluation"
-	"github.com/buildbarn/bb-playground/pkg/label"
-	model_core "github.com/buildbarn/bb-playground/pkg/model/core"
-	"github.com/buildbarn/bb-playground/pkg/model/core/btree"
-	model_parser "github.com/buildbarn/bb-playground/pkg/model/parser"
-	model_starlark "github.com/buildbarn/bb-playground/pkg/model/starlark"
-	model_analysis_pb "github.com/buildbarn/bb-playground/pkg/proto/model/analysis"
-	model_core_pb "github.com/buildbarn/bb-playground/pkg/proto/model/core"
-	model_starlark_pb "github.com/buildbarn/bb-playground/pkg/proto/model/starlark"
-	"github.com/buildbarn/bb-playground/pkg/storage/dag"
-	"github.com/buildbarn/bb-playground/pkg/storage/object"
+	"github.com/buildbarn/bonanza/pkg/evaluation"
+	"github.com/buildbarn/bonanza/pkg/label"
+	model_core "github.com/buildbarn/bonanza/pkg/model/core"
+	"github.com/buildbarn/bonanza/pkg/model/core/btree"
+	model_parser "github.com/buildbarn/bonanza/pkg/model/parser"
+	model_starlark "github.com/buildbarn/bonanza/pkg/model/starlark"
+	model_analysis_pb "github.com/buildbarn/bonanza/pkg/proto/model/analysis"
+	model_core_pb "github.com/buildbarn/bonanza/pkg/proto/model/core"
+	model_starlark_pb "github.com/buildbarn/bonanza/pkg/proto/model/starlark"
+	"github.com/buildbarn/bonanza/pkg/storage/dag"
+	"github.com/buildbarn/bonanza/pkg/storage/object"
 )
 
 func (c *baseComputer) getConfigurationByReference(ctx context.Context, configurationReference model_core.Message[*model_core_pb.Reference]) (model_core.Message[*model_analysis_pb.Configuration], error) {

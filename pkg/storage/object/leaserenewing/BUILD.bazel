@@ -4,7 +4,7 @@ load("@rules_go//go:def.bzl", "go_library", "go_test")
 go_library(
     name = "leaserenewing",
     srcs = ["lease_renewing_uploader.go"],
-    importpath = "github.com/buildbarn/bb-playground/pkg/storage/object/leaserenewing",
+    importpath = "github.com/buildbarn/bonanza/pkg/storage/object/leaserenewing",
     visibility = ["//visibility:public"],
     deps = [
         "//pkg/ds",

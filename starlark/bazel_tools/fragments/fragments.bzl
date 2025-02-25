@@ -47,25 +47,36 @@ def _cpp_fragment_impl(ctx):
         True if fission == "yes" else False if fission == "no" else compilation_mode in fission.split(",")
     )
     force_pic = ctx.attr._force_pic[BuildSettingInfo].value
+    generate_llvm_lcov = ctx.attr._generate_llvm_lcov[BuildSettingInfo].value
     grte_top = ctx.attr._grte_top.label if ctx.attr._grte_top else None
     minimum_os_version = ctx.attr._minimum_os_version[BuildSettingInfo].value
     process_headers_in_dependencies = ctx.attr._process_headers_in_dependencies[BuildSettingInfo].value
     save_feature_state = ctx.attr._save_feature_state[BuildSettingInfo].value
+    strip = ctx.attr._strip[BuildSettingInfo].value
+    stripopt = ctx.attr._strip[BuildSettingInfo].value
+    should_strip_binaries = strip == "always" or (strip == "sometimes" and compilation_mode == "fastbuild")
+    use_specific_tool_files = ctx.attr._use_specific_tool_files[BuildSettingInfo].value
     return [FragmentInfo(
         compilation_mode = lambda: compilation_mode,
         conlyopts = ctx.attr._conlyopt[BuildSettingInfo].value,
         copts = ctx.attr._copt[BuildSettingInfo].value,
+        custom_malloc = ctx.attr._custom_malloc[BuildSettingInfo].value if ctx.attr._custom_malloc else None,
         cxxopts = ctx.attr._cxxopt[BuildSettingInfo].value,
         do_not_use_macos_set_install_name = ctx.attr._macos_set_install_name[BuildSettingInfo].value,
         dynamic_mode = lambda: dynamic_mode,
         experimental_cc_implementation_deps = lambda: experimental_cc_implementation_deps,
+        experimental_starlark_linking = lambda: True,
         fission_active_for_current_compilation_mode = lambda: fission_active_for_current_compilation_mode,
         force_pic = lambda: force_pic,
+        generate_llvm_lcov = lambda: generate_llvm_lcov,
         grte_top = lambda: grte_top,
         linkopts = ctx.attr._linkopt[BuildSettingInfo].value,
         minimum_os_version = lambda: minimum_os_version,
         process_headers_in_dependencies = lambda: process_headers_in_dependencies,
         save_feature_state = lambda: save_feature_state,
+        should_strip_binaries = lambda: should_strip_binaries,
+        strip_opts = lambda: stripopt,
+        incompatible_use_specific_tool_files = lambda: use_specific_tool_files,
     )]
 
 cpp_fragment = rule(
@@ -75,15 +86,32 @@ cpp_fragment = rule(
         "_compilation_mode": attr.label(default = "//command_line_option:compilation_mode"),
         "_conlyopt": attr.label(default = "//command_line_option:conlyopt"),
         "_copt": attr.label(default = "//command_line_option:copt"),
+        "_custom_malloc": attr.label(default = "//command_line_option:custom_malloc"),
         "_cxxopt": attr.label(default = "//command_line_option:cxxopt"),
         "_dynamic_mode": attr.label(default = "//command_line_option:dynamic_mode"),
         "_fission": attr.label(default = "//command_line_option:fission"),
         "_force_pic": attr.label(default = "//command_line_option:force_pic"),
+        "_generate_llvm_lcov": attr.label(default = "//command_line_option:experimental_generate_llvm_lcov"),
         "_grte_top": attr.label(default = "//command_line_option:grte_top"),
         "_linkopt": attr.label(default = "//command_line_option:linkopt"),
         "_process_headers_in_dependencies": attr.label(default = "//command_line_option:process_headers_in_dependencies"),
         "_macos_set_install_name": attr.label(default = "//command_line_option:incompatible_macos_set_install_name"),
         "_minimum_os_version": attr.label(default = "//command_line_option:minimum_os_version"),
         "_save_feature_state": attr.label(default = "//command_line_option:experimental_save_feature_state"),
+        "_strip": attr.label(default = "//command_line_option:strip"),
+        "_stripopt": attr.label(default = "//command_line_option:stripopt"),
+        "_use_specific_tool_files": attr.label(default = "//command_line_option:incompatible_use_specific_tool_files"),
+    },
+)
+
+def _proto_fragment_impl(ctx):
+    return [FragmentInfo(
+        experimental_protoc_opts = ctx.attr._protocopt[BuildSettingInfo].value,
+    )]
+
+proto_fragment = rule(
+    _proto_fragment_impl,
+    attrs = {
+        "_protocopt": attr.label(default = "//command_line_option:protocopt"),
     },
 )

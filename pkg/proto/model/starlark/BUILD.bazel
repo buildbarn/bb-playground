@@ -14,7 +14,7 @@ proto_library(
 
 go_proto_library(
     name = "starlark_go_proto",
-    importpath = "github.com/buildbarn/bb-playground/pkg/proto/model/starlark",
+    importpath = "github.com/buildbarn/bonanza/pkg/proto/model/starlark",
     proto = ":starlark_proto",
     visibility = ["//visibility:public"],
     deps = ["//pkg/proto/model/core"],
@@ -23,6 +23,6 @@ go_proto_library(
 go_library(
     name = "starlark",
     embed = [":starlark_go_proto"],
-    importpath = "github.com/buildbarn/bb-playground/pkg/proto/model/starlark",
+    importpath = "github.com/buildbarn/bonanza/pkg/proto/model/starlark",
     visibility = ["//visibility:public"],
 )

@@ -14,14 +14,14 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/buildbarn/bb-playground/pkg/ds"
-	remoteexecution_pb "github.com/buildbarn/bb-playground/pkg/proto/remoteexecution"
-	remoteworker_pb "github.com/buildbarn/bb-playground/pkg/proto/remoteworker"
 	"github.com/buildbarn/bb-storage/pkg/clock"
 	"github.com/buildbarn/bb-storage/pkg/otel"
 	"github.com/buildbarn/bb-storage/pkg/program"
 	"github.com/buildbarn/bb-storage/pkg/random"
 	"github.com/buildbarn/bb-storage/pkg/util"
+	"github.com/buildbarn/bonanza/pkg/ds"
+	remoteexecution_pb "github.com/buildbarn/bonanza/pkg/proto/remoteexecution"
+	remoteworker_pb "github.com/buildbarn/bonanza/pkg/proto/remoteworker"
 	"github.com/secure-io/siv-go"
 
 	"google.golang.org/grpc/codes"

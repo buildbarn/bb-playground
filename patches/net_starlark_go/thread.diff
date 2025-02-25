@@ -21,7 +21,7 @@ index bc67be5..a75e484 100644
  					if b != ',' {
  						if b != '}' {
 diff --git lib/proto/proto.go lib/proto/proto.go
-index e8b235d..d1bb743 100644
+index e8b235d..16fc09a 100644
 --- lib/proto/proto.go
 +++ lib/proto/proto.go
 @@ -279,7 +279,7 @@ func setFieldStarlark(thread *starlark.Thread, fn *starlark.Builtin, args starla
@@ -126,7 +126,20 @@ index e8b235d..d1bb743 100644
  			return protoreflect.ValueOfMessage(dest), err
  		}
  
-@@ -742,7 +742,7 @@ func (m *Message) Hash() (h uint32, err error) { return uint32(uintptr(unsafe.Po
+@@ -735,14 +735,16 @@ func (m *Message) String() string {
+ 	return buf.String()
+ }
+ 
+-func (m *Message) Type() string                { return "proto.Message" }
+-func (m *Message) Truth() starlark.Bool        { return true }
+-func (m *Message) Freeze()                     { *m.frozen = true }
+-func (m *Message) Hash() (h uint32, err error) { return uint32(uintptr(unsafe.Pointer(m))), nil } // identity hash
++func (m *Message) Type() string         { return "proto.Message" }
++func (m *Message) Truth() starlark.Bool { return true }
++func (m *Message) Freeze()              { *m.frozen = true }
++func (m *Message) Hash(thread *starlark.Thread) (h uint32, err error) {
++	return uint32(uintptr(unsafe.Pointer(m))), nil
++} // identity hash
  
  // Attr returns the value of this message's field of the specified name.
  // Extension fields are not accessible this way as their names are not unique.
@@ -135,7 +148,7 @@ index e8b235d..d1bb743 100644
  	// The name 'descriptor' is already effectively reserved
  	// by the Go API for generated message types.
  	if name == "descriptor" {
-@@ -826,7 +826,7 @@ func fieldDesc(desc protoreflect.MessageDescriptor, name string) (protoreflect.F
+@@ -826,7 +828,7 @@ func fieldDesc(desc protoreflect.MessageDescriptor, name string) (protoreflect.F
  
  // SetField updates a non-extension field of this message.
  // It implements the HasSetField interface.
@@ -144,7 +157,7 @@ index e8b235d..d1bb743 100644
  	fdesc, err := fieldDesc(m.desc(), name)
  	if err != nil {
  		return err
-@@ -835,7 +835,7 @@ func (m *Message) SetField(name string, v starlark.Value) error {
+@@ -835,7 +837,7 @@ func (m *Message) SetField(name string, v starlark.Value) error {
  		return fmt.Errorf("cannot set .%s field of frozen %s message",
  			name, m.desc().FullName())
  	}
@@ -153,7 +166,7 @@ index e8b235d..d1bb743 100644
  }
  
  // AttrNames returns the set of field names defined for this message.
-@@ -901,14 +901,14 @@ func (rf *RepeatedField) Type() string {
+@@ -901,14 +903,14 @@ func (rf *RepeatedField) Type() string {
  	return fmt.Sprintf("proto.repeated<%s>", typeString(rf.typ))
  }
  
@@ -170,43 +183,103 @@ index e8b235d..d1bb743 100644
  	if err != nil {
  		// The repeated field value cannot know which field it
  		// belongs to---it might be shared by several of the
-@@ -994,7 +994,7 @@ func (f FileDescriptor) Type() string                { return "proto.FileDescrip
- func (f FileDescriptor) Truth() starlark.Bool        { return true }
- func (f FileDescriptor) Freeze()                     {} // immutable
- func (f FileDescriptor) Hash() (h uint32, err error) { return starlark.String(f.Desc.Path()).Hash() }
+@@ -919,8 +921,10 @@ func (rf *RepeatedField) SetIndex(i int, v starlark.Value) error {
+ 	return nil
+ }
+ 
+-func (rf *RepeatedField) Freeze()               { *rf.frozen = true }
+-func (rf *RepeatedField) Hash() (uint32, error) { return 0, fmt.Errorf("unhashable: %s", rf.Type()) }
++func (rf *RepeatedField) Freeze() { *rf.frozen = true }
++func (rf *RepeatedField) Hash(thread *starlark.Thread) (uint32, error) {
++	return 0, fmt.Errorf("unhashable: %s", rf.Type())
++}
+ func (rf *RepeatedField) Index(i int) starlark.Value {
+ 	return toStarlark1(rf.typ, rf.list.Get(i), rf.frozen)
+ }
+@@ -989,12 +993,15 @@ type FileDescriptor struct {
+ 
+ var _ starlark.HasAttrs = FileDescriptor{}
+ 
+-func (f FileDescriptor) String() string              { return string(f.Desc.Path()) }
+-func (f FileDescriptor) Type() string                { return "proto.FileDescriptor" }
+-func (f FileDescriptor) Truth() starlark.Bool        { return true }
+-func (f FileDescriptor) Freeze()                     {} // immutable
+-func (f FileDescriptor) Hash() (h uint32, err error) { return starlark.String(f.Desc.Path()).Hash() }
 -func (f FileDescriptor) Attr(name string) (starlark.Value, error) {
++func (f FileDescriptor) String() string       { return string(f.Desc.Path()) }
++func (f FileDescriptor) Type() string         { return "proto.FileDescriptor" }
++func (f FileDescriptor) Truth() starlark.Bool { return true }
++func (f FileDescriptor) Freeze()              {} // immutable
++func (f FileDescriptor) Hash(thread *starlark.Thread) (h uint32, err error) {
++	return starlark.String(f.Desc.Path()).Hash(thread)
++}
++
 +func (f FileDescriptor) Attr(thread *starlark.Thread, name string) (starlark.Value, error) {
  	if desc := f.Desc.Messages().ByName(protoreflect.Name(name)); desc != nil {
  		return MessageDescriptor{Desc: desc}, nil
  	}
-@@ -1050,7 +1050,7 @@ func (d MessageDescriptor) Freeze()              {} // immutable
- func (d MessageDescriptor) Hash() (h uint32, err error) {
- 	return starlark.String(d.Desc.FullName()).Hash()
+@@ -1047,10 +1054,10 @@ func (d MessageDescriptor) String() string       { return string(d.Desc.FullName
+ func (d MessageDescriptor) Type() string         { return "proto.MessageDescriptor" }
+ func (d MessageDescriptor) Truth() starlark.Bool { return true }
+ func (d MessageDescriptor) Freeze()              {} // immutable
+-func (d MessageDescriptor) Hash() (h uint32, err error) {
+-	return starlark.String(d.Desc.FullName()).Hash()
++func (d MessageDescriptor) Hash(thread *starlark.Thread) (h uint32, err error) {
++	return starlark.String(d.Desc.FullName()).Hash(thread)
  }
 -func (d MessageDescriptor) Attr(name string) (starlark.Value, error) {
 +func (d MessageDescriptor) Attr(thread *starlark.Thread, name string) (starlark.Value, error) {
  	if desc := d.Desc.Messages().ByName(protoreflect.Name(name)); desc != nil {
  		return MessageDescriptor{desc}, nil
  	}
-@@ -1106,7 +1106,7 @@ func (d FieldDescriptor) Freeze()              {} // immutable
- func (d FieldDescriptor) Hash() (h uint32, err error) {
- 	return starlark.String(d.Desc.FullName()).Hash()
+@@ -1103,10 +1110,10 @@ func (d FieldDescriptor) String() string       { return string(d.Desc.FullName()
+ func (d FieldDescriptor) Type() string         { return "proto.FieldDescriptor" }
+ func (d FieldDescriptor) Truth() starlark.Bool { return true }
+ func (d FieldDescriptor) Freeze()              {} // immutable
+-func (d FieldDescriptor) Hash() (h uint32, err error) {
+-	return starlark.String(d.Desc.FullName()).Hash()
++func (d FieldDescriptor) Hash(thread *starlark.Thread) (h uint32, err error) {
++	return starlark.String(d.Desc.FullName()).Hash(thread)
  }
 -func (d FieldDescriptor) Attr(name string) (starlark.Value, error) {
 +func (d FieldDescriptor) Attr(thread *starlark.Thread, name string) (starlark.Value, error) {
  	// TODO(adonovan): expose metadata fields of Desc?
  	return nil, nil
  }
-@@ -1144,7 +1144,7 @@ func (e EnumDescriptor) Type() string                { return "proto.EnumDescrip
- func (e EnumDescriptor) Truth() starlark.Bool        { return true }
- func (e EnumDescriptor) Freeze()                     {}                // immutable
- func (e EnumDescriptor) Hash() (h uint32, err error) { return 0, nil } // TODO(adonovan): number?
+@@ -1139,12 +1146,12 @@ var (
+ 	_ starlark.Callable = EnumDescriptor{}
+ )
+ 
+-func (e EnumDescriptor) String() string              { return string(e.Desc.FullName()) }
+-func (e EnumDescriptor) Type() string                { return "proto.EnumDescriptor" }
+-func (e EnumDescriptor) Truth() starlark.Bool        { return true }
+-func (e EnumDescriptor) Freeze()                     {}                // immutable
+-func (e EnumDescriptor) Hash() (h uint32, err error) { return 0, nil } // TODO(adonovan): number?
 -func (e EnumDescriptor) Attr(name string) (starlark.Value, error) {
++func (e EnumDescriptor) String() string                                     { return string(e.Desc.FullName()) }
++func (e EnumDescriptor) Type() string                                       { return "proto.EnumDescriptor" }
++func (e EnumDescriptor) Truth() starlark.Bool                               { return true }
++func (e EnumDescriptor) Freeze()                                            {}                // immutable
++func (e EnumDescriptor) Hash(thread *starlark.Thread) (h uint32, err error) { return 0, nil } // TODO(adonovan): number?
 +func (e EnumDescriptor) Attr(thread *starlark.Thread, name string) (starlark.Value, error) {
  	if v := e.Desc.Values().ByName(protoreflect.Name(name)); v != nil {
  		return EnumValueDescriptor{v}, nil
  	}
-@@ -1240,7 +1240,7 @@ func (e EnumValueDescriptor) Hash() (h uint32, err error) { return uint32(e.Desc
+@@ -1233,14 +1240,17 @@ func (e EnumValueDescriptor) String() string {
+ 	enum := e.Desc.Parent()
+ 	return string(enum.Name() + "." + e.Desc.Name()) // "Enum.EnumValue"
+ }
+-func (e EnumValueDescriptor) Type() string                { return "proto.EnumValueDescriptor" }
+-func (e EnumValueDescriptor) Truth() starlark.Bool        { return true }
+-func (e EnumValueDescriptor) Freeze()                     {} // immutable
+-func (e EnumValueDescriptor) Hash() (h uint32, err error) { return uint32(e.Desc.Number()), nil }
++func (e EnumValueDescriptor) Type() string         { return "proto.EnumValueDescriptor" }
++func (e EnumValueDescriptor) Truth() starlark.Bool { return true }
++func (e EnumValueDescriptor) Freeze()              {} // immutable
++func (e EnumValueDescriptor) Hash(thread *starlark.Thread) (h uint32, err error) {
++	return uint32(e.Desc.Number()), nil
++}
++
  func (e EnumValueDescriptor) AttrNames() []string {
  	return []string{"index", "name", "number", "type"}
  }
@@ -215,7 +288,7 @@ index e8b235d..d1bb743 100644
  	switch name {
  	case "index":
  		return starlark.MakeInt(e.Desc.Index()), nil
-@@ -1254,7 +1254,8 @@ func (e EnumValueDescriptor) Attr(name string) (starlark.Value, error) {
+@@ -1254,7 +1264,8 @@ func (e EnumValueDescriptor) Attr(name string) (starlark.Value, error) {
  	}
  	return nil, nil
  }
@@ -226,9 +299,18 @@ index e8b235d..d1bb743 100644
  	switch op {
  	case syntax.EQL:
 diff --git lib/time/time.go lib/time/time.go
-index 7dbcf36..e1fe8a7 100644
+index 7dbcf36..64bcbcd 100644
 --- lib/time/time.go
 +++ lib/time/time.go
+@@ -200,7 +200,7 @@ func (d Duration) Freeze() {}
+ 
+ // Hash returns a function of x such that Equals(x, y) => Hash(x) == Hash(y)
+ // required by starlark.Value interface.
+-func (d Duration) Hash() (uint32, error) {
++func (d Duration) Hash(thread *starlark.Thread) (uint32, error) {
+ 	return uint32(d) ^ uint32(int64(d)>>32), nil
+ }
+ 
 @@ -209,7 +209,7 @@ func (d Duration) Truth() starlark.Bool { return d != 0 }
  
  // Attr gets a value for a string attribute, implementing dot expression support
@@ -247,6 +329,15 @@ index 7dbcf36..e1fe8a7 100644
  	x := time.Duration(d)
  
  	switch op {
+@@ -374,7 +374,7 @@ func (t Time) Freeze() {}
+ 
+ // Hash returns a function of x such that Equals(x, y) => Hash(x) == Hash(y)
+ // required by starlark.Value interface.
+-func (t Time) Hash() (uint32, error) {
++func (t Time) Hash(thread *starlark.Thread) (uint32, error) {
+ 	return uint32(time.Time(t).UnixNano()) ^ uint32(int64(time.Time(t).UnixNano())>>32), nil
+ }
+ 
 @@ -384,7 +384,7 @@ func (t Time) Truth() starlark.Bool { return !starlark.Bool(time.Time(t).IsZero(
  
  // Attr gets a value for a string attribute, implementing dot expression support
@@ -266,14 +357,28 @@ index 7dbcf36..e1fe8a7 100644
  
  	switch op {
 diff --git starlark/bench_test.go starlark/bench_test.go
-index 4ff0789..092d2d3 100644
+index 4ff0789..0300150 100644
 --- starlark/bench_test.go
 +++ starlark/bench_test.go
-@@ -82,7 +82,7 @@ func (benchmark) Type() string          { return "benchmark" }
- func (benchmark) String() string        { return "<benchmark>" }
- func (benchmark) Hash() (uint32, error) { return 0, fmt.Errorf("unhashable: benchmark") }
- func (benchmark) AttrNames() []string   { return []string{"n", "restart", "start", "stop"} }
+@@ -76,13 +76,15 @@ type benchmark struct {
+ 	b *testing.B
+ }
+ 
+-func (benchmark) Freeze()               {}
+-func (benchmark) Truth() starlark.Bool  { return true }
+-func (benchmark) Type() string          { return "benchmark" }
+-func (benchmark) String() string        { return "<benchmark>" }
+-func (benchmark) Hash() (uint32, error) { return 0, fmt.Errorf("unhashable: benchmark") }
+-func (benchmark) AttrNames() []string   { return []string{"n", "restart", "start", "stop"} }
 -func (b benchmark) Attr(name string) (starlark.Value, error) {
++func (benchmark) Freeze()              {}
++func (benchmark) Truth() starlark.Bool { return true }
++func (benchmark) Type() string         { return "benchmark" }
++func (benchmark) String() string       { return "<benchmark>" }
++func (benchmark) Hash(thread *starlark.Thread) (uint32, error) {
++	return 0, fmt.Errorf("unhashable: benchmark")
++}
++func (benchmark) AttrNames() []string { return []string{"n", "restart", "start", "stop"} }
 +func (b benchmark) Attr(thread *starlark.Thread, name string) (starlark.Value, error) {
  	switch name {
  	case "n":
@@ -497,9 +602,43 @@ index a4640e4..0681e01 100644
  			} else {
  				return nil, fmt.Errorf("key not found: %s", key)
 diff --git starlark/eval_test.go starlark/eval_test.go
-index 8cb6568..efae9eb 100644
+index 8cb6568..71a9c85 100644
 --- starlark/eval_test.go
 +++ starlark/eval_test.go
+@@ -176,12 +176,12 @@ func TestExecFile(t *testing.T) {
+ // A fib is an iterable value representing the infinite Fibonacci sequence.
+ type fib struct{}
+ 
+-func (t fib) Freeze()                    {}
+-func (t fib) String() string             { return "fib" }
+-func (t fib) Type() string               { return "fib" }
+-func (t fib) Truth() starlark.Bool       { return true }
+-func (t fib) Hash() (uint32, error)      { return 0, fmt.Errorf("fib is unhashable") }
+-func (t fib) Iterate() starlark.Iterator { return &fibIterator{0, 1} }
++func (t fib) Freeze()                                      {}
++func (t fib) String() string                               { return "fib" }
++func (t fib) Type() string                                 { return "fib" }
++func (t fib) Truth() starlark.Bool                         { return true }
++func (t fib) Hash(thread *starlark.Thread) (uint32, error) { return 0, fmt.Errorf("fib is unhashable") }
++func (t fib) Iterate() starlark.Iterator                   { return &fibIterator{0, 1} }
+ 
+ type fibIterator struct{ x, y int }
+ 
+@@ -236,10 +236,10 @@ var (
+ 	_ starlark.HasBinary = (*hasfields)(nil)
+ )
+ 
+-func (hf *hasfields) String() string        { return "hasfields" }
+-func (hf *hasfields) Type() string          { return "hasfields" }
+-func (hf *hasfields) Truth() starlark.Bool  { return true }
+-func (hf *hasfields) Hash() (uint32, error) { return 42, nil }
++func (hf *hasfields) String() string                               { return "hasfields" }
++func (hf *hasfields) Type() string                                 { return "hasfields" }
++func (hf *hasfields) Truth() starlark.Bool                         { return true }
++func (hf *hasfields) Hash(thread *starlark.Thread) (uint32, error) { return 42, nil }
+ 
+ func (hf *hasfields) Freeze() {
+ 	if !hf.frozen {
 @@ -250,9 +250,11 @@ func (hf *hasfields) Freeze() {
  	}
  }
@@ -532,6 +671,23 @@ index 8cb6568..efae9eb 100644
  			t.Errorf("x=%v: %v", test.x, err) // comparison error
  		} else if !eq {
  			t.Errorf("x=%v: got y=%v, want %v", test.x, globals["y"], test.want)
+@@ -865,11 +867,11 @@ g(z=7)
+ 
+ type badType string
+ 
+-func (b *badType) String() string        { return "badType" }
+-func (b *badType) Type() string          { return "badType:" + string(*b) } // panics if b==nil
+-func (b *badType) Truth() starlark.Bool  { return true }
+-func (b *badType) Hash() (uint32, error) { return 0, nil }
+-func (b *badType) Freeze()               {}
++func (b *badType) String() string                               { return "badType" }
++func (b *badType) Type() string                                 { return "badType:" + string(*b) } // panics if b==nil
++func (b *badType) Truth() starlark.Bool                         { return true }
++func (b *badType) Hash(thread *starlark.Thread) (uint32, error) { return 0, nil }
++func (b *badType) Freeze()                                      {}
+ 
+ var _ starlark.Value = new(badType)
+ 
 @@ -1075,11 +1077,11 @@ func TestDebugFrame(t *testing.T) {
  				if val == nil {
  					continue
@@ -547,16 +703,24 @@ index 8cb6568..efae9eb 100644
  			dict.Freeze()
  			return dict, nil
 diff --git starlark/hashtable.go starlark/hashtable.go
-index e1bbeaa..b96d29e 100644
+index e1bbeaa..eb08b74 100644
 --- starlark/hashtable.go
 +++ starlark/hashtable.go
-@@ -74,7 +74,7 @@ func (ht *hashtable) freeze() {
+@@ -74,14 +74,14 @@ func (ht *hashtable) freeze() {
  	}
  }
  
 -func (ht *hashtable) insert(k, v Value) error {
 +func (ht *hashtable) insert(thread *Thread, k, v Value) error {
  	if err := ht.checkMutable("insert into"); err != nil {
+ 		return err
+ 	}
+ 	if ht.table == nil {
+ 		ht.init(1)
+ 	}
+-	h, err := k.Hash()
++	h, err := k.Hash(thread)
+ 	if err != nil {
  		return err
  	}
 @@ -104,7 +104,7 @@ retry:
@@ -586,7 +750,7 @@ index e1bbeaa..b96d29e 100644
  	// Double the number of buckets and rehash.
  	//
  	// Even though this makes reentrant calls to ht.insert,
-@@ -168,12 +168,12 @@ func (ht *hashtable) grow() {
+@@ -168,13 +168,13 @@ func (ht *hashtable) grow() {
  	ht.tailLink = &ht.head
  	ht.len = 0
  	for e := oldhead; e != nil; e = e.next {
@@ -597,10 +761,12 @@ index e1bbeaa..b96d29e 100644
  }
  
 -func (ht *hashtable) lookup(k Value) (v Value, found bool, err error) {
+-	h, err := k.Hash()
 +func (ht *hashtable) lookup(thread *Thread, k Value) (v Value, found bool, err error) {
- 	h, err := k.Hash()
++	h, err := k.Hash(thread)
  	if err != nil {
  		return nil, false, err // unhashable
+ 	}
 @@ -190,7 +190,7 @@ func (ht *hashtable) lookup(k Value) (v Value, found bool, err error) {
  		for i := range p.entries {
  			e := &p.entries[i]
@@ -619,6 +785,15 @@ index e1bbeaa..b96d29e 100644
  	if ht.table == nil {
  		return 0, nil // empty
  	}
+@@ -219,7 +219,7 @@ func (ht *hashtable) count(iter Iterator) (int, error) {
+ 		bitsets[i].SetBits(storage[i : i+1 : i+1])
+ 	}
+ 	for iter.Next(&k) && count != int(ht.len) {
+-		h, err := k.Hash()
++		h, err := k.Hash(thread)
+ 		if err != nil {
+ 			return 0, err // unhashable
+ 		}
 @@ -234,7 +234,7 @@ func (ht *hashtable) count(iter Iterator) (int, error) {
  			for j := range p.entries {
  				e := &p.entries[j]
@@ -628,7 +803,7 @@ index e1bbeaa..b96d29e 100644
  						return 0, err
  					} else if eq {
  						bitIndex := i<<3 + j
-@@ -281,7 +281,7 @@ func (ht *hashtable) keys() []Value {
+@@ -281,14 +281,14 @@ func (ht *hashtable) keys() []Value {
  	return keys
  }
  
@@ -636,6 +811,14 @@ index e1bbeaa..b96d29e 100644
 +func (ht *hashtable) delete(thread *Thread, k Value) (v Value, found bool, err error) {
  	if err := ht.checkMutable("delete from"); err != nil {
  		return nil, false, err
+ 	}
+ 	if ht.table == nil {
+ 		return None, false, nil // empty
+ 	}
+-	h, err := k.Hash()
++	h, err := k.Hash(thread)
+ 	if err != nil {
+ 		return nil, false, err // unhashable
  	}
 @@ -301,7 +301,7 @@ func (ht *hashtable) delete(k Value) (v Value, found bool, err error) {
  		for i := range p.entries {
@@ -710,8 +893,22 @@ index bcbc8e8..881b0f5 100644
  		t.Error(err)
  	} else if c != count {
  		t.Errorf("count doesn't match: expected %d got %d", count, c)
+diff --git starlark/int.go starlark/int.go
+index 8f2b279..c0c2c1c 100644
+--- starlark/int.go
++++ starlark/int.go
+@@ -180,7 +180,8 @@ func (i Int) String() string {
+ func (i Int) Type() string { return "int" }
+ func (i Int) Freeze()      {} // immutable
+ func (i Int) Truth() Bool  { return i.Sign() != 0 }
+-func (i Int) Hash() (uint32, error) {
++
++func (i Int) Hash(thread *Thread) (uint32, error) {
+ 	iSmall, iBig := i.get()
+ 	var lo big.Word
+ 	if iBig != nil {
 diff --git starlark/interp.go starlark/interp.go
-index 261077f..3243d32 100644
+index 261077f..f11c5b6 100644
 --- starlark/interp.go
 +++ starlark/interp.go
 @@ -55,7 +55,7 @@ func (fn *Function) CallInternal(thread *Thread, args Tuple, kwargs []Tuple) (Va
@@ -810,6 +1007,31 @@ index 261077f..3243d32 100644
  				err = err2
  				break loop
  			}
+@@ -679,11 +679,11 @@ func (e wrappedError) Unwrap() error {
+ // to indicate that a (keyword-only) parameter is mandatory.
+ type mandatory struct{}
+ 
+-func (mandatory) String() string        { return "mandatory" }
+-func (mandatory) Type() string          { return "mandatory" }
+-func (mandatory) Freeze()               {} // immutable
+-func (mandatory) Truth() Bool           { return False }
+-func (mandatory) Hash() (uint32, error) { return 0, nil }
++func (mandatory) String() string                      { return "mandatory" }
++func (mandatory) Type() string                        { return "mandatory" }
++func (mandatory) Freeze()                             {} // immutable
++func (mandatory) Truth() Bool                         { return False }
++func (mandatory) Hash(thread *Thread) (uint32, error) { return 0, nil }
+ 
+ // A cell is a box containing a Value.
+ // Local variables marked as cells hold their value indirectly
+@@ -700,5 +700,5 @@ func (c *cell) Freeze() {
+ 		c.v.Freeze()
+ 	}
+ }
+-func (c *cell) Truth() Bool           { panic("unreachable") }
+-func (c *cell) Hash() (uint32, error) { panic("unreachable") }
++func (c *cell) Truth() Bool                         { panic("unreachable") }
++func (c *cell) Hash(thread *Thread) (uint32, error) { panic("unreachable") }
 diff --git starlark/iter.go starlark/iter.go
 index 5436d9f..a270546 100644
 --- starlark/iter.go
@@ -874,7 +1096,7 @@ index c910496..aa6ff9d 100644
  		if len(got) == 4 {
  			break // skip 3
 diff --git starlark/library.go starlark/library.go
-index 6d7ff45..f03d552 100644
+index 6d7ff45..e43d385 100644
 --- starlark/library.go
 +++ starlark/library.go
 @@ -302,7 +302,7 @@ func dict(thread *Thread, _ *Builtin, args Tuple, kwargs []Tuple) (Value, error)
@@ -913,16 +1135,25 @@ index 6d7ff45..f03d552 100644
  			return nil, nameErr(b, err)
  		} else if ok {
  			extremum = x
-@@ -904,7 +904,7 @@ func (r rangeValue) Type() string          { return "range" }
- func (r rangeValue) Truth() Bool           { return r.len > 0 }
- func (r rangeValue) Hash() (uint32, error) { return 0, fmt.Errorf("unhashable: range") }
+@@ -900,11 +900,13 @@ func (r rangeValue) String() string {
+ 		return fmt.Sprintf("range(%d)", r.stop)
+ 	}
+ }
+-func (r rangeValue) Type() string          { return "range" }
+-func (r rangeValue) Truth() Bool           { return r.len > 0 }
+-func (r rangeValue) Hash() (uint32, error) { return 0, fmt.Errorf("unhashable: range") }
++func (r rangeValue) Type() string { return "range" }
++func (r rangeValue) Truth() Bool  { return r.len > 0 }
++func (r rangeValue) Hash(thread *Thread) (uint32, error) {
++	return 0, fmt.Errorf("unhashable: range")
++}
  
 -func (x rangeValue) CompareSameType(op syntax.Token, y_ Value, depth int) (bool, error) {
 +func (x rangeValue) CompareSameType(thread *Thread, op syntax.Token, y_ Value, depth int) (bool, error) {
  	y := y_.(rangeValue)
  	switch op {
  	case syntax.EQL:
-@@ -999,7 +999,7 @@ func set(thread *Thread, b *Builtin, args Tuple, kwargs []Tuple) (Value, error)
+@@ -999,7 +1001,7 @@ func set(thread *Thread, b *Builtin, args Tuple, kwargs []Tuple) (Value, error)
  		defer iter.Done()
  		var x Value
  		for iter.Next(&x) {
@@ -931,7 +1162,7 @@ index 6d7ff45..f03d552 100644
  				return nil, nameErr(b, err)
  			}
  		}
-@@ -1045,7 +1045,7 @@ func sorted(thread *Thread, _ *Builtin, args Tuple, kwargs []Tuple) (Value, erro
+@@ -1045,7 +1047,7 @@ func sorted(thread *Thread, _ *Builtin, args Tuple, kwargs []Tuple) (Value, erro
  		}
  	}
  
@@ -940,7 +1171,7 @@ index 6d7ff45..f03d552 100644
  	if reverse {
  		sort.Stable(sort.Reverse(slice))
  	} else {
-@@ -1055,6 +1055,7 @@ func sorted(thread *Thread, _ *Builtin, args Tuple, kwargs []Tuple) (Value, erro
+@@ -1055,6 +1057,7 @@ func sorted(thread *Thread, _ *Builtin, args Tuple, kwargs []Tuple) (Value, erro
  }
  
  type sortSlice struct {
@@ -948,7 +1179,7 @@ index 6d7ff45..f03d552 100644
  	keys   []Value // nil => values[i] is key
  	values []Value
  	err    error
-@@ -1066,7 +1067,7 @@ func (s *sortSlice) Less(i, j int) bool {
+@@ -1066,7 +1069,7 @@ func (s *sortSlice) Less(i, j int) bool {
  	if s.keys == nil {
  		keys = s.values
  	}
@@ -957,7 +1188,7 @@ index 6d7ff45..f03d552 100644
  	if err != nil {
  		s.err = err
  	}
-@@ -1202,12 +1203,12 @@ func zip(thread *Thread, _ *Builtin, args Tuple, kwargs []Tuple) (Value, error)
+@@ -1202,12 +1205,12 @@ func zip(thread *Thread, _ *Builtin, args Tuple, kwargs []Tuple) (Value, error)
  // ---- methods of built-in types ---
  
  // https://github.com/google/starlark-go/blob/master/doc/spec.md#dict·get
@@ -972,7 +1203,7 @@ index 6d7ff45..f03d552 100644
  		return nil, nameErr(b, err)
  	} else if ok {
  		return v, nil
-@@ -1247,12 +1248,12 @@ func dict_keys(_ *Thread, b *Builtin, args Tuple, kwargs []Tuple) (Value, error)
+@@ -1247,12 +1250,12 @@ func dict_keys(_ *Thread, b *Builtin, args Tuple, kwargs []Tuple) (Value, error)
  }
  
  // https://github.com/google/starlark-go/blob/master/doc/spec.md#dict·pop
@@ -987,7 +1218,7 @@ index 6d7ff45..f03d552 100644
  		return nil, nameErr(b, err) // dict is frozen or key is unhashable
  	} else if found {
  		return v, nil
-@@ -1263,7 +1264,7 @@ func dict_pop(_ *Thread, b *Builtin, args Tuple, kwargs []Tuple) (Value, error)
+@@ -1263,7 +1266,7 @@ func dict_pop(_ *Thread, b *Builtin, args Tuple, kwargs []Tuple) (Value, error)
  }
  
  // https://github.com/google/starlark-go/blob/master/doc/spec.md#dict·popitem
@@ -996,7 +1227,7 @@ index 6d7ff45..f03d552 100644
  	if err := UnpackPositionalArgs(b.Name(), args, kwargs, 0); err != nil {
  		return nil, err
  	}
-@@ -1272,7 +1273,7 @@ func dict_popitem(_ *Thread, b *Builtin, args Tuple, kwargs []Tuple) (Value, err
+@@ -1272,7 +1275,7 @@ func dict_popitem(_ *Thread, b *Builtin, args Tuple, kwargs []Tuple) (Value, err
  	if !ok {
  		return nil, nameErr(b, "empty dict")
  	}
@@ -1005,7 +1236,7 @@ index 6d7ff45..f03d552 100644
  	if err != nil {
  		return nil, nameErr(b, err) // dict is frozen
  	}
-@@ -1280,17 +1281,17 @@ func dict_popitem(_ *Thread, b *Builtin, args Tuple, kwargs []Tuple) (Value, err
+@@ -1280,17 +1283,17 @@ func dict_popitem(_ *Thread, b *Builtin, args Tuple, kwargs []Tuple) (Value, err
  }
  
  // https://github.com/google/starlark-go/blob/master/doc/spec.md#dict·setdefault
@@ -1026,7 +1257,7 @@ index 6d7ff45..f03d552 100644
  		return nil, nameErr(b, err)
  	} else {
  		return dflt, nil
-@@ -1298,11 +1299,11 @@ func dict_setdefault(_ *Thread, b *Builtin, args Tuple, kwargs []Tuple) (Value,
+@@ -1298,11 +1301,11 @@ func dict_setdefault(_ *Thread, b *Builtin, args Tuple, kwargs []Tuple) (Value,
  }
  
  // https://github.com/google/starlark-go/blob/master/doc/spec.md#dict·update
@@ -1040,7 +1271,7 @@ index 6d7ff45..f03d552 100644
  		return nil, fmt.Errorf("update: %v", err)
  	}
  	return None, nil
-@@ -1361,7 +1362,7 @@ func list_extend(_ *Thread, b *Builtin, args Tuple, kwargs []Tuple) (Value, erro
+@@ -1361,7 +1364,7 @@ func list_extend(_ *Thread, b *Builtin, args Tuple, kwargs []Tuple) (Value, erro
  }
  
  // https://github.com/google/starlark-go/blob/master/doc/spec.md#list·index
@@ -1049,7 +1280,7 @@ index 6d7ff45..f03d552 100644
  	var value, start_, end_ Value
  	if err := UnpackPositionalArgs(b.Name(), args, kwargs, 1, &value, &start_, &end_); err != nil {
  		return nil, err
-@@ -1374,7 +1375,7 @@ func list_index(_ *Thread, b *Builtin, args Tuple, kwargs []Tuple) (Value, error
+@@ -1374,7 +1377,7 @@ func list_index(_ *Thread, b *Builtin, args Tuple, kwargs []Tuple) (Value, error
  	}
  
  	for i := start; i < end; i++ {
@@ -1058,7 +1289,7 @@ index 6d7ff45..f03d552 100644
  			return nil, nameErr(b, err)
  		} else if eq {
  			return MakeInt(i), nil
-@@ -1414,7 +1415,7 @@ func list_insert(_ *Thread, b *Builtin, args Tuple, kwargs []Tuple) (Value, erro
+@@ -1414,7 +1417,7 @@ func list_insert(_ *Thread, b *Builtin, args Tuple, kwargs []Tuple) (Value, erro
  }
  
  // https://github.com/google/starlark-go/blob/master/doc/spec.md#list·remove
@@ -1067,7 +1298,7 @@ index 6d7ff45..f03d552 100644
  	recv := b.Receiver().(*List)
  	var value Value
  	if err := UnpackPositionalArgs(b.Name(), args, kwargs, 1, &value); err != nil {
-@@ -1424,7 +1425,7 @@ func list_remove(_ *Thread, b *Builtin, args Tuple, kwargs []Tuple) (Value, erro
+@@ -1424,7 +1427,7 @@ func list_remove(_ *Thread, b *Builtin, args Tuple, kwargs []Tuple) (Value, erro
  		return nil, nameErr(b, err)
  	}
  	for i, elem := range recv.elems {
@@ -1076,7 +1307,29 @@ index 6d7ff45..f03d552 100644
  			return nil, fmt.Errorf("remove: %v", err)
  		} else if eq {
  			recv.elems = append(recv.elems[:i], recv.elems[i+1:]...)
-@@ -2180,17 +2181,17 @@ func string_splitlines(_ *Thread, b *Builtin, args Tuple, kwargs []Tuple) (Value
+@@ -1511,12 +1514,15 @@ type bytesIterable struct{ bytes Bytes }
+ 
+ var _ Iterable = (*bytesIterable)(nil)
+ 
+-func (bi bytesIterable) String() string        { return bi.bytes.String() + ".elems()" }
+-func (bi bytesIterable) Type() string          { return "bytes.elems" }
+-func (bi bytesIterable) Freeze()               {} // immutable
+-func (bi bytesIterable) Truth() Bool           { return True }
+-func (bi bytesIterable) Hash() (uint32, error) { return 0, fmt.Errorf("unhashable: %s", bi.Type()) }
+-func (bi bytesIterable) Iterate() Iterator     { return &bytesIterator{bi.bytes} }
++func (bi bytesIterable) String() string { return bi.bytes.String() + ".elems()" }
++func (bi bytesIterable) Type() string   { return "bytes.elems" }
++func (bi bytesIterable) Freeze()        {} // immutable
++func (bi bytesIterable) Truth() Bool { return True }
++
++func (bi bytesIterable) Hash(thread *Thread) (uint32, error) {
++	return 0, fmt.Errorf("unhashable: %s", bi.Type())
++}
++func (bi bytesIterable) Iterate() Iterator { return &bytesIterator{bi.bytes} }
+ 
+ type bytesIterator struct{ bytes Bytes }
+ 
+@@ -2180,17 +2186,17 @@ func string_splitlines(_ *Thread, b *Builtin, args Tuple, kwargs []Tuple) (Value
  }
  
  // https://github.com/google/starlark-go/blob/master/doc/spec.md#set·add.
@@ -1097,7 +1350,7 @@ index 6d7ff45..f03d552 100644
  	if err != nil {
  		return nil, nameErr(b, err)
  	}
-@@ -2211,7 +2212,7 @@ func set_clear(_ *Thread, b *Builtin, args Tuple, kwargs []Tuple) (Value, error)
+@@ -2211,7 +2217,7 @@ func set_clear(_ *Thread, b *Builtin, args Tuple, kwargs []Tuple) (Value, error)
  }
  
  // https://github.com/google/starlark-go/blob/master/doc/spec.md#set·difference.
@@ -1106,7 +1359,7 @@ index 6d7ff45..f03d552 100644
  	// TODO: support multiple others: s.difference(*others)
  	var other Iterable
  	if err := UnpackPositionalArgs(b.Name(), args, kwargs, 0, &other); err != nil {
-@@ -2219,7 +2220,7 @@ func set_difference(_ *Thread, b *Builtin, args Tuple, kwargs []Tuple) (Value, e
+@@ -2219,7 +2225,7 @@ func set_difference(_ *Thread, b *Builtin, args Tuple, kwargs []Tuple) (Value, e
  	}
  	iter := other.Iterate()
  	defer iter.Done()
@@ -1115,7 +1368,7 @@ index 6d7ff45..f03d552 100644
  	if err != nil {
  		return nil, nameErr(b, err)
  	}
-@@ -2227,7 +2228,7 @@ func set_difference(_ *Thread, b *Builtin, args Tuple, kwargs []Tuple) (Value, e
+@@ -2227,7 +2233,7 @@ func set_difference(_ *Thread, b *Builtin, args Tuple, kwargs []Tuple) (Value, e
  }
  
  // https://github.com/google/starlark-go/blob/master/doc/spec.md#set_intersection.
@@ -1124,7 +1377,7 @@ index 6d7ff45..f03d552 100644
  	// TODO: support multiple others: s.difference(*others)
  	var other Iterable
  	if err := UnpackPositionalArgs(b.Name(), args, kwargs, 0, &other); err != nil {
-@@ -2235,7 +2236,7 @@ func set_intersection(_ *Thread, b *Builtin, args Tuple, kwargs []Tuple) (Value,
+@@ -2235,7 +2241,7 @@ func set_intersection(_ *Thread, b *Builtin, args Tuple, kwargs []Tuple) (Value,
  	}
  	iter := other.Iterate()
  	defer iter.Done()
@@ -1133,7 +1386,7 @@ index 6d7ff45..f03d552 100644
  	if err != nil {
  		return nil, nameErr(b, err)
  	}
-@@ -2243,14 +2244,14 @@ func set_intersection(_ *Thread, b *Builtin, args Tuple, kwargs []Tuple) (Value,
+@@ -2243,14 +2249,14 @@ func set_intersection(_ *Thread, b *Builtin, args Tuple, kwargs []Tuple) (Value,
  }
  
  // https://github.com/google/starlark-go/blob/master/doc/spec.md#set_issubset.
@@ -1150,7 +1403,7 @@ index 6d7ff45..f03d552 100644
  	if err != nil {
  		return nil, nameErr(b, err)
  	}
-@@ -2258,14 +2259,14 @@ func set_issubset(_ *Thread, b *Builtin, args Tuple, kwargs []Tuple) (Value, err
+@@ -2258,14 +2264,14 @@ func set_issubset(_ *Thread, b *Builtin, args Tuple, kwargs []Tuple) (Value, err
  }
  
  // https://github.com/google/starlark-go/blob/master/doc/spec.md#set_issuperset.
@@ -1167,7 +1420,7 @@ index 6d7ff45..f03d552 100644
  	if err != nil {
  		return nil, nameErr(b, err)
  	}
-@@ -2273,24 +2274,24 @@ func set_issuperset(_ *Thread, b *Builtin, args Tuple, kwargs []Tuple) (Value, e
+@@ -2273,24 +2279,24 @@ func set_issuperset(_ *Thread, b *Builtin, args Tuple, kwargs []Tuple) (Value, e
  }
  
  // https://github.com/google/starlark-go/blob/master/doc/spec.md#set·discard.
@@ -1196,7 +1449,7 @@ index 6d7ff45..f03d552 100644
  	if err := UnpackPositionalArgs(b.Name(), args, kwargs, 0); err != nil {
  		return nil, err
  	}
-@@ -2299,7 +2300,7 @@ func set_pop(_ *Thread, b *Builtin, args Tuple, kwargs []Tuple) (Value, error) {
+@@ -2299,7 +2305,7 @@ func set_pop(_ *Thread, b *Builtin, args Tuple, kwargs []Tuple) (Value, error) {
  	if !ok {
  		return nil, nameErr(b, "empty set")
  	}
@@ -1205,7 +1458,7 @@ index 6d7ff45..f03d552 100644
  	if err != nil {
  		return nil, nameErr(b, err) // set is frozen
  	}
-@@ -2307,12 +2308,12 @@ func set_pop(_ *Thread, b *Builtin, args Tuple, kwargs []Tuple) (Value, error) {
+@@ -2307,12 +2313,12 @@ func set_pop(_ *Thread, b *Builtin, args Tuple, kwargs []Tuple) (Value, error) {
  }
  
  // https://github.com/google/starlark-go/blob/master/doc/spec.md#set·remove.
@@ -1220,7 +1473,7 @@ index 6d7ff45..f03d552 100644
  		return nil, nameErr(b, err) // dict is frozen or key is unhashable
  	} else if found {
  		return None, nil
-@@ -2321,14 +2322,14 @@ func set_remove(_ *Thread, b *Builtin, args Tuple, kwargs []Tuple) (Value, error
+@@ -2321,14 +2327,14 @@ func set_remove(_ *Thread, b *Builtin, args Tuple, kwargs []Tuple) (Value, error
  }
  
  // https://github.com/google/starlark-go/blob/master/doc/spec.md#set·symmetric_difference.
@@ -1237,7 +1490,7 @@ index 6d7ff45..f03d552 100644
  	if err != nil {
  		return nil, nameErr(b, err)
  	}
-@@ -2336,17 +2337,17 @@ func set_symmetric_difference(_ *Thread, b *Builtin, args Tuple, kwargs []Tuple)
+@@ -2336,17 +2342,17 @@ func set_symmetric_difference(_ *Thread, b *Builtin, args Tuple, kwargs []Tuple)
  }
  
  // https://github.com/google/starlark-go/blob/master/doc/spec.md#set·union.
@@ -1260,7 +1513,7 @@ index 6d7ff45..f03d552 100644
  		return nil, nameErr(b, err)
  	}
  	return None, nil
-@@ -2387,13 +2388,13 @@ func string_find_impl(b *Builtin, args Tuple, kwargs []Tuple, allowError, last b
+@@ -2387,13 +2393,13 @@ func string_find_impl(b *Builtin, args Tuple, kwargs []Tuple, allowError, last b
  
  // Common implementation of builtin dict function and dict.update method.
  // Precondition: len(updates) == 0 or 1.
@@ -1276,7 +1529,7 @@ index 6d7ff45..f03d552 100644
  					return err // dict is frozen
  				}
  			}
-@@ -2421,7 +2422,7 @@ func updateDict(dict *Dict, updates Tuple, kwargs []Tuple) error {
+@@ -2421,7 +2427,7 @@ func updateDict(dict *Dict, updates Tuple, kwargs []Tuple) error {
  				var k, v Value
  				iter2.Next(&k)
  				iter2.Next(&v)
@@ -1285,7 +1538,7 @@ index 6d7ff45..f03d552 100644
  					return err
  				}
  			}
-@@ -2431,7 +2432,7 @@ func updateDict(dict *Dict, updates Tuple, kwargs []Tuple) error {
+@@ -2431,7 +2437,7 @@ func updateDict(dict *Dict, updates Tuple, kwargs []Tuple) error {
  	// Then add the kwargs.
  	before := dict.Len()
  	for _, pair := range kwargs {
@@ -1294,7 +1547,7 @@ index 6d7ff45..f03d552 100644
  			return err // dict is frozen
  		}
  	}
-@@ -2451,7 +2452,7 @@ func updateDict(dict *Dict, updates Tuple, kwargs []Tuple) error {
+@@ -2451,7 +2457,7 @@ func updateDict(dict *Dict, updates Tuple, kwargs []Tuple) error {
  	return nil
  }
  
@@ -1303,7 +1556,7 @@ index 6d7ff45..f03d552 100644
  	if len(kwargs) > 0 {
  		return errors.New("does not accept keyword arguments")
  	}
-@@ -2464,7 +2465,7 @@ func setUpdate(s *Set, args Tuple, kwargs []Tuple) error {
+@@ -2464,7 +2470,7 @@ func setUpdate(s *Set, args Tuple, kwargs []Tuple) error {
  		if err := func() error {
  			iter := iterable.Iterate()
  			defer iter.Done()
@@ -1313,9 +1566,18 @@ index 6d7ff45..f03d552 100644
  			return err
  		}
 diff --git starlark/value.go starlark/value.go
-index d89a9f5..841b358 100644
+index d89a9f5..d108de2 100644
 --- starlark/value.go
 +++ starlark/value.go
+@@ -109,7 +109,7 @@ type Value interface {
+ 	// Hash may fail if the value's type is not hashable, or if the value
+ 	// contains a non-hashable value. The hash is used only by dictionaries and
+ 	// is not exposed to the Starlark program.
+-	Hash() (uint32, error)
++	Hash(thread *Thread) (uint32, error)
+ }
+ 
+ // A Comparable is a value that defines its own equivalence relation and
 @@ -133,7 +133,7 @@ type Comparable interface {
  	// Client code should not call this method.  Instead, use the
  	// standalone Compare or Equals functions, which are defined for
@@ -1379,31 +1641,169 @@ index d89a9f5..841b358 100644
  }
  
  // A NoSuchAttrError may be returned by an implementation of
-@@ -410,7 +410,7 @@ func (b Bool) Type() string          { return "bool" }
- func (b Bool) Freeze()               {} // immutable
- func (b Bool) Truth() Bool           { return b }
- func (b Bool) Hash() (uint32, error) { return uint32(b2i(bool(b))), nil }
+@@ -385,11 +385,11 @@ type NoneType byte
+ 
+ const None = NoneType(0)
+ 
+-func (NoneType) String() string        { return "None" }
+-func (NoneType) Type() string          { return "NoneType" }
+-func (NoneType) Freeze()               {} // immutable
+-func (NoneType) Truth() Bool           { return False }
+-func (NoneType) Hash() (uint32, error) { return 0, nil }
++func (NoneType) String() string                      { return "None" }
++func (NoneType) Type() string                        { return "NoneType" }
++func (NoneType) Freeze()                             {} // immutable
++func (NoneType) Truth() Bool                         { return False }
++func (NoneType) Hash(thread *Thread) (uint32, error) { return 0, nil }
+ 
+ // Bool is the type of a Starlark bool.
+ type Bool bool
+@@ -406,11 +406,11 @@ func (b Bool) String() string {
+ 		return "False"
+ 	}
+ }
+-func (b Bool) Type() string          { return "bool" }
+-func (b Bool) Freeze()               {} // immutable
+-func (b Bool) Truth() Bool           { return b }
+-func (b Bool) Hash() (uint32, error) { return uint32(b2i(bool(b))), nil }
 -func (x Bool) CompareSameType(op syntax.Token, y_ Value, depth int) (bool, error) {
++func (b Bool) Type() string                        { return "bool" }
++func (b Bool) Freeze()                             {} // immutable
++func (b Bool) Truth() Bool                         { return b }
++func (b Bool) Hash(thread *Thread) (uint32, error) { return uint32(b2i(bool(b))), nil }
 +func (x Bool) CompareSameType(thread *Thread, op syntax.Token, y_ Value, depth int) (bool, error) {
  	y := y_.(Bool)
  	return threeway(op, b2i(bool(x))-b2i(bool(y))), nil
  }
-@@ -581,10 +581,12 @@ func (s String) Slice(start, end, step int) Value {
+@@ -459,12 +459,13 @@ func (f Float) format(buf *strings.Builder, conv byte) {
+ func (f Float) Type() string { return "float" }
+ func (f Float) Freeze()      {} // immutable
+ func (f Float) Truth() Bool  { return f != 0.0 }
+-func (f Float) Hash() (uint32, error) {
++
++func (f Float) Hash(thread *Thread) (uint32, error) {
+ 	// Equal float and int values must yield the same hash.
+ 	// TODO(adonovan): opt: if f is non-integral, and thus not equal
+ 	// to any Int, we can avoid the Int conversion and use a cheaper hash.
+ 	if isFinite(float64(f)) {
+-		return finiteFloatToInt(f).Hash()
++		return finiteFloatToInt(f).Hash(thread)
+ 	}
+ 	return 1618033, nil // NaN, +/-Inf
+ }
+@@ -559,14 +560,14 @@ func (f Float) Unary(op syntax.Token) (Value, error) {
+ // of a Starlark string as a Go string.
+ type String string
+ 
+-func (s String) String() string        { return syntax.Quote(string(s), false) }
+-func (s String) GoString() string      { return string(s) }
+-func (s String) Type() string          { return "string" }
+-func (s String) Freeze()               {} // immutable
+-func (s String) Truth() Bool           { return len(s) > 0 }
+-func (s String) Hash() (uint32, error) { return hashString(string(s)), nil }
+-func (s String) Len() int              { return len(s) } // bytes
+-func (s String) Index(i int) Value     { return s[i : i+1] }
++func (s String) String() string                      { return syntax.Quote(string(s), false) }
++func (s String) GoString() string                    { return string(s) }
++func (s String) Type() string                        { return "string" }
++func (s String) Freeze()                             {} // immutable
++func (s String) Truth() Bool                         { return len(s) > 0 }
++func (s String) Hash(thread *Thread) (uint32, error) { return hashString(string(s)), nil }
++func (s String) Len() int                            { return len(s) } // bytes
++func (s String) Index(i int) Value                   { return s[i : i+1] }
+ 
+ func (s String) Slice(start, end, step int) Value {
+ 	if step == 1 {
+@@ -581,10 +582,12 @@ func (s String) Slice(start, end, step int) Value {
  	return String(str)
  }
  
 -func (s String) Attr(name string) (Value, error) { return builtinAttr(s, name, stringMethods) }
+-func (s String) AttrNames() []string             { return builtinAttrNames(stringMethods) }
 +func (s String) Attr(thread *Thread, name string) (Value, error) {
 +	return builtinAttr(s, name, stringMethods)
 +}
- func (s String) AttrNames() []string             { return builtinAttrNames(stringMethods) }
++func (s String) AttrNames() []string { return builtinAttrNames(stringMethods) }
  
 -func (x String) CompareSameType(op syntax.Token, y_ Value, depth int) (bool, error) {
 +func (x String) CompareSameType(thread *Thread, op syntax.Token, y_ Value, depth int) (bool, error) {
  	y := y_.(String)
  	return threeway(op, strings.Compare(string(x), string(y))), nil
  }
-@@ -855,55 +857,62 @@ func NewDict(size int) *Dict {
+@@ -611,12 +614,15 @@ func (si stringElems) String() string {
+ 		return si.s.String() + ".elems()"
+ 	}
+ }
+-func (si stringElems) Type() string          { return "string.elems" }
+-func (si stringElems) Freeze()               {} // immutable
+-func (si stringElems) Truth() Bool           { return True }
+-func (si stringElems) Hash() (uint32, error) { return 0, fmt.Errorf("unhashable: %s", si.Type()) }
+-func (si stringElems) Iterate() Iterator     { return &stringElemsIterator{si, 0} }
+-func (si stringElems) Len() int              { return len(si.s) }
++func (si stringElems) Type() string { return "string.elems" }
++func (si stringElems) Freeze()      {} // immutable
++func (si stringElems) Truth() Bool  { return True }
++
++func (si stringElems) Hash(thread *Thread) (uint32, error) {
++	return 0, fmt.Errorf("unhashable: %s", si.Type())
++}
++func (si stringElems) Iterate() Iterator { return &stringElemsIterator{si, 0} }
++func (si stringElems) Len() int          { return len(si.s) }
+ func (si stringElems) Index(i int) Value {
+ 	if si.ords {
+ 		return MakeInt(int(si.s[i]))
+@@ -660,11 +666,14 @@ func (si stringCodepoints) String() string {
+ 		return si.s.String() + ".codepoints()"
+ 	}
+ }
+-func (si stringCodepoints) Type() string          { return "string.codepoints" }
+-func (si stringCodepoints) Freeze()               {} // immutable
+-func (si stringCodepoints) Truth() Bool           { return True }
+-func (si stringCodepoints) Hash() (uint32, error) { return 0, fmt.Errorf("unhashable: %s", si.Type()) }
+-func (si stringCodepoints) Iterate() Iterator     { return &stringCodepointsIterator{si, 0} }
++func (si stringCodepoints) Type() string { return "string.codepoints" }
++func (si stringCodepoints) Freeze()      {} // immutable
++func (si stringCodepoints) Truth() Bool  { return True }
++
++func (si stringCodepoints) Hash(thread *Thread) (uint32, error) {
++	return 0, fmt.Errorf("unhashable: %s", si.Type())
++}
++func (si stringCodepoints) Iterate() Iterator { return &stringCodepointsIterator{si, 0} }
+ 
+ type stringCodepointsIterator struct {
+ 	si stringCodepoints
+@@ -722,13 +731,13 @@ func (m *module) makeGlobalDict() StringDict {
+ 	return r
+ }
+ 
+-func (fn *Function) Name() string          { return fn.funcode.Name } // "lambda" for anonymous functions
+-func (fn *Function) Doc() string           { return fn.funcode.Doc }
+-func (fn *Function) Hash() (uint32, error) { return hashString(fn.funcode.Name), nil }
+-func (fn *Function) Freeze()               { fn.defaults.Freeze(); fn.freevars.Freeze() }
+-func (fn *Function) String() string        { return toString(fn) }
+-func (fn *Function) Type() string          { return "function" }
+-func (fn *Function) Truth() Bool           { return true }
++func (fn *Function) Name() string                        { return fn.funcode.Name } // "lambda" for anonymous functions
++func (fn *Function) Doc() string                         { return fn.funcode.Doc }
++func (fn *Function) Hash(thread *Thread) (uint32, error) { return hashString(fn.funcode.Name), nil }
++func (fn *Function) Freeze()                             { fn.defaults.Freeze(); fn.freevars.Freeze() }
++func (fn *Function) String() string                      { return toString(fn) }
++func (fn *Function) Type() string                        { return "function" }
++func (fn *Function) Truth() Bool                         { return true }
+ 
+ // Globals returns a new, unfrozen StringDict containing all global
+ // variables so far defined in the function's module.
+@@ -802,7 +811,8 @@ func (b *Builtin) Freeze() {
+ 		b.recv.Freeze()
+ 	}
+ }
+-func (b *Builtin) Hash() (uint32, error) {
++
++func (b *Builtin) Hash(thread *Thread) (uint32, error) {
+ 	h := hashString(b.name)
+ 	if b.recv != nil {
+ 		h ^= 5521
+@@ -855,55 +865,62 @@ func NewDict(size int) *Dict {
  	return dict
  }
  
@@ -1439,7 +1839,7 @@ index d89a9f5..841b358 100644
 +func (d *Dict) Type() string                            { return "dict" }
 +func (d *Dict) Freeze()                                 { d.ht.freeze() }
 +func (d *Dict) Truth() Bool                             { return d.Len() > 0 }
-+func (d *Dict) Hash() (uint32, error)                   { return 0, fmt.Errorf("unhashable type: dict") }
++func (d *Dict) Hash(thread *Thread) (uint32, error)     { return 0, fmt.Errorf("unhashable type: dict") }
 +
 +func (x *Dict) Union(thread *Thread, y *Dict) *Dict {
  	z := new(Dict)
@@ -1453,10 +1853,11 @@ index d89a9f5..841b358 100644
  }
  
 -func (d *Dict) Attr(name string) (Value, error) { return builtinAttr(d, name, dictMethods) }
+-func (d *Dict) AttrNames() []string             { return builtinAttrNames(dictMethods) }
 +func (d *Dict) Attr(thread *Thread, name string) (Value, error) {
 +	return builtinAttr(d, name, dictMethods)
 +}
- func (d *Dict) AttrNames() []string             { return builtinAttrNames(dictMethods) }
++func (d *Dict) AttrNames() []string { return builtinAttrNames(dictMethods) }
  
 -func (x *Dict) CompareSameType(op syntax.Token, y_ Value, depth int) (bool, error) {
 +func (x *Dict) CompareSameType(thread *Thread, op syntax.Token, y_ Value, depth int) (bool, error) {
@@ -1491,18 +1892,39 @@ index d89a9f5..841b358 100644
  			return false, err
  		} else if !eq {
  			return false, nil
-@@ -965,7 +974,9 @@ func (l *List) Slice(start, end, step int) Value {
+@@ -944,12 +961,12 @@ func (l *List) checkMutable(verb string) error {
+ 	return nil
+ }
+ 
+-func (l *List) String() string        { return toString(l) }
+-func (l *List) Type() string          { return "list" }
+-func (l *List) Hash() (uint32, error) { return 0, fmt.Errorf("unhashable type: list") }
+-func (l *List) Truth() Bool           { return l.Len() > 0 }
+-func (l *List) Len() int              { return len(l.elems) }
+-func (l *List) Index(i int) Value     { return l.elems[i] }
++func (l *List) String() string                      { return toString(l) }
++func (l *List) Type() string                        { return "list" }
++func (l *List) Hash(thread *Thread) (uint32, error) { return 0, fmt.Errorf("unhashable type: list") }
++func (l *List) Truth() Bool                         { return l.Len() > 0 }
++func (l *List) Len() int                            { return len(l.elems) }
++func (l *List) Index(i int) Value                   { return l.elems[i] }
+ 
+ func (l *List) Slice(start, end, step int) Value {
+ 	if step == 1 {
+@@ -965,8 +982,10 @@ func (l *List) Slice(start, end, step int) Value {
  	return NewList(list)
  }
  
 -func (l *List) Attr(name string) (Value, error) { return builtinAttr(l, name, listMethods) }
+-func (l *List) AttrNames() []string             { return builtinAttrNames(listMethods) }
 +func (l *List) Attr(thread *Thread, name string) (Value, error) {
 +	return builtinAttr(l, name, listMethods)
 +}
- func (l *List) AttrNames() []string             { return builtinAttrNames(listMethods) }
++func (l *List) AttrNames() []string { return builtinAttrNames(listMethods) }
  
  func (l *List) Iterate() Iterator {
-@@ -975,14 +986,14 @@ func (l *List) Iterate() Iterator {
+ 	if !l.frozen {
+@@ -975,14 +994,14 @@ func (l *List) Iterate() Iterator {
  	return &listIterator{l: l}
  }
  
@@ -1520,7 +1942,7 @@ index d89a9f5..841b358 100644
  	// Fast path: check length.
  	if len(x) != len(y) && (op == syntax.EQL || op == syntax.NEQ) {
  		return op == syntax.NEQ, nil
-@@ -990,7 +1001,7 @@ func sliceCompare(op syntax.Token, x, y []Value, depth int) (bool, error) {
+@@ -990,7 +1009,7 @@ func sliceCompare(op syntax.Token, x, y []Value, depth int) (bool, error) {
  
  	// Find first element that is not equal in both lists.
  	for i := 0; i < len(x) && i < len(y); i++ {
@@ -1529,7 +1951,7 @@ index d89a9f5..841b358 100644
  			return false, err
  		} else if !eq {
  			switch op {
-@@ -999,7 +1010,7 @@ func sliceCompare(op syntax.Token, x, y []Value, depth int) (bool, error) {
+@@ -999,7 +1018,7 @@ func sliceCompare(op syntax.Token, x, y []Value, depth int) (bool, error) {
  			case syntax.NEQ:
  				return true, nil
  			default:
@@ -1538,7 +1960,7 @@ index d89a9f5..841b358 100644
  			}
  		}
  	}
-@@ -1027,7 +1038,7 @@ func (it *listIterator) Done() {
+@@ -1027,7 +1046,7 @@ func (it *listIterator) Done() {
  	}
  }
  
@@ -1547,7 +1969,7 @@ index d89a9f5..841b358 100644
  	if err := l.checkMutable("assign to element of"); err != nil {
  		return err
  	}
-@@ -1084,9 +1095,9 @@ func (t Tuple) String() string { return toString(t) }
+@@ -1084,16 +1103,16 @@ func (t Tuple) String() string { return toString(t) }
  func (t Tuple) Type() string   { return "tuple" }
  func (t Tuple) Truth() Bool    { return len(t) > 0 }
  
@@ -1558,8 +1980,17 @@ index d89a9f5..841b358 100644
 +	return sliceCompare(thread, op, x, y, depth)
  }
  
- func (t Tuple) Hash() (uint32, error) {
-@@ -1132,29 +1143,37 @@ func NewSet(size int) *Set {
+-func (t Tuple) Hash() (uint32, error) {
++func (t Tuple) Hash(thread *Thread) (uint32, error) {
+ 	// Use same algorithm as Python.
+ 	var x, mult uint32 = 0x345678, 1000003
+ 	for _, elem := range t {
+-		y, err := elem.Hash()
++		y, err := elem.Hash(thread)
+ 		if err != nil {
+ 			return 0, err
+ 		}
+@@ -1132,29 +1151,37 @@ func NewSet(size int) *Set {
  	return set
  }
  
@@ -1589,14 +2020,15 @@ index d89a9f5..841b358 100644
 +func (s *Set) String() string                       { return toString(s) }
 +func (s *Set) Type() string                         { return "set" }
 +func (s *Set) Freeze()                              { s.ht.freeze() }
-+func (s *Set) Hash() (uint32, error)                { return 0, fmt.Errorf("unhashable type: set") }
++func (s *Set) Hash(thread *Thread) (uint32, error)  { return 0, fmt.Errorf("unhashable type: set") }
 +func (s *Set) Truth() Bool                          { return s.Len() > 0 }
  
 -func (s *Set) Attr(name string) (Value, error) { return builtinAttr(s, name, setMethods) }
+-func (s *Set) AttrNames() []string             { return builtinAttrNames(setMethods) }
 +func (s *Set) Attr(thread *Thread, name string) (Value, error) {
 +	return builtinAttr(s, name, setMethods)
 +}
- func (s *Set) AttrNames() []string             { return builtinAttrNames(setMethods) }
++func (s *Set) AttrNames() []string { return builtinAttrNames(setMethods) }
  
 -func (x *Set) CompareSameType(op syntax.Token, y_ Value, depth int) (bool, error) {
 +func (x *Set) CompareSameType(thread *Thread, op syntax.Token, y_ Value, depth int) (bool, error) {
@@ -1612,7 +2044,7 @@ index d89a9f5..841b358 100644
  		return !ok, err
  	case syntax.GE: // superset
  		if x.Len() < y.Len() {
-@@ -1162,50 +1181,50 @@ func (x *Set) CompareSameType(op syntax.Token, y_ Value, depth int) (bool, error
+@@ -1162,50 +1189,50 @@ func (x *Set) CompareSameType(op syntax.Token, y_ Value, depth int) (bool, error
  		}
  		iter := y.Iterate()
  		defer iter.Done()
@@ -1671,7 +2103,7 @@ index d89a9f5..841b358 100644
  		if err != nil {
  			return set, err
  		}
-@@ -1213,50 +1232,50 @@ func setFromIterator(iter Iterator) (*Set, error) {
+@@ -1213,50 +1240,50 @@ func setFromIterator(iter Iterator) (*Set, error) {
  	return set, nil
  }
  
@@ -1734,7 +2166,7 @@ index d89a9f5..841b358 100644
  		if err != nil {
  			return false, err
  		}
-@@ -1267,24 +1286,24 @@ func (s *Set) IsSuperset(other Iterator) (bool, error) {
+@@ -1267,24 +1294,24 @@ func (s *Set) IsSuperset(other Iterator) (bool, error) {
  	return true, nil
  }
  
@@ -1764,7 +2196,7 @@ index d89a9f5..841b358 100644
  			if err != nil {
  				return nil, err
  			}
-@@ -1293,16 +1312,16 @@ func (s *Set) Intersection(other Iterator) (Value, error) {
+@@ -1293,16 +1320,16 @@ func (s *Set) Intersection(other Iterator) (Value, error) {
  	return intersect, nil
  }
  
@@ -1785,7 +2217,7 @@ index d89a9f5..841b358 100644
  		}
  	}
  	return diff, nil
-@@ -1428,19 +1447,19 @@ func pathContains(path []Value, x Value) bool {
+@@ -1428,19 +1455,19 @@ func pathContains(path []Value, x Value) bool {
  var CompareLimit = 10
  
  // Equal reports whether two Starlark values are equal.
@@ -1809,7 +2241,7 @@ index d89a9f5..841b358 100644
  }
  
  // Compare compares two Starlark values.
-@@ -1450,8 +1469,8 @@ func EqualDepth(x, y Value, depth int) (bool, error) {
+@@ -1450,8 +1477,8 @@ func EqualDepth(x, y Value, depth int) (bool, error) {
  //
  // Recursive comparisons by implementations of Value.CompareSameType
  // should use CompareDepth to prevent infinite recursion.
@@ -1820,7 +2252,7 @@ index d89a9f5..841b358 100644
  }
  
  // CompareDepth compares two Starlark values.
-@@ -1461,13 +1480,13 @@ func Compare(op syntax.Token, x, y Value) (bool, error) {
+@@ -1461,13 +1488,13 @@ func Compare(op syntax.Token, x, y Value) (bool, error) {
  //
  // The depth parameter limits the maximum depth of recursion
  // in cyclic data structures.
@@ -1836,18 +2268,35 @@ index d89a9f5..841b358 100644
  		}
  
  		if xcomp, ok := x.(TotallyOrdered); ok {
-@@ -1623,7 +1642,9 @@ func (b Bytes) Hash() (uint32, error) { return String(b).Hash() }
- func (b Bytes) Len() int              { return len(b) }
- func (b Bytes) Index(i int) Value     { return b[i : i+1] }
+@@ -1615,16 +1642,18 @@ var (
+ 	_ Indexable  = Bytes("")
+ )
+ 
+-func (b Bytes) String() string        { return syntax.Quote(string(b), true) }
+-func (b Bytes) Type() string          { return "bytes" }
+-func (b Bytes) Freeze()               {} // immutable
+-func (b Bytes) Truth() Bool           { return len(b) > 0 }
+-func (b Bytes) Hash() (uint32, error) { return String(b).Hash() }
+-func (b Bytes) Len() int              { return len(b) }
+-func (b Bytes) Index(i int) Value     { return b[i : i+1] }
++func (b Bytes) String() string                      { return syntax.Quote(string(b), true) }
++func (b Bytes) Type() string                        { return "bytes" }
++func (b Bytes) Freeze()                             {} // immutable
++func (b Bytes) Truth() Bool                         { return len(b) > 0 }
++func (b Bytes) Hash(thread *Thread) (uint32, error) { return String(b).Hash(thread) }
++func (b Bytes) Len() int                            { return len(b) }
++func (b Bytes) Index(i int) Value                   { return b[i : i+1] }
  
 -func (b Bytes) Attr(name string) (Value, error) { return builtinAttr(b, name, bytesMethods) }
+-func (b Bytes) AttrNames() []string             { return builtinAttrNames(bytesMethods) }
 +func (b Bytes) Attr(thread *Thread, name string) (Value, error) {
 +	return builtinAttr(b, name, bytesMethods)
 +}
- func (b Bytes) AttrNames() []string             { return builtinAttrNames(bytesMethods) }
++func (b Bytes) AttrNames() []string { return builtinAttrNames(bytesMethods) }
  
  func (b Bytes) Slice(start, end, step int) Value {
-@@ -1639,7 +1660,7 @@ func (b Bytes) Slice(start, end, step int) Value {
+ 	if step == 1 {
+@@ -1639,7 +1668,7 @@ func (b Bytes) Slice(start, end, step int) Value {
  	return Bytes(str)
  }
  
@@ -1857,24 +2306,55 @@ index d89a9f5..841b358 100644
  	return threeway(op, strings.Compare(string(x), string(y))), nil
  }
 diff --git starlarkstruct/module.go starlarkstruct/module.go
-index 735c98a..e85ea5f 100644
+index 735c98a..827f494 100644
 --- starlarkstruct/module.go
 +++ starlarkstruct/module.go
-@@ -18,7 +18,9 @@ type Module struct {
+@@ -18,13 +18,17 @@ type Module struct {
  
  var _ starlark.HasAttrs = (*Module)(nil)
  
 -func (m *Module) Attr(name string) (starlark.Value, error) { return m.Members[name], nil }
+-func (m *Module) AttrNames() []string                      { return m.Members.Keys() }
+-func (m *Module) Freeze()                                  { m.Members.Freeze() }
+-func (m *Module) Hash() (uint32, error)                    { return 0, fmt.Errorf("unhashable: %s", m.Type()) }
+-func (m *Module) String() string                           { return fmt.Sprintf("<module %q>", m.Name) }
+-func (m *Module) Truth() starlark.Bool                     { return true }
+-func (m *Module) Type() string                             { return "module" }
 +func (m *Module) Attr(thread *starlark.Thread, name string) (starlark.Value, error) {
 +	return m.Members[name], nil
 +}
- func (m *Module) AttrNames() []string                      { return m.Members.Keys() }
- func (m *Module) Freeze()                                  { m.Members.Freeze() }
- func (m *Module) Hash() (uint32, error)                    { return 0, fmt.Errorf("unhashable: %s", m.Type()) }
++func (m *Module) AttrNames() []string { return m.Members.Keys() }
++func (m *Module) Freeze()             { m.Members.Freeze() }
++func (m *Module) Hash(thread *starlark.Thread) (uint32, error) {
++	return 0, fmt.Errorf("unhashable: %s", m.Type())
++}
++func (m *Module) String() string       { return fmt.Sprintf("<module %q>", m.Name) }
++func (m *Module) Truth() starlark.Bool { return true }
++func (m *Module) Type() string         { return "module" }
+ 
+ // MakeModule may be used as the implementation of a Starlark built-in
+ // function, module(name, **kwargs). It returns a new module with the
 diff --git starlarkstruct/struct.go starlarkstruct/struct.go
-index 44612d2..7649d76 100644
+index 44612d2..e968547 100644
 --- starlarkstruct/struct.go
 +++ starlarkstruct/struct.go
+@@ -157,13 +157,13 @@ func (s *Struct) Constructor() starlark.Value { return s.constructor }
+ 
+ func (s *Struct) Type() string         { return "struct" }
+ func (s *Struct) Truth() starlark.Bool { return true } // even when empty
+-func (s *Struct) Hash() (uint32, error) {
++func (s *Struct) Hash(thread *starlark.Thread) (uint32, error) {
+ 	// Same algorithm as Tuple.hash, but with different primes.
+ 	var x, m uint32 = 8731, 9839
+ 	for _, e := range s.entries {
+-		namehash, _ := starlark.String(e.name).Hash()
++		namehash, _ := starlark.String(e.name).Hash(thread)
+ 		x = x ^ 3*namehash
+-		y, err := e.value.Hash()
++		y, err := e.value.Hash(thread)
+ 		if err != nil {
+ 			return 0, err
+ 		}
 @@ -181,13 +181,13 @@ func (s *Struct) Freeze() {
  	}
  }
@@ -1940,3 +2420,28 @@ index 44612d2..7649d76 100644
  			return false, err
  		} else if !eq {
  			return false, nil
+diff --git starlarkstruct/struct_test.go starlarkstruct/struct_test.go
+index 4f103bd..4cf77e3 100644
+--- starlarkstruct/struct_test.go
++++ starlarkstruct/struct_test.go
+@@ -54,12 +54,14 @@ type symbol struct{ name string }
+ 
+ var _ starlark.Callable = (*symbol)(nil)
+ 
+-func (sym *symbol) Name() string          { return sym.name }
+-func (sym *symbol) String() string        { return sym.name }
+-func (sym *symbol) Type() string          { return "symbol" }
+-func (sym *symbol) Freeze()               {} // immutable
+-func (sym *symbol) Truth() starlark.Bool  { return starlark.True }
+-func (sym *symbol) Hash() (uint32, error) { return 0, fmt.Errorf("unhashable: %s", sym.Type()) }
++func (sym *symbol) Name() string         { return sym.name }
++func (sym *symbol) String() string       { return sym.name }
++func (sym *symbol) Type() string         { return "symbol" }
++func (sym *symbol) Freeze()              {} // immutable
++func (sym *symbol) Truth() starlark.Bool { return starlark.True }
++func (sym *symbol) Hash(thread *starlark.Thread) (uint32, error) {
++	return 0, fmt.Errorf("unhashable: %s", sym.Type())
++}
+ 
+ func (sym *symbol) CallInternal(thread *starlark.Thread, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
+ 	if len(args) > 0 {

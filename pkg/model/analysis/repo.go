@@ -17,26 +17,26 @@ import (
 	"strings"
 
 	"github.com/bluekeyes/go-gitdiff/gitdiff"
-	"github.com/buildbarn/bb-playground/pkg/diff"
-	"github.com/buildbarn/bb-playground/pkg/evaluation"
-	"github.com/buildbarn/bb-playground/pkg/label"
-	model_core "github.com/buildbarn/bb-playground/pkg/model/core"
-	"github.com/buildbarn/bb-playground/pkg/model/core/btree"
-	model_encoding "github.com/buildbarn/bb-playground/pkg/model/encoding"
-	model_filesystem "github.com/buildbarn/bb-playground/pkg/model/filesystem"
-	model_parser "github.com/buildbarn/bb-playground/pkg/model/parser"
-	model_starlark "github.com/buildbarn/bb-playground/pkg/model/starlark"
-	model_analysis_pb "github.com/buildbarn/bb-playground/pkg/proto/model/analysis"
-	model_command_pb "github.com/buildbarn/bb-playground/pkg/proto/model/command"
-	model_filesystem_pb "github.com/buildbarn/bb-playground/pkg/proto/model/filesystem"
-	model_starlark_pb "github.com/buildbarn/bb-playground/pkg/proto/model/starlark"
-	"github.com/buildbarn/bb-playground/pkg/search"
-	"github.com/buildbarn/bb-playground/pkg/starlark/unpack"
-	"github.com/buildbarn/bb-playground/pkg/storage/dag"
-	"github.com/buildbarn/bb-playground/pkg/storage/object"
 	"github.com/buildbarn/bb-storage/pkg/filesystem"
 	"github.com/buildbarn/bb-storage/pkg/filesystem/path"
 	"github.com/buildbarn/bb-storage/pkg/util"
+	"github.com/buildbarn/bonanza/pkg/diff"
+	"github.com/buildbarn/bonanza/pkg/evaluation"
+	"github.com/buildbarn/bonanza/pkg/label"
+	model_core "github.com/buildbarn/bonanza/pkg/model/core"
+	"github.com/buildbarn/bonanza/pkg/model/core/btree"
+	model_encoding "github.com/buildbarn/bonanza/pkg/model/encoding"
+	model_filesystem "github.com/buildbarn/bonanza/pkg/model/filesystem"
+	model_parser "github.com/buildbarn/bonanza/pkg/model/parser"
+	model_starlark "github.com/buildbarn/bonanza/pkg/model/starlark"
+	model_analysis_pb "github.com/buildbarn/bonanza/pkg/proto/model/analysis"
+	model_command_pb "github.com/buildbarn/bonanza/pkg/proto/model/command"
+	model_filesystem_pb "github.com/buildbarn/bonanza/pkg/proto/model/filesystem"
+	model_starlark_pb "github.com/buildbarn/bonanza/pkg/proto/model/starlark"
+	"github.com/buildbarn/bonanza/pkg/search"
+	"github.com/buildbarn/bonanza/pkg/starlark/unpack"
+	"github.com/buildbarn/bonanza/pkg/storage/dag"
+	"github.com/buildbarn/bonanza/pkg/storage/object"
 	"github.com/kballard/go-shellquote"
 
 	"golang.org/x/sync/errgroup"
@@ -49,14 +49,62 @@ import (
 
 var externalDirectoryName = path.MustNewComponent("external")
 
+type jsonOrderedMapEntry[T any] struct {
+	key   string
+	value T
+}
+
+// jsonOrderedMap can be used instead of map[string]T to unmarshal JSON
+// objects where the original order of fields is preserved.
+//
+// This is necessary to unmarshal patches declared in source.json files
+// that are served by Bazel Central Registry (BCR), as those need to be
+// applied in the same order as they are listed in the JSON object.
+//
+// More details: https://github.com/bazelbuild/bazel/issues/25369
+type jsonOrderedMap[T any] []jsonOrderedMapEntry[T]
+
+func (m *jsonOrderedMap[T]) UnmarshalJSON(data []byte) error {
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	t, err := decoder.Token()
+	if err != nil {
+		return err
+	}
+	if t != json.Delim('{') {
+		return errors.New("expected start of ordered map")
+	}
+	for {
+		keyToken, err := decoder.Token()
+		if err != nil {
+			return err
+		}
+		if keyToken == json.Delim('}') {
+			return nil
+		}
+		key, ok := keyToken.(string)
+		if !ok {
+			return fmt.Errorf("unexpected token %s", keyToken)
+		}
+
+		var value T
+		if err := decoder.Decode(&value); err != nil {
+			return err
+		}
+		*m = append(*m, jsonOrderedMapEntry[T]{
+			key:   key,
+			value: value,
+		})
+	}
+}
+
 // sourceJSON corresponds to the format of source.json files that are
 // served by Bazel Central Registry (BCR).
 type sourceJSON struct {
-	Integrity   string            `json:"integrity"`
-	PatchStrip  int               `json:"patch_strip"`
-	Patches     map[string]string `json:"patches"`
-	StripPrefix string            `json:"strip_prefix"`
-	URL         string            `json:"url"`
+	Integrity   string                 `json:"integrity"`
+	PatchStrip  int                    `json:"patch_strip"`
+	Patches     jsonOrderedMap[string] `json:"patches"`
+	StripPrefix string                 `json:"strip_prefix"`
+	URL         string                 `json:"url"`
 }
 
 type changeTrackingDirectory struct {
@@ -672,28 +720,28 @@ func (c *baseComputer) fetchModuleFromRegistry(
 
 	// Process patches stored in source.json.
 	patchesToApply := make([]patchToApply, 0, len(sourceJSON.Patches)+len(singleVersionOverridePatchLabels))
-	for _, filename := range slices.Sorted(maps.Keys(sourceJSON.Patches)) {
+	for _, patchEntry := range sourceJSON.Patches {
 		patchURL, err := url.JoinPath(
 			module.RegistryUrl,
 			"modules",
 			module.Name,
 			module.Version,
 			"patches",
-			filename,
+			patchEntry.key,
 		)
 		if err != nil {
-			return PatchedRepoValue{}, fmt.Errorf("failed to construct URL for patch %s of module %s with version %s in registry %#v: %s", filename, module.Name, module.Version, module.RegistryUrl, err)
+			return PatchedRepoValue{}, fmt.Errorf("failed to construct URL for patch %s of module %s with version %s in registry %#v: %s", patchEntry.key, module.Name, module.Version, module.RegistryUrl, err)
 		}
 		patchContentsValue := e.GetHttpFileContentsValue(&model_analysis_pb.HttpFileContents_Key{
 			Urls:      []string{patchURL},
-			Integrity: sourceJSON.Patches[filename],
+			Integrity: patchEntry.value,
 		})
 		if !patchContentsValue.IsSet() {
 			missingDependencies = true
 			continue
 		}
 		if patchContentsValue.Message.Exists == nil {
-			return PatchedRepoValue{}, fmt.Errorf("patch at URL %#v does not exist", filename)
+			return PatchedRepoValue{}, fmt.Errorf("patch at URL %#v does not exist", patchEntry.key)
 		}
 
 		patchContentsEntry, err := model_filesystem.NewFileContentsEntryFromProto(
@@ -704,11 +752,11 @@ func (c *baseComputer) fetchModuleFromRegistry(
 			c.buildSpecificationReference.GetReferenceFormat(),
 		)
 		if err != nil {
-			return PatchedRepoValue{}, fmt.Errorf("invalid file contents for patch %#v: %s", filename, err)
+			return PatchedRepoValue{}, fmt.Errorf("invalid file contents for patch %#v: %s", patchEntry.key, err)
 		}
 
 		patchesToApply = append(patchesToApply, patchToApply{
-			filename:          filename,
+			filename:          patchEntry.key,
 			strip:             sourceJSON.PatchStrip,
 			fileContentsEntry: patchContentsEntry,
 		})

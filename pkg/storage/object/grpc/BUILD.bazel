@@ -7,7 +7,7 @@ go_library(
         "grpc_downloader.go",
         "grpc_uploader.go",
     ],
-    importpath = "github.com/buildbarn/bb-playground/pkg/storage/object/grpc",
+    importpath = "github.com/buildbarn/bonanza/pkg/storage/object/grpc",
     visibility = ["//visibility:public"],
     deps = [
         "//pkg/proto/storage/object",

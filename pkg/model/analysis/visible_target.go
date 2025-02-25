@@ -7,16 +7,16 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/buildbarn/bb-playground/pkg/evaluation"
-	"github.com/buildbarn/bb-playground/pkg/label"
-	model_core "github.com/buildbarn/bb-playground/pkg/model/core"
-	"github.com/buildbarn/bb-playground/pkg/model/core/btree"
-	model_parser "github.com/buildbarn/bb-playground/pkg/model/parser"
-	model_analysis_pb "github.com/buildbarn/bb-playground/pkg/proto/model/analysis"
-	model_core_pb "github.com/buildbarn/bb-playground/pkg/proto/model/core"
-	model_starlark_pb "github.com/buildbarn/bb-playground/pkg/proto/model/starlark"
-	"github.com/buildbarn/bb-playground/pkg/storage/dag"
-	"github.com/buildbarn/bb-playground/pkg/storage/object"
+	"github.com/buildbarn/bonanza/pkg/evaluation"
+	"github.com/buildbarn/bonanza/pkg/label"
+	model_core "github.com/buildbarn/bonanza/pkg/model/core"
+	"github.com/buildbarn/bonanza/pkg/model/core/btree"
+	model_parser "github.com/buildbarn/bonanza/pkg/model/parser"
+	model_analysis_pb "github.com/buildbarn/bonanza/pkg/proto/model/analysis"
+	model_core_pb "github.com/buildbarn/bonanza/pkg/proto/model/core"
+	model_starlark_pb "github.com/buildbarn/bonanza/pkg/proto/model/starlark"
+	"github.com/buildbarn/bonanza/pkg/storage/dag"
+	"github.com/buildbarn/bonanza/pkg/storage/object"
 )
 
 type getValueFromSelectGroupEnvironment interface {
@@ -132,6 +132,21 @@ func checkVisibility(fromPackage label.CanonicalPackage, toLabel label.Canonical
 			fromPackagePath = fromPackagePath[split+1:]
 		}
 	}
+}
+
+func checkRuleTargetVisibility(fromPackage label.CanonicalPackage, ruleTargetLabel label.CanonicalLabel, ruleTarget model_core.Message[*model_starlark_pb.RuleTarget]) error {
+	inheritableAttrs := ruleTarget.Message.InheritableAttrs
+	if inheritableAttrs == nil {
+		return fmt.Errorf("rule target %#v has no inheritable attrs", ruleTargetLabel)
+	}
+	return checkVisibility(
+		fromPackage,
+		ruleTargetLabel,
+		model_core.Message[*model_starlark_pb.PackageGroup]{
+			Message:            inheritableAttrs.Visibility,
+			OutgoingReferences: ruleTarget.OutgoingReferences,
+		},
+	)
 }
 
 func (c *baseComputer) ComputeVisibleTargetValue(ctx context.Context, key model_core.Message[*model_analysis_pb.VisibleTarget_Key], e VisibleTargetEnvironment) (PatchedVisibleTargetValue, error) {
@@ -333,16 +348,50 @@ func (c *baseComputer) ComputeVisibleTargetValue(ctx context.Context, key model_
 				Label: toLabel.String(),
 			},
 		), nil
-	case *model_starlark_pb.Target_Definition_RuleTarget:
-		inheritableAttrs := definition.RuleTarget.InheritableAttrs
-		if inheritableAttrs == nil {
-			return PatchedVisibleTargetValue{}, errors.New("rule target has no inheritable attrs")
+	case *model_starlark_pb.Target_Definition_PredeclaredOutputFileTarget:
+		// The visibility of predeclared output files is
+		// controlled by the rule target that owns them.
+		ownerTargetNameStr := definition.PredeclaredOutputFileTarget.OwnerTargetName
+		ownerTargetName, err := label.NewTargetName(ownerTargetNameStr)
+		if err != nil {
+			return PatchedVisibleTargetValue{}, fmt.Errorf("invalid owner target name %#v: %w", ownerTargetNameStr, err)
 		}
-		if err := checkVisibility(
+
+		ownerLabel := toLabel.GetCanonicalPackage().AppendTargetName(ownerTargetName)
+		ownerLabelStr := ownerLabel.String()
+		ownerTargetValue := e.GetTargetValue(&model_analysis_pb.Target_Key{
+			Label: ownerLabelStr,
+		})
+		if !ownerTargetValue.IsSet() {
+			return PatchedVisibleTargetValue{}, evaluation.ErrMissingDependency
+		}
+		ruleDefinition, ok := ownerTargetValue.Message.Definition.GetKind().(*model_starlark_pb.Target_Definition_RuleTarget)
+		if !ok {
+			return PatchedVisibleTargetValue{}, fmt.Errorf("owner %#v is not a rule target", ownerLabelStr)
+		}
+		if err := checkRuleTargetVisibility(
+			fromPackage,
+			ownerLabel,
+			model_core.Message[*model_starlark_pb.RuleTarget]{
+				Message:            ruleDefinition.RuleTarget,
+				OutgoingReferences: ownerTargetValue.OutgoingReferences,
+			},
+		); err != nil {
+			return PatchedVisibleTargetValue{}, err
+		}
+
+		// Found the definitive target.
+		return model_core.NewSimplePatchedMessage[dag.ObjectContentsWalker](
+			&model_analysis_pb.VisibleTarget_Value{
+				Label: toLabel.String(),
+			},
+		), nil
+	case *model_starlark_pb.Target_Definition_RuleTarget:
+		if err := checkRuleTargetVisibility(
 			fromPackage,
 			toLabel,
-			model_core.Message[*model_starlark_pb.PackageGroup]{
-				Message:            inheritableAttrs.Visibility,
+			model_core.Message[*model_starlark_pb.RuleTarget]{
+				Message:            definition.RuleTarget,
 				OutgoingReferences: targetValue.OutgoingReferences,
 			},
 		); err != nil {

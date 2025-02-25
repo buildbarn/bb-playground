@@ -15,7 +15,7 @@ proto_library(
 
 go_proto_library(
     name = "filesystem_go_proto",
-    importpath = "github.com/buildbarn/bb-playground/pkg/proto/model/filesystem",
+    importpath = "github.com/buildbarn/bonanza/pkg/proto/model/filesystem",
     proto = ":filesystem_proto",
     visibility = ["//visibility:public"],
     deps = [
@@ -27,6 +27,6 @@ go_proto_library(
 go_library(
     name = "filesystem",
     embed = [":filesystem_go_proto"],
-    importpath = "github.com/buildbarn/bb-playground/pkg/proto/model/filesystem",
+    importpath = "github.com/buildbarn/bonanza/pkg/proto/model/filesystem",
     visibility = ["//visibility:public"],
 )

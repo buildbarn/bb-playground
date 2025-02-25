@@ -7,18 +7,18 @@ import (
 	"maps"
 	"slices"
 
-	"github.com/buildbarn/bb-playground/pkg/evaluation"
-	"github.com/buildbarn/bb-playground/pkg/label"
-	model_core "github.com/buildbarn/bb-playground/pkg/model/core"
-	"github.com/buildbarn/bb-playground/pkg/model/core/btree"
-	model_parser "github.com/buildbarn/bb-playground/pkg/model/parser"
-	model_starlark "github.com/buildbarn/bb-playground/pkg/model/starlark"
-	model_analysis_pb "github.com/buildbarn/bb-playground/pkg/proto/model/analysis"
-	model_core_pb "github.com/buildbarn/bb-playground/pkg/proto/model/core"
-	model_starlark_pb "github.com/buildbarn/bb-playground/pkg/proto/model/starlark"
-	pg_starlark "github.com/buildbarn/bb-playground/pkg/starlark"
-	"github.com/buildbarn/bb-playground/pkg/storage/dag"
-	"github.com/buildbarn/bb-playground/pkg/storage/object"
+	"github.com/buildbarn/bonanza/pkg/evaluation"
+	"github.com/buildbarn/bonanza/pkg/label"
+	model_core "github.com/buildbarn/bonanza/pkg/model/core"
+	"github.com/buildbarn/bonanza/pkg/model/core/btree"
+	model_parser "github.com/buildbarn/bonanza/pkg/model/parser"
+	model_starlark "github.com/buildbarn/bonanza/pkg/model/starlark"
+	model_analysis_pb "github.com/buildbarn/bonanza/pkg/proto/model/analysis"
+	model_core_pb "github.com/buildbarn/bonanza/pkg/proto/model/core"
+	model_starlark_pb "github.com/buildbarn/bonanza/pkg/proto/model/starlark"
+	pg_starlark "github.com/buildbarn/bonanza/pkg/starlark"
+	"github.com/buildbarn/bonanza/pkg/storage/dag"
+	"github.com/buildbarn/bonanza/pkg/storage/object"
 
 	"go.starlark.net/starlark"
 )
@@ -198,11 +198,11 @@ func (h *registeredToolchainExtractingModuleDotBazelHandler) RegisterToolchains(
 							Message:            targetCompatibleWithList.List.Elements,
 							OutgoingReferences: targetValue.OutgoingReferences,
 						},
-						func(element *model_starlark_pb.List_Element) *model_core_pb.Reference {
-							if level, ok := element.Level.(*model_starlark_pb.List_Element_Parent_); ok {
-								return level.Parent.Reference
+						func(element model_core.Message[*model_starlark_pb.List_Element]) (*model_core_pb.Reference, error) {
+							if level, ok := element.Message.Level.(*model_starlark_pb.List_Element_Parent_); ok {
+								return level.Parent.Reference, nil
 							}
-							return nil
+							return nil, nil
 						},
 						&errIter,
 					) {

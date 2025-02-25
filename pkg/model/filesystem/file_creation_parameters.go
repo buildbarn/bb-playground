@@ -1,8 +1,8 @@
 package filesystem
 
 import (
-	model_filesystem_pb "github.com/buildbarn/bb-playground/pkg/proto/model/filesystem"
-	"github.com/buildbarn/bb-playground/pkg/storage/object"
+	model_filesystem_pb "github.com/buildbarn/bonanza/pkg/proto/model/filesystem"
+	"github.com/buildbarn/bonanza/pkg/storage/object"
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"

@@ -6,7 +6,7 @@ go_library(
         "do_build.go",
         "local_path_extracting_module_dot_bazel_handler.go",
     ],
-    importpath = "github.com/buildbarn/bb-playground/pkg/bazelclient/commands/build",
+    importpath = "github.com/buildbarn/bonanza/pkg/bazelclient/commands/build",
     visibility = ["//visibility:public"],
     deps = [
         "//pkg/bazelclient/arguments",

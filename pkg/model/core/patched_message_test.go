@@ -4,11 +4,11 @@ import (
 	"math"
 	"testing"
 
-	model_core "github.com/buildbarn/bb-playground/pkg/model/core"
-	model_core_pb "github.com/buildbarn/bb-playground/pkg/proto/model/core"
-	model_filesystem_pb "github.com/buildbarn/bb-playground/pkg/proto/model/filesystem"
-	"github.com/buildbarn/bb-playground/pkg/storage/object"
 	"github.com/buildbarn/bb-storage/pkg/testutil"
+	model_core "github.com/buildbarn/bonanza/pkg/model/core"
+	model_core_pb "github.com/buildbarn/bonanza/pkg/proto/model/core"
+	model_filesystem_pb "github.com/buildbarn/bonanza/pkg/proto/model/filesystem"
+	"github.com/buildbarn/bonanza/pkg/storage/object"
 	"github.com/stretchr/testify/require"
 
 	"go.uber.org/mock/gomock"

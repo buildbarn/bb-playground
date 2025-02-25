@@ -9,11 +9,11 @@ import (
 	"strings"
 	"sync/atomic"
 
-	pg_label "github.com/buildbarn/bb-playground/pkg/label"
-	model_core "github.com/buildbarn/bb-playground/pkg/model/core"
-	model_starlark_pb "github.com/buildbarn/bb-playground/pkg/proto/model/starlark"
-	"github.com/buildbarn/bb-playground/pkg/starlark/unpack"
-	"github.com/buildbarn/bb-playground/pkg/storage/dag"
+	pg_label "github.com/buildbarn/bonanza/pkg/label"
+	model_core "github.com/buildbarn/bonanza/pkg/model/core"
+	model_starlark_pb "github.com/buildbarn/bonanza/pkg/proto/model/starlark"
+	"github.com/buildbarn/bonanza/pkg/starlark/unpack"
+	"github.com/buildbarn/bonanza/pkg/storage/dag"
 
 	"go.starlark.net/starlark"
 )
@@ -52,7 +52,7 @@ func (r *rule) Truth() starlark.Bool {
 	return starlark.True
 }
 
-func (r *rule) Hash() (uint32, error) {
+func (r *rule) Hash(thread *starlark.Thread) (uint32, error) {
 	return 0, errors.New("rule cannot be hashed")
 }
 
@@ -125,17 +125,31 @@ func (r *rule) CallInternal(thread *starlark.Thread, args starlark.Tuple, kwargs
 				return nil, fmt.Errorf("rule uses attribute with name %#v, which is reserved for tests", nameStr)
 			}
 		}
-		if name.IsPublic() {
-			if attrs[name].defaultValue == nil {
+
+		attr := attrs[name]
+		filenameTemplate, isOutput := attr.attrType.IsOutput()
+		isPublic := name.IsPublic()
+		if isOutput && filenameTemplate != "" {
+			// Predeclared output declared using
+			// rule(outputs = ...). These are not taken as
+			// explicit arguments.
+		} else if isPublic {
+			if attr.defaultValue == nil {
 				// Attribute is mandatory.
 				mandatoryUnpackers = append(mandatoryUnpackers, nameStr, &values[len(attrNames)])
 			} else {
 				// Attribute is optional.
 				optionalUnpackers = append(optionalUnpackers, nameStr+"?", &values[len(attrNames)])
 			}
+		} else if false {
+			// TODO: We should also add all label types
+			// here, regardless of whether they are public.
+			// This is needed to ensure VisitLabels() is
+			// called properly.
+		}
+
+		if isPublic || isOutput {
 			attrNames = append(attrNames, name)
-		} else {
-			// TODO: Visit labels from private attribute default values!
 		}
 	}
 
@@ -258,11 +272,23 @@ func (r *rule) CallInternal(thread *starlark.Thread, args starlark.Tuple, kwargs
 	valueEncodingOptions := thread.Local(ValueEncodingOptionsKey).(*ValueEncodingOptions)
 	for i, attrName := range attrNames {
 		attr := attrs[attrName]
+		value := values[i]
+
+		// If the attr is a predeclared output declared using
+		// rule(outputs = ...), compute its actual value.
+		filenameTemplate, isOutput := attr.attrType.IsOutput()
+		if isOutput && filenameTemplate != "" {
+			targetName, err := pg_label.NewTargetName(strings.ReplaceAll(filenameTemplate, "%{name}", name))
+			if err != nil {
+				return nil, fmt.Errorf("invalid target name for predeclared output %#v with filename template %#v: %w", attrName, filenameTemplate, err)
+			}
+			value = NewLabel(currentPackage.AppendTargetName(targetName).AsResolved())
+		}
+
 		canonicalizer := attr.attrType.GetCanonicalizer(currentPackage)
 		if attr.defaultValue != nil {
 			canonicalizer = unpack.IfNotNoneCanonicalizer(canonicalizer)
 		}
-		value := values[i]
 		if value == nil {
 			value = starlark.None
 		}
@@ -286,13 +312,49 @@ func (r *rule) CallInternal(thread *starlark.Thread, args starlark.Tuple, kwargs
 		)
 		patcher.Merge(encodedGroups.Patcher)
 
-		selectValue.VisitLabels(thread, map[starlark.Value]struct{}{}, func(l pg_label.ResolvedLabel) {
-			if canonicalLabel, err := l.AsCanonical(); err == nil {
-				if canonicalLabel.GetCanonicalPackage() == currentPackage {
-					targetRegistrar.registerImplicitTarget(l.GetTargetName().String())
+		// TODO: Visit the default value in case no explicit
+		// value is set.
+		//
+		// TODO: If attr.attrType.IsOutput(), register labels as
+		// explicit targets.
+		if _, isOutput := attr.attrType.IsOutput(); isOutput {
+			if err := selectValue.VisitLabels(thread, map[starlark.Value]struct{}{}, func(l pg_label.ResolvedLabel) error {
+				if canonicalLabel, err := l.AsCanonical(); err == nil {
+					if canonicalLabel.GetCanonicalPackage() == currentPackage {
+						targetName := canonicalLabel.GetTargetName().String()
+						if err := targetRegistrar.registerExplicitTarget(
+							targetName,
+							model_core.NewPatchedMessage(
+								&model_starlark_pb.Target_Definition{
+									Kind: &model_starlark_pb.Target_Definition_PredeclaredOutputFileTarget{
+										PredeclaredOutputFileTarget: &model_starlark_pb.PredeclaredOutputFileTarget{
+											OwnerTargetName: name,
+										},
+									},
+								},
+								patcher,
+							),
+						); err != nil {
+							return err
+						}
+					}
 				}
+				return nil
+			}); err != nil {
+				return nil, err
 			}
-		})
+		} else {
+			if err := selectValue.VisitLabels(thread, map[starlark.Value]struct{}{}, func(l pg_label.ResolvedLabel) error {
+				if canonicalLabel, err := l.AsCanonical(); err == nil {
+					if canonicalLabel.GetCanonicalPackage() == currentPackage {
+						targetRegistrar.registerImplicitTarget(l.GetTargetName().String())
+					}
+				}
+				return nil
+			}); err != nil {
+				return nil, err
+			}
+		}
 	}
 
 	var encodedBuildSettingDefault model_core.PatchedMessage[*model_starlark_pb.Value, dag.ObjectContentsWalker]
@@ -671,7 +733,7 @@ func (bogusValue) Truth() starlark.Bool {
 	return starlark.False
 }
 
-func (bogusValue) Hash() (uint32, error) {
+func (bogusValue) Hash(thread *starlark.Thread) (uint32, error) {
 	return 0, errors.New("bogus_value cannot be hashed")
 }
 

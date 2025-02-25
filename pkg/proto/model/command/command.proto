@@ -1,6 +1,6 @@
 syntax = "proto3";
 
-package buildbarn.playground.model.command;
+package bonanza.model.command;
 
 import "google/protobuf/any.proto";
 import "google/rpc/status.proto";
@@ -9,7 +9,7 @@ import "pkg/proto/model/encoding/encoding.proto";
 import "pkg/proto/model/filesystem/filesystem.proto";
 import "pkg/proto/storage/object/object.proto";
 
-option go_package = "github.com/buildbarn/bb-playground/pkg/proto/model/command";
+option go_package = "github.com/buildbarn/bonanza/pkg/proto/model/command";
 
 message Command {
   // The arguments of the command.
@@ -24,14 +24,13 @@ message Command {
   //
   // TODO: This field is relatively stable. Should we move it into a
   // nested message, so that Command remains small?
-  buildbarn.playground.model.filesystem.DirectoryCreationParameters
+  bonanza.model.filesystem.DirectoryCreationParameters
       directory_creation_parameters = 3;
 
   // Parameters that the client used to create objects containing lists
   // of FileContents messages and file chunks. The worker MUST also use
   // these parameters when creating output files.
-  buildbarn.playground.model.filesystem.FileCreationParameters
-      file_creation_parameters = 4;
+  bonanza.model.filesystem.FileCreationParameters file_creation_parameters = 4;
 
   // If set, capture the contents of directories, regular files, and
   // symbolic links present on the file system matching the provided
@@ -85,7 +84,7 @@ message PathPattern {
   oneof children {
     // Set if there are too many children to store in the current
     // object.
-    buildbarn.playground.model.core.Reference children_external = 1;
+    bonanza.model.core.Reference children_external = 1;
 
     // Set if there are only few children to match.
     Children children_inline = 2;
@@ -96,7 +95,7 @@ message ArgumentList {
   message Element {
     oneof level {
       string leaf = 1;
-      buildbarn.playground.model.core.Reference parent = 2;
+      bonanza.model.core.Reference parent = 2;
     }
   }
 
@@ -112,7 +111,7 @@ message EnvironmentVariableList {
 
     oneof level {
       Leaf leaf = 1;
-      buildbarn.playground.model.core.Reference parent = 2;
+      bonanza.model.core.Reference parent = 2;
     }
   }
 
@@ -122,26 +121,25 @@ message EnvironmentVariableList {
 message Outputs {
   // The data written by the command that was written to standard
   // output, if any.
-  buildbarn.playground.model.filesystem.FileContents stdout = 1;
+  bonanza.model.filesystem.FileContents stdout = 1;
 
   // The data written by the command that was written to standard
   // error, if any.
-  buildbarn.playground.model.filesystem.FileContents stderr = 2;
+  bonanza.model.filesystem.FileContents stderr = 2;
 
   // If Command.output_path_pattern is set, the contents of the files
   // and directories matched by the provided pattern after execution of
   // the command completed.
-  buildbarn.playground.model.filesystem.Directory output_root = 3;
+  bonanza.model.filesystem.Directory output_root = 3;
 }
 
 message Action {
   // The namespace in storage where the command and input root are stored.
-  buildbarn.playground.storage.object.Namespace namespace = 1;
+  bonanza.storage.object.Namespace namespace = 1;
 
   // Encoders that were used to compress and/or encrypt the Command
   // object.
-  repeated buildbarn.playground.model.encoding.BinaryEncoder command_encoders =
-      2;
+  repeated bonanza.model.encoding.BinaryEncoder command_encoders = 2;
 
   // Reference of the Command message, which is a specification of the
   // process to launch and files to capture.

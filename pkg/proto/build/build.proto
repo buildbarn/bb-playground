@@ -1,11 +1,11 @@
 syntax = "proto3";
 
-package buildbarn.playground.build;
+package bonanza.build;
 
 import "pkg/proto/model/encoding/encoding.proto";
 import "pkg/proto/storage/object/object.proto";
 
-option go_package = "github.com/buildbarn/bb-playground/pkg/proto/build";
+option go_package = "github.com/buildbarn/bonanza/pkg/proto/build";
 
 service Builder {
   rpc PerformBuild(PerformBuildRequest) returns (stream PerformBuildResponse);
@@ -20,15 +20,15 @@ message PerformBuildRequest {
 
   // The namespace in storage where the build specification DAG is
   // stored.
-  buildbarn.playground.storage.object.Namespace namespace = 3;
+  bonanza.storage.object.Namespace namespace = 3;
 
   // Reference of the build specification DAG.
   bytes build_specification_reference = 4;
 
   // Encoders that were used to compress and/or encrypt the root of the
   // build specification DAG.
-  repeated buildbarn.playground.model.encoding.BinaryEncoder
-      build_specification_encoders = 5;
+  repeated bonanza.model.encoding.BinaryEncoder build_specification_encoders =
+      5;
 }
 
 message PerformBuildResponse {}

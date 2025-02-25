@@ -5,9 +5,9 @@ import (
 	"fmt"
 	"strings"
 
-	pg_label "github.com/buildbarn/bb-playground/pkg/label"
-	"github.com/buildbarn/bb-playground/pkg/starlark/unpack"
 	bb_path "github.com/buildbarn/bb-storage/pkg/filesystem/path"
+	pg_label "github.com/buildbarn/bonanza/pkg/label"
+	"github.com/buildbarn/bonanza/pkg/starlark/unpack"
 
 	"go.starlark.net/starlark"
 	"go.starlark.net/syntax"
@@ -148,7 +148,7 @@ func (*path) Truth() starlark.Bool {
 	return starlark.True
 }
 
-func (*path) Hash() (uint32, error) {
+func (*path) Hash(thread *starlark.Thread) (uint32, error) {
 	return 0, errors.New("path cannot be hashed")
 }
 

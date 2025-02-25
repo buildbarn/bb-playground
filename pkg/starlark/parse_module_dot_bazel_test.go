@@ -4,9 +4,9 @@ import (
 	"net/url"
 	"testing"
 
-	"github.com/buildbarn/bb-playground/pkg/label"
-	pg_starlark "github.com/buildbarn/bb-playground/pkg/starlark"
 	"github.com/buildbarn/bb-storage/pkg/filesystem/path"
+	"github.com/buildbarn/bonanza/pkg/label"
+	pg_starlark "github.com/buildbarn/bonanza/pkg/starlark"
 	"github.com/stretchr/testify/require"
 
 	"go.starlark.net/starlark"

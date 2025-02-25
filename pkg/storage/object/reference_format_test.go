@@ -3,8 +3,8 @@ package object_test
 import (
 	"testing"
 
-	object_pb "github.com/buildbarn/bb-playground/pkg/proto/storage/object"
-	"github.com/buildbarn/bb-playground/pkg/storage/object"
+	object_pb "github.com/buildbarn/bonanza/pkg/proto/storage/object"
+	"github.com/buildbarn/bonanza/pkg/storage/object"
 	"github.com/stretchr/testify/require"
 )
 

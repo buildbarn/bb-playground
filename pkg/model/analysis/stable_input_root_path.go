@@ -5,15 +5,15 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/buildbarn/bb-playground/pkg/evaluation"
-	model_core "github.com/buildbarn/bb-playground/pkg/model/core"
-	model_filesystem "github.com/buildbarn/bb-playground/pkg/model/filesystem"
-	model_starlark "github.com/buildbarn/bb-playground/pkg/model/starlark"
-	model_analysis_pb "github.com/buildbarn/bb-playground/pkg/proto/model/analysis"
-	model_command_pb "github.com/buildbarn/bb-playground/pkg/proto/model/command"
-	model_filesystem_pb "github.com/buildbarn/bb-playground/pkg/proto/model/filesystem"
-	"github.com/buildbarn/bb-playground/pkg/storage/dag"
 	"github.com/buildbarn/bb-storage/pkg/filesystem/path"
+	"github.com/buildbarn/bonanza/pkg/evaluation"
+	model_core "github.com/buildbarn/bonanza/pkg/model/core"
+	model_filesystem "github.com/buildbarn/bonanza/pkg/model/filesystem"
+	model_starlark "github.com/buildbarn/bonanza/pkg/model/starlark"
+	model_analysis_pb "github.com/buildbarn/bonanza/pkg/proto/model/analysis"
+	model_command_pb "github.com/buildbarn/bonanza/pkg/proto/model/command"
+	model_filesystem_pb "github.com/buildbarn/bonanza/pkg/proto/model/filesystem"
+	"github.com/buildbarn/bonanza/pkg/storage/dag"
 
 	"google.golang.org/protobuf/types/known/durationpb"
 )

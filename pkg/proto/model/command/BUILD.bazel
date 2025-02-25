@@ -18,7 +18,7 @@ proto_library(
 
 go_proto_library(
     name = "command_go_proto",
-    importpath = "github.com/buildbarn/bb-playground/pkg/proto/model/command",
+    importpath = "github.com/buildbarn/bonanza/pkg/proto/model/command",
     proto = ":command_proto",
     visibility = ["//visibility:public"],
     deps = [
@@ -33,6 +33,6 @@ go_proto_library(
 go_library(
     name = "command",
     embed = [":command_go_proto"],
-    importpath = "github.com/buildbarn/bb-playground/pkg/proto/model/command",
+    importpath = "github.com/buildbarn/bonanza/pkg/proto/model/command",
     visibility = ["//visibility:public"],
 )

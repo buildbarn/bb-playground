@@ -1,0 +1,38 @@
+load("@rules_go//go:def.bzl", "go_binary", "go_library")
+
+go_library(
+    name = "bonanza_worker_lib",
+    srcs = ["main.go"],
+    importpath = "github.com/buildbarn/bonanza/cmd/bonanza_worker",
+    visibility = ["//visibility:private"],
+    deps = [
+        "//pkg/model/command",
+        "//pkg/model/filesystem/virtual",
+        "//pkg/proto/configuration/bonanza_worker",
+        "//pkg/proto/remoteworker",
+        "//pkg/proto/storage/dag",
+        "//pkg/proto/storage/object",
+        "//pkg/remoteworker",
+        "//pkg/storage/object/grpc",
+        "@com_github_buildbarn_bb_remote_execution//pkg/clock",
+        "@com_github_buildbarn_bb_remote_execution//pkg/filesystem",
+        "@com_github_buildbarn_bb_remote_execution//pkg/filesystem/virtual",
+        "@com_github_buildbarn_bb_remote_execution//pkg/filesystem/virtual/configuration",
+        "@com_github_buildbarn_bb_remote_execution//pkg/proto/runner",
+        "@com_github_buildbarn_bb_storage//pkg/clock",
+        "@com_github_buildbarn_bb_storage//pkg/global",
+        "@com_github_buildbarn_bb_storage//pkg/program",
+        "@com_github_buildbarn_bb_storage//pkg/random",
+        "@com_github_buildbarn_bb_storage//pkg/util",
+        "@com_github_google_uuid//:uuid",
+        "@org_golang_google_grpc//codes",
+        "@org_golang_google_grpc//status",
+        "@org_golang_x_sync//semaphore",
+    ],
+)
+
+go_binary(
+    name = "bonanza_worker",
+    embed = [":bonanza_worker_lib"],
+    visibility = ["//visibility:public"],
+)

@@ -22,7 +22,7 @@ go_proto_library(
         "@rules_go//proto:go_proto",
         "@rules_go//proto:go_grpc_v2",
     ],
-    importpath = "github.com/buildbarn/bb-playground/pkg/proto/remoteworker",
+    importpath = "github.com/buildbarn/bonanza/pkg/proto/remoteworker",
     proto = ":remoteworker_proto",
     visibility = ["//visibility:public"],
     deps = [
@@ -34,6 +34,6 @@ go_proto_library(
 go_library(
     name = "remoteworker",
     embed = [":remoteworker_go_proto"],
-    importpath = "github.com/buildbarn/bb-playground/pkg/proto/remoteworker",
+    importpath = "github.com/buildbarn/bonanza/pkg/proto/remoteworker",
     visibility = ["//visibility:public"],
 )

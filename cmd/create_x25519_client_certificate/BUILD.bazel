@@ -3,7 +3,7 @@ load("@rules_go//go:def.bzl", "go_binary", "go_library")
 go_library(
     name = "create_x25519_client_certificate_lib",
     srcs = ["main.go"],
-    importpath = "github.com/buildbarn/bb-playground/cmd/create_x25519_client_certificate",
+    importpath = "github.com/buildbarn/bonanza/cmd/create_x25519_client_certificate",
     visibility = ["//visibility:private"],
 )
 

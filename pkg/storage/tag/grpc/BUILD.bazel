@@ -7,7 +7,7 @@ go_library(
         "grpc_resolver.go",
         "grpc_updater.go",
     ],
-    importpath = "github.com/buildbarn/bb-playground/pkg/storage/tag/grpc",
+    importpath = "github.com/buildbarn/bonanza/pkg/storage/tag/grpc",
     visibility = ["//visibility:public"],
     deps = [
         "//pkg/proto/storage/tag",

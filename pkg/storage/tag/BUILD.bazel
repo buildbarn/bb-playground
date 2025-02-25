@@ -9,7 +9,7 @@ go_library(
         "updater.go",
         "updater_server.go",
     ],
-    importpath = "github.com/buildbarn/bb-playground/pkg/storage/tag",
+    importpath = "github.com/buildbarn/bonanza/pkg/storage/tag",
     visibility = ["//visibility:public"],
     deps = [
         "//pkg/proto/storage/tag",

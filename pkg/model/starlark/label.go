@@ -3,12 +3,13 @@ package starlark
 import (
 	"errors"
 	"fmt"
+	go_path "path"
 
-	pg_label "github.com/buildbarn/bb-playground/pkg/label"
-	model_core "github.com/buildbarn/bb-playground/pkg/model/core"
-	model_starlark_pb "github.com/buildbarn/bb-playground/pkg/proto/model/starlark"
-	"github.com/buildbarn/bb-playground/pkg/starlark/unpack"
-	"github.com/buildbarn/bb-playground/pkg/storage/dag"
+	pg_label "github.com/buildbarn/bonanza/pkg/label"
+	model_core "github.com/buildbarn/bonanza/pkg/model/core"
+	model_starlark_pb "github.com/buildbarn/bonanza/pkg/proto/model/starlark"
+	"github.com/buildbarn/bonanza/pkg/starlark/unpack"
+	"github.com/buildbarn/bonanza/pkg/storage/dag"
 
 	"go.starlark.net/starlark"
 	"go.starlark.net/syntax"
@@ -45,8 +46,8 @@ func (l label) Truth() starlark.Bool {
 	return starlark.True
 }
 
-func (l label) Hash() (uint32, error) {
-	return starlark.String(l.value.String()).Hash()
+func (l label) Hash(thread *starlark.Thread) (uint32, error) {
+	return starlark.String(l.value.String()).Hash(thread)
 }
 
 func (l label) Attr(thread *starlark.Thread, name string) (starlark.Value, error) {
@@ -61,6 +62,29 @@ func (l label) Attr(thread *starlark.Thread, name string) (starlark.Value, error
 			return nil, err
 		}
 		return starlark.String(canonicalLabel.GetCanonicalPackage().GetCanonicalRepo().String()), nil
+	case "same_package_label":
+		return starlark.NewBuiltin(
+			"Label.same_package_label",
+			func(thread *starlark.Thread, b *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
+				var targetName pg_label.TargetName
+				if err := starlark.UnpackArgs(
+					b.Name(), args, kwargs,
+					"target_name", unpack.Bind(thread, &targetName, unpack.TargetName),
+				); err != nil {
+					return nil, err
+				}
+				return NewLabel(l.value.AppendTargetName(targetName)), nil
+			},
+		), nil
+	case "workspace_root":
+		canonicalLabel, err := l.value.AsCanonical()
+		if err != nil {
+			return nil, err
+		}
+		return starlark.String(go_path.Join(
+			externalDirectoryName,
+			canonicalLabel.GetCanonicalPackage().GetCanonicalRepo().String(),
+		)), nil
 
 	default:
 		return nil, nil
@@ -71,6 +95,8 @@ var labelAttrNames = []string{
 	"name",
 	"package",
 	"repo_name",
+	"same_package_label",
+	"workspace_root",
 }
 
 func (l label) AttrNames() []string {
@@ -87,8 +113,11 @@ func (l label) EncodeValue(path map[starlark.Value]struct{}, currentIdentifier *
 	), false, nil
 }
 
-func (l label) VisitLabels(thread *starlark.Thread, path map[starlark.Value]struct{}, visitor func(pg_label.ResolvedLabel)) {
-	visitor(l.value)
+func (l label) VisitLabels(thread *starlark.Thread, path map[starlark.Value]struct{}, visitor func(pg_label.ResolvedLabel) error) error {
+	if err := visitor(l.value); err != nil {
+		return fmt.Errorf("label %#v: %w", l.value.String(), err)
+	}
+	return nil
 }
 
 type (

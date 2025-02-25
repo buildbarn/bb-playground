@@ -4,10 +4,10 @@ import (
 	"context"
 	"testing"
 
-	"github.com/buildbarn/bb-playground/pkg/evaluation"
-	model_core "github.com/buildbarn/bb-playground/pkg/model/core"
-	"github.com/buildbarn/bb-playground/pkg/storage/dag"
 	"github.com/buildbarn/bb-storage/pkg/testutil"
+	"github.com/buildbarn/bonanza/pkg/evaluation"
+	model_core "github.com/buildbarn/bonanza/pkg/model/core"
+	"github.com/buildbarn/bonanza/pkg/storage/dag"
 	"github.com/stretchr/testify/require"
 
 	"google.golang.org/protobuf/proto"

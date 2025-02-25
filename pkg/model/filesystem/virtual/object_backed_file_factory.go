@@ -3,10 +3,10 @@ package virtual
 import (
 	"context"
 
-	model_filesystem "github.com/buildbarn/bb-playground/pkg/model/filesystem"
 	"github.com/buildbarn/bb-remote-execution/pkg/filesystem/virtual"
 	"github.com/buildbarn/bb-storage/pkg/filesystem"
 	"github.com/buildbarn/bb-storage/pkg/util"
+	model_filesystem "github.com/buildbarn/bonanza/pkg/model/filesystem"
 )
 
 type objectBackedFileFactory struct {

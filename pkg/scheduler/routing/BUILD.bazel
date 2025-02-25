@@ -7,7 +7,7 @@ go_library(
         "configuration.go",
         "simple_action_router.go",
     ],
-    importpath = "github.com/buildbarn/bb-playground/pkg/scheduler/routing",
+    importpath = "github.com/buildbarn/bonanza/pkg/scheduler/routing",
     visibility = ["//visibility:public"],
     deps = [
         "//pkg/proto/configuration/scheduler",

@@ -4,7 +4,7 @@ import (
 	"maps"
 	"slices"
 
-	pg_label "github.com/buildbarn/bb-playground/pkg/label"
+	pg_label "github.com/buildbarn/bonanza/pkg/label"
 
 	"go.starlark.net/starlark"
 )

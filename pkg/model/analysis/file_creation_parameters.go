@@ -3,11 +3,11 @@ package analysis
 import (
 	"context"
 
-	"github.com/buildbarn/bb-playground/pkg/evaluation"
-	model_core "github.com/buildbarn/bb-playground/pkg/model/core"
-	model_filesystem "github.com/buildbarn/bb-playground/pkg/model/filesystem"
-	model_analysis_pb "github.com/buildbarn/bb-playground/pkg/proto/model/analysis"
-	"github.com/buildbarn/bb-playground/pkg/storage/dag"
+	"github.com/buildbarn/bonanza/pkg/evaluation"
+	model_core "github.com/buildbarn/bonanza/pkg/model/core"
+	model_filesystem "github.com/buildbarn/bonanza/pkg/model/filesystem"
+	model_analysis_pb "github.com/buildbarn/bonanza/pkg/proto/model/analysis"
+	"github.com/buildbarn/bonanza/pkg/storage/dag"
 )
 
 func (c *baseComputer) ComputeFileCreationParametersValue(ctx context.Context, key *model_analysis_pb.FileCreationParameters_Key, e FileCreationParametersEnvironment) (PatchedFileCreationParametersValue, error) {

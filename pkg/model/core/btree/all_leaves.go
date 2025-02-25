@@ -4,10 +4,10 @@ import (
 	"context"
 	"iter"
 
-	model_core "github.com/buildbarn/bb-playground/pkg/model/core"
-	model_parser "github.com/buildbarn/bb-playground/pkg/model/parser"
-	model_core_pb "github.com/buildbarn/bb-playground/pkg/proto/model/core"
-	"github.com/buildbarn/bb-playground/pkg/storage/object"
+	model_core "github.com/buildbarn/bonanza/pkg/model/core"
+	model_parser "github.com/buildbarn/bonanza/pkg/model/parser"
+	model_core_pb "github.com/buildbarn/bonanza/pkg/proto/model/core"
+	"github.com/buildbarn/bonanza/pkg/storage/object"
 
 	"google.golang.org/protobuf/proto"
 )
@@ -23,7 +23,7 @@ func AllLeaves[
 	ctx context.Context,
 	reader model_parser.ParsedObjectReader[object.LocalReference, model_core.Message[[]TMessagePtr]],
 	root model_core.Message[[]TMessagePtr],
-	traverser func(TMessagePtr) *model_core_pb.Reference,
+	traverser func(model_core.Message[TMessagePtr]) (*model_core_pb.Reference, error),
 	errOut *error,
 ) iter.Seq[model_core.Message[TMessagePtr]] {
 	lists := []model_core.Message[[]TMessagePtr]{root}
@@ -35,7 +35,13 @@ func AllLeaves[
 			} else {
 				entry := lastList.Message[0]
 				lastList.Message = lastList.Message[1:]
-				if childReference := traverser(entry); childReference == nil {
+				if childReference, err := traverser(model_core.Message[TMessagePtr]{
+					Message:            entry,
+					OutgoingReferences: lastList.OutgoingReferences,
+				}); err != nil {
+					*errOut = err
+					return
+				} else if childReference == nil {
 					// Traverser wants us to yield a leaf.
 					if !yield(model_core.Message[TMessagePtr]{
 						Message:            entry,

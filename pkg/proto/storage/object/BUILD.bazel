@@ -14,7 +14,7 @@ go_proto_library(
         "@rules_go//proto:go_proto",
         "@rules_go//proto:go_grpc_v2",
     ],
-    importpath = "github.com/buildbarn/bb-playground/pkg/proto/storage/object",
+    importpath = "github.com/buildbarn/bonanza/pkg/proto/storage/object",
     proto = ":object_proto",
     visibility = ["//visibility:public"],
 )
@@ -22,6 +22,6 @@ go_proto_library(
 go_library(
     name = "object",
     embed = [":object_go_proto"],
-    importpath = "github.com/buildbarn/bb-playground/pkg/proto/storage/object",
+    importpath = "github.com/buildbarn/bonanza/pkg/proto/storage/object",
     visibility = ["//visibility:public"],
 )

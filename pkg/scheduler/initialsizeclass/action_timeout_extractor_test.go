@@ -4,9 +4,9 @@ import (
 	"testing"
 	"time"
 
-	remoteexecution_pb "github.com/buildbarn/bb-playground/pkg/proto/remoteexecution"
-	"github.com/buildbarn/bb-playground/pkg/scheduler/initialsizeclass"
 	"github.com/buildbarn/bb-storage/pkg/testutil"
+	remoteexecution_pb "github.com/buildbarn/bonanza/pkg/proto/remoteexecution"
+	"github.com/buildbarn/bonanza/pkg/scheduler/initialsizeclass"
 	"github.com/stretchr/testify/require"
 
 	"google.golang.org/grpc/codes"

@@ -9,18 +9,18 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/buildbarn/bb-playground/pkg/evaluation"
-	"github.com/buildbarn/bb-playground/pkg/label"
-	model_core "github.com/buildbarn/bb-playground/pkg/model/core"
-	"github.com/buildbarn/bb-playground/pkg/model/core/btree"
-	model_parser "github.com/buildbarn/bb-playground/pkg/model/parser"
-	model_starlark "github.com/buildbarn/bb-playground/pkg/model/starlark"
-	model_analysis_pb "github.com/buildbarn/bb-playground/pkg/proto/model/analysis"
-	model_core_pb "github.com/buildbarn/bb-playground/pkg/proto/model/core"
-	model_starlark_pb "github.com/buildbarn/bb-playground/pkg/proto/model/starlark"
-	"github.com/buildbarn/bb-playground/pkg/starlark/unpack"
-	"github.com/buildbarn/bb-playground/pkg/storage/dag"
-	"github.com/buildbarn/bb-playground/pkg/storage/object"
+	"github.com/buildbarn/bonanza/pkg/evaluation"
+	"github.com/buildbarn/bonanza/pkg/label"
+	model_core "github.com/buildbarn/bonanza/pkg/model/core"
+	"github.com/buildbarn/bonanza/pkg/model/core/btree"
+	model_parser "github.com/buildbarn/bonanza/pkg/model/parser"
+	model_starlark "github.com/buildbarn/bonanza/pkg/model/starlark"
+	model_analysis_pb "github.com/buildbarn/bonanza/pkg/proto/model/analysis"
+	model_core_pb "github.com/buildbarn/bonanza/pkg/proto/model/core"
+	model_starlark_pb "github.com/buildbarn/bonanza/pkg/proto/model/starlark"
+	"github.com/buildbarn/bonanza/pkg/starlark/unpack"
+	"github.com/buildbarn/bonanza/pkg/storage/dag"
+	"github.com/buildbarn/bonanza/pkg/storage/object"
 
 	"google.golang.org/protobuf/types/known/emptypb"
 
@@ -257,6 +257,59 @@ var (
 	)
 )
 
+func getSingleFileConfiguredTargetValue(file *model_starlark_pb.File) PatchedConfiguredTargetValue {
+	fileValue := &model_starlark_pb.Value{
+		Kind: &model_starlark_pb.Value_File{
+			File: file,
+		},
+	}
+	return model_core.NewSimplePatchedMessage[dag.ObjectContentsWalker](
+		&model_analysis_pb.ConfiguredTarget_Value{
+			ProviderInstances: []*model_starlark_pb.Struct{{
+				ProviderInstanceProperties: &model_starlark_pb.Provider_InstanceProperties{
+					ProviderIdentifier: defaultInfoProviderIdentifier.String(),
+				},
+				Fields: &model_starlark_pb.Struct_Fields{
+					Keys: []string{
+						"data_runfiles",
+						"default_runfiles",
+						"files",
+						"files_to_run",
+					},
+					Values: []*model_starlark_pb.List_Element{
+						{
+							Level: &model_starlark_pb.List_Element_Leaf{
+								Leaf: emptyRunfilesValue,
+							},
+						},
+						{
+							Level: &model_starlark_pb.List_Element_Leaf{
+								Leaf: emptyRunfilesValue,
+							},
+						},
+						{
+							Level: &model_starlark_pb.List_Element_Leaf{
+								Leaf: &model_starlark_pb.Value{
+									Kind: &model_starlark_pb.Value_Depset{
+										Depset: &model_starlark_pb.Depset{
+											Elements: []*model_starlark_pb.List_Element{{
+												Level: &model_starlark_pb.List_Element_Leaf{
+													Leaf: fileValue,
+												},
+											}},
+										},
+									},
+								},
+							},
+						},
+						getDefaultInfoSimpleFilesToRun(fileValue),
+					},
+				},
+			}},
+		},
+	)
+}
+
 func (c *baseComputer) ComputeConfiguredTargetValue(ctx context.Context, key model_core.Message[*model_analysis_pb.ConfiguredTarget_Key], e ConfiguredTargetEnvironment) (PatchedConfiguredTargetValue, error) {
 	targetLabel, err := label.NewCanonicalLabel(key.Message.Label)
 	if err != nil {
@@ -322,23 +375,38 @@ func (c *baseComputer) ComputeConfiguredTargetValue(ctx context.Context, key mod
 				},
 			},
 		), nil
+	case *model_starlark_pb.Target_Definition_PredeclaredOutputFileTarget:
+		// Handcraft a DefaultInfo provider for this source file.
+		return getSingleFileConfiguredTargetValue(&model_starlark_pb.File{
+			Owner: &model_starlark_pb.File_Owner{
+				Cfg:        []byte{0xbe, 0x8a, 0x60, 0x1c, 0xe3, 0x03, 0x44, 0xf0},
+				TargetName: targetKind.PredeclaredOutputFileTarget.OwnerTargetName,
+			},
+			Package:             targetLabel.GetCanonicalPackage().String(),
+			PackageRelativePath: targetLabel.GetTargetName().String(),
+			Type:                model_starlark_pb.File_FILE,
+		}), nil
 	case *model_starlark_pb.Target_Definition_RuleTarget:
 		ruleTarget := targetKind.RuleTarget
+		ruleIdentifier, err := label.NewCanonicalStarlarkIdentifier(ruleTarget.RuleIdentifier)
+		if err != nil {
+			return PatchedConfiguredTargetValue{}, evaluation.ErrMissingDependency
+		}
 
 		allBuiltinsModulesNames := e.GetBuiltinsModuleNamesValue(&model_analysis_pb.BuiltinsModuleNames_Key{})
 		ruleValue := e.GetCompiledBzlFileGlobalValue(&model_analysis_pb.CompiledBzlFileGlobal_Key{
-			Identifier: ruleTarget.RuleIdentifier,
+			Identifier: ruleIdentifier.String(),
 		})
 		if !allBuiltinsModulesNames.IsSet() || !ruleValue.IsSet() {
 			return PatchedConfiguredTargetValue{}, evaluation.ErrMissingDependency
 		}
 		v, ok := ruleValue.Message.Global.GetKind().(*model_starlark_pb.Value_Rule)
 		if !ok {
-			return PatchedConfiguredTargetValue{}, fmt.Errorf("%#v is not a rule", ruleTarget.RuleIdentifier)
+			return PatchedConfiguredTargetValue{}, fmt.Errorf("%#v is not a rule", ruleIdentifier.String())
 		}
 		d, ok := v.Rule.Kind.(*model_starlark_pb.Rule_Definition_)
 		if !ok {
-			return PatchedConfiguredTargetValue{}, fmt.Errorf("%#v is not a rule definition", ruleTarget.RuleIdentifier)
+			return PatchedConfiguredTargetValue{}, fmt.Errorf("%#v is not a rule definition", ruleIdentifier.String())
 		}
 		ruleDefinition := model_core.Message[*model_starlark_pb.Rule_Definition]{
 			Message:            d.Definition,
@@ -375,14 +443,14 @@ func (c *baseComputer) ComputeConfiguredTargetValue(ctx context.Context, key mod
 				return PatchedConfiguredTargetValue{}, fmt.Errorf("TODO: support incoming edge transitions that depends on attrs")
 			case *model_analysis_pb.UserDefinedTransition_Value_Success_:
 				if l := len(result.Success.Entries); l != 1 {
-					return PatchedConfiguredTargetValue{}, fmt.Errorf("incoming edge transition %#v used by rule %#v is a 1:%d transition, while a 1:1 transition was expected", cfgTransitionIdentifier, ruleTarget.RuleIdentifier, l)
+					return PatchedConfiguredTargetValue{}, fmt.Errorf("incoming edge transition %#v used by rule %#v is a 1:%d transition, while a 1:1 transition was expected", cfgTransitionIdentifier, ruleIdentifier.String(), l)
 				}
 				configurationReference = model_core.Message[*model_core_pb.Reference]{
 					Message:            result.Success.Entries[0].OutputConfigurationReference,
 					OutgoingReferences: incomingEdgeTransitionValue.OutgoingReferences,
 				}
 			default:
-				return PatchedConfiguredTargetValue{}, fmt.Errorf("incoming edge transition %#v used by rule %#v is not a 1:1 transition", cfgTransitionIdentifier, ruleTarget.RuleIdentifier)
+				return PatchedConfiguredTargetValue{}, fmt.Errorf("incoming edge transition %#v used by rule %#v is not a 1:1 transition", cfgTransitionIdentifier, ruleIdentifier.String())
 			}
 		}
 
@@ -391,7 +459,7 @@ func (c *baseComputer) ComputeConfiguredTargetValue(ctx context.Context, key mod
 			computer:               c,
 			context:                ctx,
 			environment:            e,
-			thread:                 thread,
+			ruleIdentifier:         ruleIdentifier,
 			targetLabel:            targetLabel,
 			configurationReference: configurationReference,
 			ruleDefinition:         ruleDefinition,
@@ -463,6 +531,7 @@ func (c *baseComputer) ComputeConfiguredTargetValue(ctx context.Context, key mod
 						Message:            []*model_starlark_pb.Value{defaultValue},
 						OutgoingReferences: rc.ruleDefinition.OutgoingReferences,
 					},
+					rc.ruleIdentifier.GetCanonicalLabel().GetCanonicalPackage(),
 				)
 				if err != nil {
 					if errors.Is(err, evaluation.ErrMissingDependency) {
@@ -612,73 +681,21 @@ func (c *baseComputer) ComputeConfiguredTargetValue(ctx context.Context, key mod
 		), nil
 	case *model_starlark_pb.Target_Definition_SourceFileTarget:
 		// Handcraft a DefaultInfo provider for this source file.
-		fileValue := &model_starlark_pb.Value{
-			Kind: &model_starlark_pb.Value_File{
-				File: &model_starlark_pb.File{
-					Package:             targetLabel.GetCanonicalPackage().String(),
-					PackageRelativePath: targetLabel.GetTargetName().String(),
-					Type:                model_starlark_pb.File_FILE,
-				},
-			},
-		}
-		return model_core.NewSimplePatchedMessage[dag.ObjectContentsWalker](
-			&model_analysis_pb.ConfiguredTarget_Value{
-				ProviderInstances: []*model_starlark_pb.Struct{{
-					ProviderInstanceProperties: &model_starlark_pb.Provider_InstanceProperties{
-						ProviderIdentifier: defaultInfoProviderIdentifier.String(),
-					},
-					Fields: &model_starlark_pb.Struct_Fields{
-						Keys: []string{
-							"data_runfiles",
-							"default_runfiles",
-							"files",
-							"files_to_run",
-						},
-						Values: []*model_starlark_pb.List_Element{
-							{
-								Level: &model_starlark_pb.List_Element_Leaf{
-									Leaf: emptyRunfilesValue,
-								},
-							},
-							{
-								Level: &model_starlark_pb.List_Element_Leaf{
-									Leaf: emptyRunfilesValue,
-								},
-							},
-							{
-								Level: &model_starlark_pb.List_Element_Leaf{
-									Leaf: &model_starlark_pb.Value{
-										Kind: &model_starlark_pb.Value_Depset{
-											Depset: &model_starlark_pb.Depset{
-												Elements: []*model_starlark_pb.List_Element{{
-													Level: &model_starlark_pb.List_Element_Leaf{
-														Leaf: fileValue,
-													},
-												}},
-											},
-										},
-									},
-								},
-							},
-							getDefaultInfoSimpleFilesToRun(fileValue),
-						},
-					},
-				}},
-			},
-		), nil
+		return getSingleFileConfiguredTargetValue(&model_starlark_pb.File{
+			Package:             targetLabel.GetCanonicalPackage().String(),
+			PackageRelativePath: targetLabel.GetTargetName().String(),
+			Type:                model_starlark_pb.File_FILE,
+		}), nil
 	default:
 		return PatchedConfiguredTargetValue{}, errors.New("only source file targets and rule targets can be configured")
 	}
 }
 
 type ruleContext struct {
-	computer    *baseComputer
-	context     context.Context
-	environment ConfiguredTargetEnvironment
-	// TODO: This field should not exist. Unfortunately, methods
-	// like the ones provided by starlark.Mapping do not take a
-	// thread.
-	thread                 *starlark.Thread
+	computer               *baseComputer
+	context                context.Context
+	environment            ConfiguredTargetEnvironment
+	ruleIdentifier         label.CanonicalStarlarkIdentifier
 	targetLabel            label.CanonicalLabel
 	configurationReference model_core.Message[*model_core_pb.Reference]
 	ruleDefinition         model_core.Message[*model_starlark_pb.Rule_Definition]
@@ -711,7 +728,7 @@ func (ruleContext) Truth() starlark.Bool {
 	return starlark.True
 }
 
-func (ruleContext) Hash() (uint32, error) {
+func (ruleContext) Hash(thread *starlark.Thread) (uint32, error) {
 	return 0, errors.New("ctx cannot be hashed")
 }
 
@@ -799,6 +816,9 @@ func (rc *ruleContext) Attr(thread *starlark.Thread, name string) (starlark.Valu
 		// ctx.fragments?
 		return model_starlark.NewStructFromDict(nil, map[string]any{
 			"coverage_enabled": starlark.False,
+			"has_separate_genfiles_directory": starlark.NewBuiltin("ctx.configuration.has_separate_genfiles_directory", func(thread *starlark.Thread, b *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
+				return starlark.False, nil
+			}),
 			// TODO: Use ";" on Windows.
 			"host_path_separator": starlark.String(":"),
 			"is_sibling_repository_layout": starlark.NewBuiltin("ctx.configuration.is_sibling_repository_layout", func(thread *starlark.Thread, b *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
@@ -822,6 +842,10 @@ func (rc *ruleContext) Attr(thread *starlark.Thread, name string) (starlark.Valu
 		}), nil
 	case "disabled_features":
 		return starlark.NewList(nil), nil
+	case "exec_groups":
+		return &ruleContextExecGroups{
+			ruleContext: rc,
+		}, nil
 	case "executable":
 		return &ruleContextExecutable{
 			ruleContext: rc,
@@ -894,12 +918,14 @@ func (rc *ruleContext) Attr(thread *starlark.Thread, name string) (starlark.Valu
 			PackageRelativePath: "volatile-status.txt",
 			Type:                model_starlark_pb.File_FILE,
 		}), nil
+	case "workspace_name":
+		return starlark.String("_main"), nil
 	default:
 		return nil, nil
 	}
 }
 
-func (rc *ruleContext) configureAttr(thread *starlark.Thread, namedAttr *model_starlark_pb.NamedAttr, valueParts model_core.Message[[]*model_starlark_pb.Value]) (starlark.Value, error) {
+func (rc *ruleContext) configureAttr(thread *starlark.Thread, namedAttr *model_starlark_pb.NamedAttr, valueParts model_core.Message[[]*model_starlark_pb.Value], visibilityFromPackage label.CanonicalPackage) (starlark.Value, error) {
 	// See if any transitions need to be applied.
 	var cfg *model_starlark_pb.Transition_Reference
 	isScalar := false
@@ -1011,7 +1037,7 @@ func (rc *ruleContext) configureAttr(thread *starlark.Thread, namedAttr *model_s
 				resolvedLabelValue := rc.environment.GetVisibleTargetValue(
 					model_core.PatchedMessage[*model_analysis_pb.VisibleTarget_Key, dag.ObjectContentsWalker]{
 						Message: &model_analysis_pb.VisibleTarget_Key{
-							FromPackage:            rc.targetLabel.GetCanonicalPackage().String(),
+							FromPackage:            visibilityFromPackage.String(),
 							ToLabel:                canonicalLabel.String(),
 							ConfigurationReference: patchedConfigurationReference1.Message,
 						},
@@ -1108,6 +1134,7 @@ var ruleContextAttrNames = []string{
 	"actions",
 	"attr",
 	"build_setting_value",
+	"exec_groups",
 	"executable",
 	"features",
 	"file",
@@ -1119,6 +1146,7 @@ var ruleContextAttrNames = []string{
 	"toolchains",
 	"var",
 	"version_file",
+	"workspace_name",
 }
 
 func (ruleContext) AttrNames() []string {
@@ -1160,6 +1188,7 @@ func (ruleContext) doRunfiles(thread *starlark.Thread, b *starlark.Builtin, args
 	}
 
 	filesDepset, err := model_starlark.NewDepset(
+		thread,
 		files,
 		[]*model_starlark.Depset{transitiveFiles},
 		model_starlark_pb.Depset_DEFAULT,
@@ -1175,10 +1204,11 @@ func (ruleContext) doRunfiles(thread *starlark.Thread, b *starlark.Builtin, args
 	), nil
 }
 
-func (rc *ruleContext) getAttrValueParts(namedAttr *model_starlark_pb.NamedAttr) (model_core.Message[[]*model_starlark_pb.Value], error) {
+func (rc *ruleContext) getAttrValueParts(namedAttr *model_starlark_pb.NamedAttr) (valueParts model_core.Message[[]*model_starlark_pb.Value], visibilityFromPackage label.CanonicalPackage, err error) {
 	attr := namedAttr.Attr
+	var badCanonicalPackage label.CanonicalPackage
 	if attr == nil {
-		return model_core.Message[[]*model_starlark_pb.Value]{}, fmt.Errorf("attr %#v misses a definition", namedAttr.Name)
+		return model_core.Message[[]*model_starlark_pb.Value]{}, badCanonicalPackage, fmt.Errorf("attr %#v misses a definition", namedAttr.Name)
 	}
 
 	if !strings.HasPrefix(namedAttr.Name, "_") {
@@ -1189,18 +1219,18 @@ func (rc *ruleContext) getAttrValueParts(namedAttr *model_starlark_pb.NamedAttr)
 			func(i int) int { return strings.Compare(namedAttr.Name, ruleTargetAttrValues[i].Name) },
 		)
 		if !ok {
-			return model_core.Message[[]*model_starlark_pb.Value]{}, fmt.Errorf("missing value for attr %#v", namedAttr.Name)
+			return model_core.Message[[]*model_starlark_pb.Value]{}, badCanonicalPackage, fmt.Errorf("missing value for attr %#v", namedAttr.Name)
 		}
 
 		selectGroups := ruleTargetAttrValues[ruleTargetAttrValueIndex].ValueParts
 		if len(selectGroups) == 0 {
-			return model_core.Message[[]*model_starlark_pb.Value]{}, fmt.Errorf("attr %#v has no select groups", namedAttr.Name)
+			return model_core.Message[[]*model_starlark_pb.Value]{}, badCanonicalPackage, fmt.Errorf("attr %#v has no select groups", namedAttr.Name)
 		}
 		valueParts := make([]*model_starlark_pb.Value, 0, len(selectGroups))
 		for _, selectGroup := range selectGroups {
 			valuePart, err := getValueFromSelectGroup(rc.environment, selectGroup, false)
 			if err != nil {
-				return model_core.Message[[]*model_starlark_pb.Value]{}, err
+				return model_core.Message[[]*model_starlark_pb.Value]{}, badCanonicalPackage, err
 			}
 			valueParts = append(valueParts, valuePart)
 		}
@@ -1217,18 +1247,18 @@ func (rc *ruleContext) getAttrValueParts(namedAttr *model_starlark_pb.NamedAttr)
 			return model_core.Message[[]*model_starlark_pb.Value]{
 				Message:            valueParts,
 				OutgoingReferences: rc.ruleTarget.OutgoingReferences,
-			}, nil
+			}, rc.targetLabel.GetCanonicalPackage(), nil
 		}
 	}
 
 	// No value provided. Use the default value from the rule definition.
 	if attr.Default == nil {
-		return model_core.Message[[]*model_starlark_pb.Value]{}, fmt.Errorf("missing value for mandatory attr %#v", namedAttr.Name)
+		return model_core.Message[[]*model_starlark_pb.Value]{}, badCanonicalPackage, fmt.Errorf("missing value for mandatory attr %#v", namedAttr.Name)
 	}
 	return model_core.Message[[]*model_starlark_pb.Value]{
 		Message:            []*model_starlark_pb.Value{attr.Default},
 		OutgoingReferences: rc.ruleDefinition.OutgoingReferences,
-	}, nil
+	}, rc.ruleIdentifier.GetCanonicalLabel().GetCanonicalPackage(), nil
 }
 
 func (rc *ruleContext) getPatchedConfigurationReference() model_core.PatchedMessage[*model_core_pb.Reference, dag.ObjectContentsWalker] {
@@ -1263,12 +1293,14 @@ func (ruleContextActions) Truth() starlark.Bool {
 	return starlark.True
 }
 
-func (ruleContextActions) Hash() (uint32, error) {
+func (ruleContextActions) Hash(thread *starlark.Thread) (uint32, error) {
 	return 0, errors.New("ctx.actions cannot be hashed")
 }
 
 func (rca *ruleContextActions) Attr(thread *starlark.Thread, name string) (starlark.Value, error) {
 	switch name {
+	case "_cc_internal_actions2ctx_cheat":
+		return rca.ruleContext, nil
 	case "args":
 		return starlark.NewBuiltin("ctx.actions.args", rca.doArgs), nil
 	case "declare_directory":
@@ -1293,10 +1325,15 @@ func (rca *ruleContextActions) Attr(thread *starlark.Thread, name string) (starl
 }
 
 var ruleContextActionsAttrNames = []string{
+	"_cc_internal_actions2ctx_cheat",
+	"args",
 	"declare_directory",
 	"declare_file",
+	"run",
 	"run_shell",
 	"symlink",
+	"transform_info_file",
+	"transform_version_file",
 	"write",
 }
 
@@ -1471,7 +1508,7 @@ func (ruleContextAttr) Truth() starlark.Bool {
 	return starlark.True
 }
 
-func (ruleContextAttr) Hash() (uint32, error) {
+func (ruleContextAttr) Hash(thread *starlark.Thread) (uint32, error) {
 	return 0, errors.New("ctx.attr cannot be hashed")
 }
 
@@ -1503,11 +1540,11 @@ func (rca *ruleContextAttr) Attr(thread *starlark.Thread, name string) (starlark
 		if attr == nil {
 			// Decode the values of the parts of the attribute.
 			namedAttr := ruleDefinitionAttrs[ruleDefinitionAttrIndex]
-			valueParts, err := rc.getAttrValueParts(namedAttr)
+			valueParts, visibilityFromPackage, err := rc.getAttrValueParts(namedAttr)
 			if err != nil {
 				return nil, err
 			}
-			attr, err = rc.configureAttr(thread, namedAttr, valueParts)
+			attr, err = rc.configureAttr(thread, namedAttr, valueParts, visibilityFromPackage)
 			if err != nil {
 				return nil, err
 			}
@@ -1527,6 +1564,50 @@ func (rca *ruleContextAttr) AttrNames() []string {
 		attrNames = append(attrNames, attr.Name)
 	}
 	return attrNames
+}
+
+type ruleContextExecGroups struct {
+	ruleContext *ruleContext
+}
+
+var _ starlark.Mapping = (*ruleContextExecGroups)(nil)
+
+func (ruleContextExecGroups) String() string {
+	return "<ctx.exec_groups>"
+}
+
+func (ruleContextExecGroups) Type() string {
+	return "ctx.exec_groups"
+}
+
+func (ruleContextExecGroups) Freeze() {
+}
+
+func (ruleContextExecGroups) Truth() starlark.Bool {
+	return starlark.True
+}
+
+func (ruleContextExecGroups) Hash(thread *starlark.Thread) (uint32, error) {
+	return 0, errors.New("ctx.exec_groups cannot be hashed")
+}
+
+func (rca *ruleContextExecGroups) Get(thread *starlark.Thread, key starlark.Value) (starlark.Value, bool, error) {
+	var execGroupName string
+	if err := unpack.String.UnpackInto(thread, key, &execGroupName); err != nil {
+		return nil, false, err
+	}
+
+	rc := rca.ruleContext
+	execGroups := rc.ruleDefinition.Message.ExecGroups
+	execGroupIndex, ok := sort.Find(
+		len(execGroups),
+		func(i int) int { return strings.Compare(execGroupName, execGroups[i].Name) },
+	)
+	if !ok {
+		return nil, false, fmt.Errorf("rule does not have an exec group with name %#v", execGroupName)
+	}
+
+	return nil, true, fmt.Errorf("TODO: use exec group with index %d", execGroupIndex)
 }
 
 type ruleContextExecutable struct {
@@ -1550,7 +1631,7 @@ func (ruleContextExecutable) Truth() starlark.Bool {
 	return starlark.True
 }
 
-func (ruleContextExecutable) Hash() (uint32, error) {
+func (ruleContextExecutable) Hash(thread *starlark.Thread) (uint32, error) {
 	return 0, errors.New("ctx.executable cannot be hashed")
 }
 
@@ -1576,7 +1657,7 @@ func (rce *ruleContextExecutable) Attr(thread *starlark.Thread, name string) (st
 		}
 
 		// Decode the values of the parts of the attribute.
-		valueParts, err := rc.getAttrValueParts(ruleDefinitionAttrs[ruleDefinitionAttrIndex])
+		valueParts, visibilityFromPackage, err := rc.getAttrValueParts(ruleDefinitionAttrs[ruleDefinitionAttrIndex])
 		if err != nil {
 			return nil, err
 		}
@@ -1590,7 +1671,7 @@ func (rce *ruleContextExecutable) Attr(thread *starlark.Thread, name string) (st
 			visibleTarget := rc.environment.GetVisibleTargetValue(
 				model_core.NewPatchedMessage(
 					&model_analysis_pb.VisibleTarget_Key{
-						FromPackage:            rc.targetLabel.GetCanonicalPackage().String(),
+						FromPackage:            visibilityFromPackage.String(),
 						ToLabel:                labelValue.Label,
 						ConfigurationReference: configurationReference.Message,
 					},
@@ -1648,7 +1729,7 @@ func (rce *ruleContextExecutable) Attr(thread *starlark.Thread, name string) (st
 		case *model_starlark_pb.Value_None:
 			executable = starlark.None
 		default:
-			return nil, fmt.Errorf("value attr %#v is not of type label", name)
+			return nil, fmt.Errorf("value of attr %#v is not of type label", name)
 
 		}
 
@@ -1684,7 +1765,7 @@ func (ruleContextFile) Truth() starlark.Bool {
 	return starlark.True
 }
 
-func (ruleContextFile) Hash() (uint32, error) {
+func (ruleContextFile) Hash(thread *starlark.Thread) (uint32, error) {
 	return 0, errors.New("ctx.file cannot be hashed")
 }
 
@@ -1710,7 +1791,7 @@ func (rcf *ruleContextFile) Attr(thread *starlark.Thread, name string) (starlark
 		}
 
 		// Decode the values of the parts of the attribute.
-		valueParts, err := rc.getAttrValueParts(ruleDefinitionAttrs[ruleDefinitionAttrIndex])
+		valueParts, visibilityFromPackage, err := rc.getAttrValueParts(ruleDefinitionAttrs[ruleDefinitionAttrIndex])
 		if err != nil {
 			return nil, err
 		}
@@ -1724,7 +1805,7 @@ func (rcf *ruleContextFile) Attr(thread *starlark.Thread, name string) (starlark
 			visibleTarget := rc.environment.GetVisibleTargetValue(
 				model_core.NewPatchedMessage(
 					&model_analysis_pb.VisibleTarget_Key{
-						FromPackage:            rc.targetLabel.GetCanonicalPackage().String(),
+						FromPackage:            visibilityFromPackage.String(),
 						ToLabel:                labelValue.Label,
 						ConfigurationReference: configurationReference.Message,
 					},
@@ -1781,7 +1862,7 @@ func (rcf *ruleContextFile) Attr(thread *starlark.Thread, name string) (starlark
 		case *model_starlark_pb.Value_None:
 			file = starlark.None
 		default:
-			return nil, fmt.Errorf("value attr %#v is not of type label", name)
+			return nil, fmt.Errorf("value of attr %#v is not of type label", name)
 
 		}
 
@@ -1823,7 +1904,7 @@ func (ruleContextFiles) Truth() starlark.Bool {
 	return starlark.True
 }
 
-func (ruleContextFiles) Hash() (uint32, error) {
+func (ruleContextFiles) Hash(thread *starlark.Thread) (uint32, error) {
 	return 0, errors.New("ctx.files cannot be hashed")
 }
 
@@ -1847,15 +1928,111 @@ func (rcf *ruleContextFiles) Attr(thread *starlark.Thread, name string) (starlar
 			return nil, fmt.Errorf("attr %#v is not of type label or label_list", name)
 		}
 
-		// Decode the values of the parts of the attribute.
-		_, err := rc.getAttrValueParts(namedAttr)
+		// Walk over all labels contained in the value.
+		valueParts, visibilityFromPackage, err := rc.getAttrValueParts(namedAttr)
 		if err != nil {
 			return nil, err
 		}
+		labeListParentsSeen := map[object.LocalReference]struct{}{}
+		listReader := model_parser.NewStorageBackedParsedObjectReader(
+			rc.computer.objectDownloader,
+			rc.computer.getValueObjectEncoder(),
+			model_parser.NewMessageListObjectParser[object.LocalReference, model_starlark_pb.List_Element](),
+		)
+		missingDependencies := false
+		var filesDepsetElements []any
+		for _, valuePart := range valueParts.Message {
+			var labelList model_core.Message[[]*model_starlark_pb.List_Element]
+			if listValue, ok := valuePart.Kind.(*model_starlark_pb.Value_List); ok {
+				labelList = model_core.Message[[]*model_starlark_pb.List_Element]{
+					Message:            listValue.List.Elements,
+					OutgoingReferences: valueParts.OutgoingReferences,
+				}
+			} else {
+				labelList = model_core.Message[[]*model_starlark_pb.List_Element]{
+					Message: []*model_starlark_pb.List_Element{{
+						Level: &model_starlark_pb.List_Element_Leaf{
+							Leaf: valuePart,
+						},
+					}},
+					OutgoingReferences: valueParts.OutgoingReferences,
+				}
+			}
 
-		// TODO: Get configured target corresponding to label
-		// and extract file from DefaultInfo provider.
-		files = starlark.NewList(nil)
+			var errIter error
+			for encodedElement := range model_starlark.AllListLeafElementsSkippingDuplicateParents(
+				rc.context,
+				listReader,
+				labelList,
+				labeListParentsSeen,
+				&errIter,
+			) {
+				// For each label contained in the value,
+				// obtain the DefaultInfo.
+				labelElement, ok := encodedElement.Message.Kind.(*model_starlark_pb.Value_Label)
+				if !ok {
+					return nil, fmt.Errorf("attr %#v contains non-label values", name)
+				}
+				configurationReference := rc.getPatchedConfigurationReference()
+				visibleTarget := rc.environment.GetVisibleTargetValue(
+					model_core.NewPatchedMessage(
+						&model_analysis_pb.VisibleTarget_Key{
+							FromPackage:            visibilityFromPackage.String(),
+							ToLabel:                labelElement.Label,
+							ConfigurationReference: configurationReference.Message,
+						},
+						configurationReference.Patcher,
+					),
+				)
+				if !visibleTarget.IsSet() {
+					missingDependencies = true
+					continue
+				}
+				defaultInfo, err := getProviderFromConfiguredTarget(
+					rc.environment,
+					visibleTarget.Message.Label,
+					rc.getPatchedConfigurationReference(),
+					defaultInfoProviderIdentifier,
+				)
+				if err != nil {
+					return nil, fmt.Errorf("attr %#v with label %#v: %w", name, visibleTarget.Message.Label, err)
+				}
+
+				// Obtain the "files" depset contained within
+				// the DefaultInfo provider.
+				files, err := model_starlark.GetStructFieldValue(rc.context, listReader, defaultInfo, "files")
+				if err != nil {
+					return nil, fmt.Errorf("failed to obtain field \"files\" of DefaultInfo provider of target with label %#v: %w", visibleTarget.Message.Label, err)
+				}
+				valueDepset, ok := files.Message.Kind.(*model_starlark_pb.Value_Depset)
+				if !ok {
+					return nil, fmt.Errorf("field \"files\" of DefaultInfo provider of target with label %#v is not a depset", visibleTarget.Message.Label)
+				}
+				for _, element := range valueDepset.Depset.Elements {
+					filesDepsetElements = append(
+						filesDepsetElements,
+						model_core.Message[*model_starlark_pb.List_Element]{
+							Message:            element,
+							OutgoingReferences: files.OutgoingReferences,
+						},
+					)
+				}
+			}
+			if errIter != nil {
+				return nil, fmt.Errorf("failed to iterate value of attr %#v: %w", name, errIter)
+			}
+		}
+		if missingDependencies {
+			return nil, evaluation.ErrMissingDependency
+		}
+
+		// Place all of the gathered file elements in a single
+		// depset and convert it back to a list.
+		filesDepset := model_starlark.NewDepsetFromList(filesDepsetElements, model_starlark_pb.Depset_DEFAULT)
+		files, err = filesDepset.ToList(thread)
+		if err != nil {
+			return nil, err
+		}
 
 		// Cache attr value for subsequent lookups.
 		files.Freeze()
@@ -1897,7 +2074,7 @@ func (ruleContextFragments) Truth() starlark.Bool {
 	return starlark.True
 }
 
-func (ruleContextFragments) Hash() (uint32, error) {
+func (ruleContextFragments) Hash(thread *starlark.Thread) (uint32, error) {
 	return 0, errors.New("ctx.fragments cannot be hashed")
 }
 
@@ -1966,7 +2143,7 @@ func (ruleContextOutputs) Truth() starlark.Bool {
 	return starlark.True
 }
 
-func (ruleContextOutputs) Hash() (uint32, error) {
+func (ruleContextOutputs) Hash(thread *starlark.Thread) (uint32, error) {
 	return 0, errors.New("ctx.outputs cannot be hashed")
 }
 
@@ -1987,7 +2164,7 @@ func (rco *ruleContextOutputs) Attr(thread *starlark.Thread, name string) (starl
 		switch namedAttr.Attr.GetType().(type) {
 		case *model_starlark_pb.Attr_Output:
 			// Single output file.
-			valueParts, err := rc.getAttrValueParts(ruleDefinitionAttrs[ruleDefinitionAttrIndex])
+			valueParts, _, err := rc.getAttrValueParts(ruleDefinitionAttrs[ruleDefinitionAttrIndex])
 			if err != nil {
 				return nil, err
 			}
@@ -1998,7 +2175,7 @@ func (rco *ruleContextOutputs) Attr(thread *starlark.Thread, name string) (starl
 			case *model_starlark_pb.Value_Label:
 				labelValue, ok := valueParts.Message[0].GetKind().(*model_starlark_pb.Value_Label)
 				if !ok {
-					return nil, fmt.Errorf("value attr %#v is not of type label", name)
+					return nil, fmt.Errorf("value of attr %#v is not of type label", name)
 				}
 				outputLabel, err := label.NewResolvedLabel(labelValue.Label)
 				if err != nil {
@@ -2024,6 +2201,8 @@ func (rco *ruleContextOutputs) Attr(thread *starlark.Thread, name string) (starl
 				})
 			case *model_starlark_pb.Value_None:
 				outputs = starlark.None
+			default:
+				return nil, fmt.Errorf("attr %#v has a non-label value", name)
 			}
 		case *model_starlark_pb.Attr_OutputList:
 			return nil, errors.New("TODO: Implement!")
@@ -2064,7 +2243,7 @@ func (toolchainContext) Truth() starlark.Bool {
 	return starlark.True
 }
 
-func (toolchainContext) Hash() (uint32, error) {
+func (toolchainContext) Hash(thread *starlark.Thread) (uint32, error) {
 	return 0, errors.New("ToolchainContext cannot be hashed")
 }
 
@@ -2228,7 +2407,7 @@ func (args) Truth() starlark.Bool {
 	return starlark.True
 }
 
-func (args) Hash() (uint32, error) {
+func (args) Hash(thread *starlark.Thread) (uint32, error) {
 	return 0, errors.New("Args cannot be hashed")
 }
 
@@ -2303,7 +2482,7 @@ func (subruleContext) Truth() starlark.Bool {
 	return starlark.True
 }
 
-func (subruleContext) Hash() (uint32, error) {
+func (subruleContext) Hash(thread *starlark.Thread) (uint32, error) {
 	return 0, errors.New("subrule_ctx cannot be hashed")
 }
 

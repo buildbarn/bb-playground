@@ -2,74 +2,98 @@ package starlark
 
 import (
 	"errors"
+	"fmt"
 	"iter"
+	"math/rand/v2"
 	"slices"
 
-	pg_label "github.com/buildbarn/bb-playground/pkg/label"
-	model_core "github.com/buildbarn/bb-playground/pkg/model/core"
-	"github.com/buildbarn/bb-playground/pkg/model/core/btree"
-	model_parser "github.com/buildbarn/bb-playground/pkg/model/parser"
-	model_core_pb "github.com/buildbarn/bb-playground/pkg/proto/model/core"
-	model_starlark_pb "github.com/buildbarn/bb-playground/pkg/proto/model/starlark"
-	"github.com/buildbarn/bb-playground/pkg/storage/dag"
-	"github.com/buildbarn/bb-playground/pkg/storage/object"
+	pg_label "github.com/buildbarn/bonanza/pkg/label"
+	model_core "github.com/buildbarn/bonanza/pkg/model/core"
+	"github.com/buildbarn/bonanza/pkg/model/core/btree"
+	model_parser "github.com/buildbarn/bonanza/pkg/model/parser"
+	model_starlark_pb "github.com/buildbarn/bonanza/pkg/proto/model/starlark"
+	"github.com/buildbarn/bonanza/pkg/storage/dag"
+	"github.com/buildbarn/bonanza/pkg/storage/object"
 
 	"go.starlark.net/starlark"
+	"go.starlark.net/syntax"
 )
 
 type Depset struct {
 	children any
 	order    model_starlark_pb.Depset_Order
+	hash     uint32
 }
 
 var (
-	_ EncodableValue    = (*Depset)(nil)
-	_ starlark.HasAttrs = (*Depset)(nil)
+	_ EncodableValue      = (*Depset)(nil)
+	_ starlark.Comparable = (*Struct)(nil)
+	_ starlark.HasAttrs   = (*Depset)(nil)
 )
 
 var EmptyDepset Depset
 
-func deduplicateAndAddDirect(children *[]any, direct iter.Seq2[int, starlark.Value], childrenSeen map[any]struct{}) {
+func deduplicateAndAddDirect(thread *starlark.Thread, children *[]any, direct iter.Seq2[int, starlark.Value], valuesSeen *valueSet) error {
 	for _, v := range direct {
-		if _, ok := childrenSeen[v]; !ok {
+		if alreadySeen, err := valuesSeen.testAndAdd(thread, v); err != nil {
+			return err
+		} else if !alreadySeen {
 			*children = append(*children, v)
-			childrenSeen[v] = struct{}{}
 		}
 	}
+	return nil
 }
 
-func deduplicateAndAddTransitive(children *[]any, transitive iter.Seq2[int, *Depset], childrenSeen map[any]struct{}, order model_starlark_pb.Depset_Order) error {
+func deduplicateAndAddTransitive(thread *starlark.Thread, children *[]any, transitive iter.Seq2[int, *Depset], valuesSeen *valueSet, encodedListsSeen map[object.LocalReference]struct{}, depsetsSeen map[*any]struct{}, order model_starlark_pb.Depset_Order) error {
 	for _, d := range transitive {
 		switch v := d.children.(type) {
 		case nil:
 			// Empty child. Ignore it.
 		case starlark.Value:
 			// Single child that is decoded. Add it directly.
-			if _, ok := childrenSeen[v]; !ok {
+			if alreadySeen, err := valuesSeen.testAndAdd(thread, v); err != nil {
+				return err
+			} else if !alreadySeen {
 				*children = append(*children, v)
-				childrenSeen[v] = struct{}{}
 			}
 		case model_core.Message[*model_starlark_pb.List_Element]:
-			// Single child that is encoded. Add it directly.
-			if _, ok := childrenSeen[v.Message]; !ok {
+			switch level := v.Message.Level.(type) {
+			case *model_starlark_pb.List_Element_Leaf:
+				// Encoded child.
+				// TODO: Do we want to deduplicate these
+				// as well?
 				*children = append(*children, v)
-				childrenSeen[v.Message] = struct{}{}
+			case *model_starlark_pb.List_Element_Parent_:
+				// Multiple encoded children. Deduplicate
+				// them by list object reference.
+				listReferenceMessage := level.Parent.Reference
+				listReferenceIndex, err := model_core.GetIndexFromReferenceMessage(listReferenceMessage, v.OutgoingReferences.GetDegree())
+				if err != nil {
+					return err
+				}
+				listReference := v.OutgoingReferences.GetOutgoingReference(listReferenceIndex)
+				if _, ok := encodedListsSeen[listReference]; !ok {
+					*children = append(*children, v)
+					encodedListsSeen[listReference] = struct{}{}
+				}
+			default:
+				return errors.New("not a valid list element")
 			}
 		case []any:
 			// Multiple children. Reference it.
 			if order != d.order && order != model_starlark_pb.Depset_DEFAULT && d.order != model_starlark_pb.Depset_DEFAULT {
 				return errors.New("depsets have incompatible orders")
 			}
-			if _, ok := childrenSeen[d]; !ok {
+			if _, ok := depsetsSeen[&v[0]]; !ok {
 				*children = append(*children, v)
-				childrenSeen[d] = struct{}{}
+				depsetsSeen[&v[0]] = struct{}{}
 			}
 		}
 	}
 	return nil
 }
 
-func NewDepset(direct []starlark.Value, transitive []*Depset, order model_starlark_pb.Depset_Order) (*Depset, error) {
+func NewDepset(thread *starlark.Thread, direct []starlark.Value, transitive []*Depset, order model_starlark_pb.Depset_Order) (*Depset, error) {
 	var directIter iter.Seq2[int, starlark.Value]
 	var transitiveIter iter.Seq2[int, *Depset]
 	preorder := false
@@ -91,32 +115,46 @@ func NewDepset(direct []starlark.Value, transitive []*Depset, order model_starla
 		return nil, errors.New("unknown order")
 	}
 
-	estimatedSize := len(direct) + len(transitive)
-	childrenSeen := make(map[any]struct{}, estimatedSize)
-	children := make([]any, 0, estimatedSize)
+	var valuesSeen valueSet
+	encodedListsSeen := map[object.LocalReference]struct{}{}
+	depsetsSeen := map[*any]struct{}{}
+	children := make([]any, 0, len(direct)+len(transitive))
 	if preorder {
-		deduplicateAndAddDirect(&children, directIter, childrenSeen)
-		if err := deduplicateAndAddTransitive(&children, transitiveIter, childrenSeen, order); err != nil {
+		if err := deduplicateAndAddDirect(thread, &children, directIter, &valuesSeen); err != nil {
+			return nil, err
+		}
+		if err := deduplicateAndAddTransitive(thread, &children, transitiveIter, &valuesSeen, encodedListsSeen, depsetsSeen, order); err != nil {
 			return nil, err
 		}
 	} else {
-		if err := deduplicateAndAddTransitive(&children, transitiveIter, childrenSeen, order); err != nil {
+		if err := deduplicateAndAddTransitive(thread, &children, transitiveIter, &valuesSeen, encodedListsSeen, depsetsSeen, order); err != nil {
 			return nil, err
 		}
-		deduplicateAndAddDirect(&children, directIter, childrenSeen)
+		if err := deduplicateAndAddDirect(thread, &children, directIter, &valuesSeen); err != nil {
+			return nil, err
+		}
 	}
 
 	return NewDepsetFromList(children, order), nil
 }
 
 func NewDepsetFromList(children []any, order model_starlark_pb.Depset_Order) *Depset {
+	// As depsets only provide reference equality, give each
+	// instance a random hash.
 	switch len(children) {
 	case 0:
 		return &EmptyDepset
 	case 1:
-		return &Depset{children: children[0]}
+		return &Depset{
+			children: children[0],
+			hash:     rand.Uint32(),
+		}
 	default:
-		return &Depset{children: children, order: order}
+		return &Depset{
+			children: children,
+			order:    order,
+			hash:     rand.Uint32(),
+		}
 	}
 }
 
@@ -134,8 +172,19 @@ func (Depset) Truth() starlark.Bool {
 	return starlark.True
 }
 
-func (Depset) Hash() (uint32, error) {
-	return 0, errors.New("depset cannot be hashed")
+func (d *Depset) Hash(thread *starlark.Thread) (uint32, error) {
+	return d.hash, nil
+}
+
+func (d *Depset) CompareSameType(thread *starlark.Thread, op syntax.Token, other starlark.Value, depth int) (bool, error) {
+	switch op {
+	case syntax.EQL:
+		return d == other.(*Depset), nil
+	case syntax.NEQ:
+		return d != other.(*Depset), nil
+	default:
+		return false, errors.New("depsets cannot be compared for inequality")
+	}
 }
 
 type depsetChildrenEncoder struct {
@@ -222,11 +271,12 @@ func (d *Depset) Encode(path map[starlark.Value]struct{}, options *ValueEncoding
 		return model_core.PatchedMessage[*model_starlark_pb.Depset, dag.ObjectContentsWalker]{}, false, err
 	}
 
-	return model_core.NewSimplePatchedMessage[dag.ObjectContentsWalker](
+	return model_core.NewPatchedMessage(
 		&model_starlark_pb.Depset{
 			Elements: elements.Message,
 			Order:    d.order,
 		},
+		elements.Patcher,
 	), e.needsCode, nil
 }
 
@@ -268,16 +318,19 @@ type depsetToListConverter struct {
 	valueDecodingOptions *ValueDecodingOptions
 	reader               model_parser.ParsedObjectReader[object.LocalReference, model_core.Message[[]*model_starlark_pb.List_Element]]
 
-	list []starlark.Value
-	seen map[any]struct{}
+	list             []starlark.Value
+	valuesSeen       valueSet
+	encodedListsSeen map[object.LocalReference]struct{}
+	depsetsSeen      map[*any]struct{}
 }
 
 func (dlc *depsetToListConverter) appendChildren(children any) error {
 	switch v := children.(type) {
 	case starlark.Value:
-		if _, ok := dlc.seen[v]; !ok {
+		if alreadySeen, err := dlc.valuesSeen.testAndAdd(dlc.thread, v); err != nil {
+			return err
+		} else if !alreadySeen {
 			dlc.list = append(dlc.list, v)
-			dlc.seen[v] = struct{}{}
 		}
 	case model_core.Message[*model_starlark_pb.List_Element]:
 		if dlc.valueDecodingOptions == nil {
@@ -294,50 +347,37 @@ func (dlc *depsetToListConverter) appendChildren(children any) error {
 		}
 
 		var errIter error
-		for element := range btree.AllLeaves(
+		for encodedElement := range AllListLeafElementsSkippingDuplicateParents(
 			dlc.valueDecodingOptions.Context,
 			dlc.reader,
 			model_core.Message[[]*model_starlark_pb.List_Element]{
 				Message:            []*model_starlark_pb.List_Element{v.Message},
 				OutgoingReferences: v.OutgoingReferences,
 			},
-			func(element *model_starlark_pb.List_Element) *model_core_pb.Reference {
-				// TODO: Skip parents that we've seen before.
-				if level, ok := element.Level.(*model_starlark_pb.List_Element_Parent_); ok {
-					return level.Parent.Reference
-				}
-				return nil
-			},
+			dlc.encodedListsSeen,
 			&errIter,
 		) {
-			level, ok := element.Message.Level.(*model_starlark_pb.List_Element_Leaf)
-			if !ok {
-				return errors.New("not a valid leaf entry")
-			}
-			decodedElement, err := DecodeValue(
-				model_core.Message[*model_starlark_pb.Value]{
-					Message:            level.Leaf,
-					OutgoingReferences: element.OutgoingReferences,
-				},
-				nil,
-				dlc.valueDecodingOptions,
-			)
+			decodedElement, err := DecodeValue(encodedElement, nil, dlc.valueDecodingOptions)
 			if err != nil {
 				return err
 			}
-			if _, ok := dlc.seen[decodedElement]; !ok {
+			if alreadySeen, err := dlc.valuesSeen.testAndAdd(dlc.thread, decodedElement); err != nil {
+				return err
+			} else if !alreadySeen {
 				dlc.list = append(dlc.list, decodedElement)
-				dlc.seen[decodedElement] = struct{}{}
 			}
 		}
 		if errIter != nil {
-			return errIter
+			return fmt.Errorf("failed to iterate depset elements: %w", errIter)
 		}
 	case []any:
-		for _, child := range v {
-			if err := dlc.appendChildren(child); err != nil {
-				return err
+		if _, ok := dlc.depsetsSeen[&v[0]]; !ok {
+			for _, child := range v {
+				if err := dlc.appendChildren(child); err != nil {
+					return err
+				}
 			}
+			dlc.depsetsSeen[&v[0]] = struct{}{}
 		}
 	default:
 		panic("unexpected element type")
@@ -345,10 +385,11 @@ func (dlc *depsetToListConverter) appendChildren(children any) error {
 	return nil
 }
 
-func (d *Depset) doToList(thread *starlark.Thread, b *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
+func (d *Depset) ToList(thread *starlark.Thread) (*starlark.List, error) {
 	dlc := depsetToListConverter{
-		thread: thread,
-		seen:   map[any]struct{}{},
+		thread:           thread,
+		encodedListsSeen: map[object.LocalReference]struct{}{},
+		depsetsSeen:      map[*any]struct{}{},
 	}
 	if d.children != nil {
 		if err := dlc.appendChildren(d.children); err != nil {
@@ -363,4 +404,85 @@ func (d *Depset) doToList(thread *starlark.Thread, b *starlark.Builtin, args sta
 	l := starlark.NewList(dlc.list)
 	l.Freeze()
 	return l, nil
+}
+
+func (d *Depset) doToList(thread *starlark.Thread, b *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
+	if err := starlark.UnpackArgs(b.Name(), args, kwargs); err != nil {
+		return nil, err
+	}
+	return d.ToList(thread)
+}
+
+// valueSet is a simple set type for starlark.Value. It's not possible
+// to use map[starlark.Value]struct{} for this purpose, as this does not
+// imply equality at the Starlark level. For this starlark.Equal() needs
+// to be called.
+type valueSet struct {
+	hashes      []uint32
+	values      []starlark.Value
+	utilization int
+}
+
+func (vs *valueSet) testAndAdd(thread *starlark.Thread, v starlark.Value) (bool, error) {
+	// Compute hash of the object. Ensure the resulting hash is
+	// non-zero, as zero is used by the hash table to indicate an
+	// entry is not used.
+	hash, err := v.Hash(thread)
+	if err != nil {
+		return false, err
+	}
+	if hash == 0 {
+		hash = 1
+	}
+
+	vs.maybeGrow()
+
+	mask := uint(len(vs.hashes) - 1)
+	for h, inc := uint(hash), uint(1); ; h, inc = h+inc, inc+1 {
+		index := h & mask
+		switch vs.hashes[index] {
+		case 0:
+			// Value is not yet present.
+			vs.hashes[index] = hash
+			vs.values[index] = v
+			vs.utilization++
+			return false, nil
+		case hash:
+			// Matching hash. Perform deep comparison.
+			if equal, err := starlark.Equal(thread, v, vs.values[index]); err != nil {
+				return false, err
+			} else if equal {
+				return true, nil
+			}
+		}
+	}
+}
+
+func (vs *valueSet) maybeGrow() {
+	if vs.utilization*2 >= len(vs.hashes) {
+		// Utilization is 50% or more. Allocate a new hash table
+		// that is twice as big.
+		newLength := max(64, len(vs.hashes)*2)
+		newHashes := make([]uint32, newLength)
+		newValues := make([]starlark.Value, newLength)
+
+		// Copy entries from the old hash table to the new one.
+		newMask := uint(newLength - 1)
+		for oldIndex, hash := range vs.hashes {
+			if hash != 0 {
+				value := vs.values[oldIndex]
+				for h, inc := uint(hash), uint(1); ; h, inc = h+inc, inc+1 {
+					newIndex := h & newMask
+					if newHashes[newIndex] == 0 {
+						newHashes[newIndex] = hash
+						newValues[newIndex] = value
+						break
+					}
+				}
+			}
+		}
+
+		vs.hashes = newHashes
+		vs.values = newValues
+	}
 }

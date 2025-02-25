@@ -3,9 +3,9 @@ package tag
 import (
 	"context"
 
-	"github.com/buildbarn/bb-playground/pkg/proto/storage/tag"
-	"github.com/buildbarn/bb-playground/pkg/storage/object"
 	"github.com/buildbarn/bb-storage/pkg/util"
+	"github.com/buildbarn/bonanza/pkg/proto/storage/tag"
+	"github.com/buildbarn/bonanza/pkg/storage/object"
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"

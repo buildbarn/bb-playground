@@ -7,11 +7,11 @@ import (
 	"slices"
 	"strings"
 
-	pg_label "github.com/buildbarn/bb-playground/pkg/label"
-	model_core "github.com/buildbarn/bb-playground/pkg/model/core"
-	model_starlark_pb "github.com/buildbarn/bb-playground/pkg/proto/model/starlark"
-	"github.com/buildbarn/bb-playground/pkg/starlark/unpack"
-	"github.com/buildbarn/bb-playground/pkg/storage/dag"
+	pg_label "github.com/buildbarn/bonanza/pkg/label"
+	model_core "github.com/buildbarn/bonanza/pkg/model/core"
+	model_starlark_pb "github.com/buildbarn/bonanza/pkg/proto/model/starlark"
+	"github.com/buildbarn/bonanza/pkg/starlark/unpack"
+	"github.com/buildbarn/bonanza/pkg/storage/dag"
 
 	"go.starlark.net/starlark"
 	"go.starlark.net/syntax"
@@ -64,7 +64,7 @@ func (Select) Truth() starlark.Bool {
 	return starlark.True
 }
 
-func (Select) Hash() (uint32, error) {
+func (Select) Hash(thread *starlark.Thread) (uint32, error) {
 	return 0, errors.New("select cannot be hashed")
 }
 
@@ -184,16 +184,21 @@ func (s *Select) EncodeValue(path map[starlark.Value]struct{}, currentIdentifier
 	), needsCode, nil
 }
 
-func (s *Select) VisitLabels(thread *starlark.Thread, path map[starlark.Value]struct{}, visitor func(pg_label.ResolvedLabel)) {
+func (s *Select) VisitLabels(thread *starlark.Thread, path map[starlark.Value]struct{}, visitor func(pg_label.ResolvedLabel) error) error {
 	for _, sg := range s.groups {
 		for conditionIdentifier, conditionValue := range sg.conditions {
 			visitor(conditionIdentifier)
-			VisitLabels(thread, conditionValue, path, visitor)
+			if err := VisitLabels(thread, conditionValue, path, visitor); err != nil {
+				return err
+			}
 		}
 		if sg.defaultValue != nil {
-			VisitLabels(thread, sg.defaultValue, path, visitor)
+			if err := VisitLabels(thread, sg.defaultValue, path, visitor); err != nil {
+				return err
+			}
 		}
 	}
+	return nil
 }
 
 type selectUnpackerInto struct {

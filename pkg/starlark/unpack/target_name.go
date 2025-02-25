@@ -3,7 +3,7 @@ package unpack
 import (
 	"fmt"
 
-	"github.com/buildbarn/bb-playground/pkg/label"
+	"github.com/buildbarn/bonanza/pkg/label"
 
 	"go.starlark.net/starlark"
 	"go.starlark.net/syntax"

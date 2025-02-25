@@ -5,9 +5,9 @@ import (
 	"fmt"
 	"net/url"
 
-	"github.com/buildbarn/bb-playground/pkg/label"
-	pg_starlark "github.com/buildbarn/bb-playground/pkg/starlark"
 	"github.com/buildbarn/bb-storage/pkg/filesystem/path"
+	"github.com/buildbarn/bonanza/pkg/label"
+	pg_starlark "github.com/buildbarn/bonanza/pkg/starlark"
 
 	"go.starlark.net/starlark"
 )

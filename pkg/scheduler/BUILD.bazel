@@ -3,7 +3,7 @@ load("@rules_go//go:def.bzl", "go_library")
 go_library(
     name = "scheduler",
     srcs = ["in_memory_build_queue.go"],
-    importpath = "github.com/buildbarn/bb-playground/pkg/scheduler",
+    importpath = "github.com/buildbarn/bonanza/pkg/scheduler",
     visibility = ["//visibility:public"],
     deps = [
         "//pkg/proto/buildqueuestate",

@@ -3,7 +3,7 @@ load("@rules_go//go:def.bzl", "go_library")
 go_library(
     name = "tools",
     srcs = ["tools.go"],
-    importpath = "github.com/buildbarn/bb-playground/tools",
+    importpath = "github.com/buildbarn/bonanza/tools",
     tags = ["manual"],
     visibility = ["//visibility:public"],
     deps = [

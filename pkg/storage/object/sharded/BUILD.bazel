@@ -3,18 +3,26 @@ load("@rules_go//go:def.bzl", "go_library", "go_test")
 go_library(
     name = "sharded",
     srcs = [
+        "log2fixed64.go",
         "picker.go",
         "sharded_downloader.go",
         "sharded_uploader.go",
+        "weighted_rendezvous_picker.go",
     ],
-    importpath = "github.com/buildbarn/bb-playground/pkg/storage/object/sharded",
+    importpath = "github.com/buildbarn/bonanza/pkg/storage/object/sharded",
     visibility = ["//visibility:public"],
-    deps = ["//pkg/storage/object"],
+    deps = [
+        "//pkg/storage/object",
+        "@com_github_buildbarn_bb_storage//pkg/util",
+    ],
 )
 
 go_test(
     name = "sharded_test",
-    srcs = ["picker_test.go"],
+    srcs = [
+        "log2fixed64_test.go",
+        "weighted_rendezvous_picker_test.go",
+    ],
     deps = [
         ":sharded",
         "@com_github_stretchr_testify//assert",

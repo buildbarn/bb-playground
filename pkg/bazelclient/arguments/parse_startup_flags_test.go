@@ -3,7 +3,7 @@ package arguments_test
 import (
 	"testing"
 
-	"github.com/buildbarn/bb-playground/pkg/bazelclient/arguments"
+	"github.com/buildbarn/bonanza/pkg/bazelclient/arguments"
 	"github.com/stretchr/testify/require"
 )
 

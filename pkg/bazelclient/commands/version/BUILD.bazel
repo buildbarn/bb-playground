@@ -3,7 +3,7 @@ load("@rules_go//go:def.bzl", "go_library")
 go_library(
     name = "version",
     srcs = ["do_version.go"],
-    importpath = "github.com/buildbarn/bb-playground/pkg/bazelclient/commands/version",
+    importpath = "github.com/buildbarn/bonanza/pkg/bazelclient/commands/version",
     visibility = ["//visibility:public"],
     deps = ["//pkg/bazelclient/arguments"],
 )

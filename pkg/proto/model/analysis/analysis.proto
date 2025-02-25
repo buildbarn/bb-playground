@@ -1,6 +1,6 @@
 syntax = "proto3";
 
-package buildbarn.playground.model.analysis;
+package bonanza.model.analysis;
 
 import "google/protobuf/duration.proto";
 import "google/protobuf/empty.proto";
@@ -10,7 +10,7 @@ import "pkg/proto/model/encoding/encoding.proto";
 import "pkg/proto/model/filesystem/filesystem.proto";
 import "pkg/proto/model/starlark/starlark.proto";
 
-option go_package = "github.com/buildbarn/bb-playground/pkg/proto/model/analysis";
+option go_package = "github.com/buildbarn/bonanza/pkg/proto/model/analysis";
 
 message ActionResult {
   message Key {
@@ -18,9 +18,9 @@ message ActionResult {
     // used to execute the action in PKIX, ASN.1 DER form.
     bytes platform_pkix_public_key = 1;
 
-    buildbarn.playground.model.core.Reference command_reference = 2;
+    bonanza.model.core.Reference command_reference = 2;
 
-    buildbarn.playground.model.core.Reference input_root_reference = 3;
+    bonanza.model.core.Reference input_root_reference = 3;
 
     google.protobuf.Duration execution_timeout = 4;
 
@@ -31,7 +31,7 @@ message ActionResult {
   message Value {
     int64 exit_code = 1;
 
-    buildbarn.playground.model.core.Reference outputs_reference = 2;
+    bonanza.model.core.Reference outputs_reference = 2;
   }
 }
 
@@ -39,7 +39,7 @@ message BuildSpecification {
   message Key {}
 
   message Value {
-    buildbarn.playground.model.build.BuildSpecification build_specification = 1;
+    bonanza.model.build.BuildSpecification build_specification = 1;
   }
 }
 
@@ -90,8 +90,7 @@ message CommandEncoders {
   message Value {
     // Encoders that should be used when creating Command messages that
     // are processed by workers.
-    repeated buildbarn.playground.model.encoding.BinaryEncoder
-        command_encoders = 1;
+    repeated bonanza.model.encoding.BinaryEncoder command_encoders = 1;
   }
 }
 
@@ -123,7 +122,7 @@ message CompatibleToolchainsForType {
     //
     // If this reference is not set, toolchains need to be selected
     // without any platform constraints and build settings in place.
-    buildbarn.playground.model.core.Reference configuration_reference = 2;
+    bonanza.model.core.Reference configuration_reference = 2;
   }
 
   message Value {
@@ -145,7 +144,7 @@ message CompiledBzlFile {
   }
 
   message Value {
-    buildbarn.playground.model.starlark.CompiledProgram compiled_program = 1;
+    bonanza.model.starlark.CompiledProgram compiled_program = 1;
   }
 }
 
@@ -175,7 +174,7 @@ message CompiledBzlFileGlobal {
   }
 
   message Value {
-    buildbarn.playground.model.starlark.Value global = 1;
+    bonanza.model.starlark.Value global = 1;
   }
 }
 
@@ -189,13 +188,13 @@ message Configuration {
       string label = 1;
 
       // The value that is assigned to the build setting.
-      buildbarn.playground.model.starlark.Value value = 2;
+      bonanza.model.starlark.Value value = 2;
     }
 
     message Parent {
       // Reference to an object of type RepoList that contains
       // properties of repos in the module extension.
-      buildbarn.playground.model.core.Reference reference = 1;
+      bonanza.model.core.Reference reference = 1;
 
       // The name of the first repo contained in this B-tree.
       // This field can be used to efficiently look up repos
@@ -229,13 +228,13 @@ message ConfiguredTarget {
     //
     // If this reference is not set, the target is configured without
     // any platform constraints and build settings in place.
-    buildbarn.playground.model.core.Reference configuration_reference = 2;
+    bonanza.model.core.Reference configuration_reference = 2;
   }
 
   message Value {
     // The values of the provider instances that this target produced,
     // sorted alphabetically by provider identifier.
-    repeated buildbarn.playground.model.starlark.Struct provider_instances = 1;
+    repeated bonanza.model.starlark.Struct provider_instances = 1;
   }
 }
 
@@ -243,7 +242,7 @@ message DirectoryAccessParameters {
   message Key {}
 
   message Value {
-    buildbarn.playground.model.filesystem.DirectoryAccessParameters
+    bonanza.model.filesystem.DirectoryAccessParameters
         directory_access_parameters = 1;
   }
 }
@@ -252,7 +251,7 @@ message DirectoryCreationParameters {
   message Key {}
 
   message Value {
-    buildbarn.playground.model.filesystem.DirectoryCreationParameters
+    bonanza.model.filesystem.DirectoryCreationParameters
         directory_creation_parameters = 1;
   }
 }
@@ -265,8 +264,7 @@ message FileAccessParameters {
   message Key {}
 
   message Value {
-    buildbarn.playground.model.filesystem.FileAccessParameters
-        file_access_parameters = 1;
+    bonanza.model.filesystem.FileAccessParameters file_access_parameters = 1;
   }
 }
 
@@ -274,8 +272,8 @@ message FileCreationParameters {
   message Key {}
 
   message Value {
-    buildbarn.playground.model.filesystem.FileCreationParameters
-        file_creation_parameters = 1;
+    bonanza.model.filesystem.FileCreationParameters file_creation_parameters =
+        1;
   }
 }
 
@@ -298,7 +296,7 @@ message FileProperties {
 
   message Value {
     // If set, the file exists, and its properties are provided.
-    buildbarn.playground.model.filesystem.FileProperties exists = 1;
+    bonanza.model.filesystem.FileProperties exists = 1;
   }
 }
 
@@ -345,7 +343,7 @@ message HttpArchiveContents {
     // The directory hierarchy MUST NOT contain any symbolic links whose
     // targets escape the root directory (i.e.,
     // maximum_symlink_escapement_levels MUST be zero).
-    buildbarn.playground.model.filesystem.DirectoryReference exists = 1;
+    bonanza.model.filesystem.DirectoryReference exists = 1;
   }
 }
 
@@ -366,7 +364,7 @@ message HttpFileContents {
   message Value {
     message Exists {
       // The contents of the file, if the file was non-empty.
-      buildbarn.playground.model.filesystem.FileContents contents = 1;
+      bonanza.model.filesystem.FileContents contents = 1;
     }
 
     // If set, the file was fetched successfully. If not set, fetching
@@ -384,7 +382,7 @@ message ModuleDotBazelContents {
   message Value {
     // The contents of the module instance's MODULE.bazel file, if the
     // file was non-empty.
-    buildbarn.playground.model.filesystem.FileContents contents = 1;
+    bonanza.model.filesystem.FileContents contents = 1;
   }
 }
 
@@ -427,7 +425,7 @@ message ModuleExtensionRepo {
   }
 
   message Value {
-    buildbarn.playground.model.starlark.Repo.Definition definition = 1;
+    bonanza.model.starlark.Repo.Definition definition = 1;
   }
 }
 
@@ -454,7 +452,7 @@ message ModuleExtensionRepos {
       message Parent {
         // Reference to an object with a list of Repo messages that
         // contains properties of repos in the module extension.
-        buildbarn.playground.model.core.Reference reference = 1;
+        bonanza.model.core.Reference reference = 1;
 
         // The name of the first repo contained in this B-tree.
         // This field can be used to efficiently look up repos
@@ -464,7 +462,7 @@ message ModuleExtensionRepos {
 
       oneof level {
         // Properties of a single repo.
-        buildbarn.playground.model.starlark.Repo leaf = 1;
+        bonanza.model.starlark.Repo leaf = 1;
 
         // More repos are stored in another object.
         Parent parent = 2;
@@ -589,7 +587,7 @@ message ModuleOverride {
     // Repository rule is the definition for the rule.
     // See: https://bazel.build/rules/lib/globals/module#archive_override
     // See: https://bazel.build/rules/lib/globals/module#git_override
-    buildbarn.playground.model.starlark.Repo.Definition repository_rule = 4;
+    bonanza.model.starlark.Repo.Definition repository_rule = 4;
   }
 }
 
@@ -615,7 +613,7 @@ message Package {
       message Parent {
         // Reference to an object with a list of Target messages that
         // contain properties of targets in the package.
-        buildbarn.playground.model.core.Reference reference = 1;
+        bonanza.model.core.Reference reference = 1;
 
         // The name of the first target contained in this B-tree.
         // This field can be used to efficiently look up targets
@@ -625,7 +623,7 @@ message Package {
 
       oneof level {
         // Properties of a single target.
-        buildbarn.playground.model.starlark.Target leaf = 1;
+        bonanza.model.starlark.Target leaf = 1;
 
         // More targets are stored in another object.
         Parent parent = 2;
@@ -789,8 +787,7 @@ message Repo {
     //
     // - 1: The repo contains symbolic links that expand to paths in
     //   other repos (e.g., "../other_repo/hello.txt").
-    buildbarn.playground.model.filesystem.DirectoryReference
-        root_directory_reference = 1;
+    bonanza.model.filesystem.DirectoryReference root_directory_reference = 1;
   }
 }
 
@@ -804,7 +801,7 @@ message RepoDefaultAttrs {
   message Value {
     // Default values of attributes that need to be attached to all
     // targets in this repo.
-    buildbarn.playground.model.starlark.InheritableAttrs inheritable_attrs = 1;
+    bonanza.model.starlark.InheritableAttrs inheritable_attrs = 1;
   }
 }
 
@@ -822,11 +819,11 @@ message ResolvedToolchains {
     //
     // If this reference is not set, toolchains needd to be resolved
     // without any platform constraints and build settings in place.
-    buildbarn.playground.model.core.Reference configuration_reference = 2;
+    bonanza.model.core.Reference configuration_reference = 2;
 
     // The set of toolchains to resolve, and any constraints placed on
     // the execution platform.
-    repeated buildbarn.playground.model.starlark.ToolchainType toolchains = 3;
+    repeated bonanza.model.starlark.ToolchainType toolchains = 3;
   }
 
   message Value {
@@ -899,7 +896,7 @@ message Target {
   }
 
   message Value {
-    buildbarn.playground.model.starlark.Target.Definition definition = 1;
+    bonanza.model.starlark.Target.Definition definition = 1;
   }
 }
 
@@ -914,7 +911,7 @@ message TargetCompletion {
     //
     // If this reference is not set, the target is built without any
     // platform constraints and build settings in place.
-    buildbarn.playground.model.core.Reference configuration_reference = 2;
+    bonanza.model.core.Reference configuration_reference = 2;
   }
 
   message Value {}
@@ -933,7 +930,7 @@ message TargetPatternExpansion {
         // Reference to an object of type TargetLabelList that
         // contains a list of labels of targets matched by the
         // target pattern.
-        buildbarn.playground.model.core.Reference reference = 1;
+        bonanza.model.core.Reference reference = 1;
       }
 
       oneof level {
@@ -979,7 +976,7 @@ message ModuleExtension {
     // these attributes. For example, this means that labels may be
     // stored as plain strings that later on need to be resolved to the
     // proper canonical target.
-    buildbarn.playground.model.starlark.Struct.Fields attrs = 1;
+    bonanza.model.starlark.Struct.Fields attrs = 1;
 
     // Whether the tag was specified on the result of a use_extension()
     // call with dev_dependency = True.
@@ -1031,7 +1028,7 @@ message UserDefinedTransition {
     string transition_identifier = 1;
 
     // The configuration from which inputs need to be sourced.
-    buildbarn.playground.model.core.Reference input_configuration_reference = 2;
+    bonanza.model.core.Reference input_configuration_reference = 2;
   }
 
   message Value {
@@ -1041,8 +1038,7 @@ message UserDefinedTransition {
         string key = 1;
 
         // Output configuration that is identified by this key.
-        buildbarn.playground.model.core.Reference
-            output_configuration_reference = 2;
+        bonanza.model.core.Reference output_configuration_reference = 2;
       }
 
       // Dictionary of output configurations yielded by the transition.
@@ -1086,7 +1082,7 @@ message VisibleTarget {
     //
     // If this reference is not set, the alias is resolved without any
     // platform constraints and build settings into account.
-    buildbarn.playground.model.core.Reference configuration_reference = 4;
+    bonanza.model.core.Reference configuration_reference = 4;
 
     // Instead expanding targets of type label_setting() taking the
     // configuration into account, return the label identifier of the

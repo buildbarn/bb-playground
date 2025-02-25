@@ -3,11 +3,11 @@ package filesystem
 import (
 	"context"
 
-	"github.com/buildbarn/bb-playground/pkg/model/encoding"
-	model_parser "github.com/buildbarn/bb-playground/pkg/model/parser"
-	model_filesystem_pb "github.com/buildbarn/bb-playground/pkg/proto/model/filesystem"
-	"github.com/buildbarn/bb-playground/pkg/storage/object"
 	"github.com/buildbarn/bb-storage/pkg/util"
+	"github.com/buildbarn/bonanza/pkg/model/encoding"
+	model_parser "github.com/buildbarn/bonanza/pkg/model/parser"
+	model_filesystem_pb "github.com/buildbarn/bonanza/pkg/proto/model/filesystem"
+	"github.com/buildbarn/bonanza/pkg/storage/object"
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"

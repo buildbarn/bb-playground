@@ -3,7 +3,7 @@ package encoding_test
 import (
 	"testing"
 
-	"github.com/buildbarn/bb-playground/pkg/model/encoding"
+	"github.com/buildbarn/bonanza/pkg/model/encoding"
 	"github.com/stretchr/testify/require"
 
 	"go.uber.org/mock/gomock"

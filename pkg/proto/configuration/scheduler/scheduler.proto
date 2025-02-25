@@ -1,11 +1,11 @@
 syntax = "proto3";
 
-package buildbarn.playground.configuration.scheduler;
+package bonanza.configuration.scheduler;
 
 import "google/protobuf/duration.proto";
 import "google/protobuf/empty.proto";
 
-option go_package = "github.com/buildbarn/bb-playground/pkg/proto/configuration/scheduler";
+option go_package = "github.com/buildbarn/bonanza/pkg/proto/configuration/scheduler";
 
 message ActionRouterConfiguration {
   oneof kind {

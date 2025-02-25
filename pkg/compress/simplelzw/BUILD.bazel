@@ -6,7 +6,7 @@ go_library(
         "compress.go",
         "decompress.go",
     ],
-    importpath = "github.com/buildbarn/bb-playground/pkg/compress/simplelzw",
+    importpath = "github.com/buildbarn/bonanza/pkg/compress/simplelzw",
     visibility = ["//visibility:public"],
     deps = [
         "//pkg/encoding/varint",

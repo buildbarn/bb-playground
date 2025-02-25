@@ -1,7 +1,7 @@
 package invocation
 
 import (
-	pb "github.com/buildbarn/bb-playground/pkg/proto/configuration/scheduler"
+	pb "github.com/buildbarn/bonanza/pkg/proto/configuration/scheduler"
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"

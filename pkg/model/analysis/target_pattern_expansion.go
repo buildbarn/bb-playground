@@ -6,17 +6,17 @@ import (
 	"fmt"
 	"iter"
 
-	"github.com/buildbarn/bb-playground/pkg/evaluation"
-	"github.com/buildbarn/bb-playground/pkg/label"
-	model_core "github.com/buildbarn/bb-playground/pkg/model/core"
-	"github.com/buildbarn/bb-playground/pkg/model/core/btree"
-	model_encoding "github.com/buildbarn/bb-playground/pkg/model/encoding"
-	model_parser "github.com/buildbarn/bb-playground/pkg/model/parser"
-	model_analysis_pb "github.com/buildbarn/bb-playground/pkg/proto/model/analysis"
-	model_core_pb "github.com/buildbarn/bb-playground/pkg/proto/model/core"
-	model_starlark_pb "github.com/buildbarn/bb-playground/pkg/proto/model/starlark"
-	"github.com/buildbarn/bb-playground/pkg/storage/dag"
-	"github.com/buildbarn/bb-playground/pkg/storage/object"
+	"github.com/buildbarn/bonanza/pkg/evaluation"
+	"github.com/buildbarn/bonanza/pkg/label"
+	model_core "github.com/buildbarn/bonanza/pkg/model/core"
+	"github.com/buildbarn/bonanza/pkg/model/core/btree"
+	model_encoding "github.com/buildbarn/bonanza/pkg/model/encoding"
+	model_parser "github.com/buildbarn/bonanza/pkg/model/parser"
+	model_analysis_pb "github.com/buildbarn/bonanza/pkg/proto/model/analysis"
+	model_core_pb "github.com/buildbarn/bonanza/pkg/proto/model/core"
+	model_starlark_pb "github.com/buildbarn/bonanza/pkg/proto/model/starlark"
+	"github.com/buildbarn/bonanza/pkg/storage/dag"
+	"github.com/buildbarn/bonanza/pkg/storage/object"
 )
 
 type expandCanonicalTargetPatternEnvironment interface {
@@ -59,11 +59,11 @@ func (c *baseComputer) expandCanonicalTargetPattern(
 				Message:            targetPatternExpansion.Message.TargetLabels,
 				OutgoingReferences: targetPatternExpansion.OutgoingReferences,
 			},
-			func(entry *model_analysis_pb.TargetPatternExpansion_Value_TargetLabel) *model_core_pb.Reference {
-				if level, ok := entry.Level.(*model_analysis_pb.TargetPatternExpansion_Value_TargetLabel_Parent_); ok {
-					return level.Parent.Reference
+			func(entry model_core.Message[*model_analysis_pb.TargetPatternExpansion_Value_TargetLabel]) (*model_core_pb.Reference, error) {
+				if level, ok := entry.Message.Level.(*model_analysis_pb.TargetPatternExpansion_Value_TargetLabel_Parent_); ok {
+					return level.Parent.Reference, nil
 				}
-				return nil
+				return nil, nil
 			},
 			errOut,
 		) {
@@ -161,11 +161,11 @@ func (c *baseComputer) ComputeTargetPatternExpansionValue(ctx context.Context, k
 				Message:            packageValue.Message.Targets,
 				OutgoingReferences: packageValue.OutgoingReferences,
 			},
-			func(entry *model_analysis_pb.Package_Value_Target) *model_core_pb.Reference {
-				if level, ok := entry.Level.(*model_analysis_pb.Package_Value_Target_Parent_); ok {
-					return level.Parent.Reference
+			func(entry model_core.Message[*model_analysis_pb.Package_Value_Target]) (*model_core_pb.Reference, error) {
+				if level, ok := entry.Message.Level.(*model_analysis_pb.Package_Value_Target_Parent_); ok {
+					return level.Parent.Reference, nil
 				}
-				return nil
+				return nil, nil
 			},
 			&errIter,
 		) {
@@ -179,6 +179,10 @@ func (c *baseComputer) ComputeTargetPatternExpansionValue(ctx context.Context, k
 				reportTarget = true
 			case *model_starlark_pb.Target_Definition_LabelSetting:
 				reportTarget = true
+			case *model_starlark_pb.Target_Definition_PredeclaredOutputFileTarget:
+				if includeFileTargets {
+					reportTarget = true
+				}
 			case *model_starlark_pb.Target_Definition_RuleTarget:
 				reportTarget = true
 			case *model_starlark_pb.Target_Definition_SourceFileTarget:

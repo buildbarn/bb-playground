@@ -1,9 +1,9 @@
 package mirrored
 
 import (
-	"github.com/buildbarn/bb-playground/pkg/encoding/varint"
-	"github.com/buildbarn/bb-playground/pkg/storage/object/leasemarshaling"
 	"github.com/buildbarn/bb-storage/pkg/util"
+	"github.com/buildbarn/bonanza/pkg/encoding/varint"
+	"github.com/buildbarn/bonanza/pkg/storage/object/leasemarshaling"
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"

@@ -11,22 +11,6 @@ import (
 	"syscall"
 	"time"
 
-	model_core "github.com/buildbarn/bb-playground/pkg/model/core"
-	"github.com/buildbarn/bb-playground/pkg/model/core/btree"
-	model_encoding "github.com/buildbarn/bb-playground/pkg/model/encoding"
-	model_filesystem "github.com/buildbarn/bb-playground/pkg/model/filesystem"
-	model_filesystem_virtual "github.com/buildbarn/bb-playground/pkg/model/filesystem/virtual"
-	pg_vfs "github.com/buildbarn/bb-playground/pkg/model/filesystem/virtual"
-	model_parser "github.com/buildbarn/bb-playground/pkg/model/parser"
-	model_command_pb "github.com/buildbarn/bb-playground/pkg/proto/model/command"
-	model_core_pb "github.com/buildbarn/bb-playground/pkg/proto/model/core"
-	model_filesystem_pb "github.com/buildbarn/bb-playground/pkg/proto/model/filesystem"
-	remoteworker_pb "github.com/buildbarn/bb-playground/pkg/proto/remoteworker"
-	dag_pb "github.com/buildbarn/bb-playground/pkg/proto/storage/dag"
-	"github.com/buildbarn/bb-playground/pkg/remoteworker"
-	"github.com/buildbarn/bb-playground/pkg/storage/dag"
-	"github.com/buildbarn/bb-playground/pkg/storage/object"
-	object_namespacemapping "github.com/buildbarn/bb-playground/pkg/storage/object/namespacemapping"
 	re_clock "github.com/buildbarn/bb-remote-execution/pkg/clock"
 	re_filesystem "github.com/buildbarn/bb-remote-execution/pkg/filesystem"
 	"github.com/buildbarn/bb-remote-execution/pkg/filesystem/virtual"
@@ -35,6 +19,22 @@ import (
 	"github.com/buildbarn/bb-storage/pkg/filesystem"
 	"github.com/buildbarn/bb-storage/pkg/filesystem/path"
 	"github.com/buildbarn/bb-storage/pkg/util"
+	model_core "github.com/buildbarn/bonanza/pkg/model/core"
+	"github.com/buildbarn/bonanza/pkg/model/core/btree"
+	model_encoding "github.com/buildbarn/bonanza/pkg/model/encoding"
+	model_filesystem "github.com/buildbarn/bonanza/pkg/model/filesystem"
+	model_filesystem_virtual "github.com/buildbarn/bonanza/pkg/model/filesystem/virtual"
+	pg_vfs "github.com/buildbarn/bonanza/pkg/model/filesystem/virtual"
+	model_parser "github.com/buildbarn/bonanza/pkg/model/parser"
+	model_command_pb "github.com/buildbarn/bonanza/pkg/proto/model/command"
+	model_core_pb "github.com/buildbarn/bonanza/pkg/proto/model/core"
+	model_filesystem_pb "github.com/buildbarn/bonanza/pkg/proto/model/filesystem"
+	remoteworker_pb "github.com/buildbarn/bonanza/pkg/proto/remoteworker"
+	dag_pb "github.com/buildbarn/bonanza/pkg/proto/storage/dag"
+	"github.com/buildbarn/bonanza/pkg/remoteworker"
+	"github.com/buildbarn/bonanza/pkg/storage/dag"
+	"github.com/buildbarn/bonanza/pkg/storage/object"
+	object_namespacemapping "github.com/buildbarn/bonanza/pkg/storage/object/namespacemapping"
 	"github.com/google/uuid"
 
 	"golang.org/x/sync/errgroup"
@@ -241,11 +241,11 @@ func (e *localExecutor) Execute(ctx context.Context, action *model_command_pb.Ac
 			Message:            command.Message.Arguments,
 			OutgoingReferences: command.OutgoingReferences,
 		},
-		func(element *model_command_pb.ArgumentList_Element) *model_core_pb.Reference {
-			if level, ok := element.Level.(*model_command_pb.ArgumentList_Element_Parent); ok {
-				return level.Parent
+		func(element model_core.Message[*model_command_pb.ArgumentList_Element]) (*model_core_pb.Reference, error) {
+			if level, ok := element.Message.Level.(*model_command_pb.ArgumentList_Element_Parent); ok {
+				return level.Parent, nil
 			}
-			return nil
+			return nil, nil
 		},
 		&errIter,
 	) {
@@ -275,11 +275,11 @@ func (e *localExecutor) Execute(ctx context.Context, action *model_command_pb.Ac
 			Message:            command.Message.EnvironmentVariables,
 			OutgoingReferences: command.OutgoingReferences,
 		},
-		func(entry *model_command_pb.EnvironmentVariableList_Element) *model_core_pb.Reference {
-			if level, ok := entry.Level.(*model_command_pb.EnvironmentVariableList_Element_Parent); ok {
-				return level.Parent
+		func(entry model_core.Message[*model_command_pb.EnvironmentVariableList_Element]) (*model_core_pb.Reference, error) {
+			if level, ok := entry.Message.Level.(*model_command_pb.EnvironmentVariableList_Element_Parent); ok {
+				return level.Parent, nil
 			}
-			return nil
+			return nil, nil
 		},
 		&errIter,
 	) {

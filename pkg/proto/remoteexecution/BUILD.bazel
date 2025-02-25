@@ -15,7 +15,7 @@ go_proto_library(
         "@rules_go//proto:go_proto",
         "@rules_go//proto:go_grpc_v2",
     ],
-    importpath = "github.com/buildbarn/bb-playground/pkg/proto/remoteexecution",
+    importpath = "github.com/buildbarn/bonanza/pkg/proto/remoteexecution",
     proto = ":remoteexecution_proto",
     visibility = ["//visibility:public"],
 )
@@ -23,6 +23,6 @@ go_proto_library(
 go_library(
     name = "remoteexecution",
     embed = [":remoteexecution_go_proto"],
-    importpath = "github.com/buildbarn/bb-playground/pkg/proto/remoteexecution",
+    importpath = "github.com/buildbarn/bonanza/pkg/proto/remoteexecution",
     visibility = ["//visibility:public"],
 )

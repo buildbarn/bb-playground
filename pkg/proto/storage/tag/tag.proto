@@ -1,12 +1,12 @@
 syntax = "proto3";
 
-package buildbarn.playground.storage.tag;
+package bonanza.storage.tag;
 
 import "google/protobuf/any.proto";
 import "google/protobuf/empty.proto";
 import "pkg/proto/storage/object/object.proto";
 
-option go_package = "github.com/buildbarn/bb-playground/pkg/proto/storage/tag";
+option go_package = "github.com/buildbarn/bonanza/pkg/proto/storage/tag";
 
 service Resolver {
   // Resolve the reference of an object that's associated with a given
@@ -20,7 +20,7 @@ service Updater {
 
 message ResolveTagRequest {
   // The namespace in which the tag resides.
-  buildbarn.playground.storage.object.Namespace namespace = 1;
+  bonanza.storage.object.Namespace namespace = 1;
 
   // The tag that should be resolved.
   google.protobuf.Any tag = 2;
@@ -38,7 +38,7 @@ message ResolveTagResponse {
 
 message UpdateTagRequest {
   // The namespace in which to create the tag.
-  buildbarn.playground.storage.object.Namespace namespace = 1;
+  bonanza.storage.object.Namespace namespace = 1;
 
   // The tag that should be updated.
   google.protobuf.Any tag = 2;

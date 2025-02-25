@@ -6,10 +6,10 @@ import (
 	"sort"
 	"strings"
 
-	pg_label "github.com/buildbarn/bb-playground/pkg/label"
-	model_core "github.com/buildbarn/bb-playground/pkg/model/core"
-	model_starlark_pb "github.com/buildbarn/bb-playground/pkg/proto/model/starlark"
-	"github.com/buildbarn/bb-playground/pkg/storage/dag"
+	pg_label "github.com/buildbarn/bonanza/pkg/label"
+	model_core "github.com/buildbarn/bonanza/pkg/model/core"
+	model_starlark_pb "github.com/buildbarn/bonanza/pkg/proto/model/starlark"
+	"github.com/buildbarn/bonanza/pkg/storage/dag"
 
 	"go.starlark.net/starlark"
 )
@@ -73,11 +73,11 @@ func (p *Provider) Truth() starlark.Bool {
 	return starlark.True
 }
 
-func (p *Provider) Hash() (uint32, error) {
+func (p *Provider) Hash(thread *starlark.Thread) (uint32, error) {
 	if p.Identifier == nil {
 		return 0, errors.New("provider without a name cannot be hashed")
 	}
-	return starlark.String(p.Identifier.String()).Hash()
+	return starlark.String(p.Identifier.String()).Hash(thread)
 }
 
 func (p *Provider) Cmp(other starlark.Value, depth int) (int, error) {

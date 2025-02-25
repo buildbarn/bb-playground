@@ -1,7 +1,7 @@
 package core
 
 import (
-	"github.com/buildbarn/bb-playground/pkg/proto/model/core"
+	"github.com/buildbarn/bonanza/pkg/proto/model/core"
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"

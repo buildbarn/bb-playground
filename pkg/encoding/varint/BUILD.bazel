@@ -7,7 +7,7 @@ go_library(
         "forward.go",
         "size_bytes.go",
     ],
-    importpath = "github.com/buildbarn/bb-playground/pkg/encoding/varint",
+    importpath = "github.com/buildbarn/bonanza/pkg/encoding/varint",
     visibility = ["//visibility:public"],
     deps = [
         "@org_golang_google_grpc//codes",

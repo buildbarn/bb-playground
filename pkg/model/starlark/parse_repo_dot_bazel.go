@@ -3,13 +3,13 @@ package starlark
 import (
 	"fmt"
 
-	pg_label "github.com/buildbarn/bb-playground/pkg/label"
-	model_core "github.com/buildbarn/bb-playground/pkg/model/core"
-	"github.com/buildbarn/bb-playground/pkg/model/core/inlinedtree"
-	model_starlark_pb "github.com/buildbarn/bb-playground/pkg/proto/model/starlark"
-	"github.com/buildbarn/bb-playground/pkg/starlark/unpack"
-	"github.com/buildbarn/bb-playground/pkg/storage/dag"
-	"github.com/buildbarn/bb-playground/pkg/storage/object"
+	pg_label "github.com/buildbarn/bonanza/pkg/label"
+	model_core "github.com/buildbarn/bonanza/pkg/model/core"
+	"github.com/buildbarn/bonanza/pkg/model/core/inlinedtree"
+	model_starlark_pb "github.com/buildbarn/bonanza/pkg/proto/model/starlark"
+	"github.com/buildbarn/bonanza/pkg/starlark/unpack"
+	"github.com/buildbarn/bonanza/pkg/storage/dag"
+	"github.com/buildbarn/bonanza/pkg/storage/object"
 
 	"go.starlark.net/starlark"
 )
@@ -78,6 +78,7 @@ func getDefaultInheritableAttrs(thread *starlark.Thread, b *starlark.Builtin, ar
 	var visibility []pg_label.ResolvedLabel
 	canonicalPackage := CurrentFilePackage(thread, 1)
 	labelStringListUnpackerInto := unpack.List(unpack.Stringer(NewLabelOrStringUnpackerInto(canonicalPackage)))
+	var features []string
 	if err := starlark.UnpackArgs(
 		b.Name(), args, kwargs,
 		"default_applicable_licenses?", unpack.Bind(thread, &applicableLicenses, labelStringListUnpackerInto),
@@ -85,6 +86,7 @@ func getDefaultInheritableAttrs(thread *starlark.Thread, b *starlark.Builtin, ar
 		"default_package_metadata?", unpack.Bind(thread, &packageMetadata, labelStringListUnpackerInto),
 		"default_testonly?", unpack.Bind(thread, &testOnly, unpack.Bool),
 		"default_visibility?", unpack.Bind(thread, &visibility, unpack.List(NewLabelOrStringUnpackerInto(canonicalPackage))),
+		"features?", unpack.Bind(thread, &features, unpack.List(unpack.String)),
 	); err != nil {
 		return model_core.PatchedMessage[*model_starlark_pb.InheritableAttrs, dag.ObjectContentsWalker]{}, err
 	}
@@ -118,6 +120,7 @@ func getDefaultInheritableAttrs(thread *starlark.Thread, b *starlark.Builtin, ar
 		)
 	}
 
+	// TODO: Also store features?
 	return model_core.NewPatchedMessage(
 		&model_starlark_pb.InheritableAttrs{
 			Deprecation:     deprecation,

@@ -3,7 +3,7 @@ package namespaced
 import (
 	"context"
 
-	"github.com/buildbarn/bb-playground/pkg/storage/object"
+	"github.com/buildbarn/bonanza/pkg/storage/object"
 )
 
 type NamespaceAddingNamespace[T any] interface {

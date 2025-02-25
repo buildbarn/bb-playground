@@ -15,7 +15,7 @@ go_library(
         "split_builder.go",
         "uniform_builder.go",
     ],
-    importpath = "github.com/buildbarn/bb-playground/pkg/model/core/btree",
+    importpath = "github.com/buildbarn/bonanza/pkg/model/core/btree",
     visibility = ["//visibility:public"],
     deps = [
         "//pkg/encoding/varint",

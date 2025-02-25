@@ -4,7 +4,7 @@ import (
 	"context"
 	"time"
 
-	remoteexecution_pb "github.com/buildbarn/bb-playground/pkg/proto/remoteexecution"
+	remoteexecution_pb "github.com/buildbarn/bonanza/pkg/proto/remoteexecution"
 )
 
 // Analyzer of Actions, determining which worker size class is the most

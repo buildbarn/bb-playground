@@ -4,7 +4,7 @@ load("@rules_go//go:def.bzl", "go_library", "go_test")
 go_library(
     name = "leasemarshaling",
     srcs = ["lease_marshaling_updater.go"],
-    importpath = "github.com/buildbarn/bb-playground/pkg/storage/tag/leasemarshaling",
+    importpath = "github.com/buildbarn/bonanza/pkg/storage/tag/leasemarshaling",
     visibility = ["//visibility:public"],
     deps = [
         "//pkg/storage/object/leasemarshaling",

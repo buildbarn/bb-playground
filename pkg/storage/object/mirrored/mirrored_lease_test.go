@@ -3,8 +3,8 @@ package mirrored_test
 import (
 	"testing"
 
-	"github.com/buildbarn/bb-playground/pkg/storage/object/mirrored"
 	"github.com/buildbarn/bb-storage/pkg/testutil"
+	"github.com/buildbarn/bonanza/pkg/storage/object/mirrored"
 	"github.com/stretchr/testify/require"
 
 	"google.golang.org/grpc/codes"

@@ -9,7 +9,7 @@ go_library(
         "deterministic_encrypting_binary_encoder.go",
         "lzw_compressing_binary_encoder.go",
     ],
-    importpath = "github.com/buildbarn/bb-playground/pkg/model/encoding",
+    importpath = "github.com/buildbarn/bonanza/pkg/model/encoding",
     visibility = ["//visibility:public"],
     deps = [
         "//pkg/compress/simplelzw",

@@ -19,7 +19,7 @@ proto_library(
 
 go_proto_library(
     name = "analysis_go_proto",
-    importpath = "github.com/buildbarn/bb-playground/pkg/proto/model/analysis",
+    importpath = "github.com/buildbarn/bonanza/pkg/proto/model/analysis",
     proto = ":analysis_proto",
     visibility = ["//visibility:public"],
     deps = [
@@ -34,6 +34,6 @@ go_proto_library(
 go_library(
     name = "analysis",
     embed = [":analysis_go_proto"],
-    importpath = "github.com/buildbarn/bb-playground/pkg/proto/model/analysis",
+    importpath = "github.com/buildbarn/bonanza/pkg/proto/model/analysis",
     visibility = ["//visibility:public"],
 )

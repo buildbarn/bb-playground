@@ -4,7 +4,7 @@ load("@rules_go//go:def.bzl", "go_library", "go_test")
 go_library(
     name = "inlinedtree",
     srcs = ["build.go"],
-    importpath = "github.com/buildbarn/bb-playground/pkg/model/core/inlinedtree",
+    importpath = "github.com/buildbarn/bonanza/pkg/model/core/inlinedtree",
     visibility = ["//visibility:public"],
     deps = [
         "//pkg/ds",

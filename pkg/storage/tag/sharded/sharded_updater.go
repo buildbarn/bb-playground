@@ -3,9 +3,9 @@ package sharded
 import (
 	"context"
 
-	"github.com/buildbarn/bb-playground/pkg/storage/object/sharded"
-	"github.com/buildbarn/bb-playground/pkg/storage/tag"
 	"github.com/buildbarn/bb-storage/pkg/util"
+	"github.com/buildbarn/bonanza/pkg/storage/object/sharded"
+	"github.com/buildbarn/bonanza/pkg/storage/tag"
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/protobuf/proto"
@@ -13,16 +13,18 @@ import (
 )
 
 type shardedUpdater[TReference any, TLease any] struct {
-	shards []tag.Updater[TReference, TLease]
-	picker sharded.Picker
+	shards     []tag.Updater[TReference, TLease]
+	shardNames []string
+	picker     sharded.Picker
 }
 
 // NewShardedUpdater creates a decorator for one or more tag.Updaters
 // that spreads out incoming requests based on the provided reference.
-func NewShardedUpdater[TReference, TLease any](shards []tag.Updater[TReference, TLease]) tag.Updater[TReference, TLease] {
+func NewShardedUpdater[TReference, TLease any](shards []tag.Updater[TReference, TLease], shardNames []string, picker sharded.Picker) tag.Updater[TReference, TLease] {
 	return &shardedUpdater[TReference, TLease]{
-		shards: shards,
-		picker: sharded.NewPicker(len(shards)),
+		shards:     shards,
+		shardNames: shardNames,
+		picker:     picker,
 	}
 }
 
@@ -31,5 +33,9 @@ func (u *shardedUpdater[TReference, TLease]) UpdateTag(ctx context.Context, tag 
 	if err != nil {
 		return util.StatusWrapWithCode(err, codes.InvalidArgument, "Failed to marshal tag")
 	}
-	return u.shards[u.picker.PickShard(data)].UpdateTag(ctx, tag, reference, lease, overwrite)
+	shardIndex := u.picker.PickShard(data)
+	if err := u.shards[shardIndex].UpdateTag(ctx, tag, reference, lease, overwrite); err != nil {
+		return util.StatusWrapf(err, "Shard %#v", u.shardNames[shardIndex])
+	}
+	return nil
 }

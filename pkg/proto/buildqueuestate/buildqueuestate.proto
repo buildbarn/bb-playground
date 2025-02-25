@@ -1,6 +1,6 @@
 syntax = "proto3";
 
-package buildbarn.playground.buildqueuestate;
+package bonanza.buildqueuestate;
 
 import "google/protobuf/any.proto";
 import "google/protobuf/duration.proto";
@@ -9,7 +9,7 @@ import "google/protobuf/timestamp.proto";
 import "google/rpc/status.proto";
 import "pkg/proto/remoteexecution/remoteexecution.proto";
 
-option go_package = "github.com/buildbarn/bb-playground/pkg/proto/buildqueuestate";
+option go_package = "github.com/buildbarn/bonanza/pkg/proto/buildqueuestate";
 
 // BuildQueueState can be used to inspect the internal state of
 // InMemoryBuildQueue and perform administrative operations against it.
@@ -133,7 +133,7 @@ message OperationState {
   google.protobuf.Timestamp queued_timestamp = 4;
 
   // The Action message that the client instructed the worker to execute.
-  buildbarn.playground.remoteexecution.Action action = 5;
+  bonanza.remoteexecution.Action action = 5;
 
   // When not set, it indicates that one or more Execute() or
   // WaitExecution() calls are currently taking place for this

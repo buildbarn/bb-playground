@@ -1,5 +1,7 @@
-load(":fragments.bzl", "apple_fragment", "cpp_fragment")
+load(":fragments.bzl", "apple_fragment", "cpp_fragment", "proto_fragment")
 
 apple_fragment(name = "apple")
 
 cpp_fragment(name = "cpp")
+
+proto_fragment(name = "proto")

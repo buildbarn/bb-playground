@@ -3,10 +3,10 @@ package grpc
 import (
 	"context"
 
-	tag_pb "github.com/buildbarn/bb-playground/pkg/proto/storage/tag"
-	"github.com/buildbarn/bb-playground/pkg/storage/object"
-	"github.com/buildbarn/bb-playground/pkg/storage/tag"
 	"github.com/buildbarn/bb-storage/pkg/util"
+	tag_pb "github.com/buildbarn/bonanza/pkg/proto/storage/tag"
+	"github.com/buildbarn/bonanza/pkg/storage/object"
+	"github.com/buildbarn/bonanza/pkg/storage/tag"
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/protobuf/types/known/anypb"

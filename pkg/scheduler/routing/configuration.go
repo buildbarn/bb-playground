@@ -1,10 +1,10 @@
 package routing
 
 import (
-	pb "github.com/buildbarn/bb-playground/pkg/proto/configuration/scheduler"
-	"github.com/buildbarn/bb-playground/pkg/scheduler/initialsizeclass"
-	"github.com/buildbarn/bb-playground/pkg/scheduler/invocation"
 	"github.com/buildbarn/bb-storage/pkg/util"
+	pb "github.com/buildbarn/bonanza/pkg/proto/configuration/scheduler"
+	"github.com/buildbarn/bonanza/pkg/scheduler/initialsizeclass"
+	"github.com/buildbarn/bonanza/pkg/scheduler/invocation"
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"

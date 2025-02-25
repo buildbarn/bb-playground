@@ -7,11 +7,11 @@ import (
 	"slices"
 	"strings"
 
-	pg_label "github.com/buildbarn/bb-playground/pkg/label"
-	model_core "github.com/buildbarn/bb-playground/pkg/model/core"
-	model_starlark_pb "github.com/buildbarn/bb-playground/pkg/proto/model/starlark"
-	"github.com/buildbarn/bb-playground/pkg/starlark/unpack"
-	"github.com/buildbarn/bb-playground/pkg/storage/dag"
+	pg_label "github.com/buildbarn/bonanza/pkg/label"
+	model_core "github.com/buildbarn/bonanza/pkg/model/core"
+	model_starlark_pb "github.com/buildbarn/bonanza/pkg/proto/model/starlark"
+	"github.com/buildbarn/bonanza/pkg/starlark/unpack"
+	"github.com/buildbarn/bonanza/pkg/storage/dag"
 
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/emptypb"
@@ -51,7 +51,7 @@ func (Attr) Truth() starlark.Bool {
 	return starlark.True
 }
 
-func (a *Attr) Hash() (uint32, error) {
+func (a *Attr) Hash(thread *starlark.Thread) (uint32, error) {
 	return 0, fmt.Errorf("attr.%s cannot be hashed", a.attrType.Type())
 }
 
@@ -122,6 +122,7 @@ type AttrType interface {
 	Type() string
 	Encode(out *model_starlark_pb.Attr) error
 	GetCanonicalizer(currentPackage pg_label.CanonicalPackage) unpack.Canonicalizer
+	IsOutput() (filenameTemplate string, ok bool)
 }
 
 // sloppyBoolUnpackerInto can be used to unpack Starlark Boolean values.
@@ -176,6 +177,10 @@ func (boolAttrType) GetCanonicalizer(currentPackage pg_label.CanonicalPackage) u
 	return sloppyBoolUnpackerInto{}
 }
 
+func (boolAttrType) IsOutput() (string, bool) {
+	return "", false
+}
+
 type intAttrType struct {
 	values []int32
 }
@@ -203,6 +208,10 @@ func (intAttrType) GetCanonicalizer(currentPackage pg_label.CanonicalPackage) un
 	return unpack.Int[int32]()
 }
 
+func (intAttrType) IsOutput() (string, bool) {
+	return "", false
+}
+
 type intListAttrType struct {
 	values []int32
 }
@@ -224,6 +233,10 @@ func (intListAttrType) Encode(out *model_starlark_pb.Attr) error {
 
 func (intListAttrType) GetCanonicalizer(currentPackage pg_label.CanonicalPackage) unpack.Canonicalizer {
 	return unpack.List(unpack.Int[int32]())
+}
+
+func (intListAttrType) IsOutput() (string, bool) {
+	return "", false
 }
 
 type labelAttrType struct {
@@ -275,6 +288,10 @@ func (ui *labelAttrType) GetCanonicalizer(currentPackage pg_label.CanonicalPacka
 	return canonicalizer
 }
 
+func (labelAttrType) IsOutput() (string, bool) {
+	return "", false
+}
+
 type labelKeyedStringDictAttrType struct {
 	dictKeyAllowFiles []string
 	dictKeyCfg        TransitionDefinition
@@ -309,6 +326,10 @@ func (at *labelKeyedStringDictAttrType) Encode(out *model_starlark_pb.Attr) erro
 
 func (labelKeyedStringDictAttrType) GetCanonicalizer(currentPackage pg_label.CanonicalPackage) unpack.Canonicalizer {
 	return unpack.Dict(NewLabelOrStringUnpackerInto(currentPackage), unpack.String)
+}
+
+func (labelKeyedStringDictAttrType) IsOutput() (string, bool) {
+	return "", false
 }
 
 type labelListAttrType struct {
@@ -347,23 +368,39 @@ func (labelListAttrType) GetCanonicalizer(currentPackage pg_label.CanonicalPacka
 	return unpack.List(NewLabelOrStringUnpackerInto(currentPackage))
 }
 
-type outputAttrType struct{}
+func (labelListAttrType) IsOutput() (string, bool) {
+	return "", false
+}
 
-var OutputAttrType AttrType = outputAttrType{}
+type outputAttrType struct {
+	filenameTemplate string
+}
+
+func NewOutputAttrType(filenameTemplate string) AttrType {
+	return &outputAttrType{
+		filenameTemplate: filenameTemplate,
+	}
+}
 
 func (outputAttrType) Type() string {
 	return "output"
 }
 
-func (outputAttrType) Encode(out *model_starlark_pb.Attr) error {
+func (at *outputAttrType) Encode(out *model_starlark_pb.Attr) error {
 	out.Type = &model_starlark_pb.Attr_Output{
-		Output: &emptypb.Empty{},
+		Output: &model_starlark_pb.Attr_OutputType{
+			FilenameTemplate: at.filenameTemplate,
+		},
 	}
 	return nil
 }
 
 func (outputAttrType) GetCanonicalizer(currentPackage pg_label.CanonicalPackage) unpack.Canonicalizer {
 	return NewLabelOrStringUnpackerInto(currentPackage)
+}
+
+func (at *outputAttrType) IsOutput() (string, bool) {
+	return at.filenameTemplate, true
 }
 
 type outputListAttrType struct{}
@@ -385,6 +422,10 @@ func (at *outputListAttrType) Encode(out *model_starlark_pb.Attr) error {
 
 func (at *outputListAttrType) GetCanonicalizer(currentPackage pg_label.CanonicalPackage) unpack.Canonicalizer {
 	return unpack.List(NewLabelOrStringUnpackerInto(currentPackage))
+}
+
+func (outputListAttrType) IsOutput() (string, bool) {
+	return "", true
 }
 
 type stringAttrType struct {
@@ -412,6 +453,10 @@ func (stringAttrType) GetCanonicalizer(currentPackage pg_label.CanonicalPackage)
 	return unpack.String
 }
 
+func (stringAttrType) IsOutput() (string, bool) {
+	return "", false
+}
+
 type stringDictAttrType struct{}
 
 func NewStringDictAttrType() AttrType {
@@ -431,6 +476,10 @@ func (stringDictAttrType) Encode(out *model_starlark_pb.Attr) error {
 
 func (stringDictAttrType) GetCanonicalizer(currentPackage pg_label.CanonicalPackage) unpack.Canonicalizer {
 	return unpack.Dict(unpack.String, unpack.String)
+}
+
+func (stringDictAttrType) IsOutput() (string, bool) {
+	return "", false
 }
 
 type stringListAttrType struct{}
@@ -454,6 +503,10 @@ func (stringListAttrType) GetCanonicalizer(currentPackage pg_label.CanonicalPack
 	return unpack.List(unpack.String)
 }
 
+func (stringListAttrType) IsOutput() (string, bool) {
+	return "", false
+}
+
 type stringListDictAttrType struct{}
 
 func NewStringListDictAttrType() AttrType {
@@ -473,6 +526,10 @@ func (at *stringListDictAttrType) Encode(out *model_starlark_pb.Attr) error {
 
 func (stringListDictAttrType) GetCanonicalizer(currentPackage pg_label.CanonicalPackage) unpack.Canonicalizer {
 	return unpack.Dict(unpack.String, unpack.List(unpack.String))
+}
+
+func (stringListDictAttrType) IsOutput() (string, bool) {
+	return "", false
 }
 
 func encodeNamedAttrs(attrs map[pg_label.StarlarkIdentifier]*Attr, path map[starlark.Value]struct{}, options *ValueEncodingOptions) (model_core.PatchedMessage[[]*model_starlark_pb.NamedAttr, dag.ObjectContentsWalker], bool, error) {

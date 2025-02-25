@@ -3,9 +3,9 @@ package filesystem_test
 import (
 	"testing"
 
-	"github.com/buildbarn/bb-playground/pkg/model/filesystem"
-	"github.com/buildbarn/bb-playground/pkg/storage/object"
 	"github.com/buildbarn/bb-storage/pkg/testutil"
+	"github.com/buildbarn/bonanza/pkg/model/filesystem"
+	"github.com/buildbarn/bonanza/pkg/storage/object"
 	"github.com/stretchr/testify/require"
 
 	"google.golang.org/grpc/codes"

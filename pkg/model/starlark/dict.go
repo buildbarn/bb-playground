@@ -5,12 +5,12 @@ import (
 	"errors"
 	"iter"
 
-	model_core "github.com/buildbarn/bb-playground/pkg/model/core"
-	"github.com/buildbarn/bb-playground/pkg/model/core/btree"
-	model_parser "github.com/buildbarn/bb-playground/pkg/model/parser"
-	model_core_pb "github.com/buildbarn/bb-playground/pkg/proto/model/core"
-	model_starlark_pb "github.com/buildbarn/bb-playground/pkg/proto/model/starlark"
-	"github.com/buildbarn/bb-playground/pkg/storage/object"
+	model_core "github.com/buildbarn/bonanza/pkg/model/core"
+	"github.com/buildbarn/bonanza/pkg/model/core/btree"
+	model_parser "github.com/buildbarn/bonanza/pkg/model/parser"
+	model_core_pb "github.com/buildbarn/bonanza/pkg/proto/model/core"
+	model_starlark_pb "github.com/buildbarn/bonanza/pkg/proto/model/starlark"
+	"github.com/buildbarn/bonanza/pkg/storage/object"
 )
 
 func AllDictLeafEntries(
@@ -26,11 +26,11 @@ func AllDictLeafEntries(
 			Message:            rootDict.Message.Entries,
 			OutgoingReferences: rootDict.OutgoingReferences,
 		},
-		func(entry *model_starlark_pb.Dict_Entry) *model_core_pb.Reference {
-			if parent, ok := entry.Level.(*model_starlark_pb.Dict_Entry_Parent_); ok {
-				return parent.Parent.Reference
+		func(entry model_core.Message[*model_starlark_pb.Dict_Entry]) (*model_core_pb.Reference, error) {
+			if parent, ok := entry.Message.Level.(*model_starlark_pb.Dict_Entry_Parent_); ok {
+				return parent.Parent.Reference, nil
 			}
-			return nil
+			return nil, nil
 		},
 		errOut,
 	)

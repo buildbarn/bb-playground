@@ -1,10 +1,10 @@
 syntax = "proto3";
 
-package buildbarn.playground.model.encoding;
+package bonanza.model.encoding;
 
 import "google/protobuf/empty.proto";
 
-option go_package = "github.com/buildbarn/bb-playground/pkg/proto/model/encoding";
+option go_package = "github.com/buildbarn/bonanza/pkg/proto/model/encoding";
 
 message DeterministicEncryptingBinaryEncoder {
   // 128, 192, or 256-bit key that is used to encrypt the initialization

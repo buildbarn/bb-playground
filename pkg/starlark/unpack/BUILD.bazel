@@ -29,7 +29,7 @@ go_library(
         "type.go",
         "url.go",
     ],
-    importpath = "github.com/buildbarn/bb-playground/pkg/starlark/unpack",
+    importpath = "github.com/buildbarn/bonanza/pkg/starlark/unpack",
     visibility = ["//visibility:public"],
     deps = [
         "//pkg/label",

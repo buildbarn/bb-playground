@@ -4,11 +4,11 @@ import (
 	"errors"
 	"fmt"
 
-	pg_label "github.com/buildbarn/bb-playground/pkg/label"
-	model_core "github.com/buildbarn/bb-playground/pkg/model/core"
-	model_starlark_pb "github.com/buildbarn/bb-playground/pkg/proto/model/starlark"
-	"github.com/buildbarn/bb-playground/pkg/starlark/unpack"
-	"github.com/buildbarn/bb-playground/pkg/storage/dag"
+	pg_label "github.com/buildbarn/bonanza/pkg/label"
+	model_core "github.com/buildbarn/bonanza/pkg/model/core"
+	model_starlark_pb "github.com/buildbarn/bonanza/pkg/proto/model/starlark"
+	"github.com/buildbarn/bonanza/pkg/starlark/unpack"
+	"github.com/buildbarn/bonanza/pkg/storage/dag"
 
 	"go.starlark.net/starlark"
 	"go.starlark.net/syntax"
@@ -46,7 +46,7 @@ func (ToolchainType) Truth() starlark.Bool {
 	return starlark.True
 }
 
-func (ToolchainType) Hash() (uint32, error) {
+func (ToolchainType) Hash(thread *starlark.Thread) (uint32, error) {
 	return 0, errors.New("config_common.toolchain_type cannot be hashed")
 }
 

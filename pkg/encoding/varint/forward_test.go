@@ -6,8 +6,8 @@ import (
 	"math/rand/v2"
 	"testing"
 
-	"github.com/buildbarn/bb-playground/pkg/encoding/varint"
 	"github.com/buildbarn/bb-storage/pkg/testutil"
+	"github.com/buildbarn/bonanza/pkg/encoding/varint"
 	"github.com/stretchr/testify/require"
 
 	"google.golang.org/grpc/codes"

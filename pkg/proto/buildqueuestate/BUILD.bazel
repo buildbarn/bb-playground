@@ -22,7 +22,7 @@ go_proto_library(
         "@rules_go//proto:go_proto",
         "@rules_go//proto:go_grpc_v2",
     ],
-    importpath = "github.com/buildbarn/bb-playground/pkg/proto/buildqueuestate",
+    importpath = "github.com/buildbarn/bonanza/pkg/proto/buildqueuestate",
     proto = ":buildqueuestate_proto",
     visibility = ["//visibility:public"],
     deps = [
@@ -34,6 +34,6 @@ go_proto_library(
 go_library(
     name = "buildqueuestate",
     embed = [":buildqueuestate_go_proto"],
-    importpath = "github.com/buildbarn/bb-playground/pkg/proto/buildqueuestate",
+    importpath = "github.com/buildbarn/bonanza/pkg/proto/buildqueuestate",
     visibility = ["//visibility:public"],
 )

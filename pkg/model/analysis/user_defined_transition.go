@@ -10,19 +10,19 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/buildbarn/bb-playground/pkg/evaluation"
-	"github.com/buildbarn/bb-playground/pkg/label"
-	model_core "github.com/buildbarn/bb-playground/pkg/model/core"
-	"github.com/buildbarn/bb-playground/pkg/model/core/btree"
-	model_encoding "github.com/buildbarn/bb-playground/pkg/model/encoding"
-	model_parser "github.com/buildbarn/bb-playground/pkg/model/parser"
-	model_starlark "github.com/buildbarn/bb-playground/pkg/model/starlark"
-	model_analysis_pb "github.com/buildbarn/bb-playground/pkg/proto/model/analysis"
-	model_core_pb "github.com/buildbarn/bb-playground/pkg/proto/model/core"
-	model_starlark_pb "github.com/buildbarn/bb-playground/pkg/proto/model/starlark"
-	"github.com/buildbarn/bb-playground/pkg/starlark/unpack"
-	"github.com/buildbarn/bb-playground/pkg/storage/dag"
-	"github.com/buildbarn/bb-playground/pkg/storage/object"
+	"github.com/buildbarn/bonanza/pkg/evaluation"
+	"github.com/buildbarn/bonanza/pkg/label"
+	model_core "github.com/buildbarn/bonanza/pkg/model/core"
+	"github.com/buildbarn/bonanza/pkg/model/core/btree"
+	model_encoding "github.com/buildbarn/bonanza/pkg/model/encoding"
+	model_parser "github.com/buildbarn/bonanza/pkg/model/parser"
+	model_starlark "github.com/buildbarn/bonanza/pkg/model/starlark"
+	model_analysis_pb "github.com/buildbarn/bonanza/pkg/proto/model/analysis"
+	model_core_pb "github.com/buildbarn/bonanza/pkg/proto/model/core"
+	model_starlark_pb "github.com/buildbarn/bonanza/pkg/proto/model/starlark"
+	"github.com/buildbarn/bonanza/pkg/starlark/unpack"
+	"github.com/buildbarn/bonanza/pkg/storage/dag"
+	"github.com/buildbarn/bonanza/pkg/storage/object"
 
 	"google.golang.org/protobuf/proto"
 
@@ -59,11 +59,11 @@ func (c *baseComputer) applyTransition(
 			Message:            configuration.Message.BuildSettingOverrides,
 			OutgoingReferences: configuration.OutgoingReferences,
 		},
-		func(override *model_analysis_pb.Configuration_BuildSettingOverride) *model_core_pb.Reference {
-			if level, ok := override.Level.(*model_analysis_pb.Configuration_BuildSettingOverride_Parent_); ok {
-				return level.Parent.Reference
+		func(override model_core.Message[*model_analysis_pb.Configuration_BuildSettingOverride]) (*model_core_pb.Reference, error) {
+			if level, ok := override.Message.Level.(*model_analysis_pb.Configuration_BuildSettingOverride_Parent_); ok {
+				return level.Parent.Reference, nil
 			}
-			return nil
+			return nil, nil
 		},
 		&errIter,
 	))
@@ -620,7 +620,7 @@ func (stubbedTransitionAttr) Truth() starlark.Bool {
 	return starlark.True
 }
 
-func (stubbedTransitionAttr) Hash() (uint32, error) {
+func (stubbedTransitionAttr) Hash(thread *starlark.Thread) (uint32, error) {
 	return 0, errors.New("transition_attr cannot be hashed")
 }
 

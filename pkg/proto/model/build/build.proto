@@ -1,13 +1,13 @@
 syntax = "proto3";
 
-package buildbarn.playground.model.build;
+package bonanza.model.build;
 
 import "google/protobuf/duration.proto";
 import "pkg/proto/model/core/core.proto";
 import "pkg/proto/model/encoding/encoding.proto";
 import "pkg/proto/model/filesystem/filesystem.proto";
 
-option go_package = "github.com/buildbarn/bb-playground/pkg/proto/model/build";
+option go_package = "github.com/buildbarn/bonanza/pkg/proto/model/build";
 
 message Module {
   // The name of the module for which source code is provided, without
@@ -19,8 +19,7 @@ message Module {
   // "MODULE.bazel". It MUST NOT contain any symbolic links whose
   // targets escape the root directory (i.e.,
   // maximum_symlink_escapement_levels MUST be zero).
-  buildbarn.playground.model.filesystem.DirectoryReference
-      root_directory_reference = 2;
+  bonanza.model.filesystem.DirectoryReference root_directory_reference = 2;
 }
 
 message UseLockfile {
@@ -56,14 +55,13 @@ message BuildSpecification {
   // Parameters that the client used to create objects containing
   // Directory and Leaves messages. The server MUST also use these
   // parameters when creating output directories.
-  buildbarn.playground.model.filesystem.DirectoryCreationParameters
+  bonanza.model.filesystem.DirectoryCreationParameters
       directory_creation_parameters = 4;
 
   // Parameters that the client used to create objects containing lists
   // of FileContents messages and file chunks. The server MUST also use
   // these parameters when creating output files.
-  buildbarn.playground.model.filesystem.FileCreationParameters
-      file_creation_parameters = 5;
+  bonanza.model.filesystem.FileCreationParameters file_creation_parameters = 5;
 
   // Whether or not to use the MODULE.bazel.lock file that is part of
   // the root module. If not set, the lockfile is neither checked nor
@@ -100,6 +98,5 @@ message BuildSpecification {
 
   // Encoders that should be used when creating Command messages that
   // are processed by workers.
-  repeated buildbarn.playground.model.encoding.BinaryEncoder command_encoders =
-      11;
+  repeated bonanza.model.encoding.BinaryEncoder command_encoders = 11;
 }

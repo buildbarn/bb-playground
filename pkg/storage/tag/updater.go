@@ -3,7 +3,7 @@ package tag
 import (
 	"context"
 
-	"github.com/buildbarn/bb-playground/pkg/storage/object"
+	"github.com/buildbarn/bonanza/pkg/storage/object"
 
 	"google.golang.org/protobuf/types/known/anypb"
 )

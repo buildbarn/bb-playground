@@ -3,7 +3,7 @@ package object
 import (
 	"math"
 
-	"github.com/buildbarn/bb-playground/pkg/proto/storage/object"
+	"github.com/buildbarn/bonanza/pkg/proto/storage/object"
 )
 
 type Limit struct {

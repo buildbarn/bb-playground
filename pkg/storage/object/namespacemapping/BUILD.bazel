@@ -7,7 +7,7 @@ go_library(
         "namespace_removing_downloader.go",
         "namespace_removing_uploader.go",
     ],
-    importpath = "github.com/buildbarn/bb-playground/pkg/storage/object/namespacemapping",
+    importpath = "github.com/buildbarn/bonanza/pkg/storage/object/namespacemapping",
     visibility = ["//visibility:public"],
     deps = ["//pkg/storage/object"],
 )

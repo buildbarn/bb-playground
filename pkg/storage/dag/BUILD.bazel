@@ -7,7 +7,7 @@ go_library(
         "upload_dag.go",
         "uploader_server.go",
     ],
-    importpath = "github.com/buildbarn/bb-playground/pkg/storage/dag",
+    importpath = "github.com/buildbarn/bonanza/pkg/storage/dag",
     visibility = ["//visibility:public"],
     deps = [
         "//pkg/ds",

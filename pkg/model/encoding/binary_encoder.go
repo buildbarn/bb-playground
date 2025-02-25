@@ -3,8 +3,8 @@ package encoding
 import (
 	"crypto/aes"
 
-	"github.com/buildbarn/bb-playground/pkg/proto/model/encoding"
 	"github.com/buildbarn/bb-storage/pkg/util"
+	"github.com/buildbarn/bonanza/pkg/proto/model/encoding"
 
 	"google.golang.org/grpc/codes"
 )

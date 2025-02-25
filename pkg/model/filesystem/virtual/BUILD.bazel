@@ -11,7 +11,7 @@ go_library(
         "stateless_handle_allocating_file_factory.go",
         "worker_top_level_directory.go",
     ],
-    importpath = "github.com/buildbarn/bb-playground/pkg/model/filesystem/virtual",
+    importpath = "github.com/buildbarn/bonanza/pkg/model/filesystem/virtual",
     visibility = ["//visibility:public"],
     deps = [
         "//pkg/encoding/varint",

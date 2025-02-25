@@ -7,7 +7,7 @@ go_library(
         "escape_sequences.go",
         "logger.go",
     ],
-    importpath = "github.com/buildbarn/bb-playground/pkg/bazelclient/logging",
+    importpath = "github.com/buildbarn/bonanza/pkg/bazelclient/logging",
     visibility = ["//visibility:public"],
     deps = [
         "//pkg/bazelclient/arguments",

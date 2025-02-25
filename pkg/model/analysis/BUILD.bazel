@@ -55,7 +55,7 @@ go_library(
         "user_defined_transition.go",
         "visible_target.go",
     ],
-    importpath = "github.com/buildbarn/bb-playground/pkg/model/analysis",
+    importpath = "github.com/buildbarn/bonanza/pkg/model/analysis",
     visibility = ["//visibility:public"],
     deps = [
         "//pkg/diff",

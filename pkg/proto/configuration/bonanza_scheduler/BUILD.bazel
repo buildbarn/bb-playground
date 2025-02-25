@@ -1,0 +1,34 @@
+load("@rules_go//go:def.bzl", "go_library")
+load("@rules_go//proto:def.bzl", "go_proto_library")
+load("@rules_proto//proto:defs.bzl", "proto_library")
+
+proto_library(
+    name = "bonanza_scheduler_proto",
+    srcs = ["bonanza_scheduler.proto"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//pkg/proto/configuration/scheduler:scheduler_proto",
+        "@com_github_buildbarn_bb_storage//pkg/proto/configuration/global:global_proto",
+        "@com_github_buildbarn_bb_storage//pkg/proto/configuration/grpc:grpc_proto",
+        "@protobuf//:duration_proto",
+    ],
+)
+
+go_proto_library(
+    name = "bonanza_scheduler_go_proto",
+    importpath = "github.com/buildbarn/bonanza/pkg/proto/configuration/bonanza_scheduler",
+    proto = ":bonanza_scheduler_proto",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//pkg/proto/configuration/scheduler",
+        "@com_github_buildbarn_bb_storage//pkg/proto/configuration/global",
+        "@com_github_buildbarn_bb_storage//pkg/proto/configuration/grpc",
+    ],
+)
+
+go_library(
+    name = "bonanza_scheduler",
+    embed = [":bonanza_scheduler_go_proto"],
+    importpath = "github.com/buildbarn/bonanza/pkg/proto/configuration/bonanza_scheduler",
+    visibility = ["//visibility:public"],
+)

@@ -10,15 +10,15 @@ import (
 	"slices"
 	"strings"
 
-	pg_label "github.com/buildbarn/bb-playground/pkg/label"
-	model_core "github.com/buildbarn/bb-playground/pkg/model/core"
-	"github.com/buildbarn/bb-playground/pkg/model/core/btree"
-	model_encoding "github.com/buildbarn/bb-playground/pkg/model/encoding"
-	model_parser "github.com/buildbarn/bb-playground/pkg/model/parser"
-	model_core_pb "github.com/buildbarn/bb-playground/pkg/proto/model/core"
-	model_starlark_pb "github.com/buildbarn/bb-playground/pkg/proto/model/starlark"
-	"github.com/buildbarn/bb-playground/pkg/storage/dag"
-	"github.com/buildbarn/bb-playground/pkg/storage/object"
+	pg_label "github.com/buildbarn/bonanza/pkg/label"
+	model_core "github.com/buildbarn/bonanza/pkg/model/core"
+	"github.com/buildbarn/bonanza/pkg/model/core/btree"
+	model_encoding "github.com/buildbarn/bonanza/pkg/model/encoding"
+	model_parser "github.com/buildbarn/bonanza/pkg/model/parser"
+	model_core_pb "github.com/buildbarn/bonanza/pkg/proto/model/core"
+	model_starlark_pb "github.com/buildbarn/bonanza/pkg/proto/model/starlark"
+	"github.com/buildbarn/bonanza/pkg/storage/dag"
+	"github.com/buildbarn/bonanza/pkg/storage/object"
 
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/emptypb"
@@ -784,7 +784,7 @@ func DecodeAttrType(attr *model_starlark_pb.Attr) (AttrType, error) {
 			NewReferenceTransitionDefinition(attrTypeInfo.LabelList.ListValueOptions.Cfg),
 		), nil
 	case *model_starlark_pb.Attr_Output:
-		return OutputAttrType, nil
+		return NewOutputAttrType(attrTypeInfo.Output.FilenameTemplate), nil
 	case *model_starlark_pb.Attr_OutputList:
 		return NewOutputListAttrType(), nil
 	case *model_starlark_pb.Attr_String_:
@@ -942,11 +942,11 @@ func decodeList_Elements(in model_core.Message[*model_starlark_pb.List], options
 			Message:            in.Message.Elements,
 			OutgoingReferences: in.OutgoingReferences,
 		},
-		func(element *model_starlark_pb.List_Element) *model_core_pb.Reference {
-			if level, ok := element.Level.(*model_starlark_pb.List_Element_Parent_); ok {
-				return level.Parent.Reference
+		func(element model_core.Message[*model_starlark_pb.List_Element]) (*model_core_pb.Reference, error) {
+			if level, ok := element.Message.Level.(*model_starlark_pb.List_Element_Parent_); ok {
+				return level.Parent.Reference, nil
 			}
-			return nil
+			return nil, nil
 		},
 		&errIter,
 	) {

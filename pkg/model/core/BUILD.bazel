@@ -10,7 +10,7 @@ go_library(
         "patched_message.go",
         "reference_message_patcher.go",
     ],
-    importpath = "github.com/buildbarn/bb-playground/pkg/model/core",
+    importpath = "github.com/buildbarn/bonanza/pkg/model/core",
     visibility = ["//visibility:public"],
     deps = [
         "//pkg/ds",

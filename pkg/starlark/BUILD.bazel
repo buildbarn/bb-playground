@@ -4,7 +4,7 @@ load("@rules_go//go:def.bzl", "go_library", "go_test")
 go_library(
     name = "starlark",
     srcs = ["parse_module_dot_bazel.go"],
-    importpath = "github.com/buildbarn/bb-playground/pkg/starlark",
+    importpath = "github.com/buildbarn/bonanza/pkg/starlark",
     visibility = ["//visibility:public"],
     deps = [
         "//pkg/label",

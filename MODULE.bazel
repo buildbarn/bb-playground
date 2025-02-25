@@ -1,4 +1,4 @@
-module(name = "com_github_buildbarn_bb_playground")
+module(name = "com_github_buildbarn_bonanza")
 
 bazel_dep(name = "bazel_remote_apis", version = "0.0.0")
 bazel_dep(name = "com_github_buildbarn_bb_remote_execution")

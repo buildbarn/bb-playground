@@ -3,7 +3,7 @@ package logging
 import (
 	"os"
 
-	"github.com/buildbarn/bb-playground/pkg/bazelclient/arguments"
+	"github.com/buildbarn/bonanza/pkg/bazelclient/arguments"
 
 	"golang.org/x/term"
 )

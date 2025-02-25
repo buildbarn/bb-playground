@@ -6,7 +6,7 @@ go_library(
         "sharded_resolver.go",
         "sharded_updater.go",
     ],
-    importpath = "github.com/buildbarn/bb-playground/pkg/storage/tag/sharded",
+    importpath = "github.com/buildbarn/bonanza/pkg/storage/tag/sharded",
     visibility = ["//visibility:public"],
     deps = [
         "//pkg/storage/object",

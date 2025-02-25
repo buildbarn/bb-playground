@@ -5,7 +5,7 @@ import (
 	"math/rand/v2"
 	"testing"
 
-	"github.com/buildbarn/bb-playground/pkg/encoding/varint"
+	"github.com/buildbarn/bonanza/pkg/encoding/varint"
 	"github.com/stretchr/testify/require"
 )
 

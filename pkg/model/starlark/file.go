@@ -7,16 +7,18 @@ import (
 	"hash/fnv"
 	go_path "path"
 
-	pg_label "github.com/buildbarn/bb-playground/pkg/label"
-	model_core "github.com/buildbarn/bb-playground/pkg/model/core"
-	model_starlark_pb "github.com/buildbarn/bb-playground/pkg/proto/model/starlark"
-	"github.com/buildbarn/bb-playground/pkg/storage/dag"
+	pg_label "github.com/buildbarn/bonanza/pkg/label"
+	model_core "github.com/buildbarn/bonanza/pkg/model/core"
+	model_starlark_pb "github.com/buildbarn/bonanza/pkg/proto/model/starlark"
+	"github.com/buildbarn/bonanza/pkg/storage/dag"
 
 	"google.golang.org/protobuf/proto"
 
 	"go.starlark.net/starlark"
 	"go.starlark.net/syntax"
 )
+
+const externalDirectoryName = "external"
 
 type File struct {
 	definition *model_starlark_pb.File
@@ -49,7 +51,7 @@ func (File) Truth() starlark.Bool {
 	return starlark.True
 }
 
-func (f File) Hash() (uint32, error) {
+func (f File) Hash(thread *starlark.Thread) (uint32, error) {
 	data, err := proto.Marshal(f.definition)
 	if err != nil {
 		return 0, err
@@ -70,12 +72,7 @@ func (f File) CompareSameType(thread *starlark.Thread, op syntax.Token, other st
 	}
 }
 
-func (f File) getPath() (string, error) {
-	canonicalPackage, err := pg_label.NewCanonicalPackage(f.definition.Package)
-	if err != nil {
-		return "", fmt.Errorf("invalid canonical package %#v: %w", f.definition.Package, err)
-	}
-	parts := make([]string, 0, 7)
+func (f File) appendOwner(parts []string) []string {
 	if o := f.definition.Owner; o != nil {
 		parts = append(
 			parts,
@@ -84,10 +81,19 @@ func (f File) getPath() (string, error) {
 			"bin",
 		)
 	}
+	return parts
+}
+
+func (f File) getPath() (string, error) {
+	canonicalPackage, err := pg_label.NewCanonicalPackage(f.definition.Package)
+	if err != nil {
+		return "", fmt.Errorf("invalid canonical package %#v: %w", f.definition.Package, err)
+	}
+	parts := f.appendOwner(make([]string, 0, 7))
 	return go_path.Join(
 		append(
 			parts,
-			"external",
+			externalDirectoryName,
 			canonicalPackage.GetCanonicalRepo().String(),
 			canonicalPackage.GetPackagePath(),
 			f.definition.PackageRelativePath,
@@ -120,10 +126,24 @@ func (f File) Attr(thread *starlark.Thread, name string) (starlark.Value, error)
 	case "is_symlink":
 		return starlark.Bool(f.definition.Type == model_starlark_pb.File_SYMLINK), nil
 	case "owner":
-		if f.definition.Owner == nil {
-			return starlark.None, nil
+		canonicalPackage, err := pg_label.NewCanonicalPackage(f.definition.Package)
+		if err != nil {
+			return nil, fmt.Errorf("invalid canonical package %#v: %w", f.definition.Package, err)
 		}
-		panic("TODO")
+
+		// If the file is an output file, return the label of
+		// the target that generates it. If it is a source file,
+		// return a label of the file itself.
+		targetNameStr := f.definition.PackageRelativePath
+		if o := f.definition.Owner; o != nil {
+			targetNameStr = o.TargetName
+		}
+		targetName, err := pg_label.NewTargetName(targetNameStr)
+		if err != nil {
+			return nil, fmt.Errorf("invalid target name %#v: %w", targetNameStr, err)
+		}
+
+		return NewLabel(canonicalPackage.AppendTargetName(targetName).AsResolved()), nil
 	case "path":
 		p, err := f.getPath()
 		if err != nil {
@@ -131,9 +151,36 @@ func (f File) Attr(thread *starlark.Thread, name string) (starlark.Value, error)
 		}
 		return starlark.String(p), nil
 	case "root":
-		panic("TODO")
+		canonicalPackage, err := pg_label.NewCanonicalPackage(f.definition.Package)
+		if err != nil {
+			return nil, fmt.Errorf("invalid canonical package %#v: %w", f.definition.Package, err)
+		}
+		parts := f.appendOwner(make([]string, 0, 6))
+		// TODO: Should we have a dedicated root type?
+		return newStructFromLists(
+			nil,
+			[]string{"path"},
+			[]any{
+				starlark.String(go_path.Join(
+					append(
+						parts,
+						externalDirectoryName,
+						canonicalPackage.GetCanonicalRepo().String(),
+					)...,
+				)),
+			},
+		), nil
 	case "short_path":
-		panic("TODO")
+		canonicalPackage, err := pg_label.NewCanonicalPackage(f.definition.Package)
+		if err != nil {
+			return nil, fmt.Errorf("invalid canonical package %#v: %w", f.definition.Package, err)
+		}
+		return starlark.String(go_path.Join(
+			"..",
+			canonicalPackage.GetCanonicalRepo().String(),
+			canonicalPackage.GetPackagePath(),
+			f.definition.PackageRelativePath,
+		)), nil
 	default:
 		return nil, nil
 	}

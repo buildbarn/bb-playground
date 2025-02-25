@@ -3,13 +3,13 @@ package starlark_test
 import (
 	"testing"
 
-	"github.com/buildbarn/bb-playground/pkg/label"
-	"github.com/buildbarn/bb-playground/pkg/model/core/inlinedtree"
-	model_starlark "github.com/buildbarn/bb-playground/pkg/model/starlark"
-	model_starlark_pb "github.com/buildbarn/bb-playground/pkg/proto/model/starlark"
-	object_pb "github.com/buildbarn/bb-playground/pkg/proto/storage/object"
-	"github.com/buildbarn/bb-playground/pkg/storage/object"
 	"github.com/buildbarn/bb-storage/pkg/testutil"
+	"github.com/buildbarn/bonanza/pkg/label"
+	"github.com/buildbarn/bonanza/pkg/model/core/inlinedtree"
+	model_starlark "github.com/buildbarn/bonanza/pkg/model/starlark"
+	model_starlark_pb "github.com/buildbarn/bonanza/pkg/proto/model/starlark"
+	object_pb "github.com/buildbarn/bonanza/pkg/proto/storage/object"
+	"github.com/buildbarn/bonanza/pkg/storage/object"
 	"github.com/stretchr/testify/require"
 
 	"go.uber.org/mock/gomock"

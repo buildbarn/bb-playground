@@ -3,9 +3,9 @@ package routing
 import (
 	"context"
 
-	remoteexecution_pb "github.com/buildbarn/bb-playground/pkg/proto/remoteexecution"
-	"github.com/buildbarn/bb-playground/pkg/scheduler/initialsizeclass"
-	"github.com/buildbarn/bb-playground/pkg/scheduler/invocation"
+	remoteexecution_pb "github.com/buildbarn/bonanza/pkg/proto/remoteexecution"
+	"github.com/buildbarn/bonanza/pkg/scheduler/initialsizeclass"
+	"github.com/buildbarn/bonanza/pkg/scheduler/invocation"
 )
 
 // ActionRouter is responsible for doing all forms of analysis on an

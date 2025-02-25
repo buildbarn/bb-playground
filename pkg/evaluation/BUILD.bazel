@@ -8,7 +8,7 @@ go_library(
         "environment.go",
         "fully_compute_value.go",
     ],
-    importpath = "github.com/buildbarn/bb-playground/pkg/evaluation",
+    importpath = "github.com/buildbarn/bonanza/pkg/evaluation",
     visibility = ["//visibility:public"],
     deps = [
         "//pkg/encoding/varint",

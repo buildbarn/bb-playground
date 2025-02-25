@@ -8,7 +8,7 @@ go_library(
         "configuration.go",
         "fallback_analyzer.go",
     ],
-    importpath = "github.com/buildbarn/bb-playground/pkg/scheduler/initialsizeclass",
+    importpath = "github.com/buildbarn/bonanza/pkg/scheduler/initialsizeclass",
     visibility = ["//visibility:public"],
     deps = [
         "//pkg/proto/configuration/scheduler",

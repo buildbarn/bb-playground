@@ -5,11 +5,11 @@ import (
 	"io"
 	"testing"
 
-	dag_pb "github.com/buildbarn/bb-playground/pkg/proto/storage/dag"
-	object_pb "github.com/buildbarn/bb-playground/pkg/proto/storage/object"
-	"github.com/buildbarn/bb-playground/pkg/storage/dag"
-	"github.com/buildbarn/bb-playground/pkg/storage/object"
 	"github.com/buildbarn/bb-storage/pkg/testutil"
+	dag_pb "github.com/buildbarn/bonanza/pkg/proto/storage/dag"
+	object_pb "github.com/buildbarn/bonanza/pkg/proto/storage/object"
+	"github.com/buildbarn/bonanza/pkg/storage/dag"
+	"github.com/buildbarn/bonanza/pkg/storage/object"
 	"github.com/stretchr/testify/require"
 
 	"golang.org/x/sync/semaphore"

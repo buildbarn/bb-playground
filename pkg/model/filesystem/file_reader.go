@@ -4,9 +4,9 @@ import (
 	"context"
 	"io"
 
-	model_parser "github.com/buildbarn/bb-playground/pkg/model/parser"
-	"github.com/buildbarn/bb-playground/pkg/storage/object"
 	"github.com/buildbarn/bb-storage/pkg/util"
+	model_parser "github.com/buildbarn/bonanza/pkg/model/parser"
+	"github.com/buildbarn/bonanza/pkg/storage/object"
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"

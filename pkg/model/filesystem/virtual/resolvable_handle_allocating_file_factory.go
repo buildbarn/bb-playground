@@ -4,11 +4,11 @@ import (
 	"bytes"
 	"io"
 
-	"github.com/buildbarn/bb-playground/pkg/encoding/varint"
-	model_filesystem "github.com/buildbarn/bb-playground/pkg/model/filesystem"
-	object_pb "github.com/buildbarn/bb-playground/pkg/proto/storage/object"
-	"github.com/buildbarn/bb-playground/pkg/storage/object"
 	"github.com/buildbarn/bb-remote-execution/pkg/filesystem/virtual"
+	"github.com/buildbarn/bonanza/pkg/encoding/varint"
+	model_filesystem "github.com/buildbarn/bonanza/pkg/model/filesystem"
+	object_pb "github.com/buildbarn/bonanza/pkg/proto/storage/object"
+	"github.com/buildbarn/bonanza/pkg/storage/object"
 )
 
 type resolvableHandleAllocatingFileFactory struct {

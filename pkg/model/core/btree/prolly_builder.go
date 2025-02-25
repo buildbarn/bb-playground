@@ -1,7 +1,7 @@
 package btree
 
 import (
-	model_core "github.com/buildbarn/bb-playground/pkg/model/core"
+	model_core "github.com/buildbarn/bonanza/pkg/model/core"
 
 	"google.golang.org/protobuf/proto"
 )

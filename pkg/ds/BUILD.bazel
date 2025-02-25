@@ -3,6 +3,6 @@ load("@rules_go//go:def.bzl", "go_library")
 go_library(
     name = "ds",
     srcs = ["slice.go"],
-    importpath = "github.com/buildbarn/bb-playground/pkg/ds",
+    importpath = "github.com/buildbarn/bonanza/pkg/ds",
     visibility = ["//visibility:public"],
 )

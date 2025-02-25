@@ -3,7 +3,7 @@ load("@rules_go//go:def.bzl", "go_binary", "go_library")
 go_library(
     name = "generate_computer_lib",
     srcs = ["main.go"],
-    importpath = "github.com/buildbarn/bb-playground/pkg/evaluation/generate_computer",
+    importpath = "github.com/buildbarn/bonanza/pkg/evaluation/generate_computer",
     visibility = ["//visibility:private"],
 )
 

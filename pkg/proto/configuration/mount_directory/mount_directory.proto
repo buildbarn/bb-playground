@@ -1,6 +1,6 @@
 syntax = "proto3";
 
-package buildbarn.playground.configuration.mount_directory;
+package bonanza.configuration.mount_directory;
 
 import "pkg/proto/configuration/eviction/eviction.proto";
 import "pkg/proto/configuration/filesystem/virtual/virtual.proto";
@@ -9,7 +9,7 @@ import "pkg/proto/configuration/grpc/grpc.proto";
 import "pkg/proto/model/encoding/encoding.proto";
 import "pkg/proto/storage/object/object.proto";
 
-option go_package = "github.com/buildbarn/bb-playground/pkg/proto/configuration/mount_directory";
+option go_package = "github.com/buildbarn/bonanza/pkg/proto/configuration/mount_directory";
 
 message ApplicationConfiguration {
   buildbarn.configuration.global.Configuration global = 1;
@@ -25,16 +25,13 @@ message ApplicationConfiguration {
 
   buildbarn.configuration.grpc.ClientConfiguration grpc_client = 6;
 
-  buildbarn.playground.storage.object.Namespace namespace = 7;
+  bonanza.storage.object.Namespace namespace = 7;
 
   bytes root_directory_reference = 8;
 
-  repeated buildbarn.playground.model.encoding.BinaryEncoder
-      directory_encoders = 9;
+  repeated bonanza.model.encoding.BinaryEncoder directory_encoders = 9;
 
-  repeated buildbarn.playground.model.encoding.BinaryEncoder
-      small_file_encoders = 10;
+  repeated bonanza.model.encoding.BinaryEncoder small_file_encoders = 10;
 
-  repeated buildbarn.playground.model.encoding.BinaryEncoder
-      concatenated_file_encoders = 11;
+  repeated bonanza.model.encoding.BinaryEncoder concatenated_file_encoders = 11;
 }

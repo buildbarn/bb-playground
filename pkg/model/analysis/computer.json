@@ -34,7 +34,7 @@
          ],
          "nativeValueType": {
             "imports": {
-               "model_encoding": "github.com/buildbarn/bb-playground/pkg/model/encoding"
+               "model_encoding": "github.com/buildbarn/bonanza/pkg/model/encoding"
             },
             "type": "model_encoding.BinaryEncoder"
          }
@@ -134,7 +134,7 @@
          ],
          "nativeValueType": {
             "imports": {
-               "model_filesystem": "github.com/buildbarn/bb-playground/pkg/model/filesystem"
+               "model_filesystem": "github.com/buildbarn/bonanza/pkg/model/filesystem"
             },
             "type": "*model_filesystem.DirectoryCreationParameters"
          }
@@ -155,7 +155,7 @@
          ],
          "nativeValueType": {
             "imports": {
-               "model_filesystem": "github.com/buildbarn/bb-playground/pkg/model/filesystem"
+               "model_filesystem": "github.com/buildbarn/bonanza/pkg/model/filesystem"
             },
             "type": "*model_filesystem.FileCreationParameters"
          }
@@ -173,7 +173,7 @@
          ],
          "nativeValueType": {
             "imports": {
-               "model_filesystem": "github.com/buildbarn/bb-playground/pkg/model/filesystem"
+               "model_filesystem": "github.com/buildbarn/bonanza/pkg/model/filesystem"
             },
             "type": "*model_filesystem.FileReader"
          }
@@ -271,7 +271,7 @@
          ],
          "nativeValueType": {
             "imports": {
-               "label": "github.com/buildbarn/bb-playground/pkg/label"
+               "label": "github.com/buildbarn/bonanza/pkg/label"
             },
             "type": "map[label.Module]OverrideVersions"
          }
@@ -413,7 +413,7 @@
          ],
          "nativeValueType": {
             "imports": {
-               "model_starlark": "github.com/buildbarn/bb-playground/pkg/model/starlark"
+               "model_starlark": "github.com/buildbarn/bonanza/pkg/model/starlark"
             },
             "type": "*model_starlark.BarePath"
          }
@@ -471,5 +471,5 @@
       }
    },
    "goPackage": "analysis",
-   "protoPackage": "github.com/buildbarn/bb-playground/pkg/proto/model/analysis"
+   "protoPackage": "github.com/buildbarn/bonanza/pkg/proto/model/analysis"
 }

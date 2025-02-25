@@ -1,12 +1,12 @@
 syntax = "proto3";
 
-package buildbarn.playground.model.filesystem;
+package bonanza.model.filesystem;
 
 import "google/protobuf/wrappers.proto";
 import "pkg/proto/model/core/core.proto";
 import "pkg/proto/model/encoding/encoding.proto";
 
-option go_package = "github.com/buildbarn/bb-playground/pkg/proto/model/filesystem";
+option go_package = "github.com/buildbarn/bonanza/pkg/proto/model/filesystem";
 
 message Leaves {
   // The files in the directory. Files MUST be stored in alphabetical
@@ -20,7 +20,7 @@ message Leaves {
 
 message LeavesReference {
   // Reference to an object containing a Leaves message.
-  buildbarn.playground.model.core.Reference reference = 1;
+  bonanza.model.core.Reference reference = 1;
 
   // Value indicating up to how many levels the symbolic links contained
   // in the current directory escape it.
@@ -87,7 +87,7 @@ message DirectoryNode {
 
 message DirectoryReference {
   // Reference to an object containing a Directory message.
-  buildbarn.playground.model.core.Reference reference = 1;
+  bonanza.model.core.Reference reference = 1;
 
   // The number of subdirectories present in the directory. This value
   // needs to be provided to make the link count of directories accurate
@@ -126,7 +126,7 @@ message FileContents {
   // zero, the payload contains a list of FileContents messages. The
   // file's contents can be reobtained by concatenating the parts
   // referenced by this message.
-  buildbarn.playground.model.core.Reference reference = 1;
+  bonanza.model.core.Reference reference = 1;
 
   // The total size of all chunks of data in this part of the file.
   uint64 total_size_bytes = 2;
@@ -135,7 +135,7 @@ message FileContents {
 message DirectoryAccessParameters {
   // Encoders that were used when creating objects containing Directory
   // and Leaves messages.
-  repeated buildbarn.playground.model.encoding.BinaryEncoder encoders = 1;
+  repeated bonanza.model.encoding.BinaryEncoder encoders = 1;
 }
 
 message DirectoryCreationParameters {
@@ -151,12 +151,11 @@ message DirectoryCreationParameters {
 message FileAccessParameters {
   // Encoders that were used when creating objects containing chunks of
   // data.
-  repeated buildbarn.playground.model.encoding.BinaryEncoder chunk_encoders = 1;
+  repeated bonanza.model.encoding.BinaryEncoder chunk_encoders = 1;
 
   // Encoders that were used when creating objects containing lists of
   // FileContents messages.
-  repeated buildbarn.playground.model.encoding.BinaryEncoder
-      file_contents_list_encoders = 2;
+  repeated bonanza.model.encoding.BinaryEncoder file_contents_list_encoders = 2;
 }
 
 message FileCreationParameters {

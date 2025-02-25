@@ -3,8 +3,8 @@ package btree
 import (
 	"hash/fnv"
 
-	"github.com/buildbarn/bb-playground/pkg/encoding/varint"
-	model_core "github.com/buildbarn/bb-playground/pkg/model/core"
+	"github.com/buildbarn/bonanza/pkg/encoding/varint"
+	model_core "github.com/buildbarn/bonanza/pkg/model/core"
 
 	"google.golang.org/protobuf/proto"
 )

@@ -3,10 +3,10 @@ package starlark
 import (
 	"errors"
 
-	pg_label "github.com/buildbarn/bb-playground/pkg/label"
-	model_core "github.com/buildbarn/bb-playground/pkg/model/core"
-	model_starlark_pb "github.com/buildbarn/bb-playground/pkg/proto/model/starlark"
-	"github.com/buildbarn/bb-playground/pkg/storage/dag"
+	pg_label "github.com/buildbarn/bonanza/pkg/label"
+	model_core "github.com/buildbarn/bonanza/pkg/model/core"
+	model_starlark_pb "github.com/buildbarn/bonanza/pkg/proto/model/starlark"
+	"github.com/buildbarn/bonanza/pkg/storage/dag"
 
 	"go.starlark.net/starlark"
 )
@@ -40,7 +40,7 @@ func (TagClass) Truth() starlark.Bool {
 	return starlark.True
 }
 
-func (TagClass) Hash() (uint32, error) {
+func (TagClass) Hash(thread *starlark.Thread) (uint32, error) {
 	return 0, errors.New("tag_class cannot be hashed")
 }
 

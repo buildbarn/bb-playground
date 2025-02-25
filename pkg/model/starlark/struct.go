@@ -10,14 +10,14 @@ import (
 	"strings"
 	"sync/atomic"
 
-	pg_label "github.com/buildbarn/bb-playground/pkg/label"
-	model_core "github.com/buildbarn/bb-playground/pkg/model/core"
-	"github.com/buildbarn/bb-playground/pkg/model/core/btree"
-	model_parser "github.com/buildbarn/bb-playground/pkg/model/parser"
-	model_core_pb "github.com/buildbarn/bb-playground/pkg/proto/model/core"
-	model_starlark_pb "github.com/buildbarn/bb-playground/pkg/proto/model/starlark"
-	"github.com/buildbarn/bb-playground/pkg/storage/dag"
-	"github.com/buildbarn/bb-playground/pkg/storage/object"
+	pg_label "github.com/buildbarn/bonanza/pkg/label"
+	model_core "github.com/buildbarn/bonanza/pkg/model/core"
+	"github.com/buildbarn/bonanza/pkg/model/core/btree"
+	model_parser "github.com/buildbarn/bonanza/pkg/model/parser"
+	model_core_pb "github.com/buildbarn/bonanza/pkg/proto/model/core"
+	model_starlark_pb "github.com/buildbarn/bonanza/pkg/proto/model/starlark"
+	"github.com/buildbarn/bonanza/pkg/storage/dag"
+	"github.com/buildbarn/bonanza/pkg/storage/object"
 
 	"go.starlark.net/starlark"
 	"go.starlark.net/syntax"
@@ -28,6 +28,7 @@ type Struct struct {
 	keys                       []string
 	values                     []any
 	decodedValues              []atomic.Pointer[starlark.Value]
+	hash                       uint32
 }
 
 var (
@@ -89,8 +90,35 @@ func (Struct) Truth() starlark.Bool {
 	return starlark.True
 }
 
-func (Struct) Hash() (uint32, error) {
-	return 0, errors.New("struct cannot be hashed")
+func (s *Struct) Hash(thread *starlark.Thread) (uint32, error) {
+	if s.hash == 0 {
+		// The same math as performed by starlarkstruct.
+		var h, m uint32 = 8731, 9839
+		for i, key := range s.keys {
+			keyHash, err := starlark.String(key).Hash(thread)
+			if err != nil {
+				return 0, fmt.Errorf("key of field %#v: %w", key, err)
+			}
+
+			value, err := s.fieldAtIndex(thread, i)
+			if err != nil {
+				return 0, fmt.Errorf("value of field %#v: %w", key, err)
+			}
+			valueHash, err := value.Hash(thread)
+			if err != nil {
+				return 0, fmt.Errorf("value of field %#v: %w", key, err)
+			}
+
+			h ^= 3 * keyHash
+			h ^= m * valueHash
+			m += 7349
+		}
+		if h == 0 {
+			h = 1
+		}
+		s.hash = h
+	}
+	return s.hash, nil
 }
 
 func (s *Struct) fieldAtIndex(thread *starlark.Thread, index int) (starlark.Value, error) {
@@ -159,35 +187,37 @@ func (s *Struct) Get(thread *starlark.Thread, key starlark.Value) (starlark.Valu
 }
 
 func (s *Struct) equals(thread *starlark.Thread, other *Struct, depth int) (bool, error) {
-	// Compare providers.
-	if (s.providerInstanceProperties == nil) != (other.providerInstanceProperties == nil) || (s.providerInstanceProperties != nil &&
-		!s.providerInstanceProperties.LateNamedValue.equals(&other.providerInstanceProperties.LateNamedValue)) {
-		return false, nil
-	}
-
-	// Compare keys.
-	if !slices.Equal(s.keys, other.keys) {
-		return false, nil
-	}
-
-	// Compare values.
-	//
-	// TODO: Do we want to optimize this to prevent unnecessary
-	// decoding of values, or do we only perform struct comparisons
-	// sparingly?
-	for i, key := range s.keys {
-		va, err := s.fieldAtIndex(thread, i)
-		if err != nil {
-			return false, fmt.Errorf("field %#v: %w", key, err)
-		}
-		vb, err := other.fieldAtIndex(thread, i)
-		if err != nil {
-			return false, fmt.Errorf("field %#v: %w", key, err)
-		}
-		if equal, err := starlark.EqualDepth(thread, va, vb, depth-1); err != nil {
-			return false, fmt.Errorf("field %#v: %w", key, err)
-		} else if !equal {
+	if s != other {
+		// Compare providers.
+		if (s.providerInstanceProperties == nil) != (other.providerInstanceProperties == nil) || (s.providerInstanceProperties != nil &&
+			!s.providerInstanceProperties.LateNamedValue.equals(&other.providerInstanceProperties.LateNamedValue)) {
 			return false, nil
+		}
+
+		// Compare keys.
+		if !slices.Equal(s.keys, other.keys) {
+			return false, nil
+		}
+
+		// Compare values.
+		//
+		// TODO: Do we want to optimize this to prevent unnecessary
+		// decoding of values, or do we only perform struct comparisons
+		// sparingly?
+		for i, key := range s.keys {
+			va, err := s.fieldAtIndex(thread, i)
+			if err != nil {
+				return false, fmt.Errorf("field %#v: %w", key, err)
+			}
+			vb, err := other.fieldAtIndex(thread, i)
+			if err != nil {
+				return false, fmt.Errorf("field %#v: %w", key, err)
+			}
+			if equal, err := starlark.EqualDepth(thread, va, vb, depth-1); err != nil {
+				return false, fmt.Errorf("field %#v: %w", key, err)
+			} else if !equal {
+				return false, nil
+			}
 		}
 	}
 	return true, nil
@@ -332,11 +362,11 @@ func AllStructFields(
 			Message:            structFields.Message.Values,
 			OutgoingReferences: structFields.OutgoingReferences,
 		},
-		func(element *model_starlark_pb.List_Element) *model_core_pb.Reference {
-			if level, ok := element.Level.(*model_starlark_pb.List_Element_Parent_); ok {
-				return level.Parent.Reference
+		func(element model_core.Message[*model_starlark_pb.List_Element]) (*model_core_pb.Reference, error) {
+			if level, ok := element.Message.Level.(*model_starlark_pb.List_Element_Parent_); ok {
+				return level.Parent.Reference, nil
 			}
-			return nil
+			return nil, nil
 		},
 		errOut,
 	)

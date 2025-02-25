@@ -1,8 +1,8 @@
 package core
 
 import (
-	model_encoding "github.com/buildbarn/bb-playground/pkg/model/encoding"
-	"github.com/buildbarn/bb-playground/pkg/storage/object"
+	model_encoding "github.com/buildbarn/bonanza/pkg/model/encoding"
+	"github.com/buildbarn/bonanza/pkg/storage/object"
 
 	"google.golang.org/protobuf/proto"
 )
