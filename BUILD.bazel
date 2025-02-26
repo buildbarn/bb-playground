@@ -1,3 +1,4 @@
+load("@com_github_bazelbuild_buildtools//buildifier:def.bzl", "buildifier")
 load("@gazelle//:def.bzl", "gazelle")
 
 exports_files(["LICENSE"])
@@ -21,4 +22,8 @@ exports_files(["LICENSE"])
 # gazelle:resolve proto pkg/proto/configuration/http/http.proto @com_github_buildbarn_bb_storage//pkg/proto/configuration/http:http_proto
 gazelle(
     name = "gazelle",
+)
+
+buildifier(
+    name = "buildifier",
 )

@@ -1,3 +1,4 @@
+load("@com_github_buildbarn_bb_storage//tools:container.bzl", "container_push_official", "multiarch_go_image")
 load("@rules_go//go:def.bzl", "go_binary", "go_library")
 
 go_library(
@@ -30,4 +31,15 @@ go_binary(
     name = "bonanza_storage_shard",
     embed = [":bonanza_storage_shard_lib"],
     visibility = ["//visibility:public"],
+)
+
+multiarch_go_image(
+    name = "bonanza_storage_shard_container",
+    binary = ":bonanza_storage_shard",
+)
+
+container_push_official(
+    name = "bonanza_storage_shard_container_push",
+    component = "bonanza-storage-shard",
+    image = ":bonanza_storage_shard_container",
 )
