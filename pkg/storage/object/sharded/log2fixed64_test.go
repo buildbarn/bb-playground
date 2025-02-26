@@ -22,7 +22,7 @@ func TestLog2Fixed64(t *testing.T) {
 		// Exact powers of two should result in integer
 		// logarithmic values.
 		for i := 0; i < 64; i++ {
-			assert.Equal(t, uint64(i<<(64-6)), sharded.Log2Fixed64(1<<i), i)
+			assert.Equal(t, uint64(i)<<(64-6), sharded.Log2Fixed64(1<<i), i)
 		}
 	})
 
