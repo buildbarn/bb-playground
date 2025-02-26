@@ -1,13 +1,1 @@
-load("@rules_go//go:def.bzl", "go_library")
-
-go_library(
-    name = "tools",
-    srcs = ["tools.go"],
-    importpath = "github.com/buildbarn/bonanza/tools",
-    tags = ["manual"],
-    visibility = ["//visibility:public"],
-    deps = [
-        "@cc_mvdan_gofumpt//:gofumpt",
-        "@org_golang_google_genproto_googleapis_rpc//status",
-    ],
-)
+# gazelle:ignore

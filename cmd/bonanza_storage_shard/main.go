@@ -33,7 +33,7 @@ func main() {
 		if err := util.UnmarshalConfigurationFromFile(os.Args[1], &configuration); err != nil {
 			return util.StatusWrapf(err, "Failed to read configuration from %s", os.Args[1])
 		}
-		lifecycleState, _, err := global.ApplyConfiguration(configuration.Global)
+		lifecycleState, grpcClientFactory, err := global.ApplyConfiguration(configuration.Global)
 		if err != nil {
 			return util.StatusWrap(err, "Failed to apply global configuration options")
 		}
@@ -81,6 +81,7 @@ func main() {
 				)
 			},
 			siblingsGroup,
+			grpcClientFactory,
 		); err != nil {
 			return util.StatusWrap(err, "gRPC server failure")
 		}
