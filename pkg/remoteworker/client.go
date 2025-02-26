@@ -8,6 +8,7 @@ import (
 	"crypto/sha256"
 	"crypto/x509"
 	"encoding/base64"
+	"encoding/pem"
 	"io"
 	"log"
 	"sort"
@@ -587,4 +588,48 @@ func LaunchWorkerThread(group program.Group, run func(ctx context.Context) (bool
 			}
 		}
 	})
+}
+
+// ParsePlatformPrivateKeys parses a set of ECDH private keys specified
+// in a worker's configuration file, so that they can be provided to
+// NewClient().
+func ParsePlatformPrivateKeys(privateKeys []string) ([]*ecdh.PrivateKey, error) {
+	platformPrivateKeys := make([]*ecdh.PrivateKey, 0, len(privateKeys))
+	for i, privateKey := range privateKeys {
+		privateKeyBlock, _ := pem.Decode([]byte(privateKey))
+		if privateKeyBlock == nil {
+			return nil, status.Errorf(codes.InvalidArgument, "Platform private key at index %d does not contain a PEM block", i)
+		}
+		if privateKeyBlock.Type != "PRIVATE KEY" {
+			return nil, status.Errorf(codes.InvalidArgument, "PEM block of platform private key at index %d is not of type PRIVATE KEY", i)
+		}
+		parsedPrivateKey, err := x509.ParsePKCS8PrivateKey(privateKeyBlock.Bytes)
+		if err != nil {
+			return nil, util.StatusWrapf(err, "Failed to parse platform private key at index %d", i)
+		}
+		ecdhPrivateKey, ok := parsedPrivateKey.(*ecdh.PrivateKey)
+		if !ok {
+			return nil, status.Errorf(codes.InvalidArgument, "Platform private key at index %d is not an ECDH private key", i)
+		}
+		platformPrivateKeys = append(platformPrivateKeys, ecdhPrivateKey)
+	}
+	return platformPrivateKeys, nil
+}
+
+// ParseClientCertificateAuthorities converts a series of X.509 in PEM
+// blocks to a certificate pool, so that it can be provided to
+// NewClient().
+func ParseClientCertificateAuthorities(certificateAuthorities string) (*x509.CertPool, error) {
+	clientCertificateAuthorities := x509.NewCertPool()
+	for certificateBlock, remainder := pem.Decode([]byte(certificateAuthorities)); certificateBlock != nil; certificateBlock, remainder = pem.Decode(remainder) {
+		if certificateBlock.Type != "CERTIFICATE" {
+			return nil, status.Error(codes.InvalidArgument, "Client certificate authority is not of type CERTIFICATE")
+		}
+		certificate, err := x509.ParseCertificate(certificateBlock.Bytes)
+		if err != nil {
+			return nil, util.StatusWrapWithCode(err, codes.InvalidArgument, "Invalid certificate in client certificate authorities")
+		}
+		clientCertificateAuthorities.AddCert(certificate)
+	}
+	return clientCertificateAuthorities, nil
 }

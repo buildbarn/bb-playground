@@ -2,7 +2,6 @@ package analysis
 
 import (
 	"context"
-	"crypto/ecdh"
 	"errors"
 	"fmt"
 	"net/http"
@@ -19,25 +18,26 @@ import (
 	model_starlark "github.com/buildbarn/bonanza/pkg/model/starlark"
 	model_analysis_pb "github.com/buildbarn/bonanza/pkg/proto/model/analysis"
 	model_build_pb "github.com/buildbarn/bonanza/pkg/proto/model/build"
+	model_command_pb "github.com/buildbarn/bonanza/pkg/proto/model/command"
 	model_core_pb "github.com/buildbarn/bonanza/pkg/proto/model/core"
 	model_filesystem_pb "github.com/buildbarn/bonanza/pkg/proto/model/filesystem"
-	remoteexecution_pb "github.com/buildbarn/bonanza/pkg/proto/remoteexecution"
+	remoteexecution "github.com/buildbarn/bonanza/pkg/remoteexecution"
 	"github.com/buildbarn/bonanza/pkg/storage/dag"
 	"github.com/buildbarn/bonanza/pkg/storage/object"
+
+	"google.golang.org/protobuf/types/known/emptypb"
 
 	"go.starlark.net/starlark"
 )
 
 type baseComputer struct {
-	objectDownloader                object.Downloader[object.LocalReference]
-	buildSpecificationReference     object.GlobalReference
-	buildSpecificationEncoder       model_encoding.BinaryEncoder
-	httpClient                      *http.Client
-	filePool                        re_filesystem.FilePool
-	cacheDirectory                  filesystem.Directory
-	executionClient                 remoteexecution_pb.ExecutionClient
-	executionClientPrivateKey       *ecdh.PrivateKey
-	executionClientCertificateChain [][]byte
+	objectDownloader            object.Downloader[object.LocalReference]
+	buildSpecificationReference object.GlobalReference
+	buildSpecificationEncoder   model_encoding.BinaryEncoder
+	httpClient                  *http.Client
+	filePool                    re_filesystem.FilePool
+	cacheDirectory              filesystem.Directory
+	executionClient             *remoteexecution.Client[*model_command_pb.Action, emptypb.Empty, *emptypb.Empty, *model_command_pb.Result]
 }
 
 func NewBaseComputer(
@@ -47,20 +47,16 @@ func NewBaseComputer(
 	httpClient *http.Client,
 	filePool re_filesystem.FilePool,
 	cacheDirectory filesystem.Directory,
-	executionClient remoteexecution_pb.ExecutionClient,
-	executionClientPrivateKey *ecdh.PrivateKey,
-	executionClientCertificateChain [][]byte,
+	executionClient *remoteexecution.Client[*model_command_pb.Action, emptypb.Empty, *emptypb.Empty, *model_command_pb.Result],
 ) Computer {
 	return &baseComputer{
-		objectDownloader:                objectDownloader,
-		buildSpecificationReference:     buildSpecificationReference,
-		buildSpecificationEncoder:       buildSpecificationEncoder,
-		httpClient:                      httpClient,
-		filePool:                        filePool,
-		cacheDirectory:                  cacheDirectory,
-		executionClient:                 executionClient,
-		executionClientPrivateKey:       executionClientPrivateKey,
-		executionClientCertificateChain: executionClientCertificateChain,
+		objectDownloader:            objectDownloader,
+		buildSpecificationReference: buildSpecificationReference,
+		buildSpecificationEncoder:   buildSpecificationEncoder,
+		httpClient:                  httpClient,
+		filePool:                    filePool,
+		cacheDirectory:              cacheDirectory,
+		executionClient:             executionClient,
 	}
 }
 

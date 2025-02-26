@@ -2,42 +2,46 @@ package main
 
 import (
 	"context"
-	"crypto/ecdh"
-	"crypto/x509"
-	"encoding/pem"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"os"
 	"runtime"
+	"time"
 
 	re_filesystem "github.com/buildbarn/bb-remote-execution/pkg/filesystem"
+	"github.com/buildbarn/bb-storage/pkg/clock"
 	"github.com/buildbarn/bb-storage/pkg/filesystem"
 	"github.com/buildbarn/bb-storage/pkg/filesystem/path"
 	"github.com/buildbarn/bb-storage/pkg/global"
-	bb_grpc "github.com/buildbarn/bb-storage/pkg/grpc"
 	bb_http "github.com/buildbarn/bb-storage/pkg/http"
 	"github.com/buildbarn/bb-storage/pkg/program"
+	"github.com/buildbarn/bb-storage/pkg/random"
 	"github.com/buildbarn/bb-storage/pkg/util"
 	"github.com/buildbarn/bonanza/pkg/evaluation"
 	model_analysis "github.com/buildbarn/bonanza/pkg/model/analysis"
 	model_core "github.com/buildbarn/bonanza/pkg/model/core"
 	"github.com/buildbarn/bonanza/pkg/model/encoding"
-	build_pb "github.com/buildbarn/bonanza/pkg/proto/build"
 	"github.com/buildbarn/bonanza/pkg/proto/configuration/bonanza_builder"
 	model_analysis_pb "github.com/buildbarn/bonanza/pkg/proto/model/analysis"
+	model_build_pb "github.com/buildbarn/bonanza/pkg/proto/model/build"
+	model_command_pb "github.com/buildbarn/bonanza/pkg/proto/model/command"
 	remoteexecution_pb "github.com/buildbarn/bonanza/pkg/proto/remoteexecution"
+	remoteworker_pb "github.com/buildbarn/bonanza/pkg/proto/remoteworker"
 	dag_pb "github.com/buildbarn/bonanza/pkg/proto/storage/dag"
 	object_pb "github.com/buildbarn/bonanza/pkg/proto/storage/object"
+	remoteexecution "github.com/buildbarn/bonanza/pkg/remoteexecution"
+	"github.com/buildbarn/bonanza/pkg/remoteworker"
 	"github.com/buildbarn/bonanza/pkg/storage/dag"
 	"github.com/buildbarn/bonanza/pkg/storage/object"
 	object_grpc "github.com/buildbarn/bonanza/pkg/storage/object/grpc"
 	object_namespacemapping "github.com/buildbarn/bonanza/pkg/storage/object/namespacemapping"
 
 	"golang.org/x/sync/semaphore"
-	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/types/known/emptypb"
 )
 
 func main() {
@@ -82,87 +86,107 @@ func main() {
 			return util.StatusWrap(err, "Failed to create execution gRPC client")
 		}
 
-		executionClientPrivateKeyBlock, _ := pem.Decode([]byte(configuration.ExecutionClientPrivateKey))
-		if executionClientPrivateKeyBlock == nil {
-			return status.Error(codes.InvalidArgument, "Execution client private key does not contain a PEM block")
-		}
-		if executionClientPrivateKeyBlock.Type != "PRIVATE KEY" {
-			return status.Error(codes.InvalidArgument, "Execution client private key PEM block is not of type PRIVATE KEY")
-		}
-		executionClientPrivateKey, err := x509.ParsePKCS8PrivateKey(executionClientPrivateKeyBlock.Bytes)
+		executionClientPrivateKey, err := remoteexecution.ParseECDHPrivateKey([]byte(configuration.ExecutionClientPrivateKey))
 		if err != nil {
 			return util.StatusWrap(err, "Failed to parse execution client private key")
 		}
-		executionClientECDHPrivateKey, ok := executionClientPrivateKey.(*ecdh.PrivateKey)
-		if !ok {
-			return status.Error(codes.InvalidArgument, "Execution client private key is not an ECDH private key")
-		}
-		var executionClientCertificates [][]byte
-		for certificateBlock, remainder := pem.Decode([]byte(configuration.ExecutionClientCertificateChain)); certificateBlock != nil; certificateBlock, remainder = pem.Decode(remainder) {
-			if certificateBlock.Type != "CERTIFICATE" {
-				return status.Error(codes.InvalidArgument, "Execution client certificate PEM block is not of type CERTIFICATE")
-			}
-			executionClientCertificates = append(executionClientCertificates, certificateBlock.Bytes)
+		executionClientCertificateChain, err := remoteexecution.ParseCertificateChain([]byte(configuration.ExecutionClientCertificateChain))
+		if err != nil {
+			return util.StatusWrap(err, "Failed to parse execution client certificate chain")
 		}
 
-		if err := bb_grpc.NewServersFromConfigurationAndServe(
-			configuration.GrpcServers,
-			func(s grpc.ServiceRegistrar) {
-				build_pb.RegisterBuilderServer(s, &builderServer{
-					objectDownloader:              objectDownloader,
-					dagUploaderClient:             dag_pb.NewUploaderClient(storageGRPCClient),
-					objectContentsWalkerSemaphore: semaphore.NewWeighted(int64(runtime.NumCPU())),
-					httpClient: &http.Client{
-						Transport: bb_http.NewMetricsRoundTripper(roundTripper, "Builder"),
-					},
-					filePool:                    filePool,
-					cacheDirectory:              cacheDirectory,
-					executionClient:             remoteexecution_pb.NewExecutionClient(executionGRPCClient),
-					executionClientPrivateKey:   executionClientECDHPrivateKey,
-					executionClientCertificates: executionClientCertificates,
-				})
-			},
-			siblingsGroup,
-		); err != nil {
-			return util.StatusWrap(err, "gRPC server failure")
+		remoteWorkerConnection, err := grpcClientFactory.NewClientFromConfiguration(configuration.RemoteWorkerGrpcClient)
+		if err != nil {
+			return util.StatusWrap(err, "Failed to create remote worker RPC client")
 		}
+		remoteWorkerClient := remoteworker_pb.NewOperationQueueClient(remoteWorkerConnection)
+
+		platformPrivateKeys, err := remoteworker.ParsePlatformPrivateKeys(configuration.PlatformPrivateKeys)
+		if err != nil {
+			return err
+		}
+		clientCertificateAuthorities, err := remoteworker.ParseClientCertificateAuthorities(configuration.ClientCertificateAuthorities)
+		if err != nil {
+			return err
+		}
+		workerName, err := json.Marshal(configuration.WorkerId)
+		if err != nil {
+			return util.StatusWrap(err, "Failed to marshal worker ID")
+		}
+
+		executor := &builderExecutor{
+			objectDownloader:              objectDownloader,
+			dagUploaderClient:             dag_pb.NewUploaderClient(storageGRPCClient),
+			objectContentsWalkerSemaphore: semaphore.NewWeighted(int64(runtime.NumCPU())),
+			httpClient: &http.Client{
+				Transport: bb_http.NewMetricsRoundTripper(roundTripper, "Builder"),
+			},
+			filePool:       filePool,
+			cacheDirectory: cacheDirectory,
+			executionClient: remoteexecution.NewClient[*model_command_pb.Action, emptypb.Empty, *model_command_pb.Result](
+				remoteexecution_pb.NewExecutionClient(executionGRPCClient),
+				executionClientPrivateKey,
+				executionClientCertificateChain,
+			),
+		}
+		client, err := remoteworker.NewClient(
+			remoteWorkerClient,
+			executor,
+			clock.SystemClock,
+			random.CryptoThreadSafeGenerator,
+			platformPrivateKeys,
+			clientCertificateAuthorities,
+			configuration.WorkerId,
+			/* sizeClass = */ 0,
+			/* isLargestSizeClass = */ true,
+		)
+		if err != nil {
+			return util.StatusWrap(err, "Failed to create remote worker client")
+		}
+		remoteworker.LaunchWorkerThread(siblingsGroup, client.Run, string(workerName))
 
 		lifecycleState.MarkReadyAndWait(siblingsGroup)
 		return nil
 	})
 }
 
-type builderServer struct {
+type builderExecutor struct {
 	objectDownloader              object.Downloader[object.GlobalReference]
 	dagUploaderClient             dag_pb.UploaderClient
 	objectContentsWalkerSemaphore *semaphore.Weighted
 	httpClient                    *http.Client
 	filePool                      re_filesystem.FilePool
 	cacheDirectory                filesystem.Directory
-	executionClient               remoteexecution_pb.ExecutionClient
-	executionClientPrivateKey     *ecdh.PrivateKey
-	executionClientCertificates   [][]byte
+	executionClient               *remoteexecution.Client[*model_command_pb.Action, emptypb.Empty, *emptypb.Empty, *model_command_pb.Result]
 }
 
-func (s *builderServer) PerformBuild(request *build_pb.PerformBuildRequest, server build_pb.Builder_PerformBuildServer) error {
-	ctx := server.Context()
+func (e *builderExecutor) CheckReadiness(ctx context.Context) error {
+	return nil
+}
 
-	namespace, err := object.NewNamespace(request.Namespace)
+func (e *builderExecutor) Execute(ctx context.Context, action *model_build_pb.Action, executionTimeout time.Duration, executionEvents chan<- proto.Message) (proto.Message, time.Duration, remoteworker_pb.CurrentState_Completed_Result) {
+	namespace, err := object.NewNamespace(action.Namespace)
 	if err != nil {
-		return util.StatusWrap(err, "Invalid namespace")
+		return &model_build_pb.Result{
+			Status: status.Convert(util.StatusWrap(err, "Invalid namespace")).Proto(),
+		}, 0, remoteworker_pb.CurrentState_Completed_FAILED
 	}
 	instanceName := namespace.InstanceName
-	objectDownloader := object_namespacemapping.NewNamespaceAddingDownloader(s.objectDownloader, namespace)
-	buildSpecificationReference, err := namespace.NewGlobalReference(request.BuildSpecificationReference)
+	objectDownloader := object_namespacemapping.NewNamespaceAddingDownloader(e.objectDownloader, namespace)
+	buildSpecificationReference, err := namespace.NewGlobalReference(action.BuildSpecificationReference)
 	if err != nil {
-		return util.StatusWrap(err, "Invalid build specification reference")
+		return &model_build_pb.Result{
+			Status: status.Convert(util.StatusWrap(err, "Invalid build specification reference")).Proto(),
+		}, 0, remoteworker_pb.CurrentState_Completed_FAILED
 	}
 	buildSpecificationEncoder, err := encoding.NewBinaryEncoderFromProto(
-		request.BuildSpecificationEncoders,
+		action.BuildSpecificationEncoders,
 		uint32(namespace.ReferenceFormat.GetMaximumObjectSizeBytes()),
 	)
 	if err != nil {
-		return util.StatusWrap(err, "Invalid build specification encoders")
+		return &model_build_pb.Result{
+			Status: status.Convert(util.StatusWrap(err, "Invalid build specification encoder")).Proto(),
+		}, 0, remoteworker_pb.CurrentState_Completed_FAILED
 	}
 	value, err := evaluation.FullyComputeValue(
 		ctx,
@@ -170,37 +194,39 @@ func (s *builderServer) PerformBuild(request *build_pb.PerformBuildRequest, serv
 			objectDownloader,
 			buildSpecificationReference,
 			buildSpecificationEncoder,
-			s.httpClient,
-			s.filePool,
-			s.cacheDirectory,
-			s.executionClient,
-			s.executionClientPrivateKey,
-			s.executionClientCertificates,
+			e.httpClient,
+			e.filePool,
+			e.cacheDirectory,
+			e.executionClient,
 		)),
 		model_core.NewSimpleMessage[proto.Message](&model_analysis_pb.BuildResult_Key{}),
 		func(references []object.LocalReference, objectContentsWalkers []dag.ObjectContentsWalker) error {
 			for i, reference := range references {
 				if err := dag.UploadDAG(
 					ctx,
-					s.dagUploaderClient,
+					e.dagUploaderClient,
 					object.GlobalReference{
 						InstanceName:   instanceName,
 						LocalReference: reference,
 					},
 					objectContentsWalkers[i],
-					s.objectContentsWalkerSemaphore,
+					e.objectContentsWalkerSemaphore,
 					// Assume everything we attempt
 					// to upload is memory backed.
 					object.Unlimited,
 				); err != nil {
-					return fmt.Errorf("failed to store DAG with reference %s: %w", reference.String(), err)
+					return fmt.Errorf("failed to store DAG with reference %e: %w", reference.String(), err)
 				}
 			}
 			return nil
 		},
 	)
 	if err != nil {
-		return err
+		return &model_build_pb.Result{
+			Status: status.Convert(err).Proto(),
+		}, 0, remoteworker_pb.CurrentState_Completed_FAILED
 	}
-	return status.Errorf(codes.Internal, "XXX: %s", value)
+	return &model_build_pb.Result{
+		Status: status.Newf(codes.Internal, "TODO: %s", value).Proto(),
+	}, 0, remoteworker_pb.CurrentState_Completed_FAILED
 }

@@ -136,7 +136,22 @@ var commonFlags = []flag{
 	},
 	{
 		longName:    "remote_executor",
-		description: "A URI of a bonanza_blabla endpoint endpoint. The supported schemas are grpc, grpcs (grpc with TLS enabled) and unix (local UNIX sockets). Specify grpc:// or unix: schema to disable TLS.",
+		description: "A URI of a bonanza_scheduler endpoint. The supported schemas are grpc, grpcs (grpc with TLS enabled) and unix (local UNIX sockets). Specify grpc:// or unix: schema to disable TLS.",
+		flagType:    stringFlagType{},
+	},
+	{
+		longName:    "remote_executor_builder_pkix_public_key",
+		description: "The PKIX public key of the bonanza_builder processes to which to send builds.",
+		flagType:    stringFlagType{},
+	},
+	{
+		longName:    "remote_executor_client_private_key",
+		description: "Path of a file containing an X25519 private key that is used to encrypt build requests that are submitted to bonanza_scheduler.",
+		flagType:    stringFlagType{},
+	},
+	{
+		longName:    "remote_executor_client_certificate_chain",
+		description: "Path of a file containing a certificate chain that corresponds to the X25519 private key that is used to encrypt build requests that are submitted to bonanza_scheduler.",
 		flagType:    stringFlagType{},
 	},
 	{

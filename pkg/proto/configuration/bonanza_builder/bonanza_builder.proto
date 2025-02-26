@@ -13,9 +13,6 @@ message ApplicationConfiguration {
   // Common configuration options that apply to all Buildbarn binaries.
   buildbarn.configuration.global.Configuration global = 1;
 
-  // gRPC servers to spawn to listen for requests from clients.
-  repeated buildbarn.configuration.grpc.ServerConfiguration grpc_servers = 2;
-
   // gRPC client that communicates with the storage frontend.
   buildbarn.configuration.grpc.ClientConfiguration storage_grpc_client = 3;
 
@@ -31,7 +28,8 @@ message ApplicationConfiguration {
   // in the build cache.
   string cache_directory_path = 6;
 
-  // gRPC client that communicates with the scheduler.
+  // gRPC client that communicates with the remoteexecution service of
+  // the scheduler to request the execution of build actions.
   buildbarn.configuration.grpc.ClientConfiguration execution_grpc_client = 7;
 
   // X25519 private key used to compute a shared secret for encrypting
@@ -43,4 +41,28 @@ message ApplicationConfiguration {
   // authenticate, followed by any intermediate certificates.
   // Certificates must be stored in PEM blocks of type "CERTIFICATE".
   string execution_client_certificate_chain = 9;
+
+  // gRPC client that communicates with the remoteworker service of the
+  // scheduler to accept incoming builds.
+  buildbarn.configuration.grpc.ClientConfiguration remote_worker_grpc_client =
+      10;
+
+  // X25519 privates key used to compute a shared secret for decrypting
+  // build requests obtained from the scheduler. The public keys
+  // associated with these private keys are used by the scheduler to
+  // identify the platform and route actions.
+  //
+  // Keys must be in PKCS #8, ASN.1 DER form, stored in a PEM block of
+  // type "PRIVATE KEY".
+  repeated string platform_private_keys = 11;
+
+  // Client certificate authorities to consider when authenticating the
+  // client certificate that is provided as part of the build request
+  // submitted by clients. This effectively controls which clients are
+  // permitted to use this worker.
+  string client_certificate_authorities = 12;
+
+  // Fields that need to be attached to the ID of the worker, as
+  // announced to the scheduler.
+  map<string, string> worker_id = 13;
 }

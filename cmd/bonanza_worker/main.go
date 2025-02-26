@@ -2,10 +2,7 @@ package main
 
 import (
 	"context"
-	"crypto/ecdh"
-	"crypto/x509"
 	"encoding/json"
-	"encoding/pem"
 	"fmt"
 	"os"
 	"regexp"
@@ -116,36 +113,13 @@ func main() {
 				}
 				maximumWritableFileUploadDelay := runnerConfiguration.MaximumWritableFileUploadDelay.AsDuration()
 
-				platformPrivateKeys := make([]*ecdh.PrivateKey, 0, len(runnerConfiguration.PlatformPrivateKeys))
-				for i, privateKey := range runnerConfiguration.PlatformPrivateKeys {
-					privateKeyBlock, _ := pem.Decode([]byte(privateKey))
-					if privateKeyBlock == nil {
-						return status.Errorf(codes.InvalidArgument, "Platform private key at index %d does not contain a PEM block", i)
-					}
-					if privateKeyBlock.Type != "PRIVATE KEY" {
-						return status.Errorf(codes.InvalidArgument, "PEM block of platform private key at index %d is not of type PRIVATE KEY", i)
-					}
-					parsedPrivateKey, err := x509.ParsePKCS8PrivateKey(privateKeyBlock.Bytes)
-					if err != nil {
-						return util.StatusWrapf(err, "Failed to parse platform private key at index %d", i)
-					}
-					ecdhPrivateKey, ok := parsedPrivateKey.(*ecdh.PrivateKey)
-					if !ok {
-						return status.Errorf(codes.InvalidArgument, "Platform private key at index %d is not an ECDH private key", i)
-					}
-					platformPrivateKeys = append(platformPrivateKeys, ecdhPrivateKey)
+				platformPrivateKeys, err := remoteworker.ParsePlatformPrivateKeys(runnerConfiguration.PlatformPrivateKeys)
+				if err != nil {
+					return err
 				}
-
-				clientCertificateAuthorities := x509.NewCertPool()
-				for certificateBlock, remainder := pem.Decode([]byte(runnerConfiguration.ClientCertificateAuthorities)); certificateBlock != nil; certificateBlock, remainder = pem.Decode(remainder) {
-					if certificateBlock.Type != "CERTIFICATE" {
-						return status.Error(codes.InvalidArgument, "Client certificate authority is not of type CERTIFICATE")
-					}
-					certificate, err := x509.ParseCertificate(certificateBlock.Bytes)
-					if err != nil {
-						return util.StatusWrapWithCode(err, codes.InvalidArgument, "Invalid certificate in client certificate authorities")
-					}
-					clientCertificateAuthorities.AddCert(certificate)
+				clientCertificateAuthorities, err := remoteworker.ParseClientCertificateAuthorities(runnerConfiguration.ClientCertificateAuthorities)
+				if err != nil {
+					return err
 				}
 
 				hiddenFilesPattern := func(s string) bool { return false }
@@ -193,7 +167,7 @@ func main() {
 						return util.StatusWrap(err, "Failed to marshal worker ID")
 					}
 
-					buildExecutor := model_command.NewLocalExecutor(
+					executor := model_command.NewLocalExecutor(
 						objectDownloader,
 						dag_pb.NewUploaderClient(storageGRPCClient),
 						semaphore.NewWeighted(int64(runtime.NumCPU())),
@@ -216,7 +190,7 @@ func main() {
 
 					client, err := remoteworker.NewClient(
 						schedulerClient,
-						buildExecutor,
+						executor,
 						clock.SystemClock,
 						random.CryptoThreadSafeGenerator,
 						platformPrivateKeys,

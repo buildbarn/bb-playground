@@ -9,15 +9,14 @@ local statePath = std.extVar('STATE_PATH');
     enablePrometheus: true,
     enablePprof: true,
   } },
-  grpcServers: [{
-    listenPaths: [statePath + '/bonanza_builder.sock'],
-    authenticationPolicy: { allow: {} },
-  }],
+
   storageGrpcClient: {
     address: 'unix://%s/bonanza_storage_frontend.sock' % statePath,
   },
   cacheDirectoryPath: statePath + '/bonanza_builder_cache',
   filePool: { directoryPath: statePath + '/bonanza_builder_filepool' },
+
+  // Connection to the scheduler to run actions on workers.
   executionGrpcClient: {
     address: 'unix://%s/bonanza_scheduler_clients.sock' % statePath,
   },
@@ -45,6 +44,33 @@ local statePath = std.extVar('STATE_PATH');
     b2fdM0rdWLC5hpzA6lOY6OcPE0IzaEBlxFh4M1KLmazvgtBEk/O3lgK4nHqB8DEq
     NFOxMVZMoqlkVu8mVvjjmuj7lRvA0z+vFb81vH1csmH4MPf9AFgp8SeFciELKSuY
     cAhYLEjfNOEe
+    -----END CERTIFICATE-----
+  |||,
+
+  // Connection to scheduler to pick up build requests from clients.
+  remoteWorkerGrpcClient: {
+    address: 'unix://%s/bonanza_scheduler_workers.sock' % statePath,
+  },
+  platformPrivateKeys: [
+    |||
+      -----BEGIN PRIVATE KEY-----
+      MC4CAQAwBQYDK2VuBCIEIPANGDz3SIhhQJdIQ/7w4Uq9DYUwyH/fw36A1j2aviBW
+      -----END PRIVATE KEY-----
+    |||,
+  ],
+  clientCertificateAuthorities: |||
+    -----BEGIN CERTIFICATE-----
+    MIICCTCCAbugAwIBAgIUInuoaz+gaqJzo2hTnh5H1ECkXvswBQYDK2VwMHoxCzAJ
+    BgNVBAYTAkFVMRMwEQYDVQQIDApTb21lLVN0YXRlMSEwHwYDVQQKDBhJbnRlcm5l
+    dCBXaWRnaXRzIFB0eSBMdGQxMzAxBgNVBAMMKmJvbmFuemFfYmF6ZWwgY2xpZW50
+    IGNlcnRpZmljYXRlIGF1dGhvcml0eTAeFw0yNTAyMjYwMzU5MzlaFw0zMDAyMjUw
+    MzU5MzlaMHoxCzAJBgNVBAYTAkFVMRMwEQYDVQQIDApTb21lLVN0YXRlMSEwHwYD
+    VQQKDBhJbnRlcm5ldCBXaWRnaXRzIFB0eSBMdGQxMzAxBgNVBAMMKmJvbmFuemFf
+    YmF6ZWwgY2xpZW50IGNlcnRpZmljYXRlIGF1dGhvcml0eTAqMAUGAytlcAMhANOW
+    vxiefU/Kd4Ha5cx5zjVQQpfOhzV60VbvKFnm++Lco1MwUTAdBgNVHQ4EFgQU74cZ
+    7iqgZyuGkwSSjdgM/fL80qkwHwYDVR0jBBgwFoAU74cZ7iqgZyuGkwSSjdgM/fL8
+    0qkwDwYDVR0TAQH/BAUwAwEB/zAFBgMrZXADQQAgdsu4PG6imFTb2IW5/miBhk5C
+    5Moo8AQc9RtC7X5ck5+0iRBgsoI3lSabhmyh9luRfPakQO8B5ARI3oihopUC
     -----END CERTIFICATE-----
   |||,
 }

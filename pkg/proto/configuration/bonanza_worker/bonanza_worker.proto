@@ -45,7 +45,7 @@ message RunnerConfiguration {
   uint64 concurrency = 2;
 
   // X25519 privates key used to compute a shared secret for decrypting
-  // actions to obtained from the scheduler. The public keys associated
+  // actions obtained from the scheduler. The public keys associated
   // with these private keys are used by the scheduler to identify the
   // platform and route actions.
   //

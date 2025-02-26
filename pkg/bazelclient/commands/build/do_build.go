@@ -2,6 +2,8 @@ package build
 
 import (
 	"context"
+	"crypto/ecdh"
+	"crypto/x509"
 	"encoding/base64"
 	"errors"
 	"fmt"
@@ -9,6 +11,7 @@ import (
 	"maps"
 	"math"
 	"net/url"
+	"os"
 	"runtime"
 	"slices"
 	"strings"
@@ -23,12 +26,13 @@ import (
 	model_core "github.com/buildbarn/bonanza/pkg/model/core"
 	model_encoding "github.com/buildbarn/bonanza/pkg/model/encoding"
 	model_filesystem "github.com/buildbarn/bonanza/pkg/model/filesystem"
-	build_pb "github.com/buildbarn/bonanza/pkg/proto/build"
 	model_build_pb "github.com/buildbarn/bonanza/pkg/proto/model/build"
 	model_encoding_pb "github.com/buildbarn/bonanza/pkg/proto/model/encoding"
 	model_filesystem_pb "github.com/buildbarn/bonanza/pkg/proto/model/filesystem"
+	remoteexecution_pb "github.com/buildbarn/bonanza/pkg/proto/remoteexecution"
 	dag_pb "github.com/buildbarn/bonanza/pkg/proto/storage/dag"
 	object_pb "github.com/buildbarn/bonanza/pkg/proto/storage/object"
+	"github.com/buildbarn/bonanza/pkg/remoteexecution"
 	pg_starlark "github.com/buildbarn/bonanza/pkg/starlark"
 	"github.com/buildbarn/bonanza/pkg/storage/dag"
 	"github.com/buildbarn/bonanza/pkg/storage/object"
@@ -397,11 +401,46 @@ func DoBuild(args *arguments.BuildCommand, workspacePath path.Parser) {
 		logger.Fatal("Failed to upload workspace directory: ", err)
 	}
 
+	clientPrivateKeyData, err := os.ReadFile(args.CommonFlags.RemoteExecutorClientPrivateKey)
+	if err != nil {
+		logger.Fatalf("Failed to read --remote_executor_client_private_key=%#v: %s", args.CommonFlags.RemoteExecutorClientPrivateKey, err)
+	}
+	clientPrivateKey, err := remoteexecution.ParseECDHPrivateKey(clientPrivateKeyData)
+	if err != nil {
+		logger.Fatalf("Failed to parse --remote_executor_client_private_key=%#v: %s", args.CommonFlags.RemoteExecutorClientPrivateKey, err)
+	}
+
+	clientCertificateChainData, err := os.ReadFile(args.CommonFlags.RemoteExecutorClientCertificateChain)
+	if err != nil {
+		logger.Fatalf("Failed to read --remote_executor_client_certificate_chain=%#v: %s", args.CommonFlags.RemoteExecutorClientCertificateChain, err)
+	}
+	clientCertificateChain, err := remoteexecution.ParseCertificateChain(clientCertificateChainData)
+	if err != nil {
+		logger.Fatalf("Failed to parse --remote_executor_client_certificate_chain=%#v: %s", args.CommonFlags.RemoteExecutorClientCertificateChain, err)
+	}
+
 	remoteExecutorClient, err := newGRPCClient(args.CommonFlags.RemoteExecutor, &args.CommonFlags)
 	if err != nil {
 		logger.Fatalf("Failed to create gRPC client for --remote_executor=%#v: %s", args.CommonFlags.RemoteExecutor, err)
 	}
-	builderClient := build_pb.NewBuilderClient(remoteExecutorClient)
+	builderClient := remoteexecution.NewClient[*model_build_pb.Action, emptypb.Empty, *model_build_pb.Result](
+		remoteexecution_pb.NewExecutionClient(remoteExecutorClient),
+		clientPrivateKey,
+		clientCertificateChain,
+	)
+
+	builderPKIXPublicKey, err := base64.StdEncoding.DecodeString(args.CommonFlags.RemoteExecutorBuilderPkixPublicKey)
+	if err != nil {
+		logger.Fatalf("Failed to base64 decode --remote_executor_builder_pkix_public_key: %s", err)
+	}
+	builderPublicKey, err := x509.ParsePKIXPublicKey(builderPKIXPublicKey)
+	if err != nil {
+		logger.Fatalf("Failed to parse --remote_executor_builder_pkix_public_key: %s", err)
+	}
+	builderECDHPublicKey, ok := builderPublicKey.(*ecdh.PublicKey)
+	if !ok {
+		logger.Fatalf("--remote_executor_builder_pkix_public_key is not an ECDH public key")
+	}
 
 	var invocationID uuid.UUID
 	if v := args.CommonFlags.InvocationId; v == "" {
@@ -423,25 +462,31 @@ func DoBuild(args *arguments.BuildCommand, workspacePath path.Parser) {
 	}
 
 	logger.Info("Performing build")
-	stream, err := builderClient.PerformBuild(context.Background(), &build_pb.PerformBuildRequest{
-		InvocationId:   invocationID.String(),
-		BuildRequestId: buildRequestID.String(),
-		Namespace: object.Namespace{
-			InstanceName:    instanceName,
-			ReferenceFormat: referenceFormat,
-		}.ToProto(),
-		BuildSpecificationReference: buildSpecificationReference.GetRawReference(),
-		BuildSpecificationEncoders:  defaultEncoders,
-	})
-	if err != nil {
-		logger.Fatal("Failed to start build: ", err)
+	var result model_build_pb.Result
+	var errBuild error
+	for event := range builderClient.RunAction(
+		context.Background(),
+		builderECDHPublicKey,
+		&model_build_pb.Action{
+			InvocationId:   invocationID.String(),
+			BuildRequestId: buildRequestID.String(),
+			Namespace: object.Namespace{
+				InstanceName:    instanceName,
+				ReferenceFormat: referenceFormat,
+			}.ToProto(),
+			BuildSpecificationReference: buildSpecificationReference.GetRawReference(),
+			BuildSpecificationEncoders:  defaultEncoders,
+		},
+		&remoteexecution_pb.Action_AdditionalData{
+			ExecutionTimeout: &durationpb.Duration{Seconds: 24 * 60 * 60},
+		},
+		&result,
+		&errBuild,
+	) {
+		logger.Info(event)
 	}
-
-	for {
-		response, err := stream.Recv()
-		if err != nil {
-			logger.Fatal("Build failed: ", err)
-		}
-		logger.Info(response)
+	if errBuild != nil {
+		logger.Fatal("Failed to perform build: ", errBuild)
 	}
+	logger.Info(result)
 }

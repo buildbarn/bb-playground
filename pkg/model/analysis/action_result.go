@@ -21,11 +21,8 @@ import (
 	remoteexecution_pb "github.com/buildbarn/bonanza/pkg/proto/remoteexecution"
 	"github.com/buildbarn/bonanza/pkg/storage/dag"
 	"github.com/buildbarn/bonanza/pkg/storage/object"
-	"github.com/secure-io/siv-go"
 
 	"google.golang.org/grpc/status"
-	"google.golang.org/protobuf/proto"
-	"google.golang.org/protobuf/types/known/anypb"
 )
 
 func (c *baseComputer) ComputeActionResultValue(ctx context.Context, key model_core.Message[*model_analysis_pb.ActionResult_Key], e ActionResultEnvironment) (PatchedActionResultValue, error) {
@@ -42,10 +39,6 @@ func (c *baseComputer) ComputeActionResultValue(ctx context.Context, key model_c
 	platformECDHPublicKey, ok := platformPublicKey.(*ecdh.PublicKey)
 	if !ok {
 		return PatchedActionResultValue{}, errors.New("platform PKIX public key is not an ECDH public key")
-	}
-	sharedSecret, err := c.executionClientPrivateKey.ECDH(platformECDHPublicKey)
-	if err != nil {
-		return PatchedActionResultValue{}, fmt.Errorf("failed to obtain shared secret: %w", err)
 	}
 
 	// Use the reference of the Command message as the stable
@@ -64,115 +57,50 @@ func (c *baseComputer) ComputeActionResultValue(ctx context.Context, key model_c
 		return PatchedActionResultValue{}, fmt.Errorf("invalid input root reference: %w", err)
 	}
 
-	actionAdditionalData := &remoteexecution_pb.Action_AdditionalData{
-		StableFingerprint: commandReferenceSHA256[:],
-		ExecutionTimeout:  key.Message.ExecutionTimeout,
-	}
-	marshaledActionAdditionalData, err := proto.Marshal(actionAdditionalData)
-	if err != nil {
-		return PatchedActionResultValue{}, fmt.Errorf("failed to marshal action additional data: %w", err)
-	}
-
-	actionKey := append([]byte(nil), sharedSecret...)
-	actionKey[0] ^= 1
-	actionAEAD, err := siv.NewGCM(actionKey)
-	if err != nil {
-		return PatchedActionResultValue{}, fmt.Errorf("failed to create AES-GCM-SIV for action: %w", err)
-	}
-	actionNonce := make([]byte, actionAEAD.NonceSize())
-
 	namespace := c.buildSpecificationReference.GetNamespace()
-	commandAction := model_command_pb.Action{
-		Namespace:          namespace.ToProto(),
-		CommandEncoders:    commandEncodersValue.Message.CommandEncoders,
-		CommandReference:   commandReference,
-		InputRootReference: key.OutgoingReferences.GetOutgoingReference(inputRootReferenceIndex).GetRawReference(),
-	}
-	commandActionAny, err := anypb.New(&commandAction)
-	if err != nil {
-		return PatchedActionResultValue{}, fmt.Errorf("failed to embed action into Any message: %w", err)
-	}
-	commandActionData, err := proto.Marshal(commandActionAny)
-	if err != nil {
-		return PatchedActionResultValue{}, fmt.Errorf("failed to marshal action: %w", err)
-	}
-	actionCiphertext := actionAEAD.Seal(nil, actionNonce, commandActionData, marshaledActionAdditionalData)
-
-	ctxWithCancel, cancel := context.WithCancel(ctx)
-	defer cancel()
-	client, err := c.executionClient.Execute(ctxWithCancel, &remoteexecution_pb.ExecuteRequest{
-		Action: &remoteexecution_pb.Action{
-			PlatformPkixPublicKey:  key.Message.PlatformPkixPublicKey,
-			ClientCertificateChain: c.executionClientCertificateChain,
-			Nonce:                  actionNonce,
-			AdditionalData:         actionAdditionalData,
-			Ciphertext:             actionCiphertext,
+	var completionEvent model_command_pb.Result
+	var errExecution error
+	for range c.executionClient.RunAction(
+		ctx,
+		platformECDHPublicKey,
+		&model_command_pb.Action{
+			Namespace:          namespace.ToProto(),
+			CommandEncoders:    commandEncodersValue.Message.CommandEncoders,
+			CommandReference:   commandReference,
+			InputRootReference: key.OutgoingReferences.GetOutgoingReference(inputRootReferenceIndex).GetRawReference(),
 		},
-		// TODO: Priority.
-	})
-	if err != nil {
+		&remoteexecution_pb.Action_AdditionalData{
+			StableFingerprint: commandReferenceSHA256[:],
+			ExecutionTimeout:  key.Message.ExecutionTimeout,
+		},
+		&completionEvent,
+		&errExecution,
+	) {
+		// TODO: Capture and propagate execution events?
+	}
+	if errExecution != nil {
+		return PatchedActionResultValue{}, errExecution
+	}
+
+	if err := status.ErrorProto(completionEvent.Status); err != nil {
 		return PatchedActionResultValue{}, err
 	}
-	defer func() {
-		cancel()
-		for {
-			if _, err := client.Recv(); err != nil {
-				return
-			}
-		}
-	}()
-
-	executionEventAdditionalData := sha256.Sum256(actionCiphertext)
-	for {
-		response, err := client.Recv()
-		if err != nil {
-			return PatchedActionResultValue{}, err
-		}
-
-		if completed, ok := response.Stage.(*remoteexecution_pb.ExecuteResponse_Completed_); ok {
-			completionEventMessage := completed.Completed.CompletionEvent
-			if completionEventMessage == nil {
-				return PatchedActionResultValue{}, errors.New("action completed, but no completion event was returned")
-			}
-
-			completionEventKey := append([]byte(nil), sharedSecret...)
-			completionEventKey[0] ^= 3
-			completionEventAEAD, err := siv.NewGCM(completionEventKey)
-			if err != nil {
-				return PatchedActionResultValue{}, fmt.Errorf("failed to create AES-GCM-SIV for completion event: %w", err)
-			}
-
-			completionEventData, err := completionEventAEAD.Open(nil, completionEventMessage.Nonce, completionEventMessage.Ciphertext, executionEventAdditionalData[:])
-			if err != nil {
-				return PatchedActionResultValue{}, fmt.Errorf("failed to decrypt completion event: %w", err)
-			}
-
-			var completionEvent model_command_pb.Result
-			if err := proto.Unmarshal(completionEventData, &completionEvent); err != nil {
-				return PatchedActionResultValue{}, fmt.Errorf("failed to unmarshal completion event: %w", err)
-			}
-
-			if err := status.ErrorProto(completionEvent.Status); err != nil {
-				return PatchedActionResultValue{}, err
-			}
-			if key.Message.ExitCodeMustBeZero && completionEvent.ExitCode != 0 {
-				return PatchedActionResultValue{}, fmt.Errorf("action completed with non-zero exit code %d", completionEvent.ExitCode)
-			}
-
-			result := &model_analysis_pb.ActionResult_Value{
-				ExitCode: completionEvent.ExitCode,
-			}
-			patcher := model_core.NewReferenceMessagePatcher[dag.ObjectContentsWalker]()
-			if len(completionEvent.OutputsReference) > 0 {
-				outputsReference, err := namespace.NewLocalReference(completionEvent.OutputsReference)
-				if err != nil {
-					return PatchedActionResultValue{}, fmt.Errorf("invalid outputs reference: %w", err)
-				}
-				result.OutputsReference = patcher.AddReference(outputsReference, dag.ExistingObjectContentsWalker)
-			}
-			return model_core.NewPatchedMessage(result, patcher), nil
-		}
+	if key.Message.ExitCodeMustBeZero && completionEvent.ExitCode != 0 {
+		return PatchedActionResultValue{}, fmt.Errorf("action completed with non-zero exit code %d", completionEvent.ExitCode)
 	}
+
+	result := &model_analysis_pb.ActionResult_Value{
+		ExitCode: completionEvent.ExitCode,
+	}
+	patcher := model_core.NewReferenceMessagePatcher[dag.ObjectContentsWalker]()
+	if len(completionEvent.OutputsReference) > 0 {
+		outputsReference, err := namespace.NewLocalReference(completionEvent.OutputsReference)
+		if err != nil {
+			return PatchedActionResultValue{}, fmt.Errorf("invalid outputs reference: %w", err)
+		}
+		result.OutputsReference = patcher.AddReference(outputsReference, dag.ExistingObjectContentsWalker)
+	}
+	return model_core.NewPatchedMessage(result, patcher), nil
 }
 
 func (c *baseComputer) convertDictToEnvironmentVariableList(environment map[string]string, commandEncoder model_encoding.BinaryEncoder) (model_core.PatchedMessage[[]*model_command_pb.EnvironmentVariableList_Element, dag.ObjectContentsWalker], error) {

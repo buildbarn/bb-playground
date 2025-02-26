@@ -10,6 +10,8 @@ proto_library(
         "//pkg/proto/model/core:core_proto",
         "//pkg/proto/model/encoding:encoding_proto",
         "//pkg/proto/model/filesystem:filesystem_proto",
+        "//pkg/proto/storage/object:object_proto",
+        "@googleapis//google/rpc:status_proto",
         "@protobuf//:duration_proto",
     ],
 )
@@ -23,6 +25,8 @@ go_proto_library(
         "//pkg/proto/model/core",
         "//pkg/proto/model/encoding",
         "//pkg/proto/model/filesystem",
+        "//pkg/proto/storage/object",
+        "@org_golang_google_genproto_googleapis_rpc//status",
     ],
 )
 
