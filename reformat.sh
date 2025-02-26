@@ -12,7 +12,6 @@ find bazel-bin/pkg/proto -name '*.pb.go' | while read f; do
 done
 go get -d -u ./... || true
 go mod tidy || true
-find . -name '*.pb.go' -delete
 
 # Gazelle
 rm -f $(find . -name '*.proto' | sed -e 's/[^/]*$/BUILD.bazel/')

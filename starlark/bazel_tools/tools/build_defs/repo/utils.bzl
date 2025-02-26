@@ -264,6 +264,7 @@ def maybe(repo_rule, name, **kwargs):
     Returns:
         Nothing, defines the repository when needed as a side-effect.
     """
+
     # TODO: Do we really need to create repositories conditionally,
     # based on whether they already exist? This macro is likely dead
     # code with bzlmod.

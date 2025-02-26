@@ -1,0 +1,94 @@
+{
+   "jobs": {
+      "build_and_test": {
+         "runs-on": "ubuntu-latest",
+         "steps": [
+            {
+               "name": "Check out source code",
+               "uses": "actions/checkout@v1"
+            },
+            {
+               "name": "Installing Bazel",
+               "run": "v=$(cat .bazelversion) && curl -L https://github.com/bazelbuild/bazel/releases/download/${v}/bazel-${v}-linux-x86_64 > ~/bazel && chmod +x ~/bazel && echo ~ >> ${GITHUB_PATH}"
+            },
+            {
+               "name": "Bazel mod tidy",
+               "run": "bazel mod tidy"
+            },
+            {
+               "name": "Gazelle",
+               "run": "rm -f $(find . -name '*.pb.go' | sed -e 's/[^/]*$/BUILD.bazel/') && bazel run //:gazelle"
+            },
+            {
+               "name": "Buildifier",
+               "run": "bazel run @com_github_bazelbuild_buildtools//:buildifier"
+            },
+            {
+               "name": "Gofmt",
+               "run": "bazel run @cc_mvdan_gofumpt//:gofumpt -- -w -extra $(pwd)"
+            },
+            {
+               "name": "Clang format",
+               "run": "find . -name '*.proto' -exec bazel run @llvm_toolchain_llvm//:bin/clang-format -- -i {} +"
+            },
+            {
+               "name": "GitHub workflows",
+               "run": "bazel build //tools/github_workflows && cp bazel-bin/tools/github_workflows/*.yaml .github/workflows"
+            },
+            {
+               "name": "Protobuf generation",
+               "run": "if [ -d pkg/proto ]; then\n  find . bazel-bin/pkg/proto -name '*.pb.go' -delete || true\n  bazel build $(bazel query --output=label 'kind(\"go_proto_library\", //...)')\n  find bazel-bin/pkg/proto -name '*.pb.go' | while read f; do\n    cat $f > $(echo $f | sed -e 's|.*/pkg/proto/|pkg/proto/|')\n  done\nfi\n"
+            },
+            {
+               "name": "Embedded asset generation",
+               "run": "bazel build $(git grep '^[[:space:]]*//go:embed ' | sed -e 's|\\(.*\\)/.*//go:embed |//\\1:|; s|\"||g; s| .*||' | sort -u)\ngit grep '^[[:space:]]*//go:embed ' | sed -e 's|\\(.*\\)/.*//go:embed |\\1/|' | while read o; do\n  if [ -e \"bazel-bin/$o\" ]; then\n    rm -rf \"$o\"\n    cp -r \"bazel-bin/$o\" \"$o\"\n    find \"$o\" -type f -exec chmod -x {} +\n  fi\ndone\n"
+            },
+            {
+               "name": "Test style conformance",
+               "run": "git add . && git diff --exit-code HEAD --"
+            },
+            {
+               "name": "linux_amd64: build and test",
+               "run": "bazel test --test_output=errors --platforms=@rules_go//go/toolchain:linux_amd64 //..."
+            },
+            {
+               "name": "linux_386: build and test",
+               "run": "bazel test --test_output=errors --platforms=@rules_go//go/toolchain:linux_386 //..."
+            },
+            {
+               "name": "linux_arm: build and test",
+               "run": "bazel build --platforms=@rules_go//go/toolchain:linux_arm //..."
+            },
+            {
+               "name": "linux_arm64: build and test",
+               "run": "bazel build --platforms=@rules_go//go/toolchain:linux_arm64 //..."
+            },
+            {
+               "name": "darwin_amd64: build and test",
+               "run": "bazel build --platforms=@rules_go//go/toolchain:darwin_amd64 //..."
+            },
+            {
+               "name": "darwin_arm64: build and test",
+               "run": "bazel build --platforms=@rules_go//go/toolchain:darwin_arm64 //..."
+            },
+            {
+               "name": "freebsd_amd64: build and test",
+               "run": "bazel build --platforms=@rules_go//go/toolchain:freebsd_amd64 //cmd/bonanza_bazel //cmd/bonanza_builder //cmd/bonanza_scheduler //cmd/bonanza_storage_frontend //cmd/bonanza_storage_shard //cmd/bonanza_worker"
+            },
+            {
+               "name": "windows_amd64: build and test",
+               "run": "bazel build --platforms=@rules_go//go/toolchain:windows_amd64 //cmd/bonanza_bazel //cmd/bonanza_builder //cmd/bonanza_scheduler //cmd/bonanza_storage_frontend //cmd/bonanza_storage_shard //cmd/bonanza_worker"
+            }
+         ]
+      }
+   },
+   "name": "pull-requests",
+   "on": {
+      "pull_request": {
+         "branches": [
+            "main",
+            "master"
+         ]
+      }
+   }
+}

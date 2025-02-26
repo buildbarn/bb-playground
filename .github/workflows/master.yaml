@@ -1,0 +1,697 @@
+{
+   "jobs": {
+      "build_and_test": {
+         "runs-on": "ubuntu-latest",
+         "steps": [
+            {
+               "name": "Check out source code",
+               "uses": "actions/checkout@v1"
+            },
+            {
+               "name": "Installing Bazel",
+               "run": "v=$(cat .bazelversion) && curl -L https://github.com/bazelbuild/bazel/releases/download/${v}/bazel-${v}-linux-x86_64 > ~/bazel && chmod +x ~/bazel && echo ~ >> ${GITHUB_PATH}"
+            },
+            {
+               "name": "Bazel mod tidy",
+               "run": "bazel mod tidy"
+            },
+            {
+               "name": "Gazelle",
+               "run": "rm -f $(find . -name '*.pb.go' | sed -e 's/[^/]*$/BUILD.bazel/') && bazel run //:gazelle"
+            },
+            {
+               "name": "Buildifier",
+               "run": "bazel run @com_github_bazelbuild_buildtools//:buildifier"
+            },
+            {
+               "name": "Gofmt",
+               "run": "bazel run @cc_mvdan_gofumpt//:gofumpt -- -w -extra $(pwd)"
+            },
+            {
+               "name": "Clang format",
+               "run": "find . -name '*.proto' -exec bazel run @llvm_toolchain_llvm//:bin/clang-format -- -i {} +"
+            },
+            {
+               "name": "GitHub workflows",
+               "run": "bazel build //tools/github_workflows && cp bazel-bin/tools/github_workflows/*.yaml .github/workflows"
+            },
+            {
+               "name": "Protobuf generation",
+               "run": "if [ -d pkg/proto ]; then\n  find . bazel-bin/pkg/proto -name '*.pb.go' -delete || true\n  bazel build $(bazel query --output=label 'kind(\"go_proto_library\", //...)')\n  find bazel-bin/pkg/proto -name '*.pb.go' | while read f; do\n    cat $f > $(echo $f | sed -e 's|.*/pkg/proto/|pkg/proto/|')\n  done\nfi\n"
+            },
+            {
+               "name": "Embedded asset generation",
+               "run": "bazel build $(git grep '^[[:space:]]*//go:embed ' | sed -e 's|\\(.*\\)/.*//go:embed |//\\1:|; s|\"||g; s| .*||' | sort -u)\ngit grep '^[[:space:]]*//go:embed ' | sed -e 's|\\(.*\\)/.*//go:embed |\\1/|' | while read o; do\n  if [ -e \"bazel-bin/$o\" ]; then\n    rm -rf \"$o\"\n    cp -r \"bazel-bin/$o\" \"$o\"\n    find \"$o\" -type f -exec chmod -x {} +\n  fi\ndone\n"
+            },
+            {
+               "name": "Test style conformance",
+               "run": "git add . && git diff --exit-code HEAD --"
+            },
+            {
+               "name": "linux_amd64: build and test",
+               "run": "bazel test --test_output=errors --platforms=@rules_go//go/toolchain:linux_amd64 //..."
+            },
+            {
+               "name": "linux_amd64: copy bonanza_bazel",
+               "run": "rm -f bonanza_bazel && bazel run --run_under cp --platforms=@rules_go//go/toolchain:linux_amd64 //cmd/bonanza_bazel $(pwd)/bonanza_bazel"
+            },
+            {
+               "name": "linux_amd64: upload bonanza_bazel",
+               "uses": "actions/upload-artifact@v4",
+               "with": {
+                  "name": "bonanza_bazel.linux_amd64",
+                  "path": "bonanza_bazel"
+               }
+            },
+            {
+               "name": "linux_amd64: copy bonanza_builder",
+               "run": "rm -f bonanza_builder && bazel run --run_under cp --platforms=@rules_go//go/toolchain:linux_amd64 //cmd/bonanza_builder $(pwd)/bonanza_builder"
+            },
+            {
+               "name": "linux_amd64: upload bonanza_builder",
+               "uses": "actions/upload-artifact@v4",
+               "with": {
+                  "name": "bonanza_builder.linux_amd64",
+                  "path": "bonanza_builder"
+               }
+            },
+            {
+               "name": "linux_amd64: copy bonanza_scheduler",
+               "run": "rm -f bonanza_scheduler && bazel run --run_under cp --platforms=@rules_go//go/toolchain:linux_amd64 //cmd/bonanza_scheduler $(pwd)/bonanza_scheduler"
+            },
+            {
+               "name": "linux_amd64: upload bonanza_scheduler",
+               "uses": "actions/upload-artifact@v4",
+               "with": {
+                  "name": "bonanza_scheduler.linux_amd64",
+                  "path": "bonanza_scheduler"
+               }
+            },
+            {
+               "name": "linux_amd64: copy bonanza_storage_frontend",
+               "run": "rm -f bonanza_storage_frontend && bazel run --run_under cp --platforms=@rules_go//go/toolchain:linux_amd64 //cmd/bonanza_storage_frontend $(pwd)/bonanza_storage_frontend"
+            },
+            {
+               "name": "linux_amd64: upload bonanza_storage_frontend",
+               "uses": "actions/upload-artifact@v4",
+               "with": {
+                  "name": "bonanza_storage_frontend.linux_amd64",
+                  "path": "bonanza_storage_frontend"
+               }
+            },
+            {
+               "name": "linux_amd64: copy bonanza_storage_shard",
+               "run": "rm -f bonanza_storage_shard && bazel run --run_under cp --platforms=@rules_go//go/toolchain:linux_amd64 //cmd/bonanza_storage_shard $(pwd)/bonanza_storage_shard"
+            },
+            {
+               "name": "linux_amd64: upload bonanza_storage_shard",
+               "uses": "actions/upload-artifact@v4",
+               "with": {
+                  "name": "bonanza_storage_shard.linux_amd64",
+                  "path": "bonanza_storage_shard"
+               }
+            },
+            {
+               "name": "linux_amd64: copy bonanza_worker",
+               "run": "rm -f bonanza_worker && bazel run --run_under cp --platforms=@rules_go//go/toolchain:linux_amd64 //cmd/bonanza_worker $(pwd)/bonanza_worker"
+            },
+            {
+               "name": "linux_amd64: upload bonanza_worker",
+               "uses": "actions/upload-artifact@v4",
+               "with": {
+                  "name": "bonanza_worker.linux_amd64",
+                  "path": "bonanza_worker"
+               }
+            },
+            {
+               "name": "linux_386: build and test",
+               "run": "bazel test --test_output=errors --platforms=@rules_go//go/toolchain:linux_386 //..."
+            },
+            {
+               "name": "linux_386: copy bonanza_bazel",
+               "run": "rm -f bonanza_bazel && bazel run --run_under cp --platforms=@rules_go//go/toolchain:linux_386 //cmd/bonanza_bazel $(pwd)/bonanza_bazel"
+            },
+            {
+               "name": "linux_386: upload bonanza_bazel",
+               "uses": "actions/upload-artifact@v4",
+               "with": {
+                  "name": "bonanza_bazel.linux_386",
+                  "path": "bonanza_bazel"
+               }
+            },
+            {
+               "name": "linux_386: copy bonanza_builder",
+               "run": "rm -f bonanza_builder && bazel run --run_under cp --platforms=@rules_go//go/toolchain:linux_386 //cmd/bonanza_builder $(pwd)/bonanza_builder"
+            },
+            {
+               "name": "linux_386: upload bonanza_builder",
+               "uses": "actions/upload-artifact@v4",
+               "with": {
+                  "name": "bonanza_builder.linux_386",
+                  "path": "bonanza_builder"
+               }
+            },
+            {
+               "name": "linux_386: copy bonanza_scheduler",
+               "run": "rm -f bonanza_scheduler && bazel run --run_under cp --platforms=@rules_go//go/toolchain:linux_386 //cmd/bonanza_scheduler $(pwd)/bonanza_scheduler"
+            },
+            {
+               "name": "linux_386: upload bonanza_scheduler",
+               "uses": "actions/upload-artifact@v4",
+               "with": {
+                  "name": "bonanza_scheduler.linux_386",
+                  "path": "bonanza_scheduler"
+               }
+            },
+            {
+               "name": "linux_386: copy bonanza_storage_frontend",
+               "run": "rm -f bonanza_storage_frontend && bazel run --run_under cp --platforms=@rules_go//go/toolchain:linux_386 //cmd/bonanza_storage_frontend $(pwd)/bonanza_storage_frontend"
+            },
+            {
+               "name": "linux_386: upload bonanza_storage_frontend",
+               "uses": "actions/upload-artifact@v4",
+               "with": {
+                  "name": "bonanza_storage_frontend.linux_386",
+                  "path": "bonanza_storage_frontend"
+               }
+            },
+            {
+               "name": "linux_386: copy bonanza_storage_shard",
+               "run": "rm -f bonanza_storage_shard && bazel run --run_under cp --platforms=@rules_go//go/toolchain:linux_386 //cmd/bonanza_storage_shard $(pwd)/bonanza_storage_shard"
+            },
+            {
+               "name": "linux_386: upload bonanza_storage_shard",
+               "uses": "actions/upload-artifact@v4",
+               "with": {
+                  "name": "bonanza_storage_shard.linux_386",
+                  "path": "bonanza_storage_shard"
+               }
+            },
+            {
+               "name": "linux_386: copy bonanza_worker",
+               "run": "rm -f bonanza_worker && bazel run --run_under cp --platforms=@rules_go//go/toolchain:linux_386 //cmd/bonanza_worker $(pwd)/bonanza_worker"
+            },
+            {
+               "name": "linux_386: upload bonanza_worker",
+               "uses": "actions/upload-artifact@v4",
+               "with": {
+                  "name": "bonanza_worker.linux_386",
+                  "path": "bonanza_worker"
+               }
+            },
+            {
+               "name": "linux_arm: build and test",
+               "run": "bazel build --platforms=@rules_go//go/toolchain:linux_arm //..."
+            },
+            {
+               "name": "linux_arm: copy bonanza_bazel",
+               "run": "rm -f bonanza_bazel && bazel run --run_under cp --platforms=@rules_go//go/toolchain:linux_arm //cmd/bonanza_bazel $(pwd)/bonanza_bazel"
+            },
+            {
+               "name": "linux_arm: upload bonanza_bazel",
+               "uses": "actions/upload-artifact@v4",
+               "with": {
+                  "name": "bonanza_bazel.linux_arm",
+                  "path": "bonanza_bazel"
+               }
+            },
+            {
+               "name": "linux_arm: copy bonanza_builder",
+               "run": "rm -f bonanza_builder && bazel run --run_under cp --platforms=@rules_go//go/toolchain:linux_arm //cmd/bonanza_builder $(pwd)/bonanza_builder"
+            },
+            {
+               "name": "linux_arm: upload bonanza_builder",
+               "uses": "actions/upload-artifact@v4",
+               "with": {
+                  "name": "bonanza_builder.linux_arm",
+                  "path": "bonanza_builder"
+               }
+            },
+            {
+               "name": "linux_arm: copy bonanza_scheduler",
+               "run": "rm -f bonanza_scheduler && bazel run --run_under cp --platforms=@rules_go//go/toolchain:linux_arm //cmd/bonanza_scheduler $(pwd)/bonanza_scheduler"
+            },
+            {
+               "name": "linux_arm: upload bonanza_scheduler",
+               "uses": "actions/upload-artifact@v4",
+               "with": {
+                  "name": "bonanza_scheduler.linux_arm",
+                  "path": "bonanza_scheduler"
+               }
+            },
+            {
+               "name": "linux_arm: copy bonanza_storage_frontend",
+               "run": "rm -f bonanza_storage_frontend && bazel run --run_under cp --platforms=@rules_go//go/toolchain:linux_arm //cmd/bonanza_storage_frontend $(pwd)/bonanza_storage_frontend"
+            },
+            {
+               "name": "linux_arm: upload bonanza_storage_frontend",
+               "uses": "actions/upload-artifact@v4",
+               "with": {
+                  "name": "bonanza_storage_frontend.linux_arm",
+                  "path": "bonanza_storage_frontend"
+               }
+            },
+            {
+               "name": "linux_arm: copy bonanza_storage_shard",
+               "run": "rm -f bonanza_storage_shard && bazel run --run_under cp --platforms=@rules_go//go/toolchain:linux_arm //cmd/bonanza_storage_shard $(pwd)/bonanza_storage_shard"
+            },
+            {
+               "name": "linux_arm: upload bonanza_storage_shard",
+               "uses": "actions/upload-artifact@v4",
+               "with": {
+                  "name": "bonanza_storage_shard.linux_arm",
+                  "path": "bonanza_storage_shard"
+               }
+            },
+            {
+               "name": "linux_arm: copy bonanza_worker",
+               "run": "rm -f bonanza_worker && bazel run --run_under cp --platforms=@rules_go//go/toolchain:linux_arm //cmd/bonanza_worker $(pwd)/bonanza_worker"
+            },
+            {
+               "name": "linux_arm: upload bonanza_worker",
+               "uses": "actions/upload-artifact@v4",
+               "with": {
+                  "name": "bonanza_worker.linux_arm",
+                  "path": "bonanza_worker"
+               }
+            },
+            {
+               "name": "linux_arm64: build and test",
+               "run": "bazel build --platforms=@rules_go//go/toolchain:linux_arm64 //..."
+            },
+            {
+               "name": "linux_arm64: copy bonanza_bazel",
+               "run": "rm -f bonanza_bazel && bazel run --run_under cp --platforms=@rules_go//go/toolchain:linux_arm64 //cmd/bonanza_bazel $(pwd)/bonanza_bazel"
+            },
+            {
+               "name": "linux_arm64: upload bonanza_bazel",
+               "uses": "actions/upload-artifact@v4",
+               "with": {
+                  "name": "bonanza_bazel.linux_arm64",
+                  "path": "bonanza_bazel"
+               }
+            },
+            {
+               "name": "linux_arm64: copy bonanza_builder",
+               "run": "rm -f bonanza_builder && bazel run --run_under cp --platforms=@rules_go//go/toolchain:linux_arm64 //cmd/bonanza_builder $(pwd)/bonanza_builder"
+            },
+            {
+               "name": "linux_arm64: upload bonanza_builder",
+               "uses": "actions/upload-artifact@v4",
+               "with": {
+                  "name": "bonanza_builder.linux_arm64",
+                  "path": "bonanza_builder"
+               }
+            },
+            {
+               "name": "linux_arm64: copy bonanza_scheduler",
+               "run": "rm -f bonanza_scheduler && bazel run --run_under cp --platforms=@rules_go//go/toolchain:linux_arm64 //cmd/bonanza_scheduler $(pwd)/bonanza_scheduler"
+            },
+            {
+               "name": "linux_arm64: upload bonanza_scheduler",
+               "uses": "actions/upload-artifact@v4",
+               "with": {
+                  "name": "bonanza_scheduler.linux_arm64",
+                  "path": "bonanza_scheduler"
+               }
+            },
+            {
+               "name": "linux_arm64: copy bonanza_storage_frontend",
+               "run": "rm -f bonanza_storage_frontend && bazel run --run_under cp --platforms=@rules_go//go/toolchain:linux_arm64 //cmd/bonanza_storage_frontend $(pwd)/bonanza_storage_frontend"
+            },
+            {
+               "name": "linux_arm64: upload bonanza_storage_frontend",
+               "uses": "actions/upload-artifact@v4",
+               "with": {
+                  "name": "bonanza_storage_frontend.linux_arm64",
+                  "path": "bonanza_storage_frontend"
+               }
+            },
+            {
+               "name": "linux_arm64: copy bonanza_storage_shard",
+               "run": "rm -f bonanza_storage_shard && bazel run --run_under cp --platforms=@rules_go//go/toolchain:linux_arm64 //cmd/bonanza_storage_shard $(pwd)/bonanza_storage_shard"
+            },
+            {
+               "name": "linux_arm64: upload bonanza_storage_shard",
+               "uses": "actions/upload-artifact@v4",
+               "with": {
+                  "name": "bonanza_storage_shard.linux_arm64",
+                  "path": "bonanza_storage_shard"
+               }
+            },
+            {
+               "name": "linux_arm64: copy bonanza_worker",
+               "run": "rm -f bonanza_worker && bazel run --run_under cp --platforms=@rules_go//go/toolchain:linux_arm64 //cmd/bonanza_worker $(pwd)/bonanza_worker"
+            },
+            {
+               "name": "linux_arm64: upload bonanza_worker",
+               "uses": "actions/upload-artifact@v4",
+               "with": {
+                  "name": "bonanza_worker.linux_arm64",
+                  "path": "bonanza_worker"
+               }
+            },
+            {
+               "name": "darwin_amd64: build and test",
+               "run": "bazel build --platforms=@rules_go//go/toolchain:darwin_amd64 //..."
+            },
+            {
+               "name": "darwin_amd64: copy bonanza_bazel",
+               "run": "rm -f bonanza_bazel && bazel run --run_under cp --platforms=@rules_go//go/toolchain:darwin_amd64 //cmd/bonanza_bazel $(pwd)/bonanza_bazel"
+            },
+            {
+               "name": "darwin_amd64: upload bonanza_bazel",
+               "uses": "actions/upload-artifact@v4",
+               "with": {
+                  "name": "bonanza_bazel.darwin_amd64",
+                  "path": "bonanza_bazel"
+               }
+            },
+            {
+               "name": "darwin_amd64: copy bonanza_builder",
+               "run": "rm -f bonanza_builder && bazel run --run_under cp --platforms=@rules_go//go/toolchain:darwin_amd64 //cmd/bonanza_builder $(pwd)/bonanza_builder"
+            },
+            {
+               "name": "darwin_amd64: upload bonanza_builder",
+               "uses": "actions/upload-artifact@v4",
+               "with": {
+                  "name": "bonanza_builder.darwin_amd64",
+                  "path": "bonanza_builder"
+               }
+            },
+            {
+               "name": "darwin_amd64: copy bonanza_scheduler",
+               "run": "rm -f bonanza_scheduler && bazel run --run_under cp --platforms=@rules_go//go/toolchain:darwin_amd64 //cmd/bonanza_scheduler $(pwd)/bonanza_scheduler"
+            },
+            {
+               "name": "darwin_amd64: upload bonanza_scheduler",
+               "uses": "actions/upload-artifact@v4",
+               "with": {
+                  "name": "bonanza_scheduler.darwin_amd64",
+                  "path": "bonanza_scheduler"
+               }
+            },
+            {
+               "name": "darwin_amd64: copy bonanza_storage_frontend",
+               "run": "rm -f bonanza_storage_frontend && bazel run --run_under cp --platforms=@rules_go//go/toolchain:darwin_amd64 //cmd/bonanza_storage_frontend $(pwd)/bonanza_storage_frontend"
+            },
+            {
+               "name": "darwin_amd64: upload bonanza_storage_frontend",
+               "uses": "actions/upload-artifact@v4",
+               "with": {
+                  "name": "bonanza_storage_frontend.darwin_amd64",
+                  "path": "bonanza_storage_frontend"
+               }
+            },
+            {
+               "name": "darwin_amd64: copy bonanza_storage_shard",
+               "run": "rm -f bonanza_storage_shard && bazel run --run_under cp --platforms=@rules_go//go/toolchain:darwin_amd64 //cmd/bonanza_storage_shard $(pwd)/bonanza_storage_shard"
+            },
+            {
+               "name": "darwin_amd64: upload bonanza_storage_shard",
+               "uses": "actions/upload-artifact@v4",
+               "with": {
+                  "name": "bonanza_storage_shard.darwin_amd64",
+                  "path": "bonanza_storage_shard"
+               }
+            },
+            {
+               "name": "darwin_amd64: copy bonanza_worker",
+               "run": "rm -f bonanza_worker && bazel run --run_under cp --platforms=@rules_go//go/toolchain:darwin_amd64 //cmd/bonanza_worker $(pwd)/bonanza_worker"
+            },
+            {
+               "name": "darwin_amd64: upload bonanza_worker",
+               "uses": "actions/upload-artifact@v4",
+               "with": {
+                  "name": "bonanza_worker.darwin_amd64",
+                  "path": "bonanza_worker"
+               }
+            },
+            {
+               "name": "darwin_arm64: build and test",
+               "run": "bazel build --platforms=@rules_go//go/toolchain:darwin_arm64 //..."
+            },
+            {
+               "name": "darwin_arm64: copy bonanza_bazel",
+               "run": "rm -f bonanza_bazel && bazel run --run_under cp --platforms=@rules_go//go/toolchain:darwin_arm64 //cmd/bonanza_bazel $(pwd)/bonanza_bazel"
+            },
+            {
+               "name": "darwin_arm64: upload bonanza_bazel",
+               "uses": "actions/upload-artifact@v4",
+               "with": {
+                  "name": "bonanza_bazel.darwin_arm64",
+                  "path": "bonanza_bazel"
+               }
+            },
+            {
+               "name": "darwin_arm64: copy bonanza_builder",
+               "run": "rm -f bonanza_builder && bazel run --run_under cp --platforms=@rules_go//go/toolchain:darwin_arm64 //cmd/bonanza_builder $(pwd)/bonanza_builder"
+            },
+            {
+               "name": "darwin_arm64: upload bonanza_builder",
+               "uses": "actions/upload-artifact@v4",
+               "with": {
+                  "name": "bonanza_builder.darwin_arm64",
+                  "path": "bonanza_builder"
+               }
+            },
+            {
+               "name": "darwin_arm64: copy bonanza_scheduler",
+               "run": "rm -f bonanza_scheduler && bazel run --run_under cp --platforms=@rules_go//go/toolchain:darwin_arm64 //cmd/bonanza_scheduler $(pwd)/bonanza_scheduler"
+            },
+            {
+               "name": "darwin_arm64: upload bonanza_scheduler",
+               "uses": "actions/upload-artifact@v4",
+               "with": {
+                  "name": "bonanza_scheduler.darwin_arm64",
+                  "path": "bonanza_scheduler"
+               }
+            },
+            {
+               "name": "darwin_arm64: copy bonanza_storage_frontend",
+               "run": "rm -f bonanza_storage_frontend && bazel run --run_under cp --platforms=@rules_go//go/toolchain:darwin_arm64 //cmd/bonanza_storage_frontend $(pwd)/bonanza_storage_frontend"
+            },
+            {
+               "name": "darwin_arm64: upload bonanza_storage_frontend",
+               "uses": "actions/upload-artifact@v4",
+               "with": {
+                  "name": "bonanza_storage_frontend.darwin_arm64",
+                  "path": "bonanza_storage_frontend"
+               }
+            },
+            {
+               "name": "darwin_arm64: copy bonanza_storage_shard",
+               "run": "rm -f bonanza_storage_shard && bazel run --run_under cp --platforms=@rules_go//go/toolchain:darwin_arm64 //cmd/bonanza_storage_shard $(pwd)/bonanza_storage_shard"
+            },
+            {
+               "name": "darwin_arm64: upload bonanza_storage_shard",
+               "uses": "actions/upload-artifact@v4",
+               "with": {
+                  "name": "bonanza_storage_shard.darwin_arm64",
+                  "path": "bonanza_storage_shard"
+               }
+            },
+            {
+               "name": "darwin_arm64: copy bonanza_worker",
+               "run": "rm -f bonanza_worker && bazel run --run_under cp --platforms=@rules_go//go/toolchain:darwin_arm64 //cmd/bonanza_worker $(pwd)/bonanza_worker"
+            },
+            {
+               "name": "darwin_arm64: upload bonanza_worker",
+               "uses": "actions/upload-artifact@v4",
+               "with": {
+                  "name": "bonanza_worker.darwin_arm64",
+                  "path": "bonanza_worker"
+               }
+            },
+            {
+               "name": "freebsd_amd64: build and test",
+               "run": "bazel build --platforms=@rules_go//go/toolchain:freebsd_amd64 //cmd/bonanza_bazel //cmd/bonanza_builder //cmd/bonanza_scheduler //cmd/bonanza_storage_frontend //cmd/bonanza_storage_shard //cmd/bonanza_worker"
+            },
+            {
+               "name": "freebsd_amd64: copy bonanza_bazel",
+               "run": "rm -f bonanza_bazel && bazel run --run_under cp --platforms=@rules_go//go/toolchain:freebsd_amd64 //cmd/bonanza_bazel $(pwd)/bonanza_bazel"
+            },
+            {
+               "name": "freebsd_amd64: upload bonanza_bazel",
+               "uses": "actions/upload-artifact@v4",
+               "with": {
+                  "name": "bonanza_bazel.freebsd_amd64",
+                  "path": "bonanza_bazel"
+               }
+            },
+            {
+               "name": "freebsd_amd64: copy bonanza_builder",
+               "run": "rm -f bonanza_builder && bazel run --run_under cp --platforms=@rules_go//go/toolchain:freebsd_amd64 //cmd/bonanza_builder $(pwd)/bonanza_builder"
+            },
+            {
+               "name": "freebsd_amd64: upload bonanza_builder",
+               "uses": "actions/upload-artifact@v4",
+               "with": {
+                  "name": "bonanza_builder.freebsd_amd64",
+                  "path": "bonanza_builder"
+               }
+            },
+            {
+               "name": "freebsd_amd64: copy bonanza_scheduler",
+               "run": "rm -f bonanza_scheduler && bazel run --run_under cp --platforms=@rules_go//go/toolchain:freebsd_amd64 //cmd/bonanza_scheduler $(pwd)/bonanza_scheduler"
+            },
+            {
+               "name": "freebsd_amd64: upload bonanza_scheduler",
+               "uses": "actions/upload-artifact@v4",
+               "with": {
+                  "name": "bonanza_scheduler.freebsd_amd64",
+                  "path": "bonanza_scheduler"
+               }
+            },
+            {
+               "name": "freebsd_amd64: copy bonanza_storage_frontend",
+               "run": "rm -f bonanza_storage_frontend && bazel run --run_under cp --platforms=@rules_go//go/toolchain:freebsd_amd64 //cmd/bonanza_storage_frontend $(pwd)/bonanza_storage_frontend"
+            },
+            {
+               "name": "freebsd_amd64: upload bonanza_storage_frontend",
+               "uses": "actions/upload-artifact@v4",
+               "with": {
+                  "name": "bonanza_storage_frontend.freebsd_amd64",
+                  "path": "bonanza_storage_frontend"
+               }
+            },
+            {
+               "name": "freebsd_amd64: copy bonanza_storage_shard",
+               "run": "rm -f bonanza_storage_shard && bazel run --run_under cp --platforms=@rules_go//go/toolchain:freebsd_amd64 //cmd/bonanza_storage_shard $(pwd)/bonanza_storage_shard"
+            },
+            {
+               "name": "freebsd_amd64: upload bonanza_storage_shard",
+               "uses": "actions/upload-artifact@v4",
+               "with": {
+                  "name": "bonanza_storage_shard.freebsd_amd64",
+                  "path": "bonanza_storage_shard"
+               }
+            },
+            {
+               "name": "freebsd_amd64: copy bonanza_worker",
+               "run": "rm -f bonanza_worker && bazel run --run_under cp --platforms=@rules_go//go/toolchain:freebsd_amd64 //cmd/bonanza_worker $(pwd)/bonanza_worker"
+            },
+            {
+               "name": "freebsd_amd64: upload bonanza_worker",
+               "uses": "actions/upload-artifact@v4",
+               "with": {
+                  "name": "bonanza_worker.freebsd_amd64",
+                  "path": "bonanza_worker"
+               }
+            },
+            {
+               "name": "windows_amd64: build and test",
+               "run": "bazel build --platforms=@rules_go//go/toolchain:windows_amd64 //cmd/bonanza_bazel //cmd/bonanza_builder //cmd/bonanza_scheduler //cmd/bonanza_storage_frontend //cmd/bonanza_storage_shard //cmd/bonanza_worker"
+            },
+            {
+               "name": "windows_amd64: copy bonanza_bazel",
+               "run": "rm -f bonanza_bazel.exe && bazel run --run_under cp --platforms=@rules_go//go/toolchain:windows_amd64 //cmd/bonanza_bazel $(pwd)/bonanza_bazel.exe"
+            },
+            {
+               "name": "windows_amd64: upload bonanza_bazel",
+               "uses": "actions/upload-artifact@v4",
+               "with": {
+                  "name": "bonanza_bazel.windows_amd64",
+                  "path": "bonanza_bazel.exe"
+               }
+            },
+            {
+               "name": "windows_amd64: copy bonanza_builder",
+               "run": "rm -f bonanza_builder.exe && bazel run --run_under cp --platforms=@rules_go//go/toolchain:windows_amd64 //cmd/bonanza_builder $(pwd)/bonanza_builder.exe"
+            },
+            {
+               "name": "windows_amd64: upload bonanza_builder",
+               "uses": "actions/upload-artifact@v4",
+               "with": {
+                  "name": "bonanza_builder.windows_amd64",
+                  "path": "bonanza_builder.exe"
+               }
+            },
+            {
+               "name": "windows_amd64: copy bonanza_scheduler",
+               "run": "rm -f bonanza_scheduler.exe && bazel run --run_under cp --platforms=@rules_go//go/toolchain:windows_amd64 //cmd/bonanza_scheduler $(pwd)/bonanza_scheduler.exe"
+            },
+            {
+               "name": "windows_amd64: upload bonanza_scheduler",
+               "uses": "actions/upload-artifact@v4",
+               "with": {
+                  "name": "bonanza_scheduler.windows_amd64",
+                  "path": "bonanza_scheduler.exe"
+               }
+            },
+            {
+               "name": "windows_amd64: copy bonanza_storage_frontend",
+               "run": "rm -f bonanza_storage_frontend.exe && bazel run --run_under cp --platforms=@rules_go//go/toolchain:windows_amd64 //cmd/bonanza_storage_frontend $(pwd)/bonanza_storage_frontend.exe"
+            },
+            {
+               "name": "windows_amd64: upload bonanza_storage_frontend",
+               "uses": "actions/upload-artifact@v4",
+               "with": {
+                  "name": "bonanza_storage_frontend.windows_amd64",
+                  "path": "bonanza_storage_frontend.exe"
+               }
+            },
+            {
+               "name": "windows_amd64: copy bonanza_storage_shard",
+               "run": "rm -f bonanza_storage_shard.exe && bazel run --run_under cp --platforms=@rules_go//go/toolchain:windows_amd64 //cmd/bonanza_storage_shard $(pwd)/bonanza_storage_shard.exe"
+            },
+            {
+               "name": "windows_amd64: upload bonanza_storage_shard",
+               "uses": "actions/upload-artifact@v4",
+               "with": {
+                  "name": "bonanza_storage_shard.windows_amd64",
+                  "path": "bonanza_storage_shard.exe"
+               }
+            },
+            {
+               "name": "windows_amd64: copy bonanza_worker",
+               "run": "rm -f bonanza_worker.exe && bazel run --run_under cp --platforms=@rules_go//go/toolchain:windows_amd64 //cmd/bonanza_worker $(pwd)/bonanza_worker.exe"
+            },
+            {
+               "name": "windows_amd64: upload bonanza_worker",
+               "uses": "actions/upload-artifact@v4",
+               "with": {
+                  "name": "bonanza_worker.windows_amd64",
+                  "path": "bonanza_worker.exe"
+               }
+            },
+            {
+               "env": {
+                  "GITHUB_TOKEN": "${{ secrets.GITHUB_TOKEN }}"
+               },
+               "name": "Install Docker credentials",
+               "run": "echo \"${GITHUB_TOKEN}\" | docker login ghcr.io -u $ --password-stdin"
+            },
+            {
+               "name": "Push container bonanza_builder:bonanza_builder",
+               "run": "bazel run --stamp //cmd/bonanza_builder:bonanza_builder_container_push"
+            },
+            {
+               "name": "Push container bonanza_scheduler:bonanza_scheduler",
+               "run": "bazel run --stamp //cmd/bonanza_scheduler:bonanza_scheduler_container_push"
+            },
+            {
+               "name": "Push container bonanza_storage_frontend:bonanza_storage_frontend",
+               "run": "bazel run --stamp //cmd/bonanza_storage_frontend:bonanza_storage_frontend_container_push"
+            },
+            {
+               "name": "Push container bonanza_storage_shard:bonanza_storage_shard",
+               "run": "bazel run --stamp //cmd/bonanza_storage_shard:bonanza_storage_shard_container_push"
+            },
+            {
+               "name": "Push container bonanza_worker:bonanza_worker",
+               "run": "bazel run --stamp //cmd/bonanza_worker:bonanza_worker_container_push"
+            }
+         ]
+      }
+   },
+   "name": "master",
+   "on": {
+      "push": {
+         "branches": [
+            "main",
+            "master"
+         ]
+      }
+   }
+}
