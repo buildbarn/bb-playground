@@ -1,0 +1,9 @@
+module(
+    name = "builtins_bazel",
+    repo_name = "_builtins",
+)
+
+bazel_dep(name = "platforms")
+bazel_dep(name = "protobuf")
+bazel_dep(name = "rules_cc")
+bazel_dep(name = "rules_java")
