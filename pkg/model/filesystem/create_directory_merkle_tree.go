@@ -16,6 +16,8 @@ import (
 
 	"golang.org/x/sync/errgroup"
 	"golang.org/x/sync/semaphore"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/wrapperspb"
 )
@@ -338,6 +340,92 @@ func (b *directoryMerkleTreeBuilder[TDirectory, TFile]) maybeFinalizeDirectory(u
 type CreatedDirectory[TDirectory model_core.ReferenceMetadata] struct {
 	Message                        model_core.PatchedMessage[*model_filesystem_pb.Directory, TDirectory]
 	MaximumSymlinkEscapementLevels *wrapperspb.UInt32Value
+}
+
+// NewCreatedDirectoryBare creates a CreatedDirectory, recomputing
+// MaximumSymlinkEscapementLevels from the provided Directory message.
+//
+// This function can be used to embed an existing directory in a Merkle
+// tree for which no DirectoryReference exists (e.g., because it was not
+// the root directory of a directory cluster). In cases where a
+// DirectoryReference is available, this function should not be used.
+func NewCreatedDirectoryBare[TDirectory model_core.ReferenceMetadata](message model_core.PatchedMessage[*model_filesystem_pb.Directory, TDirectory]) (*CreatedDirectory[TDirectory], error) {
+	cd := &CreatedDirectory[TDirectory]{
+		Message:                        message,
+		MaximumSymlinkEscapementLevels: &wrapperspb.UInt32Value{Value: 0},
+	}
+	if err := cd.raiseDirectoryMaximumSymlinkEscapementLevels(message.Message, nil, 0); err != nil {
+		return nil, err
+	}
+	return cd, nil
+}
+
+// raiseMaximumSymlinkEscapementLevels raises the value of the
+// MaximumSymlinkEscapementLevels field if it is lower than the
+// escapement level of a given symbolic link, compensated for the depth
+// at which the sybolic link is located.
+func (cd *CreatedDirectory[TDirectory]) raiseMaximumSymlinkEscapementLevels(maximumSymlinkEscapementLevels *wrapperspb.UInt32Value, currentDepth uint32) bool {
+	if maximumSymlinkEscapementLevels == nil {
+		cd.MaximumSymlinkEscapementLevels = nil
+		return true
+	}
+	if maximumSymlinkEscapementLevels.Value > currentDepth {
+		if newLevels := maximumSymlinkEscapementLevels.Value - currentDepth; cd.MaximumSymlinkEscapementLevels.Value < newLevels {
+			cd.MaximumSymlinkEscapementLevels.Value = newLevels
+		}
+	}
+	return false
+}
+
+// raiseDirectoryMaximumSymlinkEscapementLevels recursively traverses a
+// Directory message and raises the value of
+// MaximumSymlinkEscapementLevels if needed.
+func (cd *CreatedDirectory[TDirectory]) raiseDirectoryMaximumSymlinkEscapementLevels(d *model_filesystem_pb.Directory, currentPath *path.Trace, currentDepth uint32) error {
+	// Process all symbolic links in the current directory.
+	switch leaves := d.Leaves.(type) {
+	case *model_filesystem_pb.Directory_LeavesExternal:
+		if cd.raiseMaximumSymlinkEscapementLevels(leaves.LeavesExternal.MaximumSymlinkEscapementLevels, currentDepth) {
+			return nil
+		}
+	case *model_filesystem_pb.Directory_LeavesInline:
+		for _, child := range leaves.LeavesInline.Symlinks {
+			escapementCounter := NewEscapementCountingScopeWalker()
+			if err := path.Resolve(path.UNIXFormat.NewParser(child.Target), escapementCounter); err != nil {
+				return util.StatusWrapf(err, "Failed to resolve target of symbolic link with target %#v", child.Target)
+			}
+			if cd.raiseMaximumSymlinkEscapementLevels(escapementCounter.GetLevels(), currentDepth) {
+				return nil
+			}
+		}
+	default:
+		return status.Errorf(codes.InvalidArgument, "Invalid leaves type for directory %#v", currentPath.GetUNIXString())
+	}
+
+	// Traverse into child directories.
+	childDepth := currentDepth + 1
+	for _, child := range d.Directories {
+		childName, ok := path.NewComponent(child.Name)
+		if !ok {
+			return status.Errorf(codes.InvalidArgument, "Invalid name for child %#v inside directory %#v", child.Name, currentPath.GetUNIXString())
+		}
+		childPath := currentPath.Append(childName)
+		switch contents := child.Contents.(type) {
+		case *model_filesystem_pb.DirectoryNode_ContentsExternal:
+			if cd.raiseMaximumSymlinkEscapementLevels(contents.ContentsExternal.MaximumSymlinkEscapementLevels, childDepth) {
+				return nil
+			}
+		case *model_filesystem_pb.DirectoryNode_ContentsInline:
+			if err := cd.raiseDirectoryMaximumSymlinkEscapementLevels(contents.ContentsInline, childPath, childDepth); err != nil {
+				return err
+			}
+			if cd.MaximumSymlinkEscapementLevels == nil {
+				return nil
+			}
+		default:
+			return status.Errorf(codes.InvalidArgument, "Invalid directory type for directory %#v", childPath.GetUNIXString())
+		}
+	}
+	return nil
 }
 
 // ToDirectoryReference creates a DirectoryReference message that

@@ -25,6 +25,7 @@ type DirectoryCluster []Directory
 type Directory struct {
 	Directories []DirectoryNode
 	Leaves      model_core.Message[*model_filesystem_pb.Leaves]
+	Raw         model_core.Message[*model_filesystem_pb.Directory]
 }
 
 // DirectoryInfo holds all of the properties of a directory that could
@@ -89,32 +90,42 @@ func (p *directoryClusterObjectParser[TReference]) ParseObject(ctx context.Conte
 	// object and store them in a list. This allows the caller to
 	// address each directory separately.
 	var cluster DirectoryCluster
-	_, externalLeavesTotalSizeBytes, err := p.addDirectoriesToCluster(ctx, &cluster, &d, reference, outgoingReferences.GetOutgoingReferencesList(), nil)
+	_, externalLeavesTotalSizeBytes, err := p.addDirectoriesToCluster(
+		ctx,
+		&cluster,
+		model_core.Message[*model_filesystem_pb.Directory]{
+			Message:            &d,
+			OutgoingReferences: outgoingReferences.GetOutgoingReferencesList(),
+		},
+		reference,
+		nil,
+	)
 	if err != nil {
 		return nil, 0, err
 	}
 	return cluster, reference.GetLocalReference().GetSizeBytes() + externalLeavesTotalSizeBytes, nil
 }
 
-func (p *directoryClusterObjectParser[TReference]) addDirectoriesToCluster(ctx context.Context, c *DirectoryCluster, d *model_filesystem_pb.Directory, reference TReference, outgoingReferences object.OutgoingReferencesList, dTrace *path.Trace) (uint, int, error) {
+func (p *directoryClusterObjectParser[TReference]) addDirectoriesToCluster(ctx context.Context, c *DirectoryCluster, d model_core.Message[*model_filesystem_pb.Directory], reference TReference, dTrace *path.Trace) (uint, int, error) {
 	directoryIndex := uint(len(*c))
 	*c = append(
 		*c,
 		Directory{
-			Directories: make([]DirectoryNode, 0, len(d.Directories)),
+			Directories: make([]DirectoryNode, 0, len(d.Message.Directories)),
+			Raw:         d,
 		},
 	)
 
 	localReference := reference.GetLocalReference()
 	degree := localReference.GetDegree()
 	externalLeavesTotalSizeBytes := 0
-	switch leaves := d.Leaves.(type) {
+	switch leaves := d.Message.Leaves.(type) {
 	case *model_filesystem_pb.Directory_LeavesExternal:
 		leavesReferenceIndex, err := model_core.GetIndexFromReferenceMessage(leaves.LeavesExternal.Reference, degree)
 		if err != nil {
 			return 0, 0, util.StatusWrapf(err, "Invalid reference index for leaves for directory %#v", dTrace.GetUNIXString())
 		}
-		leavesReference := reference.WithLocalReference(outgoingReferences.GetOutgoingReference(leavesReferenceIndex))
+		leavesReference := reference.WithLocalReference(d.OutgoingReferences.GetOutgoingReference(leavesReferenceIndex))
 		leavesObject, externalLeavesSizeBytes, err := p.leavesReader.ReadParsedObject(ctx, leavesReference)
 		if err != nil {
 			return 0, 0, util.StatusWrapf(err, "Leaves for directory %#v with reference %s", dTrace.GetUNIXString(), leavesReference)
@@ -124,13 +135,13 @@ func (p *directoryClusterObjectParser[TReference]) addDirectoriesToCluster(ctx c
 	case *model_filesystem_pb.Directory_LeavesInline:
 		(*c)[directoryIndex].Leaves = model_core.Message[*model_filesystem_pb.Leaves]{
 			Message:            leaves.LeavesInline,
-			OutgoingReferences: outgoingReferences,
+			OutgoingReferences: d.OutgoingReferences,
 		}
 	default:
 		return 0, 0, status.Errorf(codes.InvalidArgument, "Directory %#v has no leaves", dTrace.GetUNIXString())
 	}
 
-	for _, entry := range d.Directories {
+	for _, entry := range d.Message.Directories {
 		name, ok := path.NewComponent(entry.Name)
 		if !ok {
 			return 0, 0, status.Errorf(codes.InvalidArgument, "Entry %#v in directory %#v has an invalid name", entry.Name, dTrace.GetUNIXString())
@@ -142,7 +153,7 @@ func (p *directoryClusterObjectParser[TReference]) addDirectoriesToCluster(ctx c
 			directoryInfo, err := NewDirectoryInfoFromDirectoryReference(
 				model_core.Message[*model_filesystem_pb.DirectoryReference]{
 					Message:            contents.ContentsExternal,
-					OutgoingReferences: outgoingReferences,
+					OutgoingReferences: d.OutgoingReferences,
 				},
 			)
 			if err != nil {
@@ -162,9 +173,11 @@ func (p *directoryClusterObjectParser[TReference]) addDirectoriesToCluster(ctx c
 			childDirectoryIndex, childExternalLeavesTotalSizeBytes, err := p.addDirectoriesToCluster(
 				ctx,
 				c,
-				contents.ContentsInline,
+				model_core.Message[*model_filesystem_pb.Directory]{
+					Message:            contents.ContentsInline,
+					OutgoingReferences: d.OutgoingReferences,
+				},
 				reference,
-				outgoingReferences,
 				dTrace.Append(name),
 			)
 			if err != nil {

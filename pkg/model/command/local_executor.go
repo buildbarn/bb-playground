@@ -702,6 +702,30 @@ func (d *prepopulatedCapturableDirectory) EnterCapturableDirectory(name path.Com
 	if childDirectory == nil {
 		return nil, nil, syscall.ENOTDIR
 	}
+
+	var getRawDirectory model_filesystem_virtual.ApplyGetRawDirectory
+	if childDirectory.VirtualApply(&getRawDirectory) {
+		// The current directory is still backed by an
+		// InitialContentsFetcher, meaning it hasn't been
+		// accessed yet.
+		//
+		// Instead of traversing into it and computing a Merkle
+		// tree, use the original Directory message that backs
+		// the InitialContentsFetcher.
+		if err := getRawDirectory.Err; err != nil {
+			return nil, nil, err
+		}
+		createdDirectory, err := model_filesystem.NewCreatedDirectoryBare(
+			model_core.NewPatchedMessageFromExisting(
+				getRawDirectory.RawDirectory,
+				func(index int) dag.ObjectContentsWalker {
+					return dag.ExistingObjectContentsWalker
+				},
+			),
+		)
+		return createdDirectory, nil, err
+	}
+
 	return nil,
 		&prepopulatedCapturableDirectory{
 			options:   d.options,

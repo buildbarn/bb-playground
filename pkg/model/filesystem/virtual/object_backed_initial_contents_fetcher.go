@@ -41,7 +41,7 @@ func NewObjectBackedInitialContentsFetcher(ctx context.Context, directoryCluster
 	}
 }
 
-func (icf *objectBackedInitialContentsFetcher) FetchContents(fileReadMonitorFactory virtual.FileReadMonitorFactory) (map[path.Component]virtual.InitialChild, error) {
+func (icf *objectBackedInitialContentsFetcher) getDirectory() (*model_filesystem.Directory, error) {
 	options := icf.options
 	cluster, _, err := options.directoryClusterReader.ReadParsedObject(options.context, icf.clusterReference)
 	if err != nil {
@@ -50,11 +50,19 @@ func (icf *objectBackedInitialContentsFetcher) FetchContents(fileReadMonitorFact
 	if icf.directoryIndex >= uint(len(cluster)) {
 		return nil, status.Errorf(codes.InvalidArgument, "Directory index %d is out of range, as directory cluster with reference %s only contains %d directories", icf.directoryIndex, len(cluster), icf.clusterReference)
 	}
-	directory := cluster[icf.directoryIndex]
+	return &cluster[icf.directoryIndex], nil
+}
+
+func (icf *objectBackedInitialContentsFetcher) FetchContents(fileReadMonitorFactory virtual.FileReadMonitorFactory) (map[path.Component]virtual.InitialChild, error) {
+	directory, err := icf.getDirectory()
+	if err != nil {
+		return nil, err
+	}
 
 	// Create InitialContentsFetchers for all child directories.
 	// These can yield even more InitialContentsFetchers for
 	// grandchildren.
+	options := icf.options
 	children := make(map[path.Component]virtual.InitialChild, len(directory.Directories)+len(directory.Leaves.Message.Files)+len(directory.Leaves.Message.Symlinks))
 	for _, entry := range directory.Directories {
 		component := entry.Name
@@ -63,7 +71,7 @@ func (icf *objectBackedInitialContentsFetcher) FetchContents(fileReadMonitorFact
 		}
 
 		children[component] = virtual.InitialChild{}.FromDirectory(&objectBackedInitialContentsFetcher{
-			options:          icf.options,
+			options:          options,
 			clusterReference: entry.Info.ClusterReference,
 			directoryIndex:   entry.Info.DirectoryIndex,
 		})
@@ -129,6 +137,28 @@ func (icf *objectBackedInitialContentsFetcher) FetchContents(fileReadMonitorFact
 	return children, nil
 }
 
-func (objectBackedInitialContentsFetcher) VirtualApply(data any) bool {
-	return false
+// ApplyGetRawDirectory can be used to obtain the Directory message that
+// backs a directory, assuming the contents of the directory still match
+// the message.
+//
+// This can be used to efficiently compute a Merkle tree of a directory
+// hierarchy, skipping parts of the hierarchy that have not been
+// modified.
+type ApplyGetRawDirectory struct {
+	RawDirectory model_core.Message[*model_filesystem_pb.Directory]
+	Err          error
+}
+
+func (icf *objectBackedInitialContentsFetcher) VirtualApply(data any) bool {
+	switch typedData := data.(type) {
+	case *ApplyGetRawDirectory:
+		if directory, err := icf.getDirectory(); err == nil {
+			typedData.RawDirectory = directory.Raw
+		} else {
+			typedData.Err = err
+		}
+		return true
+	default:
+		return false
+	}
 }

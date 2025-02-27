@@ -48,6 +48,7 @@ go_library(
 go_test(
     name = "filesystem_test",
     srcs = [
+        "create_directory_merkle_tree_test.go",
         "create_file_merkle_tree_test.go",
         "directory_cluster_object_parser_test.go",
         "file_contents_iterator_test.go",
@@ -62,6 +63,7 @@ go_test(
         "//pkg/proto/model/core",
         "//pkg/proto/model/filesystem",
         "//pkg/proto/storage/object",
+        "//pkg/storage/dag",
         "//pkg/storage/object",
         "@com_github_buildbarn_bb_storage//pkg/testutil",
         "@com_github_seehuhn_mt19937//:mt19937",
@@ -69,6 +71,7 @@ go_test(
         "@org_golang_google_grpc//codes",
         "@org_golang_google_grpc//status",
         "@org_golang_google_protobuf//proto",
+        "@org_golang_google_protobuf//types/known/wrapperspb",
         "@org_uber_go_mock//gomock",
     ],
 )
