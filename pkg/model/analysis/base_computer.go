@@ -19,8 +19,6 @@ import (
 	model_analysis_pb "github.com/buildbarn/bonanza/pkg/proto/model/analysis"
 	model_build_pb "github.com/buildbarn/bonanza/pkg/proto/model/build"
 	model_command_pb "github.com/buildbarn/bonanza/pkg/proto/model/command"
-	model_core_pb "github.com/buildbarn/bonanza/pkg/proto/model/core"
-	model_filesystem_pb "github.com/buildbarn/bonanza/pkg/proto/model/filesystem"
 	remoteexecution "github.com/buildbarn/bonanza/pkg/remoteexecution"
 	"github.com/buildbarn/bonanza/pkg/storage/dag"
 	"github.com/buildbarn/bonanza/pkg/storage/object"
@@ -426,10 +424,7 @@ func (c *baseComputer) ComputeRepoDefaultAttrsValue(ctx context.Context, key *mo
 	}
 	referenceFormat := c.buildSpecificationReference.GetReferenceFormat()
 	repoFileContentsEntry, err := model_filesystem.NewFileContentsEntryFromProto(
-		model_core.Message[*model_filesystem_pb.FileContents]{
-			Message:            repoFileProperties.Message.Exists.GetContents(),
-			OutgoingReferences: repoFileProperties.OutgoingReferences,
-		},
+		model_core.NewNestedMessage(repoFileProperties, repoFileProperties.Message.Exists.GetContents()),
 		referenceFormat,
 	)
 	if err != nil {
@@ -460,10 +455,7 @@ func (c *baseComputer) ComputeRepoDefaultAttrsValue(ctx context.Context, key *mo
 
 func (c *baseComputer) ComputeTargetCompletionValue(ctx context.Context, key model_core.Message[*model_analysis_pb.TargetCompletion_Key], e TargetCompletionEnvironment) (PatchedTargetCompletionValue, error) {
 	configurationReference := model_core.NewPatchedMessageFromExisting(
-		model_core.Message[*model_core_pb.Reference]{
-			Message:            key.Message.ConfigurationReference,
-			OutgoingReferences: key.OutgoingReferences,
-		},
+		model_core.NewNestedMessage(key, key.Message.ConfigurationReference),
 		func(index int) dag.ObjectContentsWalker {
 			return dag.ExistingObjectContentsWalker
 		},

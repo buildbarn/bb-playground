@@ -22,10 +22,7 @@ func AllDictLeafEntries(
 	allLeaves := btree.AllLeaves(
 		ctx,
 		reader,
-		model_core.Message[[]*model_starlark_pb.Dict_Entry]{
-			Message:            rootDict.Message.Entries,
-			OutgoingReferences: rootDict.OutgoingReferences,
-		},
+		model_core.NewNestedMessage(rootDict, rootDict.Message.Entries),
 		func(entry model_core.Message[*model_starlark_pb.Dict_Entry]) (*model_core_pb.Reference, error) {
 			if parent, ok := entry.Message.Level.(*model_starlark_pb.Dict_Entry_Parent_); ok {
 				return parent.Parent.Reference, nil
@@ -41,10 +38,7 @@ func AllDictLeafEntries(
 				*errOut = errors.New("not a valid leaf entry")
 				return false
 			}
-			return yield(model_core.Message[*model_starlark_pb.Dict_Entry_Leaf]{
-				Message:            leafEntry.Leaf,
-				OutgoingReferences: entry.OutgoingReferences,
-			})
+			return yield(model_core.NewNestedMessage(entry, leafEntry.Leaf))
 		})
 	}
 }

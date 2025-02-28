@@ -40,10 +40,7 @@ func (c *baseComputer) ComputeRepositoryRuleObjectValue(ctx context.Context, key
 
 	attrs, err := c.decodeAttrsDict(
 		ctx,
-		model_core.Message[[]*model_starlark_pb.NamedAttr]{
-			Message:            d.Definition.Attrs,
-			OutgoingReferences: repositoryRuleValue.OutgoingReferences,
-		},
+		model_core.NewNestedMessage(repositoryRuleValue, d.Definition.Attrs),
 		func(resolvedLabel label.ResolvedLabel) (starlark.Value, error) {
 			return model_starlark.NewLabel(resolvedLabel), nil
 		},
@@ -54,10 +51,7 @@ func (c *baseComputer) ComputeRepositoryRuleObjectValue(ctx context.Context, key
 
 	return &RepositoryRule{
 		Implementation: model_starlark.NewNamedFunction(model_starlark.NewProtoNamedFunctionDefinition(
-			model_core.Message[*model_starlark_pb.Function]{
-				Message:            d.Definition.Implementation,
-				OutgoingReferences: repositoryRuleValue.OutgoingReferences,
-			},
+			model_core.NewNestedMessage(repositoryRuleValue, d.Definition.Implementation),
 		)),
 		Attrs: attrs,
 	}, nil
@@ -86,10 +80,7 @@ func (c *baseComputer) decodeAttrsDict(ctx context.Context, encodedAttrs model_c
 
 		if strings.HasPrefix(namedAttr.Name, "_") {
 			value, err := model_starlark.DecodeValue(
-				model_core.Message[*model_starlark_pb.Value]{
-					Message:            namedAttr.Attr.GetDefault(),
-					OutgoingReferences: encodedAttrs.OutgoingReferences,
-				},
+				model_core.NewNestedMessage(encodedAttrs, namedAttr.Attr.GetDefault()),
 				/* currentIdentifier = */ nil,
 				c.getValueDecodingOptions(ctx, labelCreator),
 			)
@@ -104,10 +95,7 @@ func (c *baseComputer) decodeAttrsDict(ctx context.Context, encodedAttrs model_c
 				// TODO: Call into attr type to validate
 				// the value!
 				defaultAttr, err = model_starlark.DecodeValue(
-					model_core.Message[*model_starlark_pb.Value]{
-						Message:            d,
-						OutgoingReferences: encodedAttrs.OutgoingReferences,
-					},
+					model_core.NewNestedMessage(encodedAttrs, d),
 					/* currentIdentifier = */ nil,
 					c.getValueDecodingOptions(ctx, labelCreator),
 				)

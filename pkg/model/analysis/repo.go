@@ -135,10 +135,7 @@ func (d *changeTrackingDirectory) setContents(contents model_core.Message[*model
 			return err
 		}
 	case *model_filesystem_pb.Directory_LeavesInline:
-		leaves = model_core.Message[*model_filesystem_pb.Leaves]{
-			Message:            leavesType.LeavesInline,
-			OutgoingReferences: contents.OutgoingReferences,
-		}
+		leaves = model_core.NewNestedMessage(contents, leavesType.LeavesInline)
 	default:
 		return errors.New("unknown leaves contents type")
 	}
@@ -156,10 +153,7 @@ func (d *changeTrackingDirectory) setContents(contents model_core.Message[*model
 		d.files[name] = &changeTrackingFile{
 			isExecutable: properties.IsExecutable,
 			contents: unmodifiedFileContents{
-				contents: model_core.Message[*model_filesystem_pb.FileContents]{
-					Message:            properties.Contents,
-					OutgoingReferences: leaves.OutgoingReferences,
-				},
+				contents: model_core.NewNestedMessage(leaves, properties.Contents),
 			},
 		}
 	}
@@ -181,18 +175,12 @@ func (d *changeTrackingDirectory) setContents(contents model_core.Message[*model
 		switch childContents := directory.Contents.(type) {
 		case *model_filesystem_pb.DirectoryNode_ContentsExternal:
 			d.directories[name] = &changeTrackingDirectory{
-				currentReference: model_core.Message[*model_filesystem_pb.DirectoryReference]{
-					Message:            childContents.ContentsExternal,
-					OutgoingReferences: contents.OutgoingReferences,
-				},
+				currentReference: model_core.NewNestedMessage(contents, childContents.ContentsExternal),
 			}
 		case *model_filesystem_pb.DirectoryNode_ContentsInline:
 			dChild := &changeTrackingDirectory{}
 			if err := dChild.setContents(
-				model_core.Message[*model_filesystem_pb.Directory]{
-					Message:            childContents.ContentsInline,
-					OutgoingReferences: contents.OutgoingReferences,
-				},
+				model_core.NewNestedMessage(contents, childContents.ContentsInline),
 				options,
 			); err != nil {
 				return err
@@ -681,10 +669,7 @@ func (c *baseComputer) fetchModuleFromRegistry(
 		return PatchedRepoValue{}, fmt.Errorf("file at URL %#v does not exist", sourceJSONURL)
 	}
 	sourceJSONContentsEntry, err := model_filesystem.NewFileContentsEntryFromProto(
-		model_core.Message[*model_filesystem_pb.FileContents]{
-			Message:            sourceJSONContentsValue.Message.Exists.Contents,
-			OutgoingReferences: sourceJSONContentsValue.OutgoingReferences,
-		},
+		model_core.NewNestedMessage(sourceJSONContentsValue, sourceJSONContentsValue.Message.Exists.Contents),
 		c.buildSpecificationReference.GetReferenceFormat(),
 	)
 	if err != nil {
@@ -745,10 +730,7 @@ func (c *baseComputer) fetchModuleFromRegistry(
 		}
 
 		patchContentsEntry, err := model_filesystem.NewFileContentsEntryFromProto(
-			model_core.Message[*model_filesystem_pb.FileContents]{
-				Message:            patchContentsValue.Message.Exists.Contents,
-				OutgoingReferences: patchContentsValue.OutgoingReferences,
-			},
+			model_core.NewNestedMessage(patchContentsValue, patchContentsValue.Message.Exists.Contents),
 			c.buildSpecificationReference.GetReferenceFormat(),
 		)
 		if err != nil {
@@ -782,10 +764,7 @@ func (c *baseComputer) fetchModuleFromRegistry(
 		}
 
 		patchContentsEntry, err := model_filesystem.NewFileContentsEntryFromProto(
-			model_core.Message[*model_filesystem_pb.FileContents]{
-				Message:            patchPropertiesValue.Message.Exists.Contents,
-				OutgoingReferences: patchPropertiesValue.OutgoingReferences,
-			},
+			model_core.NewNestedMessage(patchPropertiesValue, patchPropertiesValue.Message.Exists.Contents),
 			c.buildSpecificationReference.GetReferenceFormat(),
 		)
 		if err != nil {
@@ -1316,10 +1295,7 @@ func (mrc *moduleOrRepositoryContext) doDownload(thread *starlark.Thread, b *sta
 		&changeTrackingFile{
 			isExecutable: executable,
 			contents: unmodifiedFileContents{
-				contents: model_core.Message[*model_filesystem_pb.FileContents]{
-					Message:            fileContentsValue.Message.Exists.Contents,
-					OutgoingReferences: fileContentsValue.OutgoingReferences,
-				},
+				contents: model_core.NewNestedMessage(fileContentsValue, fileContentsValue.Message.Exists.Contents),
 			},
 		},
 	); err != nil {
@@ -1417,10 +1393,7 @@ func (mrc *moduleOrRepositoryContext) doDownloadAndExtract(thread *starlark.Thre
 
 	// Determine which directory to place inside the file system.
 	archiveRootDirectory := changeTrackingDirectory{
-		currentReference: model_core.Message[*model_filesystem_pb.DirectoryReference]{
-			Message:            archiveContentsValue.Message.Exists,
-			OutgoingReferences: archiveContentsValue.OutgoingReferences,
-		},
+		currentReference: model_core.NewNestedMessage(archiveContentsValue, archiveContentsValue.Message.Exists),
 	}
 	rootDirectoryResolver := changeTrackingDirectoryResolver{
 		loadOptions:      mrc.directoryLoadOptions,
@@ -1638,10 +1611,7 @@ func (mrc *moduleOrRepositoryContext) doExecute(thread *starlark.Thread, b *star
 	}
 
 	stdoutEntry, err := model_filesystem.NewFileContentsEntryFromProto(
-		model_core.Message[*model_filesystem_pb.FileContents]{
-			Message:            outputs.Message.Stdout,
-			OutgoingReferences: outputs.OutgoingReferences,
-		},
+		model_core.NewNestedMessage(outputs, outputs.Message.Stdout),
 		referenceFormat,
 	)
 	if err != nil {
@@ -1653,10 +1623,7 @@ func (mrc *moduleOrRepositoryContext) doExecute(thread *starlark.Thread, b *star
 	}
 
 	stderrEntry, err := model_filesystem.NewFileContentsEntryFromProto(
-		model_core.Message[*model_filesystem_pb.FileContents]{
-			Message:            outputs.Message.Stderr,
-			OutgoingReferences: outputs.OutgoingReferences,
-		},
+		model_core.NewNestedMessage(outputs, outputs.Message.Stderr),
 		referenceFormat,
 	)
 	if err != nil {
@@ -1672,10 +1639,7 @@ func (mrc *moduleOrRepositoryContext) doExecute(thread *starlark.Thread, b *star
 	// input root.
 	var outputRootDirectory changeTrackingDirectory
 	if err := outputRootDirectory.setContents(
-		model_core.Message[*model_filesystem_pb.Directory]{
-			Message:            outputs.Message.OutputRoot,
-			OutgoingReferences: outputs.OutgoingReferences,
-		},
+		model_core.NewNestedMessage(outputs, outputs.Message.OutputRoot),
 		mrc.directoryLoadOptions,
 	); err != nil {
 		return nil, fmt.Errorf("failed load output root: %w", err)
@@ -1955,10 +1919,7 @@ func (mrc *moduleOrRepositoryContext) doRead(thread *starlark.Thread, b *starlar
 	}
 
 	stdoutEntry, err := model_filesystem.NewFileContentsEntryFromProto(
-		model_core.Message[*model_filesystem_pb.FileContents]{
-			Message:            outputs.Message.Stdout,
-			OutgoingReferences: outputs.OutgoingReferences,
-		},
+		model_core.NewNestedMessage(outputs, outputs.Message.Stdout),
 		referenceFormat,
 	)
 	if err != nil {
@@ -2110,10 +2071,7 @@ func (mrc *moduleOrRepositoryContext) doWhich(thread *starlark.Thread, b *starla
 		}
 
 		stdoutEntry, err := model_filesystem.NewFileContentsEntryFromProto(
-			model_core.Message[*model_filesystem_pb.FileContents]{
-				Message:            outputs.Message.Stdout,
-				OutgoingReferences: outputs.OutgoingReferences,
-			},
+			model_core.NewNestedMessage(outputs, outputs.Message.Stdout),
 			referenceFormat,
 		)
 		if err != nil {
@@ -2325,10 +2283,7 @@ func (ui *externalRepoAddingPathUnpackerInto) maybeAddExternalRepo(bp *model_sta
 				if rootDirectoryReference == nil {
 					return errors.New("root directory reference is not set")
 				}
-				repoDirectory.currentReference = model_core.Message[*model_filesystem_pb.DirectoryReference]{
-					Message:            rootDirectoryReference,
-					OutgoingReferences: repo.OutgoingReferences,
-				}
+				repoDirectory.currentReference = model_core.NewNestedMessage(repo, rootDirectoryReference)
 			}
 		}
 	}
@@ -2542,10 +2497,7 @@ func (c *baseComputer) fetchModuleExtensionRepo(ctx context.Context, canonicalRe
 		ctx,
 		canonicalRepo,
 		apparentRepo,
-		model_core.Message[*model_starlark_pb.Repo_Definition]{
-			Message:            repo,
-			OutgoingReferences: repoValue.OutgoingReferences,
-		},
+		model_core.NewNestedMessage(repoValue, repo),
 		e,
 	)
 }
@@ -2582,10 +2534,7 @@ func (c *baseComputer) fetchRepo(ctx context.Context, canonicalRepo label.Canoni
 				c.getValueObjectEncoder(),
 				model_parser.NewMessageListObjectParser[object.LocalReference, model_starlark_pb.List_Element](),
 			),
-			model_core.Message[*model_starlark_pb.Struct_Fields]{
-				Message:            repo.Message.AttrValues,
-				OutgoingReferences: repo.OutgoingReferences,
-			},
+			model_core.NewNestedMessage(repo, repo.Message.AttrValues),
 			&errIter,
 		),
 	)
@@ -3104,10 +3053,7 @@ func (c *baseComputer) ComputeRepoValue(ctx context.Context, key *model_analysis
 			); ok {
 				// Found matching module.
 				rootDirectoryReference := model_core.NewPatchedMessageFromExisting(
-					model_core.Message[*model_filesystem_pb.DirectoryReference]{
-						Message:            modules[i].RootDirectoryReference,
-						OutgoingReferences: buildSpecification.OutgoingReferences,
-					},
+					model_core.NewNestedMessage(buildSpecification, modules[i].RootDirectoryReference),
 					func(index int) dag.ObjectContentsWalker {
 						return dag.ExistingObjectContentsWalker
 					},
@@ -3140,10 +3086,7 @@ func (c *baseComputer) ComputeRepoValue(ctx context.Context, key *model_analysis
 						ctx,
 						canonicalRepo,
 						canonicalRepo.GetModuleInstance().GetModule().ToApparentRepo(),
-						model_core.Message[*model_starlark_pb.Repo_Definition]{
-							Message:            override.RepositoryRule,
-							OutgoingReferences: remoteOverridesValue.OutgoingReferences,
-						},
+						model_core.NewNestedMessage(remoteOverridesValue, override.RepositoryRule),
 						e,
 					)
 				case *model_analysis_pb.ModuleOverride_SingleVersion_:

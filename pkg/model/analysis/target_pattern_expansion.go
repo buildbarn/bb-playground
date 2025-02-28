@@ -55,10 +55,7 @@ func (c *baseComputer) expandCanonicalTargetPattern(
 				c.getValueObjectEncoder(),
 				model_parser.NewMessageListObjectParser[object.LocalReference, model_analysis_pb.TargetPatternExpansion_Value_TargetLabel](),
 			),
-			model_core.Message[[]*model_analysis_pb.TargetPatternExpansion_Value_TargetLabel]{
-				Message:            targetPatternExpansion.Message.TargetLabels,
-				OutgoingReferences: targetPatternExpansion.OutgoingReferences,
-			},
+			model_core.NewNestedMessage(targetPatternExpansion, targetPatternExpansion.Message.TargetLabels),
 			func(entry model_core.Message[*model_analysis_pb.TargetPatternExpansion_Value_TargetLabel]) (*model_core_pb.Reference, error) {
 				if level, ok := entry.Message.Level.(*model_analysis_pb.TargetPatternExpansion_Value_TargetLabel_Parent_); ok {
 					return level.Parent.Reference, nil
@@ -104,10 +101,7 @@ func (c *baseComputer) ComputeTargetPatternExpansionValue(ctx context.Context, k
 
 		definition, err := c.lookupTargetDefinitionInTargetList(
 			ctx,
-			model_core.Message[[]*model_analysis_pb.Package_Value_Target]{
-				Message:            packageValue.Message.Targets,
-				OutgoingReferences: packageValue.OutgoingReferences,
-			},
+			model_core.NewNestedMessage(packageValue, packageValue.Message.Targets),
 			initialTarget.GetTargetName(),
 		)
 		if err != nil {
@@ -157,10 +151,7 @@ func (c *baseComputer) ComputeTargetPatternExpansionValue(ctx context.Context, k
 				c.getValueObjectEncoder(),
 				model_parser.NewMessageListObjectParser[object.LocalReference, model_analysis_pb.Package_Value_Target](),
 			),
-			model_core.Message[[]*model_analysis_pb.Package_Value_Target]{
-				Message:            packageValue.Message.Targets,
-				OutgoingReferences: packageValue.OutgoingReferences,
-			},
+			model_core.NewNestedMessage(packageValue, packageValue.Message.Targets),
 			func(entry model_core.Message[*model_analysis_pb.Package_Value_Target]) (*model_core_pb.Reference, error) {
 				if level, ok := entry.Message.Level.(*model_analysis_pb.Package_Value_Target_Parent_); ok {
 					return level.Parent.Reference, nil

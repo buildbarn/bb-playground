@@ -8,7 +8,6 @@ import (
 	"github.com/buildbarn/bonanza/pkg/evaluation"
 	model_core "github.com/buildbarn/bonanza/pkg/model/core"
 	model_analysis_pb "github.com/buildbarn/bonanza/pkg/proto/model/analysis"
-	model_core_pb "github.com/buildbarn/bonanza/pkg/proto/model/core"
 	"github.com/buildbarn/bonanza/pkg/storage/dag"
 )
 
@@ -60,10 +59,7 @@ func (c *baseComputer) ComputeResolvedToolchainsValue(ctx context.Context, key m
 	compatibleToolchainsByType := make([][]*model_analysis_pb.RegisteredToolchain, 0, len(key.Message.Toolchains))
 	for _, toolchain := range key.Message.Toolchains {
 		configurationReference := model_core.NewPatchedMessageFromExisting(
-			model_core.Message[*model_core_pb.Reference]{
-				Message:            key.Message.ConfigurationReference,
-				OutgoingReferences: key.OutgoingReferences,
-			},
+			model_core.NewNestedMessage(key, key.Message.ConfigurationReference),
 			func(index int) dag.ObjectContentsWalker {
 				return dag.ExistingObjectContentsWalker
 			},

@@ -58,10 +58,7 @@ func (r *reposFilePropertiesResolver) OnDirectory(name path.Component) (path.Got
 		}
 
 		directoryInfo, err := model_filesystem.NewDirectoryInfoFromDirectoryReference(
-			model_core.Message[*model_filesystem_pb.DirectoryReference]{
-				Message:            repoValue.Message.RootDirectoryReference,
-				OutgoingReferences: repoValue.OutgoingReferences,
-			},
+			model_core.NewNestedMessage(repoValue, repoValue.Message.RootDirectoryReference),
 		)
 		if err != nil {
 			return nil, fmt.Errorf("failed to create directory info for canonical repo %#v: %w", name.String())
@@ -142,10 +139,7 @@ func (r *reposFilePropertiesResolver) OnTerminal(name path.Component) (*path.Got
 		if properties == nil {
 			return nil, errors.New("path resolves to file that does not have any properties")
 		}
-		r.fileProperties = model_core.Message[*model_filesystem_pb.FileProperties]{
-			Message:            properties,
-			OutgoingReferences: d.Leaves.OutgoingReferences,
-		}
+		r.fileProperties = model_core.NewNestedMessage(d.Leaves, properties)
 		r.gotTerminal = true
 		return nil, nil
 	}

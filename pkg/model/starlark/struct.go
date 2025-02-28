@@ -358,10 +358,7 @@ func AllStructFields(
 	allLeaves := btree.AllLeaves(
 		ctx,
 		reader,
-		model_core.Message[[]*model_starlark_pb.List_Element]{
-			Message:            structFields.Message.Values,
-			OutgoingReferences: structFields.OutgoingReferences,
-		},
+		model_core.NewNestedMessage(structFields, structFields.Message.Values),
 		func(element model_core.Message[*model_starlark_pb.List_Element]) (*model_core_pb.Reference, error) {
 			if level, ok := element.Message.Level.(*model_starlark_pb.List_Element_Parent_); ok {
 				return level.Parent.Reference, nil
@@ -387,10 +384,7 @@ func AllStructFields(
 			key := keys[0]
 			keys = keys[1:]
 
-			return yield(key, model_core.Message[*model_starlark_pb.Value]{
-				Message:            leaf.Leaf,
-				OutgoingReferences: entry.OutgoingReferences,
-			})
+			return yield(key, model_core.NewNestedMessage(entry, leaf.Leaf))
 		})
 	}
 }
@@ -415,10 +409,7 @@ func GetStructFieldValue(
 	}
 
 	contiguousLength := len(keys)
-	list := model_core.Message[[]*model_starlark_pb.List_Element]{
-		Message:            structFields.Message.Values,
-		OutgoingReferences: structFields.OutgoingReferences,
-	}
+	list := model_core.NewNestedMessage(structFields, structFields.Message.Values)
 	for {
 		// List elements may never refer to empty nested lists,
 		// meaning that if the length of a list is equal to the
@@ -436,10 +427,7 @@ func GetStructFieldValue(
 				panic("TODO")
 			case *model_starlark_pb.List_Element_Leaf:
 				if index == 0 {
-					return model_core.Message[*model_starlark_pb.Value]{
-						Message:            level.Leaf,
-						OutgoingReferences: list.OutgoingReferences,
-					}, nil
+					return model_core.NewNestedMessage(list, level.Leaf), nil
 				}
 				index--
 			}

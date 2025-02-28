@@ -61,10 +61,7 @@ func AllListLeafElementsSkippingDuplicateParents(
 		allLeaves(func(entry model_core.Message[*model_starlark_pb.List_Element]) bool {
 			switch level := entry.Message.Level.(type) {
 			case *model_starlark_pb.List_Element_Leaf:
-				return yield(model_core.Message[*model_starlark_pb.Value]{
-					Message:            level.Leaf,
-					OutgoingReferences: entry.OutgoingReferences,
-				})
+				return yield(model_core.NewNestedMessage(entry, level.Leaf))
 			case *model_starlark_pb.List_Element_Parent_:
 				// Parent that was traversed previously,
 				// which needs to be skipped.

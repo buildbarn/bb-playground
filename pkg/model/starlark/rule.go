@@ -623,10 +623,7 @@ func (rd *protoRuleDefinition) GetInitializer(thread *starlark.Thread) (*NamedFu
 	}
 	f := NewNamedFunction(
 		NewProtoNamedFunctionDefinition(
-			model_core.Message[*model_starlark_pb.Function]{
-				Message:            rd.message.Message.Initializer,
-				OutgoingReferences: rd.message.OutgoingReferences,
-			},
+			model_core.NewNestedMessage(rd.message, rd.message.Message.Initializer),
 		),
 	)
 	return &f, nil
@@ -673,10 +670,7 @@ func (rd *reloadingRuleDefinition) getBase(thread *starlark.Thread) (RuleDefinit
 		return nil, fmt.Errorf("rule %#v does not have a definition", rd.identifier.String())
 	}
 
-	base := NewProtoRuleDefinition(model_core.Message[*model_starlark_pb.Rule_Definition]{
-		Message:            ruleKind.Definition,
-		OutgoingReferences: value.OutgoingReferences,
-	})
+	base := NewProtoRuleDefinition(model_core.NewNestedMessage(value, ruleKind.Definition))
 	rd.base.Store(&base)
 	return base, nil
 }

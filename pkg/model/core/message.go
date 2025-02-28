@@ -20,6 +20,15 @@ func NewSimpleMessage[TMessage any](v TMessage) Message[TMessage] {
 	}
 }
 
+// NewNestedMessage is a helper function for creating instances of
+// Message that refer to a message that was mebedded into another one.
+func NewNestedMessage[T1, T2 any](parent Message[T1], child T2) Message[T2] {
+	return Message[T2]{
+		Message:            child,
+		OutgoingReferences: parent.OutgoingReferences,
+	}
+}
+
 func (m Message[T]) IsSet() bool {
 	return m.OutgoingReferences != nil
 }

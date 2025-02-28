@@ -100,10 +100,7 @@ func (c *baseComputer) constraintValuesToConstraints(ctx context.Context, e cons
 				for key, value := range model_starlark.AllStructFields(
 					ctx,
 					listReader,
-					model_core.Message[*model_starlark_pb.Struct_Fields]{
-						Message:            constraintSettingInfoProvider.Struct.Fields,
-						OutgoingReferences: value.OutgoingReferences,
-					},
+					model_core.NewNestedMessage(value, constraintSettingInfoProvider.Struct.Fields),
 					&errIter,
 				) {
 					switch key {
@@ -408,17 +405,11 @@ func (c *baseComputer) ComputeConfiguredTargetValue(ctx context.Context, key mod
 		if !ok {
 			return PatchedConfiguredTargetValue{}, fmt.Errorf("%#v is not a rule definition", ruleIdentifier.String())
 		}
-		ruleDefinition := model_core.Message[*model_starlark_pb.Rule_Definition]{
-			Message:            d.Definition,
-			OutgoingReferences: ruleValue.OutgoingReferences,
-		}
+		ruleDefinition := model_core.NewNestedMessage(ruleValue, d.Definition)
 
 		// Determine the configuration to use. If an incoming
 		// edge transition is specified, apply it.
-		configurationReference := model_core.Message[*model_core_pb.Reference]{
-			Message:            key.Message.ConfigurationReference,
-			OutgoingReferences: key.OutgoingReferences,
-		}
+		configurationReference := model_core.NewNestedMessage(key, key.Message.ConfigurationReference)
 		if cfgTransitionIdentifier := ruleDefinition.Message.CfgTransitionIdentifier; cfgTransitionIdentifier != "" {
 			patchedConfigurationReference := model_core.NewPatchedMessageFromExisting(
 				configurationReference,
@@ -445,10 +436,7 @@ func (c *baseComputer) ComputeConfiguredTargetValue(ctx context.Context, key mod
 				if l := len(result.Success.Entries); l != 1 {
 					return PatchedConfiguredTargetValue{}, fmt.Errorf("incoming edge transition %#v used by rule %#v is a 1:%d transition, while a 1:1 transition was expected", cfgTransitionIdentifier, ruleIdentifier.String(), l)
 				}
-				configurationReference = model_core.Message[*model_core_pb.Reference]{
-					Message:            result.Success.Entries[0].OutputConfigurationReference,
-					OutgoingReferences: incomingEdgeTransitionValue.OutgoingReferences,
-				}
+				configurationReference = model_core.NewNestedMessage(incomingEdgeTransitionValue, result.Success.Entries[0].OutputConfigurationReference)
 			default:
 				return PatchedConfiguredTargetValue{}, fmt.Errorf("incoming edge transition %#v used by rule %#v is not a 1:1 transition", cfgTransitionIdentifier, ruleIdentifier.String())
 			}
@@ -463,17 +451,14 @@ func (c *baseComputer) ComputeConfiguredTargetValue(ctx context.Context, key mod
 			targetLabel:            targetLabel,
 			configurationReference: configurationReference,
 			ruleDefinition:         ruleDefinition,
-			ruleTarget: model_core.Message[*model_starlark_pb.RuleTarget]{
-				Message:            ruleTarget,
-				OutgoingReferences: targetValue.OutgoingReferences,
-			},
-			attrs:         make([]starlark.Value, len(ruleDefinition.Message.Attrs)),
-			executables:   make([]starlark.Value, len(ruleDefinition.Message.Attrs)),
-			singleFiles:   make([]starlark.Value, len(ruleDefinition.Message.Attrs)),
-			multipleFiles: make([]starlark.Value, len(ruleDefinition.Message.Attrs)),
-			outputs:       make([]starlark.Value, len(ruleDefinition.Message.Attrs)),
-			execGroups:    make([]*ruleContextExecGroupState, len(ruleDefinition.Message.ExecGroups)),
-			fragments:     map[string]*model_starlark.Struct{},
+			ruleTarget:             model_core.NewNestedMessage(targetValue, ruleTarget),
+			attrs:                  make([]starlark.Value, len(ruleDefinition.Message.Attrs)),
+			executables:            make([]starlark.Value, len(ruleDefinition.Message.Attrs)),
+			singleFiles:            make([]starlark.Value, len(ruleDefinition.Message.Attrs)),
+			multipleFiles:          make([]starlark.Value, len(ruleDefinition.Message.Attrs)),
+			outputs:                make([]starlark.Value, len(ruleDefinition.Message.Attrs)),
+			execGroups:             make([]*ruleContextExecGroupState, len(ruleDefinition.Message.ExecGroups)),
+			fragments:              map[string]*model_starlark.Struct{},
 		}
 		thread.SetLocal(model_starlark.CurrentCtxKey, rc)
 
@@ -502,10 +487,7 @@ func (c *baseComputer) ComputeConfiguredTargetValue(ctx context.Context, key mod
 			if !ok {
 				return nil, fmt.Errorf("%#v is not a subrule definition", subruleIdentifierStr)
 			}
-			subruleDefinition := model_core.Message[*model_starlark_pb.Subrule_Definition]{
-				Message:            d.Definition,
-				OutgoingReferences: subruleValue.OutgoingReferences,
-			}
+			subruleDefinition := model_core.NewNestedMessage(subruleValue, d.Definition)
 
 			missingDependencies := false
 
@@ -528,10 +510,7 @@ func (c *baseComputer) ComputeConfiguredTargetValue(ctx context.Context, key mod
 				value, err := rc.configureAttr(
 					thread,
 					namedAttr,
-					model_core.Message[[]*model_starlark_pb.Value]{
-						Message:            []*model_starlark_pb.Value{defaultValue},
-						OutgoingReferences: rc.ruleDefinition.OutgoingReferences,
-					},
+					model_core.NewNestedMessage(rc.ruleDefinition, []*model_starlark_pb.Value{defaultValue}),
 					rc.ruleIdentifier.GetCanonicalLabel().GetCanonicalPackage(),
 				)
 				if err != nil {
@@ -558,10 +537,7 @@ func (c *baseComputer) ComputeConfiguredTargetValue(ctx context.Context, key mod
 				thread,
 				model_starlark.NewNamedFunction(
 					model_starlark.NewProtoNamedFunctionDefinition(
-						model_core.Message[*model_starlark_pb.Function]{
-							Message:            subruleDefinition.Message.Implementation,
-							OutgoingReferences: subruleDefinition.OutgoingReferences,
-						},
+						model_core.NewNestedMessage(subruleDefinition, subruleDefinition.Message.Implementation),
 					),
 				),
 				implementationArgs,
@@ -573,10 +549,7 @@ func (c *baseComputer) ComputeConfiguredTargetValue(ctx context.Context, key mod
 			thread,
 			model_starlark.NewNamedFunction(
 				model_starlark.NewProtoNamedFunctionDefinition(
-					model_core.Message[*model_starlark_pb.Function]{
-						Message:            ruleDefinition.Message.Implementation,
-						OutgoingReferences: ruleDefinition.OutgoingReferences,
-					},
+					model_core.NewNestedMessage(ruleDefinition, ruleDefinition.Message.Implementation),
 				),
 			),
 			/* args = */ starlark.Tuple{rc},
@@ -763,10 +736,7 @@ func (rc *ruleContext) Attr(thread *starlark.Thread, name string) (starlark.Valu
 					rc.computer.getValueObjectEncoder(),
 					model_parser.NewMessageListObjectParser[object.LocalReference, model_analysis_pb.Configuration_BuildSettingOverride](),
 				),
-				model_core.Message[[]*model_analysis_pb.Configuration_BuildSettingOverride]{
-					Message:            configuration.Message.BuildSettingOverrides,
-					OutgoingReferences: configuration.OutgoingReferences,
-				},
+				model_core.NewNestedMessage(configuration, configuration.Message.BuildSettingOverrides),
 				func(entry *model_analysis_pb.Configuration_BuildSettingOverride) (int, *model_core_pb.Reference) {
 					switch level := entry.Level.(type) {
 					case *model_analysis_pb.Configuration_BuildSettingOverride_Leaf_:
@@ -788,15 +758,9 @@ func (rc *ruleContext) Attr(thread *starlark.Thread, name string) (starlark.Valu
 				if !ok {
 					return nil, errors.New("build setting override is not a valid leaf")
 				}
-				encodedValue = model_core.Message[*model_starlark_pb.Value]{
-					Message:            overrideLeaf.Leaf.Value,
-					OutgoingReferences: override.OutgoingReferences,
-				}
+				encodedValue = model_core.NewNestedMessage(override, overrideLeaf.Leaf.Value)
 			} else {
-				encodedValue = model_core.Message[*model_starlark_pb.Value]{
-					Message:            rc.ruleTarget.Message.BuildSettingDefault,
-					OutgoingReferences: rc.ruleTarget.OutgoingReferences,
-				}
+				encodedValue = model_core.NewNestedMessage(rc.ruleTarget, rc.ruleTarget.Message.BuildSettingDefault)
 			}
 
 			value, err := model_starlark.DecodeValue(
@@ -981,10 +945,7 @@ func (rc *ruleContext) configureAttr(thread *starlark.Thread, namedAttr *model_s
 			case *model_analysis_pb.UserDefinedTransition_Value_Success_:
 				configurationReferences = make([]model_core.Message[*model_core_pb.Reference], 0, len(result.Success.Entries))
 				for _, entry := range result.Success.Entries {
-					configurationReferences = append(configurationReferences, model_core.Message[*model_core_pb.Reference]{
-						Message:            entry.OutputConfigurationReference,
-						OutgoingReferences: transitionValue.OutgoingReferences,
-					})
+					configurationReferences = append(configurationReferences, model_core.NewNestedMessage(transitionValue, entry.OutputConfigurationReference))
 				}
 				mayHaveMultipleConfigurations = true
 			default:
@@ -999,10 +960,7 @@ func (rc *ruleContext) configureAttr(thread *starlark.Thread, namedAttr *model_s
 	if len(configurationReferences) == 0 {
 		for _, valuePart := range valueParts.Message {
 			decodedPart, err := model_starlark.DecodeValue(
-				model_core.Message[*model_starlark_pb.Value]{
-					Message:            valuePart,
-					OutgoingReferences: valueParts.OutgoingReferences,
-				},
+				model_core.NewNestedMessage(valueParts, valuePart),
 				/* currentIdentifier = */ nil,
 				rc.computer.getValueDecodingOptions(rc.context, func(resolvedLabel label.ResolvedLabel) (starlark.Value, error) {
 					// We should leave the target
@@ -1078,10 +1036,7 @@ func (rc *ruleContext) configureAttr(thread *starlark.Thread, namedAttr *model_s
 
 					return model_starlark.NewTargetReference(
 						canonicalLabel.AsResolved(),
-						model_core.Message[[]*model_starlark_pb.Struct]{
-							Message:            configuredTarget.Message.ProviderInstances,
-							OutgoingReferences: configuredTarget.OutgoingReferences,
-						},
+						model_core.NewNestedMessage(configuredTarget, configuredTarget.Message.ProviderInstances),
 					), nil
 				} else {
 					return starlark.None, nil
@@ -1089,10 +1044,7 @@ func (rc *ruleContext) configureAttr(thread *starlark.Thread, namedAttr *model_s
 			})
 			for _, valuePart := range valueParts.Message {
 				decodedPart, err := model_starlark.DecodeValue(
-					model_core.Message[*model_starlark_pb.Value]{
-						Message:            valuePart,
-						OutgoingReferences: valueParts.OutgoingReferences,
-					},
+					model_core.NewNestedMessage(valueParts, valuePart),
 					/* currentIdentifier = */ nil,
 					valueDecodingOptions,
 				)
@@ -1245,10 +1197,9 @@ func (rc *ruleContext) getAttrValueParts(namedAttr *model_starlark_pb.NamedAttr)
 			}
 		}
 		if gotProperValue {
-			return model_core.Message[[]*model_starlark_pb.Value]{
-				Message:            valueParts,
-				OutgoingReferences: rc.ruleTarget.OutgoingReferences,
-			}, rc.targetLabel.GetCanonicalPackage(), nil
+			return model_core.NewNestedMessage(rc.ruleTarget, valueParts),
+				rc.targetLabel.GetCanonicalPackage(),
+				nil
 		}
 	}
 
@@ -1256,10 +1207,9 @@ func (rc *ruleContext) getAttrValueParts(namedAttr *model_starlark_pb.NamedAttr)
 	if attr.Default == nil {
 		return model_core.Message[[]*model_starlark_pb.Value]{}, badCanonicalPackage, fmt.Errorf("missing value for mandatory attr %#v", namedAttr.Name)
 	}
-	return model_core.Message[[]*model_starlark_pb.Value]{
-		Message:            []*model_starlark_pb.Value{attr.Default},
-		OutgoingReferences: rc.ruleDefinition.OutgoingReferences,
-	}, rc.ruleIdentifier.GetCanonicalLabel().GetCanonicalPackage(), nil
+	return model_core.NewNestedMessage(rc.ruleDefinition, []*model_starlark_pb.Value{attr.Default}),
+		rc.ruleIdentifier.GetCanonicalLabel().GetCanonicalPackage(),
+		nil
 }
 
 func (rc *ruleContext) getPatchedConfigurationReference() model_core.PatchedMessage[*model_core_pb.Reference, dag.ObjectContentsWalker] {
@@ -1774,10 +1724,7 @@ func (rce *ruleContextExecutable) Attr(thread *starlark.Thread, name string) (st
 			encodedExecutable, err := model_starlark.GetStructFieldValue(
 				rc.context,
 				listReader,
-				model_core.Message[*model_starlark_pb.Struct_Fields]{
-					Message:            filesToRunStruct.Struct.Fields,
-					OutgoingReferences: filesToRun.OutgoingReferences,
-				},
+				model_core.NewNestedMessage(filesToRun, filesToRunStruct.Struct.Fields),
 				"executable",
 			)
 			if err != nil {
@@ -1915,10 +1862,7 @@ func (rcf *ruleContextFile) Attr(thread *starlark.Thread, name string) (starlark
 			}
 
 			file, err = model_starlark.DecodeValue(
-				model_core.Message[*model_starlark_pb.Value]{
-					Message:            element.Leaf,
-					OutgoingReferences: files.OutgoingReferences,
-				},
+				model_core.NewNestedMessage(files, element.Leaf),
 				/* currentIdentifier = */ nil,
 				rc.computer.getValueDecodingOptions(rc.context, func(resolvedLabel label.ResolvedLabel) (starlark.Value, error) {
 					return model_starlark.NewLabel(resolvedLabel), nil
@@ -2012,19 +1956,13 @@ func (rcf *ruleContextFiles) Attr(thread *starlark.Thread, name string) (starlar
 		for _, valuePart := range valueParts.Message {
 			var labelList model_core.Message[[]*model_starlark_pb.List_Element]
 			if listValue, ok := valuePart.Kind.(*model_starlark_pb.Value_List); ok {
-				labelList = model_core.Message[[]*model_starlark_pb.List_Element]{
-					Message:            listValue.List.Elements,
-					OutgoingReferences: valueParts.OutgoingReferences,
-				}
+				labelList = model_core.NewNestedMessage(valueParts, listValue.List.Elements)
 			} else {
-				labelList = model_core.Message[[]*model_starlark_pb.List_Element]{
-					Message: []*model_starlark_pb.List_Element{{
-						Level: &model_starlark_pb.List_Element_Leaf{
-							Leaf: valuePart,
-						},
-					}},
-					OutgoingReferences: valueParts.OutgoingReferences,
-				}
+				labelList = model_core.NewNestedMessage(valueParts, []*model_starlark_pb.List_Element{{
+					Level: &model_starlark_pb.List_Element_Leaf{
+						Leaf: valuePart,
+					},
+				}})
 			}
 
 			var errIter error
@@ -2077,13 +2015,7 @@ func (rcf *ruleContextFiles) Attr(thread *starlark.Thread, name string) (starlar
 					return nil, fmt.Errorf("field \"files\" of DefaultInfo provider of target with label %#v is not a depset", visibleTarget.Message.Label)
 				}
 				for _, element := range valueDepset.Depset.Elements {
-					filesDepsetElements = append(
-						filesDepsetElements,
-						model_core.Message[*model_starlark_pb.List_Element]{
-							Message:            element,
-							OutgoingReferences: files.OutgoingReferences,
-						},
-					)
+					filesDepsetElements = append(filesDepsetElements, model_core.NewNestedMessage(files, element))
 				}
 			}
 			if errIter != nil {
@@ -2164,15 +2096,12 @@ func (rcf *ruleContextFragments) Attr(thread *starlark.Thread, name string) (sta
 			return nil, err
 		}
 		fragmentInfo, err = model_starlark.DecodeStruct(
-			model_core.Message[*model_starlark_pb.Struct]{
-				Message: &model_starlark_pb.Struct{
-					ProviderInstanceProperties: &model_starlark_pb.Provider_InstanceProperties{
-						ProviderIdentifier: fragmentInfoProviderIdentifier.String(),
-					},
-					Fields: encodedFragmentInfo.Message,
+			model_core.NewNestedMessage(encodedFragmentInfo, &model_starlark_pb.Struct{
+				ProviderInstanceProperties: &model_starlark_pb.Provider_InstanceProperties{
+					ProviderIdentifier: fragmentInfoProviderIdentifier.String(),
 				},
-				OutgoingReferences: encodedFragmentInfo.OutgoingReferences,
-			},
+				Fields: encodedFragmentInfo.Message,
+			}),
 			rc.computer.getValueDecodingOptions(rc.context, func(resolvedLabel label.ResolvedLabel) (starlark.Value, error) {
 				return model_starlark.NewLabel(resolvedLabel), nil
 			}),
@@ -2394,15 +2323,12 @@ func (tc *toolchainContext) Get(thread *starlark.Thread, v starlark.Value) (star
 			}
 
 			toolchainInfo, err = model_starlark.DecodeStruct(
-				model_core.Message[*model_starlark_pb.Struct]{
-					Message: &model_starlark_pb.Struct{
-						ProviderInstanceProperties: &model_starlark_pb.Provider_InstanceProperties{
-							ProviderIdentifier: toolchainInfoProviderIdentifier.String(),
-						},
-						Fields: encodedToolchainInfo.Message,
+				model_core.NewNestedMessage(encodedToolchainInfo, &model_starlark_pb.Struct{
+					ProviderInstanceProperties: &model_starlark_pb.Provider_InstanceProperties{
+						ProviderIdentifier: toolchainInfoProviderIdentifier.String(),
 					},
-					OutgoingReferences: encodedToolchainInfo.OutgoingReferences,
-				},
+					Fields: encodedToolchainInfo.Message,
+				}),
 				rc.computer.getValueDecodingOptions(rc.context, func(resolvedLabel label.ResolvedLabel) (starlark.Value, error) {
 					return model_starlark.NewLabel(resolvedLabel), nil
 				}),
@@ -2449,10 +2375,7 @@ func getProviderFromConfiguredTarget(e getProviderFromConfiguredTargetEnvironmen
 			return strings.Compare(providerIdentifierStr, providerInstances[i].ProviderInstanceProperties.GetProviderIdentifier())
 		},
 	); ok {
-		return model_core.Message[*model_starlark_pb.Struct_Fields]{
-			Message:            providerInstances[providerIndex].Fields,
-			OutgoingReferences: configuredTargetValue.OutgoingReferences,
-		}, nil
+		return model_core.NewNestedMessage(configuredTargetValue, providerInstances[providerIndex].Fields), nil
 	}
 	return model_core.Message[*model_starlark_pb.Struct_Fields]{}, fmt.Errorf("target did not yield provider %#v", providerIdentifierStr)
 }

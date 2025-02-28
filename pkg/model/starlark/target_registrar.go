@@ -45,10 +45,7 @@ func (tr *TargetRegistrar) getVisibilityPackageGroup(visibility []pg_label.Resol
 	// Inherit visibility from repo() in the REPO.bazel file
 	// or package() in the BUILD.bazel file.
 	return model_core.NewPatchedMessageFromExisting(
-		model_core.Message[*model_starlark_pb.PackageGroup]{
-			Message:            tr.defaultInheritableAttrs.Message.Visibility,
-			OutgoingReferences: tr.defaultInheritableAttrs.OutgoingReferences,
-		},
+		model_core.NewNestedMessage(tr.defaultInheritableAttrs, tr.defaultInheritableAttrs.Message.Visibility),
 		tr.createDefaultInheritableAttrsMetadata,
 	), nil
 }

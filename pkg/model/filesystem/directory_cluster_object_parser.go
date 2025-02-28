@@ -133,10 +133,7 @@ func (p *directoryClusterObjectParser[TReference]) addDirectoriesToCluster(ctx c
 		(*c)[directoryIndex].Leaves = leavesObject
 		externalLeavesTotalSizeBytes += externalLeavesSizeBytes
 	case *model_filesystem_pb.Directory_LeavesInline:
-		(*c)[directoryIndex].Leaves = model_core.Message[*model_filesystem_pb.Leaves]{
-			Message:            leaves.LeavesInline,
-			OutgoingReferences: d.OutgoingReferences,
-		}
+		(*c)[directoryIndex].Leaves = model_core.NewNestedMessage(d, leaves.LeavesInline)
 	default:
 		return 0, 0, status.Errorf(codes.InvalidArgument, "Directory %#v has no leaves", dTrace.GetUNIXString())
 	}
@@ -150,12 +147,7 @@ func (p *directoryClusterObjectParser[TReference]) addDirectoriesToCluster(ctx c
 		case *model_filesystem_pb.DirectoryNode_ContentsExternal:
 			// Subdirectory is stored in another object.
 			// Extract its reference.
-			directoryInfo, err := NewDirectoryInfoFromDirectoryReference(
-				model_core.Message[*model_filesystem_pb.DirectoryReference]{
-					Message:            contents.ContentsExternal,
-					OutgoingReferences: d.OutgoingReferences,
-				},
-			)
+			directoryInfo, err := NewDirectoryInfoFromDirectoryReference(model_core.NewNestedMessage(d, contents.ContentsExternal))
 			if err != nil {
 				return 0, 0, util.StatusWrapf(err, "Failed to create info for directory %#v", dTrace.Append(name).GetUNIXString())
 			}
@@ -173,10 +165,7 @@ func (p *directoryClusterObjectParser[TReference]) addDirectoriesToCluster(ctx c
 			childDirectoryIndex, childExternalLeavesTotalSizeBytes, err := p.addDirectoriesToCluster(
 				ctx,
 				c,
-				model_core.Message[*model_filesystem_pb.Directory]{
-					Message:            contents.ContentsInline,
-					OutgoingReferences: d.OutgoingReferences,
-				},
+				model_core.NewNestedMessage(d, contents.ContentsInline),
 				reference,
 				dTrace.Append(name),
 			)

@@ -110,10 +110,7 @@ func getDefaultInheritableAttrs(thread *starlark.Thread, b *starlark.Builtin, ar
 	} else {
 		// Clone the existing visibility.
 		visibilityPackageGroup = model_core.NewPatchedMessageFromExisting(
-			model_core.Message[*model_starlark_pb.PackageGroup]{
-				Message:            previousInheritableAttrs.Message.Visibility,
-				OutgoingReferences: previousInheritableAttrs.OutgoingReferences,
-			},
+			model_core.NewNestedMessage(previousInheritableAttrs, previousInheritableAttrs.Message.Visibility),
 			func(index int) dag.ObjectContentsWalker {
 				return dag.ExistingObjectContentsWalker
 			},

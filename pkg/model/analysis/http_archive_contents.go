@@ -259,10 +259,7 @@ func (c *baseComputer) ComputeHttpArchiveContentsValue(ctx context.Context, key 
 
 	referenceFormat := c.buildSpecificationReference.GetReferenceFormat()
 	httpFileContentsEntry, err := model_filesystem.NewFileContentsEntryFromProto(
-		model_core.Message[*model_filesystem_pb.FileContents]{
-			Message:            httpFileContentsValue.Message.Exists.Contents,
-			OutgoingReferences: httpFileContentsValue.OutgoingReferences,
-		},
+		model_core.NewNestedMessage(httpFileContentsValue, httpFileContentsValue.Message.Exists.Contents),
 		referenceFormat,
 	)
 	if err != nil {

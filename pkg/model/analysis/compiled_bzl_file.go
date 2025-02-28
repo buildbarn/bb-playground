@@ -14,7 +14,6 @@ import (
 	model_parser "github.com/buildbarn/bonanza/pkg/model/parser"
 	model_starlark "github.com/buildbarn/bonanza/pkg/model/starlark"
 	model_analysis_pb "github.com/buildbarn/bonanza/pkg/proto/model/analysis"
-	model_filesystem_pb "github.com/buildbarn/bonanza/pkg/proto/model/filesystem"
 	model_starlark_pb "github.com/buildbarn/bonanza/pkg/proto/model/starlark"
 	"github.com/buildbarn/bonanza/pkg/storage/dag"
 	"github.com/buildbarn/bonanza/pkg/storage/object"
@@ -50,10 +49,7 @@ func (c *baseComputer) ComputeCompiledBzlFileValue(ctx context.Context, key *mod
 		return PatchedCompiledBzlFileValue{}, fmt.Errorf("file %#v does not exist", canonicalLabel.String())
 	}
 	buildFileContentsEntry, err := model_filesystem.NewFileContentsEntryFromProto(
-		model_core.Message[*model_filesystem_pb.FileContents]{
-			Message:            bzlFileProperties.Message.Exists.GetContents(),
-			OutgoingReferences: bzlFileProperties.OutgoingReferences,
-		},
+		model_core.NewNestedMessage(bzlFileProperties, bzlFileProperties.Message.Exists.GetContents()),
 		c.buildSpecificationReference.GetReferenceFormat(),
 	)
 	if err != nil {
@@ -118,10 +114,7 @@ func (c *baseComputer) ComputeCompiledBzlFileDecodedGlobalsValue(ctx context.Con
 		return nil, evaluation.ErrMissingDependency
 	}
 	return model_starlark.DecodeGlobals(
-		model_core.Message[*model_starlark_pb.Struct_Fields]{
-			Message:            compiledBzlFile.Message.CompiledProgram.GetGlobals(),
-			OutgoingReferences: compiledBzlFile.OutgoingReferences,
-		},
+		model_core.NewNestedMessage(compiledBzlFile, compiledBzlFile.Message.CompiledProgram.GetGlobals()),
 		currentFilename,
 		c.getValueDecodingOptions(ctx, func(resolvedLabel label.ResolvedLabel) (starlark.Value, error) {
 			return model_starlark.NewLabel(resolvedLabel), nil
@@ -191,10 +184,7 @@ func (c *baseComputer) ComputeCompiledBzlFileGlobalValue(ctx context.Context, ke
 			c.getValueObjectEncoder(),
 			model_parser.NewMessageListObjectParser[object.LocalReference, model_starlark_pb.List_Element](),
 		),
-		model_core.Message[*model_starlark_pb.Struct_Fields]{
-			Message:            compiledBzlFile.Message.CompiledProgram.GetGlobals(),
-			OutgoingReferences: compiledBzlFile.OutgoingReferences,
-		},
+		model_core.NewNestedMessage(compiledBzlFile, compiledBzlFile.Message.CompiledProgram.GetGlobals()),
 		identifier.GetStarlarkIdentifier().String(),
 	)
 	if err != nil {

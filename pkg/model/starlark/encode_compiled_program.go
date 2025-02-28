@@ -388,10 +388,7 @@ func DecodeValue(encodedValue model_core.Message[*model_starlark_pb.Value], curr
 			// TODO: Should we also canonicalize?
 			var err error
 			defaultValue, err = DecodeValue(
-				model_core.Message[*model_starlark_pb.Value]{
-					Message:            d,
-					OutgoingReferences: encodedValue.OutgoingReferences,
-				},
+				model_core.NewNestedMessage(encodedValue, d),
 				nil,
 				options,
 			)
@@ -423,17 +420,11 @@ func DecodeValue(encodedValue model_core.Message[*model_starlark_pb.Value], curr
 	case *model_starlark_pb.Value_Bytes:
 		return starlark.Bytes(typedValue.Bytes), nil
 	case *model_starlark_pb.Value_Depset:
-		return decodeDepset(model_core.Message[*model_starlark_pb.Depset]{
-			Message:            typedValue.Depset,
-			OutgoingReferences: encodedValue.OutgoingReferences,
-		}), nil
+		return decodeDepset(model_core.NewNestedMessage(encodedValue, typedValue.Depset)), nil
 	case *model_starlark_pb.Value_Dict:
 		dict := starlark.NewDict(len(typedValue.Dict.Entries))
 		if err := decodeDictEntries(
-			model_core.Message[*model_starlark_pb.Dict]{
-				Message:            typedValue.Dict,
-				OutgoingReferences: encodedValue.OutgoingReferences,
-			},
+			model_core.NewNestedMessage(encodedValue, typedValue.Dict),
 			&dictEntriesDecodingOptions{
 				valueDecodingOptions: options,
 				reader: model_parser.NewStorageBackedParsedObjectReader(
@@ -471,10 +462,7 @@ func DecodeValue(encodedValue model_core.Message[*model_starlark_pb.Value], curr
 		return NewFile(typedValue.File), nil
 	case *model_starlark_pb.Value_Function:
 		return NewNamedFunction(NewProtoNamedFunctionDefinition(
-			model_core.Message[*model_starlark_pb.Function]{
-				Message:            typedValue.Function,
-				OutgoingReferences: encodedValue.OutgoingReferences,
-			},
+			model_core.NewNestedMessage(encodedValue, typedValue.Function),
 		)), nil
 	case *model_starlark_pb.Value_Int:
 		var i big.Int
@@ -497,10 +485,7 @@ func DecodeValue(encodedValue model_core.Message[*model_starlark_pb.Value], curr
 		var initFunction *NamedFunction
 		if typedValue.Provider.InitFunction != nil {
 			f := NewNamedFunction(NewProtoNamedFunctionDefinition(
-				model_core.Message[*model_starlark_pb.Function]{
-					Message:            typedValue.Provider.InitFunction,
-					OutgoingReferences: encodedValue.OutgoingReferences,
-				},
+				model_core.NewNestedMessage(encodedValue, typedValue.Provider.InitFunction),
 			))
 			initFunction = &f
 		}
@@ -512,10 +497,7 @@ func DecodeValue(encodedValue model_core.Message[*model_starlark_pb.Value], curr
 	case *model_starlark_pb.Value_List:
 		list := starlark.NewList(nil)
 		if err := decodeList_Elements(
-			model_core.Message[*model_starlark_pb.List]{
-				Message:            typedValue.List,
-				OutgoingReferences: encodedValue.OutgoingReferences,
-			},
+			model_core.NewNestedMessage(encodedValue, typedValue.List),
 			&listElementsDecodingOptions{
 				valueDecodingOptions: options,
 				reader: model_parser.NewStorageBackedParsedObjectReader(
@@ -530,10 +512,7 @@ func DecodeValue(encodedValue model_core.Message[*model_starlark_pb.Value], curr
 		return list, nil
 	case *model_starlark_pb.Value_ModuleExtension:
 		return NewModuleExtension(NewProtoModuleExtensionDefinition(
-			model_core.Message[*model_starlark_pb.ModuleExtension]{
-				Message:            typedValue.ModuleExtension,
-				OutgoingReferences: encodedValue.OutgoingReferences,
-			},
+			model_core.NewNestedMessage(encodedValue, typedValue.ModuleExtension),
 		)), nil
 	case *model_starlark_pb.Value_None:
 		return starlark.None, nil
@@ -550,10 +529,7 @@ func DecodeValue(encodedValue model_core.Message[*model_starlark_pb.Value], curr
 				return nil, errors.New("encoded repository_rule does not have a name")
 			}
 			return NewRepositoryRule(currentIdentifier, NewProtoRepositoryRuleDefinition(
-				model_core.Message[*model_starlark_pb.RepositoryRule_Definition]{
-					Message:            repositoryRuleKind.Definition,
-					OutgoingReferences: encodedValue.OutgoingReferences,
-				},
+				model_core.NewNestedMessage(encodedValue, repositoryRuleKind.Definition),
 			)), nil
 		default:
 			return nil, errors.New("encoded repository_rule does not have a reference or definition")
@@ -571,10 +547,7 @@ func DecodeValue(encodedValue model_core.Message[*model_starlark_pb.Value], curr
 				return nil, errors.New("encoded rule does not have a name")
 			}
 			return NewRule(currentIdentifier, NewProtoRuleDefinition(
-				model_core.Message[*model_starlark_pb.Rule_Definition]{
-					Message:            ruleKind.Definition,
-					OutgoingReferences: encodedValue.OutgoingReferences,
-				},
+				model_core.NewNestedMessage(encodedValue, ruleKind.Definition),
 			)), nil
 		default:
 			return nil, errors.New("encoded rule does not have a reference or definition")
@@ -584,18 +557,9 @@ func DecodeValue(encodedValue model_core.Message[*model_starlark_pb.Value], curr
 			return nil, errors.New("runfiles is missing one or more depsets")
 		}
 		return NewRunfiles(
-			decodeDepset(model_core.Message[*model_starlark_pb.Depset]{
-				Message:            typedValue.Runfiles.Files,
-				OutgoingReferences: encodedValue.OutgoingReferences,
-			}),
-			decodeDepset(model_core.Message[*model_starlark_pb.Depset]{
-				Message:            typedValue.Runfiles.RootSymlinks,
-				OutgoingReferences: encodedValue.OutgoingReferences,
-			}),
-			decodeDepset(model_core.Message[*model_starlark_pb.Depset]{
-				Message:            typedValue.Runfiles.Symlinks,
-				OutgoingReferences: encodedValue.OutgoingReferences,
-			}),
+			decodeDepset(model_core.NewNestedMessage(encodedValue, typedValue.Runfiles.Files)),
+			decodeDepset(model_core.NewNestedMessage(encodedValue, typedValue.Runfiles.RootSymlinks)),
+			decodeDepset(model_core.NewNestedMessage(encodedValue, typedValue.Runfiles.Symlinks)),
 		), nil
 	case *model_starlark_pb.Value_Select:
 		if len(typedValue.Select.Groups) < 1 {
@@ -609,10 +573,7 @@ func DecodeValue(encodedValue model_core.Message[*model_starlark_pb.Value], curr
 				if err != nil {
 					return nil, fmt.Errorf("invalid condition identifier %#v in group %d: %w", condition.ConditionIdentifier, groupIndex, err)
 				}
-				conditionValue, err := DecodeValue(model_core.Message[*model_starlark_pb.Value]{
-					Message:            condition.Value,
-					OutgoingReferences: encodedValue.OutgoingReferences,
-				}, nil, options)
+				conditionValue, err := DecodeValue(model_core.NewNestedMessage(encodedValue, condition.Value), nil, options)
 				if err != nil {
 					return nil, fmt.Errorf("condition with identifier %#v in group %d: %w", condition.ConditionIdentifier, groupIndex, err)
 				}
@@ -623,10 +584,7 @@ func DecodeValue(encodedValue model_core.Message[*model_starlark_pb.Value], curr
 			switch noMatch := group.NoMatch.(type) {
 			case *model_starlark_pb.Select_Group_NoMatchValue:
 				var err error
-				defaultValue, err = DecodeValue(model_core.Message[*model_starlark_pb.Value]{
-					Message:            noMatch.NoMatchValue,
-					OutgoingReferences: encodedValue.OutgoingReferences,
-				}, nil, options)
+				defaultValue, err = DecodeValue(model_core.NewNestedMessage(encodedValue, noMatch.NoMatchValue), nil, options)
 				if err != nil {
 					return nil, fmt.Errorf("no match value of group %d: %w", groupIndex, err)
 				}
@@ -653,10 +611,7 @@ func DecodeValue(encodedValue model_core.Message[*model_starlark_pb.Value], curr
 	case *model_starlark_pb.Value_Str:
 		return starlark.String(typedValue.Str), nil
 	case *model_starlark_pb.Value_Struct:
-		strukt, err := DecodeStruct(model_core.Message[*model_starlark_pb.Struct]{
-			Message:            typedValue.Struct,
-			OutgoingReferences: encodedValue.OutgoingReferences,
-		}, options)
+		strukt, err := DecodeStruct(model_core.NewNestedMessage(encodedValue, typedValue.Struct), options)
 		if err != nil {
 			return nil, err
 		}
@@ -674,10 +629,7 @@ func DecodeValue(encodedValue model_core.Message[*model_starlark_pb.Value], curr
 				return nil, errors.New("encoded subrule does not have a name")
 			}
 			return NewSubrule(currentIdentifier, NewProtoSubruleDefinition(
-				model_core.Message[*model_starlark_pb.Subrule_Definition]{
-					Message:            subruleKind.Definition,
-					OutgoingReferences: encodedValue.OutgoingReferences,
-				},
+				model_core.NewNestedMessage(encodedValue, subruleKind.Definition),
 			)), nil
 		default:
 			return nil, errors.New("encoded subrule does not have a reference or definition")
@@ -689,17 +641,11 @@ func DecodeValue(encodedValue model_core.Message[*model_starlark_pb.Value], curr
 		}
 		return NewTargetReference(
 			label,
-			model_core.Message[[]*model_starlark_pb.Struct]{
-				Message:            typedValue.TargetReference.Providers,
-				OutgoingReferences: encodedValue.OutgoingReferences,
-			},
+			model_core.NewNestedMessage(encodedValue, typedValue.TargetReference.Providers),
 		), nil
 	case *model_starlark_pb.Value_TagClass:
 		return NewTagClass(NewProtoTagClassDefinition(
-			model_core.Message[*model_starlark_pb.TagClass]{
-				Message:            typedValue.TagClass,
-				OutgoingReferences: encodedValue.OutgoingReferences,
-			},
+			model_core.NewNestedMessage(encodedValue, typedValue.TagClass),
 		)), nil
 	case *model_starlark_pb.Value_ToolchainType:
 		return decodeToolchainType(typedValue.ToolchainType)
@@ -733,10 +679,7 @@ func DecodeValue(encodedValue model_core.Message[*model_starlark_pb.Value], curr
 		encodedElements := typedValue.Tuple.Elements
 		tuple := make(starlark.Tuple, 0, len(encodedElements))
 		for _, encodedElement := range encodedElements {
-			element, err := DecodeValue(model_core.Message[*model_starlark_pb.Value]{
-				Message:            encodedElement,
-				OutgoingReferences: encodedValue.OutgoingReferences,
-			}, nil, options)
+			element, err := DecodeValue(model_core.NewNestedMessage(encodedValue, encodedElement), nil, options)
 			if err != nil {
 				return nil, err
 			}
@@ -826,10 +769,7 @@ func decodeBuildSetting(buildSetting *model_starlark_pb.BuildSetting) (*BuildSet
 func decodeDepset(depset model_core.Message[*model_starlark_pb.Depset]) *Depset {
 	children := make([]any, 0, len(depset.Message.Elements))
 	for _, element := range depset.Message.Elements {
-		children = append(children, model_core.Message[*model_starlark_pb.List_Element]{
-			Message:            element,
-			OutgoingReferences: depset.OutgoingReferences,
-		})
+		children = append(children, model_core.NewNestedMessage(depset, element))
 	}
 	return NewDepsetFromList(children, depset.Message.Order)
 }
@@ -862,10 +802,7 @@ func DecodeStruct(m model_core.Message[*model_starlark_pb.Struct], options *Valu
 			options.ObjectEncoder,
 			model_parser.NewMessageListObjectParser[object.LocalReference, model_starlark_pb.List_Element](),
 		),
-		model_core.Message[*model_starlark_pb.Struct_Fields]{
-			Message:            m.Message.Fields,
-			OutgoingReferences: m.OutgoingReferences,
-		},
+		model_core.NewNestedMessage(m, m.Message.Fields),
 		&errIter,
 	) {
 		keys = append(keys, key)
@@ -899,10 +836,7 @@ func decodeDictEntries(in model_core.Message[*model_starlark_pb.Dict], options *
 		&errIter,
 	) {
 		key, err := DecodeValue(
-			model_core.Message[*model_starlark_pb.Value]{
-				Message:            entry.Message.Key,
-				OutgoingReferences: entry.OutgoingReferences,
-			},
+			model_core.NewNestedMessage(entry, entry.Message.Key),
 			nil,
 			options.valueDecodingOptions,
 		)
@@ -910,10 +844,7 @@ func decodeDictEntries(in model_core.Message[*model_starlark_pb.Dict], options *
 			return err
 		}
 		value, err := DecodeValue(
-			model_core.Message[*model_starlark_pb.Value]{
-				Message:            entry.Message.Value,
-				OutgoingReferences: entry.OutgoingReferences,
-			},
+			model_core.NewNestedMessage(entry, entry.Message.Value),
 			nil,
 			options.valueDecodingOptions,
 		)
@@ -938,10 +869,7 @@ func decodeList_Elements(in model_core.Message[*model_starlark_pb.List], options
 	for element := range btree.AllLeaves(
 		options.valueDecodingOptions.Context,
 		options.reader,
-		model_core.Message[[]*model_starlark_pb.List_Element]{
-			Message:            in.Message.Elements,
-			OutgoingReferences: in.OutgoingReferences,
-		},
+		model_core.NewNestedMessage(in, in.Message.Elements),
 		func(element model_core.Message[*model_starlark_pb.List_Element]) (*model_core_pb.Reference, error) {
 			if level, ok := element.Message.Level.(*model_starlark_pb.List_Element_Parent_); ok {
 				return level.Parent.Reference, nil
@@ -955,10 +883,7 @@ func decodeList_Elements(in model_core.Message[*model_starlark_pb.List], options
 			return errors.New("not a valid leaf entry")
 		}
 		value, err := DecodeValue(
-			model_core.Message[*model_starlark_pb.Value]{
-				Message:            level.Leaf,
-				OutgoingReferences: element.OutgoingReferences,
-			},
+			model_core.NewNestedMessage(element, level.Leaf),
 			nil,
 			options.valueDecodingOptions,
 		)

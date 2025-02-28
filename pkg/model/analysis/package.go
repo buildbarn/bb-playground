@@ -16,7 +16,6 @@ import (
 	model_parser "github.com/buildbarn/bonanza/pkg/model/parser"
 	model_starlark "github.com/buildbarn/bonanza/pkg/model/starlark"
 	model_analysis_pb "github.com/buildbarn/bonanza/pkg/proto/model/analysis"
-	model_filesystem_pb "github.com/buildbarn/bonanza/pkg/proto/model/filesystem"
 	model_starlark_pb "github.com/buildbarn/bonanza/pkg/proto/model/starlark"
 	"github.com/buildbarn/bonanza/pkg/storage/dag"
 	"github.com/buildbarn/bonanza/pkg/storage/object"
@@ -67,10 +66,7 @@ func (c *baseComputer) ComputePackageValue(ctx context.Context, key *model_analy
 
 		buildFileLabel := canonicalPackage.AppendTargetName(buildFileName)
 		buildFileContentsEntry, err := model_filesystem.NewFileContentsEntryFromProto(
-			model_core.Message[*model_filesystem_pb.FileContents]{
-				Message:            buildFileProperties.Message.Exists.Contents,
-				OutgoingReferences: buildFileProperties.OutgoingReferences,
-			},
+			model_core.NewNestedMessage(buildFileProperties, buildFileProperties.Message.Exists.Contents),
 			c.buildSpecificationReference.GetReferenceFormat(),
 		)
 		if err != nil {
@@ -105,10 +101,7 @@ func (c *baseComputer) ComputePackageValue(ctx context.Context, key *model_analy
 			}, nil
 		})
 
-		repoDefaultAttrs := model_core.Message[*model_starlark_pb.InheritableAttrs]{
-			Message:            repoDefaultAttrsValue.Message.InheritableAttrs,
-			OutgoingReferences: repoDefaultAttrsValue.OutgoingReferences,
-		}
+		repoDefaultAttrs := model_core.NewNestedMessage(repoDefaultAttrsValue, repoDefaultAttrsValue.Message.InheritableAttrs)
 		targetRegistrar := model_starlark.NewTargetRegistrar(c.getInlinedTreeOptions(), repoDefaultAttrs)
 		thread.SetLocal(model_starlark.TargetRegistrarKey, targetRegistrar)
 
@@ -128,10 +121,7 @@ func (c *baseComputer) ComputePackageValue(ctx context.Context, key *model_analy
 					c.getValueObjectEncoder(),
 					model_parser.NewMessageListObjectParser[object.LocalReference, model_starlark_pb.List_Element](),
 				),
-				model_core.Message[*model_starlark_pb.Struct_Fields]{
-					Message:            compiledBzlFile.Message.CompiledProgram.GetGlobals(),
-					OutgoingReferences: compiledBzlFile.OutgoingReferences,
-				},
+				model_core.NewNestedMessage(compiledBzlFile, compiledBzlFile.Message.CompiledProgram.GetGlobals()),
 				identifier.GetStarlarkIdentifier().String(),
 			)
 		})

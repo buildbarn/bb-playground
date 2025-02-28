@@ -109,10 +109,7 @@ func (c *baseComputer) ComputeStableInputRootPathValue(ctx context.Context, key 
 	}
 
 	stdoutEntry, err := model_filesystem.NewFileContentsEntryFromProto(
-		model_core.Message[*model_filesystem_pb.FileContents]{
-			Message:            outputs.Message.Stdout,
-			OutgoingReferences: outputs.OutgoingReferences,
-		},
+		model_core.NewNestedMessage(outputs, outputs.Message.Stdout),
 		referenceFormat,
 	)
 	if err != nil {

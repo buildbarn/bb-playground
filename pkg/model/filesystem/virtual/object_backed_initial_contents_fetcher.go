@@ -100,10 +100,7 @@ func (icf *objectBackedInitialContentsFetcher) FetchContents(fileReadMonitorFact
 			return nil, status.Errorf(codes.InvalidArgument, "File %#v does not have any properties", entry.Name)
 		}
 		fileContents, err := model_filesystem.NewFileContentsEntryFromProto(
-			model_core.Message[*model_filesystem_pb.FileContents]{
-				Message:            properties.Contents,
-				OutgoingReferences: directory.Leaves.OutgoingReferences,
-			},
+			model_core.NewNestedMessage(directory.Leaves, properties.Contents),
 			icf.clusterReference.GetReferenceFormat(),
 		)
 		if err != nil {

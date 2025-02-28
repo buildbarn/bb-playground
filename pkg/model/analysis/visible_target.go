@@ -64,10 +64,7 @@ func checkVisibility(fromPackage label.CanonicalPackage, toLabel label.Canonical
 		return nil
 	}
 
-	subpackages := model_core.Message[*model_starlark_pb.PackageGroup_Subpackages]{
-		Message:            toLabelVisibility.Message.Tree,
-		OutgoingReferences: toLabelVisibility.OutgoingReferences,
-	}
+	subpackages := model_core.NewNestedMessage(toLabelVisibility, toLabelVisibility.Message.Tree)
 	component := fromPackage.GetCanonicalRepo().String()
 	fromPackagePath := fromPackage.GetPackagePath()
 	for {
@@ -76,10 +73,7 @@ func checkVisibility(fromPackage label.CanonicalPackage, toLabel label.Canonical
 		var overrides model_core.Message[*model_starlark_pb.PackageGroup_Subpackages_Overrides]
 		switch o := subpackages.Message.GetOverrides().(type) {
 		case *model_starlark_pb.PackageGroup_Subpackages_OverridesInline:
-			overrides = model_core.Message[*model_starlark_pb.PackageGroup_Subpackages_Overrides]{
-				Message:            o.OverridesInline,
-				OutgoingReferences: subpackages.OutgoingReferences,
-			}
+			overrides = model_core.NewNestedMessage(subpackages, o.OverridesInline)
 		case *model_starlark_pb.PackageGroup_Subpackages_OverridesExternal:
 			return errors.New("TODO: Download external overrides!")
 		case nil:
@@ -107,10 +101,7 @@ func checkVisibility(fromPackage label.CanonicalPackage, toLabel label.Canonical
 		// An override is in place for this specific component.
 		// Continue traversal.
 		p := packages[packageIndex]
-		subpackages = model_core.Message[*model_starlark_pb.PackageGroup_Subpackages]{
-			Message:            p.Subpackages,
-			OutgoingReferences: overrides.OutgoingReferences,
-		}
+		subpackages = model_core.NewNestedMessage(overrides, p.Subpackages)
 
 		if fromPackagePath == "" {
 			// Fully resolved the package name. Consider
@@ -142,10 +133,7 @@ func checkRuleTargetVisibility(fromPackage label.CanonicalPackage, ruleTargetLab
 	return checkVisibility(
 		fromPackage,
 		ruleTargetLabel,
-		model_core.Message[*model_starlark_pb.PackageGroup]{
-			Message:            inheritableAttrs.Visibility,
-			OutgoingReferences: ruleTarget.OutgoingReferences,
-		},
+		model_core.NewNestedMessage(ruleTarget, inheritableAttrs.Visibility),
 	)
 }
 
@@ -166,20 +154,14 @@ func (c *baseComputer) ComputeVisibleTargetValue(ctx context.Context, key model_
 		return PatchedVisibleTargetValue{}, evaluation.ErrMissingDependency
 	}
 
-	configurationReference := model_core.Message[*model_core_pb.Reference]{
-		Message:            key.Message.ConfigurationReference,
-		OutgoingReferences: key.OutgoingReferences,
-	}
+	configurationReference := model_core.NewNestedMessage(key, key.Message.ConfigurationReference)
 
 	switch definition := targetValue.Message.Definition.GetKind().(type) {
 	case *model_starlark_pb.Target_Definition_Alias:
 		if err := checkVisibility(
 			fromPackage,
 			toLabel,
-			model_core.Message[*model_starlark_pb.PackageGroup]{
-				Message:            definition.Alias.Visibility,
-				OutgoingReferences: targetValue.OutgoingReferences,
-			},
+			model_core.NewNestedMessage(targetValue, definition.Alias.Visibility),
 		); err != nil {
 			return PatchedVisibleTargetValue{}, err
 		}
@@ -249,10 +231,7 @@ func (c *baseComputer) ComputeVisibleTargetValue(ctx context.Context, key model_
 		// label setting.
 		configuration, err := c.getConfigurationByReference(
 			ctx,
-			model_core.Message[*model_core_pb.Reference]{
-				Message:            key.Message.ConfigurationReference,
-				OutgoingReferences: key.OutgoingReferences,
-			},
+			model_core.NewNestedMessage(key, key.Message.ConfigurationReference),
 		)
 		if err != nil {
 			return PatchedVisibleTargetValue{}, err
@@ -265,10 +244,7 @@ func (c *baseComputer) ComputeVisibleTargetValue(ctx context.Context, key model_
 				c.getValueObjectEncoder(),
 				model_parser.NewMessageListObjectParser[object.LocalReference, model_analysis_pb.Configuration_BuildSettingOverride](),
 			),
-			model_core.Message[[]*model_analysis_pb.Configuration_BuildSettingOverride]{
-				Message:            configuration.Message.BuildSettingOverrides,
-				OutgoingReferences: configuration.OutgoingReferences,
-			},
+			model_core.NewNestedMessage(configuration, configuration.Message.BuildSettingOverrides),
 			func(entry *model_analysis_pb.Configuration_BuildSettingOverride) (int, *model_core_pb.Reference) {
 				switch level := entry.Level.(type) {
 				case *model_analysis_pb.Configuration_BuildSettingOverride_Leaf_:
@@ -372,10 +348,7 @@ func (c *baseComputer) ComputeVisibleTargetValue(ctx context.Context, key model_
 		if err := checkRuleTargetVisibility(
 			fromPackage,
 			ownerLabel,
-			model_core.Message[*model_starlark_pb.RuleTarget]{
-				Message:            ruleDefinition.RuleTarget,
-				OutgoingReferences: ownerTargetValue.OutgoingReferences,
-			},
+			model_core.NewNestedMessage(ownerTargetValue, ruleDefinition.RuleTarget),
 		); err != nil {
 			return PatchedVisibleTargetValue{}, err
 		}
@@ -390,10 +363,7 @@ func (c *baseComputer) ComputeVisibleTargetValue(ctx context.Context, key model_
 		if err := checkRuleTargetVisibility(
 			fromPackage,
 			toLabel,
-			model_core.Message[*model_starlark_pb.RuleTarget]{
-				Message:            definition.RuleTarget,
-				OutgoingReferences: targetValue.OutgoingReferences,
-			},
+			model_core.NewNestedMessage(targetValue, definition.RuleTarget),
 		); err != nil {
 			return PatchedVisibleTargetValue{}, err
 		}
@@ -408,10 +378,7 @@ func (c *baseComputer) ComputeVisibleTargetValue(ctx context.Context, key model_
 		if err := checkVisibility(
 			fromPackage,
 			toLabel,
-			model_core.Message[*model_starlark_pb.PackageGroup]{
-				Message:            definition.SourceFileTarget.Visibility,
-				OutgoingReferences: targetValue.OutgoingReferences,
-			},
+			model_core.NewNestedMessage(targetValue, definition.SourceFileTarget.Visibility),
 		); err != nil {
 			return PatchedVisibleTargetValue{}, err
 		}

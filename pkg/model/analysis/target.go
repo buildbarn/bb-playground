@@ -54,10 +54,7 @@ func (c *baseComputer) lookupTargetDefinitionInTargetList(ctx context.Context, t
 	if definition == nil {
 		return model_core.Message[*model_starlark_pb.Target_Definition]{}, errors.New("target does not have a definition")
 	}
-	return model_core.Message[*model_starlark_pb.Target_Definition]{
-		Message:            definition,
-		OutgoingReferences: targetList.OutgoingReferences,
-	}, nil
+	return model_core.NewNestedMessage(targetList, definition), nil
 }
 
 func (c *baseComputer) ComputeTargetValue(ctx context.Context, key *model_analysis_pb.Target_Key, e TargetEnvironment) (PatchedTargetValue, error) {
@@ -74,10 +71,7 @@ func (c *baseComputer) ComputeTargetValue(ctx context.Context, key *model_analys
 
 	definition, err := c.lookupTargetDefinitionInTargetList(
 		ctx,
-		model_core.Message[[]*model_analysis_pb.Package_Value_Target]{
-			Message:            packageValue.Message.Targets,
-			OutgoingReferences: packageValue.OutgoingReferences,
-		},
+		model_core.NewNestedMessage(packageValue, packageValue.Message.Targets),
 		targetLabel.GetTargetName(),
 	)
 	if err != nil {

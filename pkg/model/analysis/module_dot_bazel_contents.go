@@ -37,10 +37,7 @@ func (c *baseComputer) parseLocalModuleInstanceModuleDotBazel(ctx context.Contex
 
 	return c.parseModuleDotBazel(
 		ctx,
-		model_core.Message[*model_filesystem_pb.FileContents]{
-			Message:            moduleFileProperties.Message.Exists.Contents,
-			OutgoingReferences: moduleFileProperties.OutgoingReferences,
-		},
+		model_core.NewNestedMessage(moduleFileProperties, moduleFileProperties.Message.Exists.Contents),
 		moduleInstance,
 		e,
 		handler,
@@ -62,10 +59,7 @@ func (c *baseComputer) parseActiveModuleInstanceModuleDotBazel(ctx context.Conte
 	}
 	return c.parseModuleDotBazel(
 		ctx,
-		model_core.Message[*model_filesystem_pb.FileContents]{
-			Message:            moduleFileContentsValue.Message.Contents,
-			OutgoingReferences: moduleFileContentsValue.OutgoingReferences,
-		},
+		model_core.NewNestedMessage(moduleFileContentsValue, moduleFileContentsValue.Message.Contents),
 		moduleInstance,
 		e,
 		handler,
@@ -232,10 +226,7 @@ func (c *baseComputer) ComputeModuleDotBazelContentsValue(ctx context.Context, k
 			return PatchedModuleDotBazelContentsValue{}, evaluation.ErrMissingDependency
 		}
 		fileContents := model_core.NewPatchedMessageFromExisting(
-			model_core.Message[*model_filesystem_pb.FileContents]{
-				Message:            filePropertiesValue.Message.Exists.Contents,
-				OutgoingReferences: filePropertiesValue.OutgoingReferences,
-			},
+			model_core.NewNestedMessage(filePropertiesValue, filePropertiesValue.Message.Exists.Contents),
 			func(index int) dag.ObjectContentsWalker {
 				return dag.ExistingObjectContentsWalker
 			},
@@ -296,10 +287,7 @@ func (c *baseComputer) ComputeModuleDotBazelContentsValue(ctx context.Context, k
 				return PatchedModuleDotBazelContentsValue{}, fmt.Errorf("file at URL %#v does not exist", moduleFileURL)
 			}
 			fileContents := model_core.NewPatchedMessageFromExisting(
-				model_core.Message[*model_filesystem_pb.FileContents]{
-					Message:            fileContentsValue.Message.Exists.Contents,
-					OutgoingReferences: fileContentsValue.OutgoingReferences,
-				},
+				model_core.NewNestedMessage(fileContentsValue, fileContentsValue.Message.Exists.Contents),
 				func(index int) dag.ObjectContentsWalker {
 					return dag.ExistingObjectContentsWalker
 				},

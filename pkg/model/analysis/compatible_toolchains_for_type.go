@@ -57,10 +57,7 @@ func (c *baseComputer) ComputeCompatibleToolchainsForTypeValue(ctx context.Conte
 	// Obtain the constraints associated with the current platform.
 	configuration, err := c.getConfigurationByReference(
 		ctx,
-		model_core.Message[*model_core_pb.Reference]{
-			Message:            key.Message.ConfigurationReference,
-			OutgoingReferences: key.OutgoingReferences,
-		},
+		model_core.NewNestedMessage(key, key.Message.ConfigurationReference),
 	)
 	if err != nil {
 		return PatchedCompatibleToolchainsForTypeValue{}, err
@@ -73,10 +70,7 @@ func (c *baseComputer) ComputeCompatibleToolchainsForTypeValue(ctx context.Conte
 			c.getValueObjectEncoder(),
 			model_parser.NewMessageListObjectParser[object.LocalReference, model_analysis_pb.Configuration_BuildSettingOverride](),
 		),
-		model_core.Message[[]*model_analysis_pb.Configuration_BuildSettingOverride]{
-			Message:            configuration.Message.BuildSettingOverrides,
-			OutgoingReferences: configuration.OutgoingReferences,
-		},
+		model_core.NewNestedMessage(configuration, configuration.Message.BuildSettingOverrides),
 		func(entry *model_analysis_pb.Configuration_BuildSettingOverride) (int, *model_core_pb.Reference) {
 			switch level := entry.Level.(type) {
 			case *model_analysis_pb.Configuration_BuildSettingOverride_Leaf_:

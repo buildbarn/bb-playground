@@ -44,10 +44,7 @@ func Find[
 			} else {
 				// Exact match. We may stop searching.
 				if reference == nil {
-					return model_core.Message[TMessagePtr]{
-						Message:            list.Message[index],
-						OutgoingReferences: list.OutgoingReferences,
-					}, nil
+					return model_core.NewNestedMessage(list, list.Message[index]), nil
 				}
 				childReference = reference
 				break

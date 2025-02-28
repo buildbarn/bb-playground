@@ -13,7 +13,6 @@ import (
 	model_parser "github.com/buildbarn/bonanza/pkg/model/parser"
 	model_analysis_pb "github.com/buildbarn/bonanza/pkg/proto/model/analysis"
 	model_core_pb "github.com/buildbarn/bonanza/pkg/proto/model/core"
-	model_starlark_pb "github.com/buildbarn/bonanza/pkg/proto/model/starlark"
 	"github.com/buildbarn/bonanza/pkg/storage/dag"
 	"github.com/buildbarn/bonanza/pkg/storage/object"
 )
@@ -42,10 +41,7 @@ func (c *baseComputer) ComputeModuleExtensionRepoValue(ctx context.Context, key 
 			c.getValueObjectEncoder(),
 			model_parser.NewMessageListObjectParser[object.LocalReference, model_analysis_pb.ModuleExtensionRepos_Value_Repo](),
 		),
-		model_core.Message[[]*model_analysis_pb.ModuleExtensionRepos_Value_Repo]{
-			Message:            moduleExtensionReposValue.Message.Repos,
-			OutgoingReferences: moduleExtensionReposValue.OutgoingReferences,
-		},
+		model_core.NewNestedMessage(moduleExtensionReposValue, moduleExtensionReposValue.Message.Repos),
 		func(entry *model_analysis_pb.ModuleExtensionRepos_Value_Repo) (int, *model_core_pb.Reference) {
 			switch level := entry.Level.(type) {
 			case *model_analysis_pb.ModuleExtensionRepos_Value_Repo_Leaf:
@@ -73,10 +69,7 @@ func (c *baseComputer) ComputeModuleExtensionRepoValue(ctx context.Context, key 
 		return PatchedModuleExtensionRepoValue{}, errors.New("repo does not have a definition")
 	}
 	patchedDefinition := model_core.NewPatchedMessageFromExisting(
-		model_core.Message[*model_starlark_pb.Repo_Definition]{
-			Message:            definition,
-			OutgoingReferences: repo.OutgoingReferences,
-		},
+		model_core.NewNestedMessage(repo, definition),
 		func(index int) dag.ObjectContentsWalker {
 			return dag.ExistingObjectContentsWalker
 		},

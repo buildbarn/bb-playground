@@ -106,10 +106,7 @@ func (tr *targetReference) getProviderValue(thread *starlark.Thread, providerIde
 	if strukt == nil {
 		var err error
 		strukt, err = DecodeStruct(
-			model_core.Message[*model_starlark_pb.Struct]{
-				Message:            tr.encodedProviders.Message[index],
-				OutgoingReferences: tr.encodedProviders.OutgoingReferences,
-			},
+			model_core.NewNestedMessage(tr.encodedProviders, tr.encodedProviders.Message[index]),
 			valueDecodingOptions.(*ValueDecodingOptions),
 		)
 		if err != nil {
@@ -138,17 +135,14 @@ func (tr *targetReference) Get(thread *starlark.Thread, v starlark.Value) (starl
 
 func (tr *targetReference) EncodeValue(path map[starlark.Value]struct{}, currentIdentifier *pg_label.CanonicalStarlarkIdentifier, options *ValueEncodingOptions) (model_core.PatchedMessage[*model_starlark_pb.Value, dag.ObjectContentsWalker], bool, error) {
 	return model_core.NewPatchedMessageFromExisting(
-		model_core.Message[*model_starlark_pb.Value]{
-			Message: &model_starlark_pb.Value{
-				Kind: &model_starlark_pb.Value_TargetReference{
-					TargetReference: &model_starlark_pb.TargetReference{
-						Label:     tr.label.String(),
-						Providers: tr.encodedProviders.Message,
-					},
+		model_core.NewNestedMessage(tr.encodedProviders, &model_starlark_pb.Value{
+			Kind: &model_starlark_pb.Value_TargetReference{
+				TargetReference: &model_starlark_pb.TargetReference{
+					Label:     tr.label.String(),
+					Providers: tr.encodedProviders.Message,
 				},
 			},
-			OutgoingReferences: tr.encodedProviders.OutgoingReferences,
-		},
+		}),
 		func(index int) dag.ObjectContentsWalker {
 			return dag.ExistingObjectContentsWalker
 		},

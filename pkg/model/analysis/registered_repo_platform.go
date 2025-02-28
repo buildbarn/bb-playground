@@ -34,10 +34,7 @@ func (c *baseComputer) decodeStringDict(ctx context.Context, d model_core.Messag
 			c.getValueObjectEncoder(),
 			model_parser.NewMessageListObjectParser[object.LocalReference, model_starlark_pb.Dict_Entry](),
 		),
-		model_core.Message[*model_starlark_pb.Dict]{
-			Message:            dict.Dict,
-			OutgoingReferences: d.OutgoingReferences,
-		},
+		model_core.NewNestedMessage(d, dict.Dict),
 		&iterErr,
 	) {
 		key, ok := entry.Message.Key.GetKind().(*model_starlark_pb.Value_Str)

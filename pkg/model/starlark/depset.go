@@ -350,10 +350,7 @@ func (dlc *depsetToListConverter) appendChildren(children any) error {
 		for encodedElement := range AllListLeafElementsSkippingDuplicateParents(
 			dlc.valueDecodingOptions.Context,
 			dlc.reader,
-			model_core.Message[[]*model_starlark_pb.List_Element]{
-				Message:            []*model_starlark_pb.List_Element{v.Message},
-				OutgoingReferences: v.OutgoingReferences,
-			},
+			model_core.NewNestedMessage(v, []*model_starlark_pb.List_Element{v.Message}),
 			dlc.encodedListsSeen,
 			&errIter,
 		) {

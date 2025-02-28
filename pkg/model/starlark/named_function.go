@@ -186,10 +186,7 @@ func (d *protoNamedFunctionDefinition) CallInternal(thread *starlark.Thread, arg
 			options := thread.Local(ValueDecodingOptionsKey).(*ValueDecodingOptions)
 			freeVariables := make(starlark.Tuple, 0, len(closure.FreeVariables))
 			for index, freeVariable := range closure.FreeVariables {
-				value, err := DecodeValue(model_core.Message[*model_starlark_pb.Value]{
-					Message:            freeVariable,
-					OutgoingReferences: d.message.OutgoingReferences,
-				}, nil, options)
+				value, err := DecodeValue(model_core.NewNestedMessage(d.message, freeVariable), nil, options)
 				if err != nil {
 					return nil, fmt.Errorf("invalid free variable %d: %w", index, err)
 				}
@@ -199,10 +196,7 @@ func (d *protoNamedFunctionDefinition) CallInternal(thread *starlark.Thread, arg
 			defaultParameters := make(starlark.Tuple, len(closure.DefaultParameters))
 			for index, defaultParameter := range closure.DefaultParameters {
 				if defaultParameter.Value != nil {
-					value, err := DecodeValue(model_core.Message[*model_starlark_pb.Value]{
-						Message:            defaultParameter.Value,
-						OutgoingReferences: d.message.OutgoingReferences,
-					}, nil, options)
+					value, err := DecodeValue(model_core.NewNestedMessage(d.message, defaultParameter.Value), nil, options)
 					if err != nil {
 						return nil, fmt.Errorf("invalid default parameter %d: %w", index, err)
 					}

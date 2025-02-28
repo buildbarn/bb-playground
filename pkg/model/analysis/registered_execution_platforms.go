@@ -55,10 +55,7 @@ func (c *baseComputer) extractFromPlatformInfoConstraints(ctx context.Context, v
 			c.getValueObjectEncoder(),
 			model_parser.NewMessageListObjectParser[object.LocalReference, model_starlark_pb.Dict_Entry](),
 		),
-		model_core.Message[*model_starlark_pb.Dict]{
-			Message:            dict.Dict,
-			OutgoingReferences: value.OutgoingReferences,
-		},
+		model_core.NewNestedMessage(value, dict.Dict),
 		&iterErr,
 	) {
 		key, ok := entry.Message.Key.GetKind().(*model_starlark_pb.Value_Label)

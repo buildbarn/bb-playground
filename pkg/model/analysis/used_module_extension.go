@@ -33,10 +33,7 @@ func (c *baseComputer) ComputeUsedModuleExtensionValue(ctx context.Context, key 
 		}
 		if identifier.ToModuleExtension().String() == key.ModuleExtension {
 			patchedExtension := model_core.NewPatchedMessageFromExisting(
-				model_core.Message[*model_analysis_pb.ModuleExtension]{
-					Message:            extension,
-					OutgoingReferences: usedModuleExtensions.OutgoingReferences,
-				},
+				model_core.NewNestedMessage(usedModuleExtensions, extension),
 				func(index int) dag.ObjectContentsWalker {
 					return dag.ExistingObjectContentsWalker
 				},
