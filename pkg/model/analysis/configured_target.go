@@ -1397,7 +1397,61 @@ func (rca *ruleContextActions) doDeclareFile(thread *starlark.Thread, b *starlar
 	}), nil
 }
 
-func (rca *ruleContextActions) doRun(thread *starlark.Thread, b *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
+func (rca *ruleContextActions) doRun(thread *starlark.Thread, b *starlark.Builtin, fnArgs starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
+	if len(fnArgs) != 0 {
+		return nil, fmt.Errorf("%s: got %d positional arguments, want 0", b.Name(), len(fnArgs))
+	}
+	var executable any
+	var outputs []model_starlark.File
+	var arguments []any
+	var env map[string]string
+	execGroup := ""
+	var executionRequirements map[string]string
+	var inputs any
+	mnemonic := ""
+	var progressMessage string
+	var resourceSet *model_starlark.NamedFunction
+	var toolchain *label.ResolvedLabel
+	var tools []any
+	useDefaultShellEnv := false
+	if err := starlark.UnpackArgs(
+		b.Name(), fnArgs, kwargs,
+		// Required arguments.
+		"executable", unpack.Bind(thread, &executable, unpack.Or([]unpack.UnpackerInto[any]{
+			unpack.Decay(unpack.String),
+			unpack.Decay(unpack.Type[model_starlark.File]("File")),
+			unpack.Decay(unpack.Type[*model_starlark.Struct]("struct")),
+		})),
+		"outputs", unpack.Bind(thread, &outputs, unpack.List(unpack.Type[model_starlark.File]("File"))),
+		// Optional arguments.
+		"arguments?", unpack.Bind(thread, &arguments, unpack.List(unpack.Or([]unpack.UnpackerInto[any]{
+			unpack.Decay(unpack.Type[*args]("Args")),
+			unpack.Decay(unpack.String),
+		}))),
+		"env?", unpack.Bind(thread, &env, unpack.Dict(unpack.String, unpack.String)),
+		"exec_group?", unpack.Bind(thread, &execGroup, unpack.IfNotNone(unpack.String)),
+		"execution_requirements?", unpack.Bind(thread, &executionRequirements, unpack.Dict(unpack.String, unpack.String)),
+		"inputs?", unpack.Bind(thread, &inputs, unpack.Or([]unpack.UnpackerInto[any]{
+			unpack.Decay(unpack.Type[*model_starlark.Depset]("depset")),
+			unpack.Decay(unpack.List(unpack.Type[model_starlark.File]("File"))),
+		})),
+		"mnemonic?", unpack.Bind(thread, &mnemonic, unpack.IfNotNone(unpack.String)),
+		"progress_message?", unpack.Bind(thread, &progressMessage, unpack.IfNotNone(unpack.String)),
+		"resource_set?", unpack.Bind(thread, &resourceSet, unpack.IfNotNone(unpack.Pointer(model_starlark.NamedFunctionUnpackerInto))),
+		"toolchain?", unpack.Bind(thread, &toolchain, unpack.IfNotNone(unpack.Pointer(model_starlark.NewLabelOrStringUnpackerInto(model_starlark.CurrentFilePackage(thread, 1))))),
+		"tools?", unpack.Bind(thread, &tools, unpack.Or([]unpack.UnpackerInto[[]any]{
+			unpack.Singleton(unpack.Decay(unpack.Type[*model_starlark.Depset]("depset"))),
+			unpack.List(unpack.Or([]unpack.UnpackerInto[any]{
+				unpack.Decay(unpack.Type[*model_starlark.Depset]("depset")),
+				unpack.Decay(unpack.Type[model_starlark.File]("File")),
+				unpack.Decay(unpack.Type[*model_starlark.Struct]("struct")),
+			})),
+		})),
+		"use_default_shell_env?", unpack.Bind(thread, &useDefaultShellEnv, unpack.Bool),
+	); err != nil {
+		return nil, err
+	}
+
 	return starlark.None, nil
 }
 
