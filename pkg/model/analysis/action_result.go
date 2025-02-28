@@ -45,14 +45,13 @@ func (c *baseComputer) ComputeActionResultValue(ctx context.Context, key model_c
 	// fingerprint of the action, which the scheduler can use to
 	// keep track of performance characteristics. Compute a hash to
 	// masquerade the actual Command reference.
-	commandReferenceIndex, err := model_core.GetIndexFromReferenceMessage(key.Message.CommandReference, key.OutgoingReferences.GetDegree())
+	commandReference, err := key.GetOutgoingReference(key.Message.CommandReference)
 	if err != nil {
 		return PatchedActionResultValue{}, fmt.Errorf("invalid command reference: %w", err)
 	}
-	commandReference := key.OutgoingReferences.GetOutgoingReference(commandReferenceIndex).GetRawReference()
-	commandReferenceSHA256 := sha256.Sum256(commandReference)
+	commandReferenceSHA256 := sha256.Sum256(commandReference.GetRawReference())
 
-	inputRootReferenceIndex, err := model_core.GetIndexFromReferenceMessage(key.Message.InputRootReference, key.OutgoingReferences.GetDegree())
+	inputRootReference, err := key.GetOutgoingReference(key.Message.InputRootReference)
 	if err != nil {
 		return PatchedActionResultValue{}, fmt.Errorf("invalid input root reference: %w", err)
 	}
@@ -66,8 +65,8 @@ func (c *baseComputer) ComputeActionResultValue(ctx context.Context, key model_c
 		&model_command_pb.Action{
 			Namespace:          namespace.ToProto(),
 			CommandEncoders:    commandEncodersValue.Message.CommandEncoders,
-			CommandReference:   commandReference,
-			InputRootReference: key.OutgoingReferences.GetOutgoingReference(inputRootReferenceIndex).GetRawReference(),
+			CommandReference:   commandReference.GetRawReference(),
+			InputRootReference: inputRootReference.GetRawReference(),
 		},
 		&remoteexecution_pb.Action_AdditionalData{
 			StableFingerprint: commandReferenceSHA256[:],
@@ -153,10 +152,10 @@ func (c *baseComputer) getOutputsFromActionResult(ctx context.Context, actionRes
 		directoryAccessParameters.GetEncoder(),
 		model_parser.NewMessageObjectParser[object.LocalReference, model_command_pb.Outputs](),
 	)
-	outputsReferenceIndex, err := model_core.GetIndexFromReferenceMessage(actionResult.Message.OutputsReference, actionResult.OutgoingReferences.GetDegree())
+	outputsReference, err := actionResult.GetOutgoingReference(actionResult.Message.OutputsReference)
 	if err != nil {
 		return model_core.Message[*model_command_pb.Outputs]{}, fmt.Errorf("invalid command outputs reference index: %w", err)
 	}
-	outputs, _, err := outputsReader.ReadParsedObject(ctx, actionResult.OutgoingReferences.GetOutgoingReference(outputsReferenceIndex))
+	outputs, _, err := outputsReader.ReadParsedObject(ctx, outputsReference)
 	return outputs, err
 }

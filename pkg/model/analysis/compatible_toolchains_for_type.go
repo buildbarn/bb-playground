@@ -28,7 +28,7 @@ func (c *baseComputer) getConfigurationByReference(ctx context.Context, configur
 		}, nil
 	}
 
-	configurationReferenceIndex, err := model_core.GetIndexFromReferenceMessage(configurationReference.Message, configurationReference.OutgoingReferences.GetDegree())
+	actualConfigurationReference, err := configurationReference.GetOutgoingReference(configurationReference.Message)
 	if err != nil {
 		return model_core.Message[*model_analysis_pb.Configuration]{}, fmt.Errorf("invalid configuration reference: %w", err)
 	}
@@ -37,7 +37,7 @@ func (c *baseComputer) getConfigurationByReference(ctx context.Context, configur
 		c.getValueObjectEncoder(),
 		model_parser.NewMessageObjectParser[object.LocalReference, model_analysis_pb.Configuration](),
 	)
-	configuration, _, err := configurationReader.ReadParsedObject(ctx, configurationReference.OutgoingReferences.GetOutgoingReference(configurationReferenceIndex))
+	configuration, _, err := configurationReader.ReadParsedObject(ctx, actualConfigurationReference)
 	if err != nil {
 		return model_core.Message[*model_analysis_pb.Configuration]{}, fmt.Errorf("failed to read configuration: %w", err)
 	}

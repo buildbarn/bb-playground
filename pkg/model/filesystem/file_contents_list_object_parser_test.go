@@ -157,7 +157,7 @@ func TestFileContentsListObjectParser(t *testing.T) {
 			},
 			data,
 		)
-		testutil.RequireEqualStatus(t, status.Error(codes.InvalidArgument, "Invalid reference index for part at index 0: Reference message contains index 7, which is outside expected range [1, 2]"), err)
+		testutil.RequireEqualStatus(t, status.Error(codes.InvalidArgument, "Invalid reference for part at index 0: Reference message contains index 7, which is outside expected range [1, 2]"), err)
 	})
 
 	t.Run("Success", func(t *testing.T) {

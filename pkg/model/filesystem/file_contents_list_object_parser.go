@@ -37,16 +37,13 @@ func NewFileContentsEntryFromProto(fileContents model_core.Message[*model_filesy
 		}, nil
 	}
 
-	index, err := model_core.GetIndexFromReferenceMessage(
-		fileContents.Message.Reference,
-		fileContents.OutgoingReferences.GetDegree(),
-	)
+	reference, err := fileContents.GetOutgoingReference(fileContents.Message.Reference)
 	if err != nil {
 		return FileContentsEntry{}, err
 	}
 	return FileContentsEntry{
 		EndBytes:  fileContents.Message.TotalSizeBytes,
-		Reference: fileContents.OutgoingReferences.GetOutgoingReference(index),
+		Reference: reference,
 	}, nil
 }
 
@@ -82,7 +79,6 @@ func (p *fileContentsListObjectParser[TReference]) ParseObject(ctx context.Conte
 	}
 
 	var endBytes uint64
-	degree := outgoingReferences.GetDegree()
 	fileContentsList := make(FileContentsList, 0, len(l.Message))
 	for i, part := range l.Message {
 		// Convert 'total_size_bytes' to a cumulative value, to
@@ -95,14 +91,14 @@ func (p *fileContentsListObjectParser[TReference]) ParseObject(ctx context.Conte
 		}
 		endBytes += part.TotalSizeBytes
 
-		partReferenceIndex, err := model_core.GetIndexFromReferenceMessage(part.Reference, degree)
+		partReference, err := l.GetOutgoingReference(part.Reference)
 		if err != nil {
-			return nil, 0, util.StatusWrapf(err, "Invalid reference index for part at index %d", i)
+			return nil, 0, util.StatusWrapf(err, "Invalid reference for part at index %d", i)
 		}
 
 		fileContentsList = append(fileContentsList, FileContentsEntry{
 			EndBytes:  endBytes,
-			Reference: outgoingReferences.GetOutgoingReference(partReferenceIndex),
+			Reference: partReference,
 		})
 	}
 	return fileContentsList, sizeBytes, nil

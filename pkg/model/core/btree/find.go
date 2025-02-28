@@ -57,11 +57,11 @@ func Find[
 		}
 
 		// Load the child from storage and continue searching.
-		index, err := model_core.GetIndexFromReferenceMessage(childReference, list.OutgoingReferences.GetDegree())
+		objectReference, err := list.GetOutgoingReference(childReference)
 		if err != nil {
 			return model_core.Message[TMessagePtr]{}, err
 		}
-		list, _, err = reader.ReadParsedObject(ctx, list.OutgoingReferences.GetOutgoingReference(index))
+		list, _, err = reader.ReadParsedObject(ctx, objectReference)
 		if err != nil {
 			return model_core.Message[TMessagePtr]{}, err
 		}

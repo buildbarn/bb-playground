@@ -1,6 +1,7 @@
 package core
 
 import (
+	model_core_pb "github.com/buildbarn/bonanza/pkg/proto/model/core"
 	"github.com/buildbarn/bonanza/pkg/storage/object"
 
 	"google.golang.org/protobuf/proto"
@@ -35,6 +36,18 @@ func (m Message[T]) IsSet() bool {
 
 func (m *Message[T]) Clear() {
 	*m = Message[T]{}
+}
+
+// GetOutgoingReference is a utility function for obtaining an outgoing
+// reference corresponding to Reference message that is a child of the
+// current message.
+func (m *Message[T]) GetOutgoingReference(reference *model_core_pb.Reference) (object.LocalReference, error) {
+	index, err := GetIndexFromReferenceMessage(reference, m.OutgoingReferences.GetDegree())
+	if err != nil {
+		var badReference object.LocalReference
+		return badReference, err
+	}
+	return m.OutgoingReferences.GetOutgoingReference(index), nil
 }
 
 func MessagesEqual[T proto.Message](m1, m2 Message[T]) bool {

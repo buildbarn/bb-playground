@@ -123,14 +123,11 @@ func (d *changeTrackingDirectory) setContents(contents model_core.Message[*model
 	var leaves model_core.Message[*model_filesystem_pb.Leaves]
 	switch leavesType := contents.Message.Leaves.(type) {
 	case *model_filesystem_pb.Directory_LeavesExternal:
-		index, err := model_core.GetIndexFromReferenceMessage(leavesType.LeavesExternal.Reference, contents.OutgoingReferences.GetDegree())
+		leavesReference, err := contents.GetOutgoingReference(leavesType.LeavesExternal.Reference)
 		if err != nil {
 			return err
 		}
-		leaves, _, err = options.leavesReader.ReadParsedObject(
-			options.context,
-			contents.OutgoingReferences.GetOutgoingReference(index),
-		)
+		leaves, _, err = options.leavesReader.ReadParsedObject(options.context, leavesReference)
 		if err != nil {
 			return err
 		}
@@ -236,14 +233,11 @@ func (d *changeTrackingDirectory) maybeLoadContents(options *changeTrackingDirec
 	if reference := d.currentReference; reference.IsSet() {
 		// Directory has not been accessed before. Load it from
 		// storage and ingest its contents.
-		index, err := model_core.GetIndexFromReferenceMessage(reference.Message.GetReference(), reference.OutgoingReferences.GetDegree())
+		objectReference, err := reference.GetOutgoingReference(reference.Message.GetReference())
 		if err != nil {
 			return err
 		}
-		directoryMessage, _, err := options.directoryReader.ReadParsedObject(options.
-			context,
-			reference.OutgoingReferences.GetOutgoingReference(index),
-		)
+		directoryMessage, _, err := options.directoryReader.ReadParsedObject(options.context, objectReference)
 		if err != nil {
 			return err
 		}
@@ -360,11 +354,11 @@ func (cd *capturableChangeTrackingDirectory) EnterCapturableDirectory(name path.
 		// Directory has not been modified. Load the copy from
 		// storage, so that it may potentially be inlined into
 		// the parent directory.
-		index, err := model_core.GetIndexFromReferenceMessage(reference.Message.GetReference(), reference.OutgoingReferences.GetDegree())
+		objectReference, err := reference.GetOutgoingReference(reference.Message.GetReference())
 		if err != nil {
 			return nil, nil, err
 		}
-		directoryMessage, _, err := cd.options.directoryReader.ReadParsedObject(cd.options.context, reference.OutgoingReferences.GetOutgoingReference(index))
+		directoryMessage, _, err := cd.options.directoryReader.ReadParsedObject(cd.options.context, objectReference)
 		if err != nil {
 			return nil, nil, err
 		}

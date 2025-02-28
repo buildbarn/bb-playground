@@ -42,12 +42,12 @@ func NewDirectoryInfoFromDirectoryReference(directoryReference model_core.Messag
 	if directoryReference.Message == nil {
 		return DirectoryInfo{}, status.Error(codes.InvalidArgument, "No directory reference provided")
 	}
-	childDirectoryReferenceIndex, err := model_core.GetIndexFromReferenceMessage(directoryReference.Message.Reference, directoryReference.OutgoingReferences.GetDegree())
+	clusterReference, err := directoryReference.GetOutgoingReference(directoryReference.Message.Reference)
 	if err != nil {
 		return DirectoryInfo{}, err
 	}
 	return DirectoryInfo{
-		ClusterReference: directoryReference.OutgoingReferences.GetOutgoingReference(childDirectoryReferenceIndex),
+		ClusterReference: clusterReference,
 		DirectoryIndex:   0,
 		DirectoriesCount: directoryReference.Message.DirectoriesCount,
 	}, nil
@@ -117,16 +117,14 @@ func (p *directoryClusterObjectParser[TReference]) addDirectoriesToCluster(ctx c
 	)
 
 	localReference := reference.GetLocalReference()
-	degree := localReference.GetDegree()
 	externalLeavesTotalSizeBytes := 0
 	switch leaves := d.Message.Leaves.(type) {
 	case *model_filesystem_pb.Directory_LeavesExternal:
-		leavesReferenceIndex, err := model_core.GetIndexFromReferenceMessage(leaves.LeavesExternal.Reference, degree)
+		leavesReference, err := d.GetOutgoingReference(leaves.LeavesExternal.Reference)
 		if err != nil {
-			return 0, 0, util.StatusWrapf(err, "Invalid reference index for leaves for directory %#v", dTrace.GetUNIXString())
+			return 0, 0, util.StatusWrapf(err, "Invalid reference for leaves for directory %#v", dTrace.GetUNIXString())
 		}
-		leavesReference := reference.WithLocalReference(d.OutgoingReferences.GetOutgoingReference(leavesReferenceIndex))
-		leavesObject, externalLeavesSizeBytes, err := p.leavesReader.ReadParsedObject(ctx, leavesReference)
+		leavesObject, externalLeavesSizeBytes, err := p.leavesReader.ReadParsedObject(ctx, reference.WithLocalReference(leavesReference))
 		if err != nil {
 			return 0, 0, util.StatusWrapf(err, "Leaves for directory %#v with reference %s", dTrace.GetUNIXString(), leavesReference)
 		}

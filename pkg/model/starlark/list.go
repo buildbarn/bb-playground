@@ -37,12 +37,10 @@ func AllListLeafElementsSkippingDuplicateParents(
 		func(element model_core.Message[*model_starlark_pb.List_Element]) (*model_core_pb.Reference, error) {
 			if level, ok := element.Message.Level.(*model_starlark_pb.List_Element_Parent_); ok {
 				listReferenceMessage := level.Parent.Reference
-				listReferenceIndex, err := model_core.GetIndexFromReferenceMessage(listReferenceMessage, element.OutgoingReferences.GetDegree())
+				listReference, err := element.GetOutgoingReference(level.Parent.Reference)
 				if err != nil {
 					return nil, err
 				}
-
-				listReference := element.OutgoingReferences.GetOutgoingReference(listReferenceIndex)
 				if _, ok := listsSeen[listReference]; ok {
 					// Parent was already seen before.
 					// Skip it.

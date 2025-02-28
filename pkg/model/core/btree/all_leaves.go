@@ -46,15 +46,12 @@ func AllLeaves[
 					}
 				} else {
 					// Traverser wants us to enter a child.
-					index, err := model_core.GetIndexFromReferenceMessage(childReference, lastList.OutgoingReferences.GetDegree())
+					objectReference, err := lastList.GetOutgoingReference(childReference)
 					if err != nil {
 						*errOut = err
 						return
 					}
-					child, _, err := reader.ReadParsedObject(
-						ctx,
-						lastList.OutgoingReferences.GetOutgoingReference(index),
-					)
+					child, _, err := reader.ReadParsedObject(ctx, objectReference)
 					if err != nil {
 						*errOut = err
 						return

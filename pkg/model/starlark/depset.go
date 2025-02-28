@@ -66,12 +66,10 @@ func deduplicateAndAddTransitive(thread *starlark.Thread, children *[]any, trans
 			case *model_starlark_pb.List_Element_Parent_:
 				// Multiple encoded children. Deduplicate
 				// them by list object reference.
-				listReferenceMessage := level.Parent.Reference
-				listReferenceIndex, err := model_core.GetIndexFromReferenceMessage(listReferenceMessage, v.OutgoingReferences.GetDegree())
+				listReference, err := v.GetOutgoingReference(level.Parent.Reference)
 				if err != nil {
 					return err
 				}
-				listReference := v.OutgoingReferences.GetOutgoingReference(listReferenceIndex)
 				if _, ok := encodedListsSeen[listReference]; !ok {
 					*children = append(*children, v)
 					encodedListsSeen[listReference] = struct{}{}
