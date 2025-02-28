@@ -65,6 +65,7 @@ var allowFilesUnpackerInto = unpack.IfNotNone(unpack.Or([]unpack.UnpackerInto[[]
 
 const (
 	CanonicalPackageKey = "canonical_package"
+	CurrentCtxKey       = "current_ctx"
 	GlobExpanderKey     = "glob_expander"
 )
 
@@ -1118,6 +1119,25 @@ func init() {
 				},
 			),
 			"bazel_version": starlark.String("8.0.0"),
+			"current_ctx": starlark.NewBuiltin(
+				"native.current_ctx",
+				func(thread *starlark.Thread, b *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
+					// This function is an extension. It
+					// is provided to implement functions
+					// like cc_internal.actions2ctx_cheat().
+					// It should be removed once the C++
+					// rules have been fully converted to
+					// Starlark.
+					if err := starlark.UnpackArgs(b.Name(), args, kwargs); err != nil {
+						return nil, err
+					}
+					currentCtx := thread.Local(CurrentCtxKey)
+					if currentCtx == nil {
+						return nil, errors.New("this function can only be called from within a rule implementation function")
+					}
+					return currentCtx.(starlark.Value), nil
+				},
+			),
 			"exports_files": starlark.NewBuiltin(
 				"native.exports_files",
 				func(thread *starlark.Thread, b *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {

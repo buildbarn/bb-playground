@@ -811,7 +811,7 @@ def builtins_internal_cc_common_merge_linking_contexts(linking_contexts = []):
     )
 
 def builtins_internal_cc_internal_actions2ctx_cheat(actions):
-    return actions._cc_internal_actions2ctx_cheat
+    return native.current_ctx()
 
 def builtins_internal_cc_internal_cc_toolchain_features(*, toolchain_config_info, tools_directory):
     return struct(
@@ -913,7 +913,7 @@ def builtins_internal_cc_internal_get_link_args(
         build_variables,
         feature_configuration,
         parameter_file_type):
-    return struct()
+    return native.current_ctx().actions.args()
 
 def builtins_internal_cc_internal_licenses(ctx):
     return None

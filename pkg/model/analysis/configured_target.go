@@ -475,6 +475,7 @@ func (c *baseComputer) ComputeConfiguredTargetValue(ctx context.Context, key mod
 			execGroups:    make([]*ruleContextExecGroupState, len(ruleDefinition.Message.ExecGroups)),
 			fragments:     map[string]*model_starlark.Struct{},
 		}
+		thread.SetLocal(model_starlark.CurrentCtxKey, rc)
 
 		thread.SetLocal(model_starlark.SubruleInvokerKey, func(subruleIdentifier label.CanonicalStarlarkIdentifier, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
 			// TODO: Subrules are allowed to be nested. Keep a stack!
@@ -1299,8 +1300,6 @@ func (ruleContextActions) Hash(thread *starlark.Thread) (uint32, error) {
 
 func (rca *ruleContextActions) Attr(thread *starlark.Thread, name string) (starlark.Value, error) {
 	switch name {
-	case "_cc_internal_actions2ctx_cheat":
-		return rca.ruleContext, nil
 	case "args":
 		return starlark.NewBuiltin("ctx.actions.args", rca.doArgs), nil
 	case "declare_directory":
@@ -1325,7 +1324,6 @@ func (rca *ruleContextActions) Attr(thread *starlark.Thread, name string) (starl
 }
 
 var ruleContextActionsAttrNames = []string{
-	"_cc_internal_actions2ctx_cheat",
 	"args",
 	"declare_directory",
 	"declare_file",
