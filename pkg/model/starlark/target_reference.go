@@ -15,7 +15,7 @@ import (
 	"go.starlark.net/starlark"
 )
 
-type targetReference struct {
+type TargetReference struct {
 	label            pg_label.ResolvedLabel
 	encodedProviders model_core.Message[[]*model_starlark_pb.Struct]
 
@@ -23,7 +23,7 @@ type targetReference struct {
 }
 
 func NewTargetReference(label pg_label.ResolvedLabel, providers model_core.Message[[]*model_starlark_pb.Struct]) starlark.Value {
-	return &targetReference{
+	return &TargetReference{
 		label:            label,
 		encodedProviders: providers,
 		decodedProviders: make([]atomic.Pointer[Struct], len(providers.Message)),
@@ -31,33 +31,33 @@ func NewTargetReference(label pg_label.ResolvedLabel, providers model_core.Messa
 }
 
 var (
-	_ EncodableValue    = (*targetReference)(nil)
-	_ starlark.HasAttrs = (*targetReference)(nil)
-	_ starlark.Mapping  = (*targetReference)(nil)
+	_ EncodableValue    = (*TargetReference)(nil)
+	_ starlark.HasAttrs = (*TargetReference)(nil)
+	_ starlark.Mapping  = (*TargetReference)(nil)
 )
 
-func (tr *targetReference) String() string {
+func (tr *TargetReference) String() string {
 	return fmt.Sprintf("<target %s>", tr.label.String())
 }
 
-func (targetReference) Type() string {
+func (TargetReference) Type() string {
 	return "Target"
 }
 
-func (targetReference) Freeze() {
+func (TargetReference) Freeze() {
 }
 
-func (targetReference) Truth() starlark.Bool {
+func (TargetReference) Truth() starlark.Bool {
 	return starlark.True
 }
 
-func (targetReference) Hash(thread *starlark.Thread) (uint32, error) {
+func (TargetReference) Hash(thread *starlark.Thread) (uint32, error) {
 	return 0, errors.New("Target cannot be hashed")
 }
 
 var defaultInfoProviderIdentifier = pg_label.MustNewCanonicalStarlarkIdentifier("@@builtins_core+//:exports.bzl%DefaultInfo")
 
-func (tr *targetReference) Attr(thread *starlark.Thread, name string) (starlark.Value, error) {
+func (tr *TargetReference) Attr(thread *starlark.Thread, name string) (starlark.Value, error) {
 	switch name {
 	case "label":
 		return NewLabel(tr.label), nil
@@ -81,11 +81,11 @@ var targetReferenceAttrNames = []string{
 	"label",
 }
 
-func (tr *targetReference) AttrNames() []string {
+func (tr *TargetReference) AttrNames() []string {
 	return targetReferenceAttrNames
 }
 
-func (tr *targetReference) getProviderValue(thread *starlark.Thread, providerIdentifier pg_label.CanonicalStarlarkIdentifier) (*Struct, error) {
+func (tr *TargetReference) getProviderValue(thread *starlark.Thread, providerIdentifier pg_label.CanonicalStarlarkIdentifier) (*Struct, error) {
 	valueDecodingOptions := thread.Local(ValueDecodingOptionsKey)
 	if valueDecodingOptions == nil {
 		return nil, errors.New("providers cannot be decoded from within this context")
@@ -117,7 +117,7 @@ func (tr *targetReference) getProviderValue(thread *starlark.Thread, providerIde
 	return strukt, nil
 }
 
-func (tr *targetReference) Get(thread *starlark.Thread, v starlark.Value) (starlark.Value, bool, error) {
+func (tr *TargetReference) Get(thread *starlark.Thread, v starlark.Value) (starlark.Value, bool, error) {
 	provider, ok := v.(*Provider)
 	if !ok {
 		return nil, false, errors.New("keys have to be of type provider")
@@ -133,7 +133,7 @@ func (tr *targetReference) Get(thread *starlark.Thread, v starlark.Value) (starl
 	return providerValue, true, nil
 }
 
-func (tr *targetReference) EncodeValue(path map[starlark.Value]struct{}, currentIdentifier *pg_label.CanonicalStarlarkIdentifier, options *ValueEncodingOptions) (model_core.PatchedMessage[*model_starlark_pb.Value, dag.ObjectContentsWalker], bool, error) {
+func (tr *TargetReference) EncodeValue(path map[starlark.Value]struct{}, currentIdentifier *pg_label.CanonicalStarlarkIdentifier, options *ValueEncodingOptions) (model_core.PatchedMessage[*model_starlark_pb.Value, dag.ObjectContentsWalker], bool, error) {
 	return model_core.NewPatchedMessageFromExisting(
 		model_core.NewNestedMessage(tr.encodedProviders, &model_starlark_pb.Value{
 			Kind: &model_starlark_pb.Value_TargetReference{

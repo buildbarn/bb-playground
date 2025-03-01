@@ -171,7 +171,7 @@ def _genrule_impl(ctx):
     # TODO: Make this implementation more accurate.
     ctx.actions.run(
         executable = "sh",
-        arguments = ["-c", ctx.attr.cmd_bash or ctx.attr.cmd],
+        arguments = ["-c", ctx.expand_location(ctx.attr.cmd_bash or ctx.attr.cmd)],
         outputs = ctx.outputs.outs,
     )
 

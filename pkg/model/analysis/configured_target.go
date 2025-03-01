@@ -815,6 +815,8 @@ func (rc *ruleContext) Attr(thread *starlark.Thread, name string) (starlark.Valu
 		return &ruleContextExecutable{
 			ruleContext: rc,
 		}, nil
+	case "expand_location":
+		return starlark.NewBuiltin("ctx.expand_location", rc.doExpandLocation), nil
 	case "features":
 		// TODO: Do we want to support ctx.features in a meaningful way?
 		return starlark.NewList(nil), nil
@@ -1108,6 +1110,21 @@ func (ruleContext) AttrNames() []string {
 
 func (ruleContext) doCoverageInstrumented(thread *starlark.Thread, b *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
 	return starlark.False, nil
+}
+
+func (ruleContext) doExpandLocation(thread *starlark.Thread, b *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
+	var input string
+	var targets []*model_starlark.TargetReference
+	if err := starlark.UnpackArgs(
+		b.Name(), args, kwargs,
+		"input", unpack.Bind(thread, &input, unpack.String),
+		"targets?", unpack.Bind(thread, &targets, unpack.List(unpack.Type[*model_starlark.TargetReference]("Target"))),
+	); err != nil {
+		return nil, err
+	}
+
+	// TODO: Actually expand $(location) tags.
+	return starlark.String(input), nil
 }
 
 func toSymlinkEntryDepset(v any) *model_starlark.Depset {
