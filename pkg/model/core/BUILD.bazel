@@ -4,6 +4,7 @@ load("@rules_go//go:def.bzl", "go_library", "go_test")
 go_library(
     name = "core",
     srcs = [
+        "created_object.go",
         "file_writing_merkle_tree_capturer.go",
         "get_index_from_reference_message.go",
         "message.go",

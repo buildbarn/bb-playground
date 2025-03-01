@@ -89,13 +89,15 @@ func (c *baseComputer) ComputeTargetPatternExpansionValue(ctx context.Context, k
 		btree.NewObjectCreatingNodeMerger(
 			model_encoding.NewChainedBinaryEncoder(nil),
 			c.buildSpecificationReference.GetReferenceFormat(),
-			/* parentNodeComputer = */ func(contents *object.Contents, childNodes []*model_analysis_pb.TargetPatternExpansion_Value_TargetLabel, outgoingReferences object.OutgoingReferences, metadata []dag.ObjectContentsWalker) (model_core.PatchedMessage[*model_analysis_pb.TargetPatternExpansion_Value_TargetLabel, dag.ObjectContentsWalker], error) {
+			/* parentNodeComputer = */ func(createdObject model_core.CreatedObject[dag.ObjectContentsWalker], childNodes []*model_analysis_pb.TargetPatternExpansion_Value_TargetLabel) (model_core.PatchedMessage[*model_analysis_pb.TargetPatternExpansion_Value_TargetLabel, dag.ObjectContentsWalker], error) {
 				patcher := model_core.NewReferenceMessagePatcher[dag.ObjectContentsWalker]()
 				return model_core.NewPatchedMessage(
 					&model_analysis_pb.TargetPatternExpansion_Value_TargetLabel{
 						Level: &model_analysis_pb.TargetPatternExpansion_Value_TargetLabel_Parent_{
 							Parent: &model_analysis_pb.TargetPatternExpansion_Value_TargetLabel_Parent{
-								Reference: patcher.AddReference(contents.GetReference(), dag.NewSimpleObjectContentsWalker(contents, metadata)),
+								Reference: patcher.AddReference(
+									createdObject.Contents.GetReference(),
+									dag.NewSimpleObjectContentsWalker(createdObject.Contents, createdObject.Metadata)),
 							},
 						},
 					},

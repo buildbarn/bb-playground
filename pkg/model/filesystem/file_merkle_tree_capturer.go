@@ -17,7 +17,7 @@ import (
 // will be returned by CreateFileMerkleTree.
 type FileMerkleTreeCapturer[T any] interface {
 	CaptureChunk(contents *object.Contents) T
-	CaptureFileContentsList(contents *object.Contents, children []T) T
+	CaptureFileContentsList(createdObject model_core.CreatedObject[T]) T
 }
 
 type noopFileMerkleTreeCapturer struct{}
@@ -32,7 +32,7 @@ func (noopFileMerkleTreeCapturer) CaptureChunk(contents *object.Contents) model_
 	return model_core.NoopReferenceMetadata{}
 }
 
-func (noopFileMerkleTreeCapturer) CaptureFileContentsList(contents *object.Contents, children []model_core.NoopReferenceMetadata) model_core.NoopReferenceMetadata {
+func (noopFileMerkleTreeCapturer) CaptureFileContentsList(createdObject model_core.CreatedObject[model_core.NoopReferenceMetadata]) model_core.NoopReferenceMetadata {
 	return model_core.NoopReferenceMetadata{}
 }
 
@@ -56,12 +56,12 @@ func (chunkDiscardingFileMerkleTreeCapturer) CaptureChunk(contents *object.Conte
 	return CapturedObject{}
 }
 
-func (chunkDiscardingFileMerkleTreeCapturer) CaptureFileContentsList(contents *object.Contents, children []CapturedObject) CapturedObject {
+func (chunkDiscardingFileMerkleTreeCapturer) CaptureFileContentsList(createdObject model_core.CreatedObject[CapturedObject]) CapturedObject {
 	o := CapturedObject{
-		Contents: contents,
+		Contents: createdObject.Contents,
 	}
-	if contents.GetReference().GetHeight() > 1 {
-		o.Children = children
+	if createdObject.Contents.GetReference().GetHeight() > 1 {
+		o.Children = createdObject.Metadata
 	}
 	return o
 }
@@ -77,11 +77,11 @@ func NewFileWritingFileMerkleTreeCapturer(capturer *model_core.FileWritingMerkle
 }
 
 func (c fileWritingFileMerkleTreeCapturer) CaptureChunk(contents *object.Contents) model_core.FileBackedObjectLocation {
-	return c.capturer.CaptureObject(contents, nil)
+	return c.capturer.CaptureObject(model_core.CreatedObject[model_core.FileBackedObjectLocation]{Contents: contents})
 }
 
-func (c fileWritingFileMerkleTreeCapturer) CaptureFileContentsList(contents *object.Contents, children []model_core.FileBackedObjectLocation) model_core.FileBackedObjectLocation {
-	return c.capturer.CaptureObject(contents, children)
+func (c fileWritingFileMerkleTreeCapturer) CaptureFileContentsList(createdObject model_core.CreatedObject[model_core.FileBackedObjectLocation]) model_core.FileBackedObjectLocation {
+	return c.capturer.CaptureObject(createdObject)
 }
 
 type FileMerkleTreeCapturerForTesting FileMerkleTreeCapturer[model_core.ReferenceMetadata]

@@ -74,7 +74,7 @@ func (c *baseComputer) applyTransition(
 		btree.NewObjectCreatingNodeMerger(
 			model_encoding.NewChainedBinaryEncoder(nil),
 			c.buildSpecificationReference.GetReferenceFormat(),
-			/* parentNodeComputer = */ func(contents *object.Contents, childNodes []*model_analysis_pb.Configuration_BuildSettingOverride, outgoingReferences object.OutgoingReferences, metadata []dag.ObjectContentsWalker) (model_core.PatchedMessage[*model_analysis_pb.Configuration_BuildSettingOverride, dag.ObjectContentsWalker], error) {
+			/* parentNodeComputer = */ func(createdObject model_core.CreatedObject[dag.ObjectContentsWalker], childNodes []*model_analysis_pb.Configuration_BuildSettingOverride) (model_core.PatchedMessage[*model_analysis_pb.Configuration_BuildSettingOverride, dag.ObjectContentsWalker], error) {
 				var firstLabel string
 				switch firstEntry := childNodes[0].Level.(type) {
 				case *model_analysis_pb.Configuration_BuildSettingOverride_Leaf_:
@@ -87,7 +87,10 @@ func (c *baseComputer) applyTransition(
 					&model_analysis_pb.Configuration_BuildSettingOverride{
 						Level: &model_analysis_pb.Configuration_BuildSettingOverride_Parent_{
 							Parent: &model_analysis_pb.Configuration_BuildSettingOverride_Parent{
-								Reference:  patcher.AddReference(contents.GetReference(), dag.NewSimpleObjectContentsWalker(contents, metadata)),
+								Reference: patcher.AddReference(
+									createdObject.Contents.GetReference(),
+									dag.NewSimpleObjectContentsWalker(createdObject.Contents, createdObject.Metadata),
+								),
 								FirstLabel: firstLabel,
 							},
 						},
@@ -184,7 +187,7 @@ func (c *baseComputer) applyTransition(
 		return model_core.NewSimplePatchedMessage[dag.ObjectContentsWalker, *model_core_pb.Reference](nil), nil
 	}
 
-	newConfigurationContents, newConfigurationMetadata, err := model_core.MarshalAndEncodePatchedMessage(
+	createdConfiguration, err := model_core.MarshalAndEncodePatchedMessage(
 		model_core.NewPatchedMessage(newConfiguration, buildSettingOverrides.Patcher),
 		c.buildSpecificationReference.GetReferenceFormat(),
 		c.getValueObjectEncoder(),
@@ -195,8 +198,8 @@ func (c *baseComputer) applyTransition(
 	configurationReferencePatcher := model_core.NewReferenceMessagePatcher[dag.ObjectContentsWalker]()
 	return model_core.NewPatchedMessage(
 		configurationReferencePatcher.AddReference(
-			newConfigurationContents.GetReference(),
-			dag.NewSimpleObjectContentsWalker(newConfigurationContents, newConfigurationMetadata),
+			createdConfiguration.Contents.GetReference(),
+			dag.NewSimpleObjectContentsWalker(createdConfiguration.Contents, createdConfiguration.Metadata),
 		),
 		configurationReferencePatcher,
 	), nil

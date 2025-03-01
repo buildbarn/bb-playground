@@ -16,10 +16,8 @@ import (
 // the values of nodes stored in an object into a single node that can
 // be stored in its parent.
 type ParentNodeComputer[TNode proto.Message, TMetadata model_core.ReferenceMetadata] func(
-	contents *object.Contents,
+	createdObject model_core.CreatedObject[TMetadata],
 	childNodes []TNode,
-	outgoingReferences object.OutgoingReferences,
-	metadata []TMetadata,
 ) (model_core.PatchedMessage[TNode, TMetadata], error)
 
 // NewObjectCreatingNodeMerger creates a NodeMerger that can be used in
@@ -49,7 +47,7 @@ func NewObjectCreatingNodeMerger[TNode proto.Message, TMetadata model_core.Refer
 
 		// Construct a parent node that references the object containing
 		// the children.
-		parentNode, err := parentNodeComputer(contents, list.Message, references, metadata)
+		parentNode, err := parentNodeComputer(model_core.CreatedObject[TMetadata]{Contents: contents, Metadata: metadata}, list.Message)
 		if err != nil {
 			return model_core.PatchedMessage[TNode, TMetadata]{}, util.StatusWrap(err, "Failed to compute parent node")
 		}

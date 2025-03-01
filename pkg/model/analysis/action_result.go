@@ -109,12 +109,15 @@ func (c *baseComputer) convertDictToEnvironmentVariableList(environment map[stri
 		btree.NewObjectCreatingNodeMerger(
 			commandEncoder,
 			c.buildSpecificationReference.GetReferenceFormat(),
-			/* parentNodeComputer = */ func(contents *object.Contents, childNodes []*model_command_pb.EnvironmentVariableList_Element, outgoingReferences object.OutgoingReferences, metadata []dag.ObjectContentsWalker) (model_core.PatchedMessage[*model_command_pb.EnvironmentVariableList_Element, dag.ObjectContentsWalker], error) {
+			/* parentNodeComputer = */ func(createdObject model_core.CreatedObject[dag.ObjectContentsWalker], childNodes []*model_command_pb.EnvironmentVariableList_Element) (model_core.PatchedMessage[*model_command_pb.EnvironmentVariableList_Element, dag.ObjectContentsWalker], error) {
 				patcher := model_core.NewReferenceMessagePatcher[dag.ObjectContentsWalker]()
 				return model_core.NewPatchedMessage(
 					&model_command_pb.EnvironmentVariableList_Element{
 						Level: &model_command_pb.EnvironmentVariableList_Element_Parent{
-							Parent: patcher.AddReference(contents.GetReference(), dag.NewSimpleObjectContentsWalker(contents, metadata)),
+							Parent: patcher.AddReference(
+								createdObject.Contents.GetReference(),
+								dag.NewSimpleObjectContentsWalker(createdObject.Contents, createdObject.Metadata),
+							),
 						},
 					},
 					patcher,

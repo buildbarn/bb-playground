@@ -41,7 +41,7 @@ func NewFileWritingMerkleTreeCapturer(w io.Writer) *FileWritingMerkleTreeCapture
 }
 
 // CaptureObject writes the contents of a single object to disk.
-func (c *FileWritingMerkleTreeCapturer) CaptureObject(contents *object.Contents, children []FileBackedObjectLocation) FileBackedObjectLocation {
+func (c *FileWritingMerkleTreeCapturer) CaptureObject(createdObject CreatedObject[FileBackedObjectLocation]) FileBackedObjectLocation {
 	c.lock.Lock()
 	defer c.lock.Unlock()
 
@@ -49,16 +49,16 @@ func (c *FileWritingMerkleTreeCapturer) CaptureObject(contents *object.Contents,
 		return FileBackedObjectLocation{offsetBytes: math.MaxUint64}
 	}
 
-	fullData := contents.GetFullData()
+	fullData := createdObject.Contents.GetFullData()
 	if _, err := c.writer.Write(fullData); err != nil {
 		c.savedErr = err
 		return FileBackedObjectLocation{offsetBytes: math.MaxUint64}
 	}
 
-	if len(children) != contents.GetDegree() {
+	if len(createdObject.Metadata) != createdObject.Contents.GetDegree() {
 		panic("number of children should match the degree")
 	}
-	for _, child := range children {
+	for _, child := range createdObject.Metadata {
 		var b [8]byte
 		binary.LittleEndian.PutUint64(b[:], child.offsetBytes)
 		if _, err := c.writer.Write(b[:]); err != nil {
@@ -68,7 +68,7 @@ func (c *FileWritingMerkleTreeCapturer) CaptureObject(contents *object.Contents,
 	}
 
 	startOffsetBytes := c.currentOffsetBytes
-	c.currentOffsetBytes += uint64(len(fullData) + len(children)*8)
+	c.currentOffsetBytes += uint64(len(fullData) + len(createdObject.Metadata)*8)
 	return FileBackedObjectLocation{
 		offsetBytes: startOffsetBytes,
 	}

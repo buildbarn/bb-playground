@@ -12,7 +12,6 @@ import (
 	"github.com/buildbarn/bonanza/pkg/model/core/inlinedtree"
 	model_starlark_pb "github.com/buildbarn/bonanza/pkg/proto/model/starlark"
 	"github.com/buildbarn/bonanza/pkg/storage/dag"
-	"github.com/buildbarn/bonanza/pkg/storage/object"
 
 	"google.golang.org/protobuf/proto"
 )
@@ -73,8 +72,7 @@ func (n *packageGroupNode) toProto(inlinedTreeOptions *inlinedtree.Options) (mod
 		ExternalMessage: model_core.NewSimplePatchedMessage[dag.ObjectContentsWalker](proto.Message(nil)),
 		ParentAppender: func(
 			subpackages model_core.PatchedMessage[*model_starlark_pb.PackageGroup_Subpackages, dag.ObjectContentsWalker],
-			externalContents *object.Contents,
-			externalChildren []dag.ObjectContentsWalker,
+			externalObject model_core.CreatedObject[dag.ObjectContentsWalker],
 		) {
 			subpackages.Message.IncludeSubpackages = n.includeSubpackages
 		},
@@ -104,18 +102,17 @@ func (n *packageGroupNode) toProto(inlinedTreeOptions *inlinedtree.Options) (mod
 			ExternalMessage: model_core.NewPatchedMessage[proto.Message](&overrides, patcher),
 			ParentAppender: func(
 				subpackages model_core.PatchedMessage[*model_starlark_pb.PackageGroup_Subpackages, dag.ObjectContentsWalker],
-				externalContents *object.Contents,
-				externalChildren []dag.ObjectContentsWalker,
+				externalObject model_core.CreatedObject[dag.ObjectContentsWalker],
 			) {
-				if externalContents == nil {
+				if externalObject.Contents == nil {
 					subpackages.Message.Overrides = &model_starlark_pb.PackageGroup_Subpackages_OverridesInline{
 						OverridesInline: &overrides,
 					}
 				} else {
 					subpackages.Message.Overrides = &model_starlark_pb.PackageGroup_Subpackages_OverridesExternal{
 						OverridesExternal: subpackages.Patcher.AddReference(
-							externalContents.GetReference(),
-							dag.NewSimpleObjectContentsWalker(externalContents, externalChildren),
+							externalObject.Contents.GetReference(),
+							dag.NewSimpleObjectContentsWalker(externalObject.Contents, externalObject.Metadata),
 						),
 					}
 				}

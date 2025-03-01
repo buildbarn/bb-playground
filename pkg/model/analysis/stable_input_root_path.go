@@ -41,7 +41,7 @@ func (c *baseComputer) ComputeStableInputRootPathValue(ctx context.Context, key 
 	}
 
 	referenceFormat := c.buildSpecificationReference.GetReferenceFormat()
-	commandContents, commandMetadata, err := model_core.MarshalAndEncodePatchedMessage(
+	createdCommand, err := model_core.MarshalAndEncodePatchedMessage(
 		model_core.NewPatchedMessage(
 			&model_command_pb.Command{
 				Arguments: []*model_command_pb.ArgumentList_Element{{
@@ -64,7 +64,7 @@ func (c *baseComputer) ComputeStableInputRootPathValue(ctx context.Context, key 
 		return PatchedStableInputRootPathValue{}, fmt.Errorf("failed to create command: %w", err)
 	}
 
-	inputRootContents, inputRootMetadata, err := model_core.MarshalAndEncodePatchedMessage(
+	createdInputRoot, err := model_core.MarshalAndEncodePatchedMessage(
 		model_core.NewSimplePatchedMessage[dag.ObjectContentsWalker](
 			&model_filesystem_pb.Directory{
 				Leaves: &model_filesystem_pb.Directory_LeavesInline{
@@ -85,12 +85,12 @@ func (c *baseComputer) ComputeStableInputRootPathValue(ctx context.Context, key 
 		Message: &model_analysis_pb.ActionResult_Key{
 			PlatformPkixPublicKey: repoPlatform.Message.ExecPkixPublicKey,
 			CommandReference: keyPatcher.AddReference(
-				commandContents.GetReference(),
-				dag.NewSimpleObjectContentsWalker(commandContents, commandMetadata),
+				createdCommand.Contents.GetReference(),
+				dag.NewSimpleObjectContentsWalker(createdCommand.Contents, createdCommand.Metadata),
 			),
 			InputRootReference: keyPatcher.AddReference(
-				inputRootContents.GetReference(),
-				dag.NewSimpleObjectContentsWalker(inputRootContents, inputRootMetadata),
+				createdInputRoot.Contents.GetReference(),
+				dag.NewSimpleObjectContentsWalker(createdInputRoot.Contents, createdInputRoot.Metadata),
 			),
 			ExecutionTimeout:   &durationpb.Duration{Seconds: 60},
 			ExitCodeMustBeZero: true,

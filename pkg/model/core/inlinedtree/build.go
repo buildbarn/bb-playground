@@ -14,17 +14,16 @@ import (
 )
 
 // ParentAppender is invoked to append the data to be stored in the
-// parent message. If externalContents is not nil, the data is about to
-// be stored in an external message. If externalMessage is nil, the data
-// may be inlined.
+// parent message. If externalObject is set, the data is about to
+// be stored in an external message. If externalObject is not set, the
+// data may be inlined.
 //
 // This function may be invoked multiple times to determine how the size
 // of the parent object is affected by either inlining the data or
 // storing it externally.
 type ParentAppender[TParentMessage any, TMetadata model_core.ReferenceMetadata] func(
 	parent model_core.PatchedMessage[TParentMessage, TMetadata],
-	externalContents *object.Contents,
-	externalMetadata []TMetadata,
+	externalObject model_core.CreatedObject[TMetadata],
 )
 
 // Candidate of data that needs to be stored in a message, but can
@@ -117,11 +116,11 @@ func Build[
 		parentInlined := model_core.PatchedMessage[TParentMessagePtr, TMetadata]{
 			Message: TParentMessagePtr(new(TParentMessage)),
 		}
-		candidate.ParentAppender(parentInlined, nil, nil)
+		candidate.ParentAppender(parentInlined, model_core.CreatedObject[TMetadata]{})
 		inlinedSizeBytes := candidate.ExternalMessage.Patcher.GetReferencesSizeBytes() + marshalOptions.Size(parentInlined.Message)
 
 		parentExternal := model_core.NewSimplePatchedMessage[TMetadata](TParentMessagePtr(new(TParentMessage)))
-		candidate.ParentAppender(parentExternal, bogusContents, nil)
+		candidate.ParentAppender(parentExternal, model_core.CreatedObject[TMetadata]{Contents: bogusContents})
 		externalSizeBytes := parentExternal.Patcher.GetReferencesSizeBytes() + marshalOptions.Size(parentExternal.Message)
 		parentExternal.Discard()
 
@@ -214,16 +213,16 @@ func Build[
 		candidate := &candidates[i]
 		if candidatesToInline[i] {
 			// Inline the message into the parent.
-			candidate.ParentAppender(output, nil, nil)
+			candidate.ParentAppender(output, model_core.CreatedObject[TMetadata]{})
 		} else {
 			// Store the message separately, and store a
 			// reference in the parent.
-			contents, metadata, err := model_core.MarshalAndEncodePatchedMessage(candidate.ExternalMessage, options.ReferenceFormat, options.Encoder)
+			createdObject, err := model_core.MarshalAndEncodePatchedMessage(candidate.ExternalMessage, options.ReferenceFormat, options.Encoder)
 			if err != nil {
 				output.Discard()
 				return model_core.PatchedMessage[TParentMessagePtr, TMetadata]{}, util.StatusWrapf(err, "Failed to create object contents for candidate at index %d", i)
 			}
-			candidate.ParentAppender(output, contents, metadata)
+			candidate.ParentAppender(output, createdObject)
 			candidate.ExternalMessage.Clear()
 		}
 	}

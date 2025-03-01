@@ -58,13 +58,16 @@ func newSplitBTreeBuilder[T proto.Message](options *ValueEncodingOptions, parent
 func newListBuilder(options *ValueEncodingOptions) btree.Builder[*model_starlark_pb.List_Element, dag.ObjectContentsWalker] {
 	return newSplitBTreeBuilder(
 		options,
-		/* parentNodeComputer = */ func(contents *object.Contents, childNodes []*model_starlark_pb.List_Element, outgoingReferences object.OutgoingReferences, metadata []dag.ObjectContentsWalker) (model_core.PatchedMessage[*model_starlark_pb.List_Element, dag.ObjectContentsWalker], error) {
+		/* parentNodeComputer = */ func(createdObject model_core.CreatedObject[dag.ObjectContentsWalker], childNodes []*model_starlark_pb.List_Element) (model_core.PatchedMessage[*model_starlark_pb.List_Element, dag.ObjectContentsWalker], error) {
 			patcher := model_core.NewReferenceMessagePatcher[dag.ObjectContentsWalker]()
 			return model_core.NewPatchedMessage(
 				&model_starlark_pb.List_Element{
 					Level: &model_starlark_pb.List_Element_Parent_{
 						Parent: &model_starlark_pb.List_Element_Parent{
-							Reference: patcher.AddReference(contents.GetReference(), dag.NewSimpleObjectContentsWalker(contents, metadata)),
+							Reference: patcher.AddReference(
+								createdObject.Contents.GetReference(),
+								dag.NewSimpleObjectContentsWalker(createdObject.Contents, createdObject.Metadata),
+							),
 						},
 					},
 				},
@@ -169,13 +172,16 @@ func EncodeValue(value starlark.Value, path map[starlark.Value]struct{}, current
 
 		treeBuilder := newSplitBTreeBuilder(
 			options,
-			/* parentNodeComputer = */ func(contents *object.Contents, childNodes []*model_starlark_pb.Dict_Entry, outgoingReferences object.OutgoingReferences, metadata []dag.ObjectContentsWalker) (model_core.PatchedMessage[*model_starlark_pb.Dict_Entry, dag.ObjectContentsWalker], error) {
+			/* parentNodeComputer = */ func(createdObject model_core.CreatedObject[dag.ObjectContentsWalker], childNodes []*model_starlark_pb.Dict_Entry) (model_core.PatchedMessage[*model_starlark_pb.Dict_Entry, dag.ObjectContentsWalker], error) {
 				patcher := model_core.NewReferenceMessagePatcher[dag.ObjectContentsWalker]()
 				return model_core.NewPatchedMessage(
 					&model_starlark_pb.Dict_Entry{
 						Level: &model_starlark_pb.Dict_Entry_Parent_{
 							Parent: &model_starlark_pb.Dict_Entry_Parent{
-								Reference: patcher.AddReference(contents.GetReference(), dag.NewSimpleObjectContentsWalker(contents, metadata)),
+								Reference: patcher.AddReference(
+									createdObject.Contents.GetReference(),
+									dag.NewSimpleObjectContentsWalker(createdObject.Contents, createdObject.Metadata),
+								),
 							},
 						},
 					},

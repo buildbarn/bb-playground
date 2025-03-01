@@ -240,13 +240,16 @@ func (e *depsetChildrenEncoder) encode(children any) error {
 func (d *Depset) Encode(path map[starlark.Value]struct{}, options *ValueEncodingOptions) (model_core.PatchedMessage[*model_starlark_pb.Depset, dag.ObjectContentsWalker], bool, error) {
 	treeBuilder := newSplitBTreeBuilder(
 		options,
-		/* parentNodeComputer = */ func(contents *object.Contents, childNodes []*model_starlark_pb.List_Element, outgoingReferences object.OutgoingReferences, metadata []dag.ObjectContentsWalker) (model_core.PatchedMessage[*model_starlark_pb.List_Element, dag.ObjectContentsWalker], error) {
+		/* parentNodeComputer = */ func(createdObject model_core.CreatedObject[dag.ObjectContentsWalker], childNodes []*model_starlark_pb.List_Element) (model_core.PatchedMessage[*model_starlark_pb.List_Element, dag.ObjectContentsWalker], error) {
 			patcher := model_core.NewReferenceMessagePatcher[dag.ObjectContentsWalker]()
 			return model_core.NewPatchedMessage(
 				&model_starlark_pb.List_Element{
 					Level: &model_starlark_pb.List_Element_Parent_{
 						Parent: &model_starlark_pb.List_Element_Parent{
-							Reference: patcher.AddReference(contents.GetReference(), dag.NewSimpleObjectContentsWalker(contents, metadata)),
+							Reference: patcher.AddReference(
+								createdObject.Contents.GetReference(),
+								dag.NewSimpleObjectContentsWalker(createdObject.Contents, createdObject.Metadata),
+							),
 						},
 					},
 				},

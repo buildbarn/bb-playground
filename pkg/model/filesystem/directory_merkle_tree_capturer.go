@@ -3,13 +3,12 @@ package filesystem
 import (
 	model_core "github.com/buildbarn/bonanza/pkg/model/core"
 	"github.com/buildbarn/bonanza/pkg/storage/dag"
-	"github.com/buildbarn/bonanza/pkg/storage/object"
 )
 
 type DirectoryMerkleTreeCapturer[TDirectory, TFile any] interface {
 	CaptureFileNode(TFile) TDirectory
-	CaptureDirectory(contents *object.Contents, children []TDirectory) TDirectory
-	CaptureLeaves(contents *object.Contents, children []TDirectory) TDirectory
+	CaptureDirectory(createdObject model_core.CreatedObject[TDirectory]) TDirectory
+	CaptureLeaves(createdObject model_core.CreatedObject[TDirectory]) TDirectory
 }
 
 type fileDiscardingDirectoryMerkleTreeCapturer struct{}
@@ -28,17 +27,17 @@ func (fileDiscardingDirectoryMerkleTreeCapturer) CaptureFileNode(model_core.Noop
 	return CapturedObject{}
 }
 
-func (fileDiscardingDirectoryMerkleTreeCapturer) CaptureDirectory(contents *object.Contents, children []CapturedObject) CapturedObject {
+func (fileDiscardingDirectoryMerkleTreeCapturer) CaptureDirectory(createdObject model_core.CreatedObject[CapturedObject]) CapturedObject {
 	return CapturedObject{
-		Contents: contents,
-		Children: children,
+		Contents: createdObject.Contents,
+		Children: createdObject.Metadata,
 	}
 }
 
-func (fileDiscardingDirectoryMerkleTreeCapturer) CaptureLeaves(contents *object.Contents, children []CapturedObject) CapturedObject {
+func (fileDiscardingDirectoryMerkleTreeCapturer) CaptureLeaves(createdObject model_core.CreatedObject[CapturedObject]) CapturedObject {
 	return CapturedObject{
-		Contents: contents,
-		Children: children,
+		Contents: createdObject.Contents,
+		Children: createdObject.Metadata,
 	}
 }
 
@@ -59,12 +58,12 @@ func (fileWritingDirectoryMerkleTreeCapturer) CaptureFileNode(metadata model_cor
 	return metadata
 }
 
-func (c fileWritingDirectoryMerkleTreeCapturer) CaptureDirectory(contents *object.Contents, children []model_core.FileBackedObjectLocation) model_core.FileBackedObjectLocation {
-	return c.capturer.CaptureObject(contents, children)
+func (c fileWritingDirectoryMerkleTreeCapturer) CaptureDirectory(createdObject model_core.CreatedObject[model_core.FileBackedObjectLocation]) model_core.FileBackedObjectLocation {
+	return c.capturer.CaptureObject(createdObject)
 }
 
-func (c fileWritingDirectoryMerkleTreeCapturer) CaptureLeaves(contents *object.Contents, children []model_core.FileBackedObjectLocation) model_core.FileBackedObjectLocation {
-	return c.capturer.CaptureObject(contents, children)
+func (c fileWritingDirectoryMerkleTreeCapturer) CaptureLeaves(createdObject model_core.CreatedObject[model_core.FileBackedObjectLocation]) model_core.FileBackedObjectLocation {
+	return c.capturer.CaptureObject(createdObject)
 }
 
 type inMemoryDirectoryMerkleTreeCapturer struct{}
@@ -77,10 +76,10 @@ func (inMemoryDirectoryMerkleTreeCapturer) CaptureFileNode(metadata dag.ObjectCo
 	return metadata
 }
 
-func (inMemoryDirectoryMerkleTreeCapturer) CaptureDirectory(contents *object.Contents, children []dag.ObjectContentsWalker) dag.ObjectContentsWalker {
-	return dag.NewSimpleObjectContentsWalker(contents, children)
+func (inMemoryDirectoryMerkleTreeCapturer) CaptureDirectory(createdObject model_core.CreatedObject[dag.ObjectContentsWalker]) dag.ObjectContentsWalker {
+	return dag.NewSimpleObjectContentsWalker(createdObject.Contents, createdObject.Metadata)
 }
 
-func (inMemoryDirectoryMerkleTreeCapturer) CaptureLeaves(contents *object.Contents, children []dag.ObjectContentsWalker) dag.ObjectContentsWalker {
-	return dag.NewSimpleObjectContentsWalker(contents, children)
+func (inMemoryDirectoryMerkleTreeCapturer) CaptureLeaves(createdObject model_core.CreatedObject[dag.ObjectContentsWalker]) dag.ObjectContentsWalker {
+	return dag.NewSimpleObjectContentsWalker(createdObject.Contents, createdObject.Metadata)
 }

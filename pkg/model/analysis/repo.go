@@ -1475,12 +1475,15 @@ func (mrc *moduleOrRepositoryContext) doExecute(thread *starlark.Thread, b *star
 		btree.NewObjectCreatingNodeMerger(
 			mrc.commandEncoder,
 			referenceFormat,
-			/* parentNodeComputer = */ func(contents *object.Contents, childNodes []*model_command_pb.ArgumentList_Element, outgoingReferences object.OutgoingReferences, metadata []dag.ObjectContentsWalker) (model_core.PatchedMessage[*model_command_pb.ArgumentList_Element, dag.ObjectContentsWalker], error) {
+			/* parentNodeComputer = */ func(createdObject model_core.CreatedObject[dag.ObjectContentsWalker], childNodes []*model_command_pb.ArgumentList_Element) (model_core.PatchedMessage[*model_command_pb.ArgumentList_Element, dag.ObjectContentsWalker], error) {
 				patcher := model_core.NewReferenceMessagePatcher[dag.ObjectContentsWalker]()
 				return model_core.NewPatchedMessage(
 					&model_command_pb.ArgumentList_Element{
 						Level: &model_command_pb.ArgumentList_Element_Parent{
-							Parent: patcher.AddReference(contents.GetReference(), dag.NewSimpleObjectContentsWalker(contents, metadata)),
+							Parent: patcher.AddReference(
+								createdObject.Contents.GetReference(),
+								dag.NewSimpleObjectContentsWalker(createdObject.Contents, createdObject.Metadata),
+							),
 						},
 					},
 					patcher,
@@ -1555,7 +1558,7 @@ func (mrc *moduleOrRepositoryContext) doExecute(thread *starlark.Thread, b *star
 
 	commandPatcher := argumentList.Patcher
 	commandPatcher.Merge(environmentVariableList.Patcher)
-	commandContents, commandMetadata, err := model_core.MarshalAndEncodePatchedMessage(
+	createdCommand, err := model_core.MarshalAndEncodePatchedMessage(
 		model_core.NewPatchedMessage(
 			&model_command_pb.Command{
 				Arguments:                   argumentList.Message,
@@ -1586,8 +1589,8 @@ func (mrc *moduleOrRepositoryContext) doExecute(thread *starlark.Thread, b *star
 		Message: &model_analysis_pb.ActionResult_Key{
 			PlatformPkixPublicKey: mrc.repoPlatform.Message.ExecPkixPublicKey,
 			CommandReference: keyPatcher.AddReference(
-				commandContents.GetReference(),
-				dag.NewSimpleObjectContentsWalker(commandContents, commandMetadata),
+				createdCommand.Contents.GetReference(),
+				dag.NewSimpleObjectContentsWalker(createdCommand.Contents, createdCommand.Metadata),
 			),
 			InputRootReference: inputRootReference.Message.Reference,
 			ExecutionTimeout:   &durationpb.Duration{Seconds: timeout},
@@ -1852,7 +1855,7 @@ func (mrc *moduleOrRepositoryContext) doRead(thread *starlark.Thread, b *starlar
 		return nil, err
 	}
 
-	commandContents, commandMetadata, err := model_core.MarshalAndEncodePatchedMessage(
+	createdCommand, err := model_core.MarshalAndEncodePatchedMessage(
 		model_core.NewPatchedMessage(
 			&model_command_pb.Command{
 				Arguments: []*model_command_pb.ArgumentList_Element{
@@ -1893,8 +1896,8 @@ func (mrc *moduleOrRepositoryContext) doRead(thread *starlark.Thread, b *starlar
 		Message: &model_analysis_pb.ActionResult_Key{
 			PlatformPkixPublicKey: mrc.repoPlatform.Message.ExecPkixPublicKey,
 			CommandReference: keyPatcher.AddReference(
-				commandContents.GetReference(),
-				dag.NewSimpleObjectContentsWalker(commandContents, commandMetadata),
+				createdCommand.Contents.GetReference(),
+				dag.NewSimpleObjectContentsWalker(createdCommand.Contents, createdCommand.Metadata),
 			),
 			InputRootReference: inputRootReference.Message.Reference,
 			ExecutionTimeout:   &durationpb.Duration{Seconds: 300},
@@ -1986,7 +1989,7 @@ func (mrc *moduleOrRepositoryContext) doWhich(thread *starlark.Thread, b *starla
 	}
 
 	referenceFormat := mrc.computer.buildSpecificationReference.GetReferenceFormat()
-	commandContents, commandMetadata, err := model_core.MarshalAndEncodePatchedMessage(
+	createdCommand, err := model_core.MarshalAndEncodePatchedMessage(
 		model_core.NewPatchedMessage(
 			&model_command_pb.Command{
 				Arguments: []*model_command_pb.ArgumentList_Element{
@@ -2020,7 +2023,7 @@ func (mrc *moduleOrRepositoryContext) doWhich(thread *starlark.Thread, b *starla
 		return nil, fmt.Errorf("failed to create command: %w", err)
 	}
 
-	inputRootContents, inputRootMetadata, err := model_core.MarshalAndEncodePatchedMessage(
+	createdInputRoot, err := model_core.MarshalAndEncodePatchedMessage(
 		model_core.NewSimplePatchedMessage[dag.ObjectContentsWalker](
 			&model_filesystem_pb.Directory{
 				Leaves: &model_filesystem_pb.Directory_LeavesInline{
@@ -2041,12 +2044,12 @@ func (mrc *moduleOrRepositoryContext) doWhich(thread *starlark.Thread, b *starla
 		Message: &model_analysis_pb.ActionResult_Key{
 			PlatformPkixPublicKey: mrc.repoPlatform.Message.ExecPkixPublicKey,
 			CommandReference: keyPatcher.AddReference(
-				commandContents.GetReference(),
-				dag.NewSimpleObjectContentsWalker(commandContents, commandMetadata),
+				createdCommand.Contents.GetReference(),
+				dag.NewSimpleObjectContentsWalker(createdCommand.Contents, createdCommand.Metadata),
 			),
 			InputRootReference: keyPatcher.AddReference(
-				inputRootContents.GetReference(),
-				dag.NewSimpleObjectContentsWalker(inputRootContents, inputRootMetadata),
+				createdInputRoot.Contents.GetReference(),
+				dag.NewSimpleObjectContentsWalker(createdInputRoot.Contents, createdInputRoot.Metadata),
 			),
 			ExecutionTimeout: &durationpb.Duration{Seconds: 60},
 		},
@@ -2161,7 +2164,7 @@ func (mrc *moduleOrRepositoryContext) Exists(p *model_starlark.BarePath) (bool, 
 		return false, err
 	}
 
-	commandContents, commandMetadata, err := model_core.MarshalAndEncodePatchedMessage(
+	createdCommand, err := model_core.MarshalAndEncodePatchedMessage(
 		model_core.NewPatchedMessage(
 			&model_command_pb.Command{
 				Arguments: []*model_command_pb.ArgumentList_Element{
@@ -2207,8 +2210,8 @@ func (mrc *moduleOrRepositoryContext) Exists(p *model_starlark.BarePath) (bool, 
 		Message: &model_analysis_pb.ActionResult_Key{
 			PlatformPkixPublicKey: mrc.repoPlatform.Message.ExecPkixPublicKey,
 			CommandReference: keyPatcher.AddReference(
-				commandContents.GetReference(),
-				dag.NewSimpleObjectContentsWalker(commandContents, commandMetadata),
+				createdCommand.Contents.GetReference(),
+				dag.NewSimpleObjectContentsWalker(createdCommand.Contents, createdCommand.Metadata),
 			),
 			InputRootReference: inputRootReference.Message.Reference,
 			ExecutionTimeout:   &durationpb.Duration{Seconds: 300},
@@ -2972,7 +2975,7 @@ func (c *baseComputer) createMerkleTreeFromChangeTrackingDirectory(ctx context.C
 
 	// Store the root directory itself. We don't embed it into the
 	// response, as that prevents it from being accessed separately.
-	contents, children, err := model_core.MarshalAndEncodePatchedMessage(
+	createdRootDirectoryObject, err := model_core.MarshalAndEncodePatchedMessage(
 		createdRootDirectory.Message,
 		c.buildSpecificationReference.GetReferenceFormat(),
 		directoryCreationParameters.GetEncoder(),
@@ -2980,7 +2983,7 @@ func (c *baseComputer) createMerkleTreeFromChangeTrackingDirectory(ctx context.C
 	if err != nil {
 		return model_core.PatchedMessage[*model_filesystem_pb.DirectoryReference, dag.ObjectContentsWalker]{}, err
 	}
-	capturedRootDirectory := fileWritingMerkleTreeCapturer.CaptureObject(contents, children)
+	capturedRootDirectory := fileWritingMerkleTreeCapturer.CaptureObject(createdRootDirectoryObject)
 
 	// Finalize writing of Merkle tree nodes to disk, and provide
 	// read access to the nodes, so that they can be uploaded.
@@ -2992,7 +2995,7 @@ func (c *baseComputer) createMerkleTreeFromChangeTrackingDirectory(ctx context.C
 	merkleTreeNodes = nil
 
 	patcher := model_core.NewReferenceMessagePatcher[dag.ObjectContentsWalker]()
-	rootReference := contents.GetReference()
+	rootReference := createdRootDirectoryObject.Contents.GetReference()
 	return model_core.NewPatchedMessage(
 		createdRootDirectory.ToDirectoryReference(
 			patcher.AddReference(

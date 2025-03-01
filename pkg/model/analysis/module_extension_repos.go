@@ -341,7 +341,7 @@ func (c *baseComputer) ComputeModuleExtensionReposValue(ctx context.Context, key
 		btree.NewObjectCreatingNodeMerger(
 			model_encoding.NewChainedBinaryEncoder(nil),
 			c.buildSpecificationReference.GetReferenceFormat(),
-			/* parentNodeComputer = */ func(contents *object.Contents, childNodes []*model_analysis_pb.ModuleExtensionRepos_Value_Repo, outgoingReferences object.OutgoingReferences, metadata []dag.ObjectContentsWalker) (model_core.PatchedMessage[*model_analysis_pb.ModuleExtensionRepos_Value_Repo, dag.ObjectContentsWalker], error) {
+			/* parentNodeComputer = */ func(createdObject model_core.CreatedObject[dag.ObjectContentsWalker], childNodes []*model_analysis_pb.ModuleExtensionRepos_Value_Repo) (model_core.PatchedMessage[*model_analysis_pb.ModuleExtensionRepos_Value_Repo, dag.ObjectContentsWalker], error) {
 				var firstName string
 				switch firstElement := childNodes[0].Level.(type) {
 				case *model_analysis_pb.ModuleExtensionRepos_Value_Repo_Leaf:
@@ -354,7 +354,10 @@ func (c *baseComputer) ComputeModuleExtensionReposValue(ctx context.Context, key
 					&model_analysis_pb.ModuleExtensionRepos_Value_Repo{
 						Level: &model_analysis_pb.ModuleExtensionRepos_Value_Repo_Parent_{
 							Parent: &model_analysis_pb.ModuleExtensionRepos_Value_Repo_Parent{
-								Reference: patcher.AddReference(contents.GetReference(), dag.NewSimpleObjectContentsWalker(contents, metadata)),
+								Reference: patcher.AddReference(
+									createdObject.Contents.GetReference(),
+									dag.NewSimpleObjectContentsWalker(createdObject.Contents, createdObject.Metadata),
+								),
 								FirstName: firstName,
 							},
 						},

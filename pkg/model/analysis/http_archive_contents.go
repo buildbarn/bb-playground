@@ -406,7 +406,7 @@ func (c *baseComputer) ComputeHttpArchiveContentsValue(ctx context.Context, key 
 	if l := createdRootDirectory.MaximumSymlinkEscapementLevels; l == nil || l.Value != 0 {
 		return PatchedHttpArchiveContentsValue{}, errors.New("archive contains one or more symbolic links that potentially escape the archive's root directory")
 	}
-	contents, children, err := model_core.MarshalAndEncodePatchedMessage(
+	createdRootDirectoryObject, err := model_core.MarshalAndEncodePatchedMessage(
 		createdRootDirectory.Message,
 		referenceFormat,
 		directoryCreationParameters.GetEncoder(),
@@ -414,7 +414,7 @@ func (c *baseComputer) ComputeHttpArchiveContentsValue(ctx context.Context, key 
 	if err != nil {
 		return PatchedHttpArchiveContentsValue{}, err
 	}
-	capturedRootDirectory := fileWritingMerkleTreeCapturer.CaptureObject(contents, children)
+	capturedRootDirectory := fileWritingMerkleTreeCapturer.CaptureObject(createdRootDirectoryObject)
 
 	// Finalize writing of Merkle tree nodes to disk, and provide
 	// read access to the nodes, so that they can be uploaded.
@@ -426,7 +426,7 @@ func (c *baseComputer) ComputeHttpArchiveContentsValue(ctx context.Context, key 
 	merkleTreeNodes = nil
 
 	patcher := model_core.NewReferenceMessagePatcher[dag.ObjectContentsWalker]()
-	rootReference := contents.GetReference()
+	rootReference := createdRootDirectoryObject.Contents.GetReference()
 	return PatchedHttpArchiveContentsValue{
 		Message: &model_analysis_pb.HttpArchiveContents_Value{
 			Exists: createdRootDirectory.ToDirectoryReference(

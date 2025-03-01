@@ -96,19 +96,22 @@ func MarshalAndEncodePatchedMessage[TMessage proto.Message, TMetadata ReferenceM
 	m PatchedMessage[TMessage, TMetadata],
 	referenceFormat object.ReferenceFormat,
 	encoder model_encoding.BinaryEncoder,
-) (*object.Contents, []TMetadata, error) {
+) (CreatedObject[TMetadata], error) {
 	references, metadata := m.Patcher.SortAndSetReferences()
 	data, err := proto.MarshalOptions{Deterministic: true}.Marshal(m.Message)
 	if err != nil {
-		return nil, nil, err
+		return CreatedObject[TMetadata]{}, err
 	}
 	encodedData, err := encoder.EncodeBinary(data)
 	if err != nil {
-		return nil, nil, err
+		return CreatedObject[TMetadata]{}, err
 	}
 	contents, err := referenceFormat.NewContents(references, encodedData)
 	if err != nil {
-		return nil, nil, err
+		return CreatedObject[TMetadata]{}, err
 	}
-	return contents, metadata, nil
+	return CreatedObject[TMetadata]{
+		Contents: contents,
+		Metadata: metadata,
+	}, nil
 }

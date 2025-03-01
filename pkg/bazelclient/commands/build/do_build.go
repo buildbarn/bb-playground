@@ -331,7 +331,7 @@ func DoBuild(args *arguments.BuildCommand, workspacePath path.Parser) {
 		if l := createdRootDirectory.MaximumSymlinkEscapementLevels; l == nil || l.Value != 0 {
 			logger.Fatalf("Module %#v contains one or more symbolic links that potentially escape the module's root directory", moduleName.String())
 		}
-		contents, children, err := model_core.MarshalAndEncodePatchedMessage(
+		createdObject, err := model_core.MarshalAndEncodePatchedMessage(
 			createdModuleRootDirectories[i].Message,
 			referenceFormat,
 			directoryParameters.GetEncoder(),
@@ -346,14 +346,14 @@ func DoBuild(args *arguments.BuildCommand, workspacePath path.Parser) {
 				Name: moduleName.String(),
 				RootDirectoryReference: createdRootDirectory.ToDirectoryReference(
 					buildSpecificationPatcher.AddReference(
-						contents.GetReference(),
+						createdObject.Contents.GetReference(),
 						model_filesystem.NewCapturedDirectoryWalker(
 							directoryParameters.DirectoryAccessParameters,
 							fileParameters,
 							moduleRootDirectories[i],
 							&model_filesystem.CapturedObject{
-								Contents: contents,
-								Children: children,
+								Contents: createdObject.Contents,
+								Children: createdObject.Metadata,
 							},
 						),
 					),
@@ -370,7 +370,7 @@ func DoBuild(args *arguments.BuildCommand, workspacePath path.Parser) {
 		logger.Fatal("Failed to create build specification encoder: ", err)
 	}
 
-	buildSpecificationObject, buildSpecificationWalkers, err := model_core.MarshalAndEncodePatchedMessage(
+	createdBuildSpecification, err := model_core.MarshalAndEncodePatchedMessage(
 		model_core.NewPatchedMessage(&buildSpecification, buildSpecificationPatcher),
 		referenceFormat,
 		buildSpecificationEncoder,
@@ -381,7 +381,7 @@ func DoBuild(args *arguments.BuildCommand, workspacePath path.Parser) {
 
 	logger.Info("Uploading module sources")
 	instanceName := object.NewInstanceName(args.CommonFlags.RemoteInstanceName)
-	buildSpecificationReference := buildSpecificationObject.GetReference()
+	buildSpecificationReference := createdBuildSpecification.Contents.GetReference()
 	if err := dag.UploadDAG(
 		context.Background(),
 		dag_pb.NewUploaderClient(remoteCacheClient),
@@ -390,8 +390,8 @@ func DoBuild(args *arguments.BuildCommand, workspacePath path.Parser) {
 			LocalReference: buildSpecificationReference,
 		},
 		dag.NewSimpleObjectContentsWalker(
-			buildSpecificationObject,
-			buildSpecificationWalkers,
+			createdBuildSpecification.Contents,
+			createdBuildSpecification.Metadata,
 		),
 		semaphore.NewWeighted(10),
 		object.NewLimit(&object_pb.Limit{

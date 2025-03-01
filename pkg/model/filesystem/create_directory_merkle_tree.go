@@ -247,17 +247,16 @@ func (b *directoryMerkleTreeBuilder[TDirectory, TFile]) maybeFinalizeDirectory(u
 				),
 				ParentAppender: func(
 					directory model_core.PatchedMessage[*model_filesystem_pb.Directory, TDirectory],
-					externalContents *object.Contents,
-					externalChildren []TDirectory,
+					externalObject model_core.CreatedObject[TDirectory],
 				) {
-					if externalContents == nil {
+					if externalObject.Contents == nil {
 						directory.Message.Leaves = leavesInline
 					} else {
 						directory.Message.Leaves = &model_filesystem_pb.Directory_LeavesExternal{
 							LeavesExternal: &model_filesystem_pb.LeavesReference{
 								Reference: directory.Patcher.AddReference(
-									externalContents.GetReference(),
-									b.capturer.CaptureDirectory(externalContents, externalChildren),
+									externalObject.Contents.GetReference(),
+									b.capturer.CaptureDirectory(externalObject),
 								),
 								MaximumSymlinkEscapementLevels: ud.leavesMaximumSymlinkEscapementLevels,
 							},
@@ -286,10 +285,9 @@ func (b *directoryMerkleTreeBuilder[TDirectory, TFile]) maybeFinalizeDirectory(u
 					),
 					ParentAppender: func(
 						directory model_core.PatchedMessage[*model_filesystem_pb.Directory, TDirectory],
-						externalContents *object.Contents,
-						externalChildren []TDirectory,
+						externalObject model_core.CreatedObject[TDirectory],
 					) {
-						if externalContents == nil {
+						if externalObject.Contents == nil {
 							directory.Message.Directories = append(directory.Message.Directories, &inlineDirectoryNode)
 						} else {
 							directory.Message.Directories = append(directory.Message.Directories, &model_filesystem_pb.DirectoryNode{
@@ -297,8 +295,8 @@ func (b *directoryMerkleTreeBuilder[TDirectory, TFile]) maybeFinalizeDirectory(u
 								Contents: &model_filesystem_pb.DirectoryNode_ContentsExternal{
 									ContentsExternal: createdDirectory.ToDirectoryReference(
 										directory.Patcher.AddReference(
-											externalContents.GetReference(),
-											b.capturer.CaptureLeaves(externalContents, externalChildren),
+											externalObject.Contents.GetReference(),
+											b.capturer.CaptureLeaves(externalObject),
 										),
 									),
 								},

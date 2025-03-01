@@ -144,7 +144,7 @@ func (c *baseComputer) ComputePackageValue(ctx context.Context, key *model_analy
 			btree.NewObjectCreatingNodeMerger(
 				model_encoding.NewChainedBinaryEncoder(nil),
 				c.buildSpecificationReference.GetReferenceFormat(),
-				/* parentNodeComputer = */ func(contents *object.Contents, childNodes []*model_analysis_pb.Package_Value_Target, outgoingReferences object.OutgoingReferences, metadata []dag.ObjectContentsWalker) (model_core.PatchedMessage[*model_analysis_pb.Package_Value_Target, dag.ObjectContentsWalker], error) {
+				/* parentNodeComputer = */ func(createdObject model_core.CreatedObject[dag.ObjectContentsWalker], childNodes []*model_analysis_pb.Package_Value_Target) (model_core.PatchedMessage[*model_analysis_pb.Package_Value_Target, dag.ObjectContentsWalker], error) {
 					var firstName string
 					switch firstElement := childNodes[0].Level.(type) {
 					case *model_analysis_pb.Package_Value_Target_Leaf:
@@ -157,7 +157,10 @@ func (c *baseComputer) ComputePackageValue(ctx context.Context, key *model_analy
 						&model_analysis_pb.Package_Value_Target{
 							Level: &model_analysis_pb.Package_Value_Target_Parent_{
 								Parent: &model_analysis_pb.Package_Value_Target_Parent{
-									Reference: patcher.AddReference(contents.GetReference(), dag.NewSimpleObjectContentsWalker(contents, metadata)),
+									Reference: patcher.AddReference(
+										createdObject.Contents.GetReference(),
+										dag.NewSimpleObjectContentsWalker(createdObject.Contents, createdObject.Metadata),
+									),
 									FirstName: firstName,
 								},
 							},
