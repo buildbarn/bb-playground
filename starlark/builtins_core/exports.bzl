@@ -168,7 +168,12 @@ filegroup = rule(
 )
 
 def _genrule_impl(ctx):
-    fail("TODO")
+    # TODO: Make this implementation more accurate.
+    ctx.actions.run(
+        executable = "sh",
+        arguments = ["-c", ctx.attr.cmd_bash or ctx.attr.cmd],
+        outputs = ctx.outputs.outs,
+    )
 
 genrule = rule(
     implementation = _genrule_impl,
