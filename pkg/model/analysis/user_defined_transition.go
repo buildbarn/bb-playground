@@ -25,6 +25,7 @@ import (
 	"github.com/buildbarn/bonanza/pkg/storage/object"
 
 	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/types/known/emptypb"
 
 	"go.starlark.net/starlark"
 )
@@ -496,6 +497,19 @@ func (c *baseComputer) ComputeUserDefinedTransitionValue(ctx context.Context, ke
 		/* kwargs = */ nil,
 	)
 	if err != nil {
+		if errors.Is(err, errTransitionDependsOnAttrs) {
+			// Can't compute the transition indepently of
+			// the rule in which it is referenced. Return
+			// this to the caller, so that it can apply the
+			// transition directly.
+			return model_core.NewSimplePatchedMessage[dag.ObjectContentsWalker](
+				&model_analysis_pb.UserDefinedTransition_Value{
+					Result: &model_analysis_pb.UserDefinedTransition_Value_TransitionDependsOnAttrs{
+						TransitionDependsOnAttrs: &emptypb.Empty{},
+					},
+				},
+			), nil
+		}
 		if !errors.Is(err, evaluation.ErrMissingDependency) {
 			var evalErr *starlark.EvalError
 			if errors.As(err, &evalErr) {
@@ -579,7 +593,7 @@ func (c *baseComputer) ComputeUserDefinedTransitionValue(ctx context.Context, ke
 
 type stubbedTransitionAttr struct{}
 
-var _ starlark.Mapping = stubbedTransitionAttr{}
+var _ starlark.HasAttrs = stubbedTransitionAttr{}
 
 func (stubbedTransitionAttr) String() string {
 	return "<transition_attr>"
@@ -599,9 +613,13 @@ func (stubbedTransitionAttr) Hash(thread *starlark.Thread) (uint32, error) {
 	return 0, errors.New("transition_attr cannot be hashed")
 }
 
-func (stubbedTransitionAttr) Get(*starlark.Thread, starlark.Value) (starlark.Value, bool, error) {
-	// TODO: This should return an error that
-	// ComputeUserDefinedTransitionValue() catches and turns into a
-	// special response.
-	return nil, false, errors.New("transition depends on rule attrs, which are not available in this context")
+var errTransitionDependsOnAttrs = errors.New("transition depends on rule attrs, which are not available in this context")
+
+func (stubbedTransitionAttr) Attr(*starlark.Thread, string) (starlark.Value, error) {
+	return nil, errTransitionDependsOnAttrs
+}
+
+func (stubbedTransitionAttr) AttrNames() []string {
+	// TODO: This should also be able to return an error.
+	return nil
 }
