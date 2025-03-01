@@ -1273,6 +1273,8 @@ func (rca *ruleContextActions) Attr(thread *starlark.Thread, name string) (starl
 		return starlark.NewBuiltin("ctx.actions.declare_directory", rca.doDeclareDirectory), nil
 	case "declare_file":
 		return starlark.NewBuiltin("ctx.actions.declare_file", rca.doDeclareFile), nil
+	case "expand_template":
+		return starlark.NewBuiltin("ctx.actions.expand_template", rca.doExpandTemplate), nil
 	case "run":
 		return starlark.NewBuiltin("ctx.actions.run", rca.doRun), nil
 	case "run_shell":
@@ -1362,6 +1364,30 @@ func (rca *ruleContextActions) doDeclareFile(thread *starlark.Thread, b *starlar
 		PackageRelativePath: filename.String(),
 		Type:                model_starlark_pb.File_FILE,
 	}), nil
+}
+
+func (rca *ruleContextActions) doExpandTemplate(thread *starlark.Thread, b *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
+	if len(args) != 0 {
+		return nil, fmt.Errorf("%s: got %d positional arguments, want 0", b.Name(), len(args))
+	}
+	var output model_starlark.File
+	var template model_starlark.File
+	isExecutable := false
+	var substitutions map[string]string
+	if err := starlark.UnpackArgs(
+		b.Name(), args, kwargs,
+		// Required arguments.
+		"output", unpack.Bind(thread, &output, unpack.Type[model_starlark.File]("File")),
+		"template", unpack.Bind(thread, &template, unpack.Type[model_starlark.File]("File")),
+		// Optional arguments.
+		// TODO: Add TemplateDict and computed_substitutions.
+		"is_executable?", unpack.Bind(thread, &isExecutable, unpack.Bool),
+		"substitutions?", unpack.Bind(thread, &substitutions, unpack.Dict(unpack.String, unpack.String)),
+	); err != nil {
+		return nil, err
+	}
+
+	return starlark.None, nil
 }
 
 func (rca *ruleContextActions) doRun(thread *starlark.Thread, b *starlark.Builtin, fnArgs starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
