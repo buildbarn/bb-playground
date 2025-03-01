@@ -36,13 +36,6 @@ func (noopFileMerkleTreeCapturer) CaptureFileContentsList(createdObject model_co
 	return model_core.NoopReferenceMetadata{}
 }
 
-type CapturedObject struct {
-	Contents *object.Contents
-	Children []CapturedObject
-}
-
-func (CapturedObject) Discard() {}
-
 type chunkDiscardingFileMerkleTreeCapturer struct{}
 
 // ChunkDiscardingFileMerkleTreeCapturer is an implementation of
@@ -50,18 +43,18 @@ type chunkDiscardingFileMerkleTreeCapturer struct{}
 // of the Merkle tree. This can be of use when incrementally replicating
 // the contents of a file. In those cases it's wasteful to store the
 // full contents of a file in memory.
-var ChunkDiscardingFileMerkleTreeCapturer FileMerkleTreeCapturer[CapturedObject] = chunkDiscardingFileMerkleTreeCapturer{}
+var ChunkDiscardingFileMerkleTreeCapturer FileMerkleTreeCapturer[model_core.CreatedObjectTree] = chunkDiscardingFileMerkleTreeCapturer{}
 
-func (chunkDiscardingFileMerkleTreeCapturer) CaptureChunk(contents *object.Contents) CapturedObject {
-	return CapturedObject{}
+func (chunkDiscardingFileMerkleTreeCapturer) CaptureChunk(contents *object.Contents) model_core.CreatedObjectTree {
+	return model_core.CreatedObjectTree{}
 }
 
-func (chunkDiscardingFileMerkleTreeCapturer) CaptureFileContentsList(createdObject model_core.CreatedObject[CapturedObject]) CapturedObject {
-	o := CapturedObject{
+func (chunkDiscardingFileMerkleTreeCapturer) CaptureFileContentsList(createdObject model_core.CreatedObject[model_core.CreatedObjectTree]) model_core.CreatedObjectTree {
+	o := model_core.CreatedObjectTree{
 		Contents: createdObject.Contents,
 	}
 	if createdObject.Contents.GetReference().GetHeight() > 1 {
-		o.Children = createdObject.Metadata
+		o.Metadata = createdObject.Metadata
 	}
 	return o
 }

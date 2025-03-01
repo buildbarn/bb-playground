@@ -125,7 +125,7 @@ func CreateChunkDiscardingFileMerkleTree(ctx context.Context, parameters *FileCr
 		Message: fileContents.Message,
 		Patcher: model_core.MapReferenceMessagePatcherMetadata(
 			fileContents.Patcher,
-			func(reference object.LocalReference, metadata CapturedObject) dag.ObjectContentsWalker {
+			func(reference object.LocalReference, metadata model_core.CreatedObjectTree) dag.ObjectContentsWalker {
 				return NewCapturedFileWalker(
 					parameters,
 					f,

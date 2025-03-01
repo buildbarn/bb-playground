@@ -255,7 +255,7 @@ func DoBuild(args *arguments.BuildCommand, workspacePath path.Parser) {
 	logger.Info("Scanning module sources")
 	group, groupCtx := errgroup.WithContext(context.Background())
 	moduleRootDirectories := make([]model_filesystem.CapturedDirectory, 0, len(moduleNames))
-	createdModuleRootDirectories := make([]model_filesystem.CreatedDirectory[model_filesystem.CapturedObject], len(moduleNames))
+	createdModuleRootDirectories := make([]model_filesystem.CreatedDirectory[model_core.CreatedObjectTree], len(moduleNames))
 	createMerkleTreesConcurrency := semaphore.NewWeighted(int64(runtime.NumCPU()))
 	group.Go(func() error {
 		for i, moduleName := range moduleNames {
@@ -272,7 +272,7 @@ func DoBuild(args *arguments.BuildCommand, workspacePath path.Parser) {
 				createMerkleTreesConcurrency,
 				group,
 				directoryParameters,
-				&localCapturableDirectory[model_filesystem.CapturedObject, model_core.NoopReferenceMetadata]{
+				&localCapturableDirectory[model_core.CreatedObjectTree, model_core.NoopReferenceMetadata]{
 					DirectoryCloser: moduleRootDirectory,
 					options: &localCapturableDirectoryOptions[model_core.NoopReferenceMetadata]{
 						fileParameters: fileParameters,
@@ -340,6 +340,7 @@ func DoBuild(args *arguments.BuildCommand, workspacePath path.Parser) {
 			logger.Fatalf("Failed to create root directory object for module %#v: %s", moduleName.String(), err)
 		}
 
+		createdObjectTree := model_core.CreatedObjectTree(createdObject)
 		buildSpecification.Modules = append(
 			buildSpecification.Modules,
 			&model_build_pb.Module{
@@ -351,10 +352,7 @@ func DoBuild(args *arguments.BuildCommand, workspacePath path.Parser) {
 							directoryParameters.DirectoryAccessParameters,
 							fileParameters,
 							moduleRootDirectories[i],
-							&model_filesystem.CapturedObject{
-								Contents: createdObject.Contents,
-								Children: createdObject.Metadata,
-							},
+							&createdObjectTree,
 						),
 					),
 				),

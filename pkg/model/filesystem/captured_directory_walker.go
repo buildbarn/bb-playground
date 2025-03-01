@@ -96,10 +96,10 @@ func (o *capturedDirectoryWalkerOptions) gatherWalkersForLeaves(leaves *model_fi
 }
 
 // capturedDirectoryWalker is an ObjectContentsWalker that is backed by
-// a CapturedObject corresponding to a Directory message.
+// a CreatedObjectTree corresponding to a Directory message.
 type capturedDirectoryWalker struct {
 	options   *capturedDirectoryWalkerOptions
-	object    *CapturedObject
+	object    *model_core.CreatedObjectTree
 	pathTrace *path.Trace
 }
 
@@ -115,7 +115,7 @@ type capturedDirectoryWalker struct {
 // must reobtain them from the underlying file system. This is why the
 // caller must provide a handle to the root directory on which the
 // provided Merkle tree is based.
-func NewCapturedDirectoryWalker(directoryParameters *DirectoryAccessParameters, fileParameters *FileCreationParameters, rootDirectory CapturedDirectory, rootObject *CapturedObject) dag.ObjectContentsWalker {
+func NewCapturedDirectoryWalker(directoryParameters *DirectoryAccessParameters, fileParameters *FileCreationParameters, rootDirectory CapturedDirectory, rootObject *model_core.CreatedObjectTree) dag.ObjectContentsWalker {
 	return &capturedDirectoryWalker{
 		options: &capturedDirectoryWalkerOptions{
 			directoryParameters: directoryParameters,
@@ -148,7 +148,7 @@ func (w *capturedDirectoryWalker) gatherWalkers(directory *model_filesystem_pb.D
 		}
 		walkers[index] = &capturedLeavesWalker{
 			options:   w.options,
-			object:    &w.object.Children[index],
+			object:    &w.object.Metadata[index],
 			pathTrace: pathTrace,
 		}
 	case *model_filesystem_pb.Directory_LeavesInline:
@@ -169,7 +169,7 @@ func (w *capturedDirectoryWalker) gatherWalkers(directory *model_filesystem_pb.D
 			}
 			walkers[index] = &capturedDirectoryWalker{
 				options:   w.options,
-				object:    &w.object.Children[index],
+				object:    &w.object.Metadata[index],
 				pathTrace: childPathTrace,
 			}
 		case *model_filesystem_pb.DirectoryNode_ContentsInline:
@@ -186,10 +186,10 @@ func (w *capturedDirectoryWalker) gatherWalkers(directory *model_filesystem_pb.D
 func (w *capturedDirectoryWalker) Discard() {}
 
 // capturedLeaves is an ObjectContentsWalker that is backed by a
-// CapturedObject corresponding to a Leaves message.
+// CreatedObjectTree corresponding to a Leaves message.
 type capturedLeavesWalker struct {
 	options   *capturedDirectoryWalkerOptions
-	object    *CapturedObject
+	object    *model_core.CreatedObjectTree
 	pathTrace *path.Trace
 }
 
@@ -288,7 +288,7 @@ func (w *recomputingConcatenatedFileWalker) GetContents(ctx context.Context) (*o
 	return wComputed.GetContents(ctx)
 }
 
-func NewCapturedFileWalker(fileParameters *FileCreationParameters, r filesystem.FileReader, fileReference object.LocalReference, fileSizeBytes uint64, fileObject *CapturedObject) dag.ObjectContentsWalker {
+func NewCapturedFileWalker(fileParameters *FileCreationParameters, r filesystem.FileReader, fileReference object.LocalReference, fileSizeBytes uint64, fileObject *model_core.CreatedObjectTree) dag.ObjectContentsWalker {
 	options := &computedConcatenatedFileObjectOptions{
 		fileParameters: fileParameters,
 		file:           r,
@@ -321,7 +321,7 @@ type computedConcatenatedFileObjectOptions struct {
 
 type computedConcatenatedFileWalker struct {
 	options     *computedConcatenatedFileObjectOptions
-	object      *CapturedObject
+	object      *model_core.CreatedObjectTree
 	offsetBytes uint64
 }
 
@@ -349,7 +349,7 @@ func (w *computedConcatenatedFileWalker) GetContents(ctx context.Context) (*obje
 		} else {
 			walkers[index] = &computedConcatenatedFileWalker{
 				options:     w.options,
-				object:      &w.object.Children[index],
+				object:      &w.object.Metadata[index],
 				offsetBytes: offsetBytes,
 			}
 		}

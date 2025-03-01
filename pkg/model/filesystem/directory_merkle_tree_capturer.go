@@ -21,24 +21,18 @@ type fileDiscardingDirectoryMerkleTreeCapturer struct{}
 // uploading directory structures with changes to only a small number of
 // files. The Merkle trees of files can be recomputed if it turns out
 // they still need to be uploaded.
-var FileDiscardingDirectoryMerkleTreeCapturer DirectoryMerkleTreeCapturer[CapturedObject, model_core.NoopReferenceMetadata] = fileDiscardingDirectoryMerkleTreeCapturer{}
+var FileDiscardingDirectoryMerkleTreeCapturer DirectoryMerkleTreeCapturer[model_core.CreatedObjectTree, model_core.NoopReferenceMetadata] = fileDiscardingDirectoryMerkleTreeCapturer{}
 
-func (fileDiscardingDirectoryMerkleTreeCapturer) CaptureFileNode(model_core.NoopReferenceMetadata) CapturedObject {
-	return CapturedObject{}
+func (fileDiscardingDirectoryMerkleTreeCapturer) CaptureFileNode(model_core.NoopReferenceMetadata) model_core.CreatedObjectTree {
+	return model_core.CreatedObjectTree{}
 }
 
-func (fileDiscardingDirectoryMerkleTreeCapturer) CaptureDirectory(createdObject model_core.CreatedObject[CapturedObject]) CapturedObject {
-	return CapturedObject{
-		Contents: createdObject.Contents,
-		Children: createdObject.Metadata,
-	}
+func (fileDiscardingDirectoryMerkleTreeCapturer) CaptureDirectory(createdObject model_core.CreatedObject[model_core.CreatedObjectTree]) model_core.CreatedObjectTree {
+	return model_core.CreatedObjectTree(createdObject)
 }
 
-func (fileDiscardingDirectoryMerkleTreeCapturer) CaptureLeaves(createdObject model_core.CreatedObject[CapturedObject]) CapturedObject {
-	return CapturedObject{
-		Contents: createdObject.Contents,
-		Children: createdObject.Metadata,
-	}
+func (fileDiscardingDirectoryMerkleTreeCapturer) CaptureLeaves(createdObject model_core.CreatedObject[model_core.CreatedObjectTree]) model_core.CreatedObjectTree {
+	return model_core.CreatedObjectTree(createdObject)
 }
 
 type fileWritingDirectoryMerkleTreeCapturer struct {
