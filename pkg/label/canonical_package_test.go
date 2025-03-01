@@ -188,4 +188,31 @@ func TestCanonicalPackage(t *testing.T) {
 			assert.Equal(t, output, newLabel.String())
 		}
 	})
+
+	t.Run("ToRecursiveTargetPatternBelow", func(t *testing.T) {
+		t.Run("Invalid", func(t *testing.T) {
+			base := label.MustNewCanonicalPackage("@@repo+")
+			for _, input := range []string{
+				"",
+				"foo//bar",
+				"./foo",
+				"foo/",
+			} {
+				_, err := base.ToRecursiveTargetPatternBelow(input, false)
+				assert.ErrorContains(t, err, "non-empty package name must match ", input)
+			}
+		})
+
+		t.Run("Valid", func(t *testing.T) {
+			canonicalTargetPattern, err := label.MustNewCanonicalPackage("@@repo+").
+				ToRecursiveTargetPatternBelow("foo/bar", false)
+			require.NoError(t, err)
+			assert.Equal(t, "@@repo+//foo/bar/...", canonicalTargetPattern.String())
+
+			canonicalTargetPattern, err = label.MustNewCanonicalPackage("@@repo+//foo").
+				ToRecursiveTargetPatternBelow("bar", true)
+			require.NoError(t, err)
+			assert.Equal(t, "@@repo+//foo/bar/...:*", canonicalTargetPattern.String())
+		})
+	})
 }

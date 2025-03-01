@@ -636,6 +636,25 @@ message Package {
   }
 }
 
+message PackagesAtAndBelow {
+  message Key {
+    // Repo and package prefix at which the lookup should start.
+    string base_package = 1;
+  }
+
+  message Value {
+    // If set, the directory corresponding to the base package contains
+    // a BUILD.bazel or BUILD file.
+    bool package_at_base_package = 1;
+
+    // List of relative paths that can be appended to the base package
+    // to obtain packages below the base package containing a
+    // BUILD.bazel or BUILD file. Paths are sorted lexicographically by
+    // their components.
+    repeated string packages_below_base_package = 2;
+  }
+}
+
 message Constraint {
   // The label of the constraint_setting() target.
   string setting = 1;

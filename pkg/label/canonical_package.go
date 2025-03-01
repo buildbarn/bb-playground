@@ -159,6 +159,32 @@ func (p CanonicalPackage) AppendTargetPattern(value string) (ApparentTargetPatte
 	return ApparentTargetPattern{}, invalidTargetPatternPattern
 }
 
+var validNonEmptyPackageNameRegexp = regexp.MustCompile("^" + validNonEmptyPackageNamePattern + "$")
+
+var invalidNonEmptyPackageNamePattern = errors.New("non-empty package name must match " + validNonEmptyPackageNamePattern)
+
+// ToRecursiveTargetPatternBelow appends a relative package path to a
+// canonical package name, and subsequently converts it to a recursive
+// target pattern.
+//
+// This method can be used during expansion of recursive target patterns
+// to split up work, so that subpackages can be traversed in parallel.
+func (p CanonicalPackage) ToRecursiveTargetPatternBelow(pathBelow string, includeFileTargets bool) (CanonicalTargetPattern, error) {
+	if !validNonEmptyPackageNameRegexp.MatchString(pathBelow) {
+		return CanonicalTargetPattern{}, invalidNonEmptyPackageNamePattern
+	}
+
+	midfix := "/"
+	if strings.IndexByte(p.value, '/') < 0 {
+		midfix = "//"
+	}
+	suffix := "/..."
+	if includeFileTargets {
+		suffix = "/...:*"
+	}
+	return CanonicalTargetPattern{value: p.value + midfix + pathBelow + suffix}, nil
+}
+
 func (p CanonicalPackage) String() string {
 	return p.value
 }

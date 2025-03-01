@@ -303,6 +303,12 @@
             "RootModule"
          ]
       },
+      "PackagesAtAndBelow": {
+         "dependsOn": [
+            "DirectoryCreationParametersObject",
+            "Repo"
+         ]
+      },
       "RegisteredExecutionPlatforms": {
          "dependsOn": [
             "CanonicalRepoName",
@@ -431,7 +437,9 @@
       },
       "TargetPatternExpansion": {
          "dependsOn": [
-            "Package"
+            "Package",
+            "PackagesAtAndBelow",
+            "TargetPatternExpansion"
          ]
       },
       "UsedModuleExtension": {
