@@ -1544,6 +1544,8 @@ func (rca *ruleContextAttr) Attr(thread *starlark.Thread, name string) (starlark
 			rc.tags.Freeze()
 		}
 		return rc.tags, nil
+	case "testonly":
+		return starlark.Bool(rc.ruleTarget.Message.InheritableAttrs.GetTestonly()), nil
 	default:
 		// Starlark rule attr.
 		ruleDefinitionAttrs := rc.ruleDefinition.Message.Attrs
@@ -1577,6 +1579,7 @@ func (rca *ruleContextAttr) AttrNames() []string {
 	attrNames := append(
 		make([]string, 0, len(attrs)+1),
 		"tags",
+		"testonly",
 	)
 	for _, attr := range attrs {
 		attrNames = append(attrNames, attr.Name)
