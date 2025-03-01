@@ -232,9 +232,13 @@ func EncodeValue(value starlark.Value, path map[starlark.Value]struct{}, current
 		return NewNamedFunction(NewStarlarkNamedFunctionDefinition(typedValue)).
 			EncodeValue(path, currentIdentifier, options)
 	case starlark.Int:
+		bigInt := typedValue.BigInt()
 		return model_core.NewSimplePatchedMessage[dag.ObjectContentsWalker](&model_starlark_pb.Value{
 			Kind: &model_starlark_pb.Value_Int{
-				Int: typedValue.BigInt().Bytes(),
+				Int: &model_starlark_pb.Int{
+					AbsoluteValue: bigInt.Bytes(),
+					Negative:      bigInt.Sign() < 0,
+				},
 			},
 		}), false, nil
 	case *starlark.List:
@@ -466,7 +470,11 @@ func DecodeValue(encodedValue model_core.Message[*model_starlark_pb.Value], curr
 		)), nil
 	case *model_starlark_pb.Value_Int:
 		var i big.Int
-		return starlark.MakeBigInt(i.SetBytes(typedValue.Int)), nil
+		i.SetBytes(typedValue.Int.AbsoluteValue)
+		if typedValue.Int.Negative {
+			i.Neg(&i)
+		}
+		return starlark.MakeBigInt(&i), nil
 	case *model_starlark_pb.Value_Label:
 		resolvedLabel, err := pg_label.NewResolvedLabel(typedValue.Label)
 		if err != nil {
