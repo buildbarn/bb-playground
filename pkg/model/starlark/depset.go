@@ -27,7 +27,7 @@ type Depset struct {
 
 var (
 	_ EncodableValue      = (*Depset)(nil)
-	_ starlark.Comparable = (*Struct)(nil)
+	_ starlark.Comparable = (*Depset)(nil)
 	_ starlark.HasAttrs   = (*Depset)(nil)
 )
 

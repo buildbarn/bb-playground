@@ -13,6 +13,7 @@ import (
 	"github.com/buildbarn/bonanza/pkg/storage/dag"
 
 	"go.starlark.net/starlark"
+	"go.starlark.net/syntax"
 )
 
 type TargetReference struct {
@@ -31,9 +32,10 @@ func NewTargetReference(label pg_label.ResolvedLabel, providers model_core.Messa
 }
 
 var (
-	_ EncodableValue    = (*TargetReference)(nil)
-	_ starlark.HasAttrs = (*TargetReference)(nil)
-	_ starlark.Mapping  = (*TargetReference)(nil)
+	_ EncodableValue      = (*TargetReference)(nil)
+	_ starlark.Comparable = (*TargetReference)(nil)
+	_ starlark.HasAttrs   = (*TargetReference)(nil)
+	_ starlark.Mapping    = (*TargetReference)(nil)
 )
 
 func (tr *TargetReference) String() string {
@@ -51,8 +53,35 @@ func (TargetReference) Truth() starlark.Bool {
 	return starlark.True
 }
 
-func (TargetReference) Hash(thread *starlark.Thread) (uint32, error) {
-	return 0, errors.New("Target cannot be hashed")
+func (tr *TargetReference) Hash(thread *starlark.Thread) (uint32, error) {
+	// Assume that the number of target references with the same
+	// label, but a different configuration are fairly low.
+	return starlark.String(tr.label.String()).Hash(thread)
+}
+
+func (tr *TargetReference) equal(thread *starlark.Thread, other *TargetReference) (bool, error) {
+	if tr != other {
+		if tr.label != other.label {
+			return false, nil
+		}
+		if len(tr.encodedProviders.Message) != len(other.encodedProviders.Message) {
+			return false, nil
+		}
+		return false, errors.New("TODO: Compare encoded providers!")
+	}
+	return true, nil
+}
+
+func (tr *TargetReference) CompareSameType(thread *starlark.Thread, op syntax.Token, other starlark.Value, depth int) (bool, error) {
+	switch op {
+	case syntax.EQL:
+		return tr.equal(thread, other.(*TargetReference))
+	case syntax.NEQ:
+		equals, err := tr.equal(thread, other.(*TargetReference))
+		return !equals, err
+	default:
+		return false, errors.New("target references cannot be compared for inequality")
+	}
 }
 
 var defaultInfoProviderIdentifier = pg_label.MustNewCanonicalStarlarkIdentifier("@@builtins_core+//:exports.bzl%DefaultInfo")
