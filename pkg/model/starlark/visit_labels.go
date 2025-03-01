@@ -39,6 +39,7 @@ func VisitLabels(thread *starlark.Thread, v starlark.Value, path map[starlark.Va
 
 		// Non-label scalars.
 		case starlark.Bool:
+		case starlark.Int:
 		case starlark.String:
 		case starlark.NoneType:
 
