@@ -851,6 +851,8 @@ func (rc *ruleContext) Attr(thread *starlark.Thread, name string) (starlark.Valu
 		}, nil
 	case "runfiles":
 		return starlark.NewBuiltin("ctx.runfiles", rc.doRunfiles), nil
+	case "target_platform_has_constraint":
+		return starlark.NewBuiltin("ctx.target_platform_has_constraint", rc.doTargetPlatformHasConstraint), nil
 	case "toolchains":
 		execGroups := rc.ruleDefinition.Message.ExecGroups
 		execGroupIndex, ok := sort.Find(
@@ -1172,6 +1174,21 @@ func (ruleContext) doRunfiles(thread *starlark.Thread, b *starlark.Builtin, args
 		toSymlinkEntryDepset(rootSymlinks),
 		toSymlinkEntryDepset(symlinks),
 	), nil
+}
+
+func (ruleContext) doTargetPlatformHasConstraint(thread *starlark.Thread, b *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
+	if len(args) != 1 {
+		return nil, fmt.Errorf("%s: got %d positional arguments, want 1", b.Name(), len(args))
+	}
+	var constraintValue *model_starlark.Struct
+	if err := starlark.UnpackArgs(
+		b.Name(), args, kwargs,
+		"constraintValue", unpack.Bind(thread, &constraintValue, unpack.Type[*model_starlark.Struct]("struct")),
+	); err != nil {
+		return nil, err
+	}
+
+	return nil, errors.New("TODO: Implement target platform has constraint")
 }
 
 func (rc *ruleContext) getAttrValueParts(namedAttr *model_starlark_pb.NamedAttr) (valueParts model_core.Message[[]*model_starlark_pb.Value], visibilityFromPackage label.CanonicalPackage, err error) {
