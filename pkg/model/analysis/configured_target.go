@@ -2205,52 +2205,45 @@ func (rco *ruleContextOutputs) Attr(thread *starlark.Thread, name string) (starl
 	if outputs == nil {
 		namedAttr := ruleDefinitionAttrs[ruleDefinitionAttrIndex]
 		switch namedAttr.Attr.GetType().(type) {
-		case *model_starlark_pb.Attr_Output:
-			// Single output file.
-			valueParts, _, err := rc.getAttrValueParts(ruleDefinitionAttrs[ruleDefinitionAttrIndex])
-			if err != nil {
-				return nil, err
-			}
-			if len(valueParts.Message) != 1 {
-				return nil, errors.New("labels cannot consist of multiple value parts")
-			}
-			switch valueParts.Message[0].GetKind().(type) {
-			case *model_starlark_pb.Value_Label:
-				labelValue, ok := valueParts.Message[0].GetKind().(*model_starlark_pb.Value_Label)
-				if !ok {
-					return nil, fmt.Errorf("value of attr %#v is not of type label", name)
-				}
-				outputLabel, err := label.NewResolvedLabel(labelValue.Label)
-				if err != nil {
-					return nil, fmt.Errorf("invalid resolved label %#v: %w", labelValue.Label, err)
-				}
-				outputCanonicalLabel, err := outputLabel.AsCanonical()
+		case *model_starlark_pb.Attr_Output, *model_starlark_pb.Attr_OutputList:
+		default:
+			return nil, fmt.Errorf("attr %#v is not of type output or output_list", name)
+		}
+
+		valueParts, _, err := rc.getAttrValueParts(ruleDefinitionAttrs[ruleDefinitionAttrIndex])
+		if err != nil {
+			return nil, err
+		}
+		if len(valueParts.Message) != 1 {
+			return nil, errors.New("values of output attrs cannot consist of multiple parts, as they are not configurable")
+		}
+
+		outputs, err = model_starlark.DecodeValue(
+			model_core.NewNestedMessage(valueParts, valueParts.Message[0]),
+			/* currentIdentifier = */ nil,
+			rc.computer.getValueDecodingOptions(rc.context, func(resolvedLabel label.ResolvedLabel) (starlark.Value, error) {
+				canonicalLabel, err := resolvedLabel.AsCanonical()
 				if err != nil {
 					return nil, err
 				}
-				outputPackage := outputCanonicalLabel.GetCanonicalPackage()
-				if outputPackage != rc.targetLabel.GetCanonicalPackage() {
-					return nil, fmt.Errorf("output attr %#v is set to label %#v, which refers to a different package", name, labelValue.Label)
+				canonicalPackage := canonicalLabel.GetCanonicalPackage()
+				if canonicalPackage != rc.targetLabel.GetCanonicalPackage() {
+					return nil, fmt.Errorf("output attr %#v contains to label %#v, which refers to a different package", name, canonicalLabel.String())
 				}
-				outputs = model_starlark.NewFile(&model_starlark_pb.File{
+				return model_starlark.NewFile(&model_starlark_pb.File{
 					Owner: &model_starlark_pb.File_Owner{
 						// TODO: Fill in a proper hash.
 						Cfg:        []byte{0xbe, 0x8a, 0x60, 0x1c, 0xe3, 0x03, 0x44, 0xf0},
 						TargetName: rc.targetLabel.GetTargetName().String(),
 					},
-					Package:             outputPackage.String(),
-					PackageRelativePath: outputLabel.GetTargetName().String(),
+					Package:             canonicalPackage.String(),
+					PackageRelativePath: canonicalLabel.GetTargetName().String(),
 					Type:                model_starlark_pb.File_FILE,
-				})
-			case *model_starlark_pb.Value_None:
-				outputs = starlark.None
-			default:
-				return nil, fmt.Errorf("attr %#v has a non-label value", name)
-			}
-		case *model_starlark_pb.Attr_OutputList:
-			return nil, errors.New("TODO: Implement!")
-		default:
-			return nil, fmt.Errorf("attr %#v is not of type output or output_list", name)
+				}), nil
+			}),
+		)
+		if err != nil {
+			return nil, err
 		}
 
 		// Cache attr value for subsequent lookups.
