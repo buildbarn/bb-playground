@@ -19,7 +19,6 @@ import (
 	model_analysis_pb "github.com/buildbarn/bonanza/pkg/proto/model/analysis"
 	model_starlark_pb "github.com/buildbarn/bonanza/pkg/proto/model/starlark"
 	pg_starlark "github.com/buildbarn/bonanza/pkg/starlark"
-	"github.com/buildbarn/bonanza/pkg/storage/dag"
 )
 
 func (c *baseComputer) ComputeModulesWithRemoteOverridesValue(ctx context.Context, key *model_analysis_pb.ModulesWithRemoteOverrides_Key, e ModulesWithRemoteOverridesEnvironment) (PatchedModulesWithRemoteOverridesValue, error) {
@@ -44,7 +43,7 @@ func (c *baseComputer) ComputeModulesWithRemoteOverridesValue(ctx context.Contex
 				GetRootPackage().
 				AppendTargetName(moduleDotBazelTargetName),
 		),
-		patcher: model_core.NewReferenceMessagePatcher[dag.ObjectContentsWalker](),
+		patcher: model_core.NewReferenceMessagePatcher[model_core.CreatedObjectTree](),
 	}
 	err = c.parseLocalModuleInstanceModuleDotBazel(ctx, rootModuleName.ToModuleInstance(nil), e, handler)
 	if err != nil {
@@ -56,7 +55,7 @@ func (c *baseComputer) ComputeModulesWithRemoteOverridesValue(ctx context.Contex
 		Message: &model_analysis_pb.ModulesWithRemoteOverrides_Value{
 			ModuleOverrides: overrideModules,
 		},
-		Patcher: handler.patcher,
+		Patcher: model_core.MapCreatedObjectsToWalkers(handler.patcher),
 	}, nil
 }
 
@@ -68,7 +67,7 @@ func (c *baseComputer) ComputeModulesWithRemoteOverridesValue(ctx context.Contex
 type overrideExtractingModuleDotBazelHandler struct {
 	overrideModules      *[]*model_analysis_pb.ModuleOverride // Keep them in order for duplication checks and caching.
 	valueEncodingOptions *model_starlark.ValueEncodingOptions
-	patcher              *model_core.ReferenceMessagePatcher[dag.ObjectContentsWalker]
+	patcher              *model_core.ReferenceMessagePatcher[model_core.CreatedObjectTree]
 }
 
 func prefixToUNIXString(stripPrefix path.Parser) (string, error) {

@@ -9,7 +9,6 @@ import (
 	pg_label "github.com/buildbarn/bonanza/pkg/label"
 	model_core "github.com/buildbarn/bonanza/pkg/model/core"
 	model_starlark_pb "github.com/buildbarn/bonanza/pkg/proto/model/starlark"
-	"github.com/buildbarn/bonanza/pkg/storage/dag"
 
 	"go.starlark.net/starlark"
 )
@@ -135,22 +134,22 @@ func (p *Provider) CallInternal(thread *starlark.Thread, args starlark.Tuple, kw
 	return NewStructFromDict(p.ProviderInstanceProperties, fields), nil
 }
 
-func (p *Provider) EncodeValue(path map[starlark.Value]struct{}, currentIdentifier *pg_label.CanonicalStarlarkIdentifier, options *ValueEncodingOptions) (model_core.PatchedMessage[*model_starlark_pb.Value, dag.ObjectContentsWalker], bool, error) {
+func (p *Provider) EncodeValue(path map[starlark.Value]struct{}, currentIdentifier *pg_label.CanonicalStarlarkIdentifier, options *ValueEncodingOptions) (model_core.PatchedMessage[*model_starlark_pb.Value, model_core.CreatedObjectTree], bool, error) {
 	instanceProperties, err := p.ProviderInstanceProperties.Encode()
 	if err != nil {
-		return model_core.PatchedMessage[*model_starlark_pb.Value, dag.ObjectContentsWalker]{}, false, err
+		return model_core.PatchedMessage[*model_starlark_pb.Value, model_core.CreatedObjectTree]{}, false, err
 	}
 
 	provider := &model_starlark_pb.Provider{
 		InstanceProperties: instanceProperties,
 	}
-	patcher := model_core.NewReferenceMessagePatcher[dag.ObjectContentsWalker]()
+	patcher := model_core.NewReferenceMessagePatcher[model_core.CreatedObjectTree]()
 	needsCode := false
 
 	if p.initFunction != nil {
 		initFunction, initFunctionNeedsCode, err := p.initFunction.Encode(path, options)
 		if err != nil {
-			return model_core.PatchedMessage[*model_starlark_pb.Value, dag.ObjectContentsWalker]{}, false, err
+			return model_core.PatchedMessage[*model_starlark_pb.Value, model_core.CreatedObjectTree]{}, false, err
 		}
 		provider.InitFunction = initFunction.Message
 		patcher.Merge(initFunction.Patcher)

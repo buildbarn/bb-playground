@@ -9,7 +9,6 @@ import (
 	model_core "github.com/buildbarn/bonanza/pkg/model/core"
 	model_starlark_pb "github.com/buildbarn/bonanza/pkg/proto/model/starlark"
 	"github.com/buildbarn/bonanza/pkg/starlark/unpack"
-	"github.com/buildbarn/bonanza/pkg/storage/dag"
 
 	"go.starlark.net/starlark"
 	"go.starlark.net/syntax"
@@ -103,8 +102,8 @@ func (l label) AttrNames() []string {
 	return labelAttrNames
 }
 
-func (l label) EncodeValue(path map[starlark.Value]struct{}, currentIdentifier *pg_label.CanonicalStarlarkIdentifier, options *ValueEncodingOptions) (model_core.PatchedMessage[*model_starlark_pb.Value, dag.ObjectContentsWalker], bool, error) {
-	return model_core.NewSimplePatchedMessage[dag.ObjectContentsWalker](
+func (l label) EncodeValue(path map[starlark.Value]struct{}, currentIdentifier *pg_label.CanonicalStarlarkIdentifier, options *ValueEncodingOptions) (model_core.PatchedMessage[*model_starlark_pb.Value, model_core.CreatedObjectTree], bool, error) {
+	return model_core.NewSimplePatchedMessage[model_core.CreatedObjectTree](
 		&model_starlark_pb.Value{
 			Kind: &model_starlark_pb.Value_Label{
 				Label: l.value.String(),

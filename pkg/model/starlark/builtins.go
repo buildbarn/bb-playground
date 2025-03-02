@@ -12,7 +12,6 @@ import (
 	model_core "github.com/buildbarn/bonanza/pkg/model/core"
 	model_starlark_pb "github.com/buildbarn/bonanza/pkg/proto/model/starlark"
 	"github.com/buildbarn/bonanza/pkg/starlark/unpack"
-	"github.com/buildbarn/bonanza/pkg/storage/dag"
 
 	"go.starlark.net/lib/json"
 	"go.starlark.net/starlark"
@@ -198,7 +197,7 @@ var BuildFileBuiltins = starlark.StringDict{
 			// an explicit visibility.
 			newDefaultInheritableAttrs, metadata := newDefaultAttrs.SortAndSetReferences()
 			targetRegistrar.defaultInheritableAttrs = newDefaultInheritableAttrs
-			targetRegistrar.createDefaultInheritableAttrsMetadata = func(index int) dag.ObjectContentsWalker {
+			targetRegistrar.createDefaultInheritableAttrsMetadata = func(index int) model_core.CreatedObjectTree {
 				return metadata[index]
 			}
 			targetRegistrar.setDefaultInheritableAttrs = true
@@ -1061,7 +1060,7 @@ func init() {
 						return nil, err
 					}
 
-					patcher := model_core.NewReferenceMessagePatcher[dag.ObjectContentsWalker]()
+					patcher := model_core.NewReferenceMessagePatcher[model_core.CreatedObjectTree]()
 					var visibilityPackageGroup *model_starlark_pb.PackageGroup
 					if len(visibility) == 0 {
 						// Unlike rule targets, exports_files()
@@ -1263,7 +1262,7 @@ func init() {
 					slices.Sort(includes)
 					return starlark.None, targetRegistrar.registerExplicitTarget(
 						name,
-						model_core.NewSimplePatchedMessage[dag.ObjectContentsWalker](
+						model_core.NewSimplePatchedMessage[model_core.CreatedObjectTree](
 							&model_starlark_pb.Target_Definition{
 								Kind: &model_starlark_pb.Target_Definition_PackageGroup{
 									PackageGroup: &model_starlark_pb.PackageGroup{

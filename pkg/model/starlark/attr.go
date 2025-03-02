@@ -11,7 +11,6 @@ import (
 	model_core "github.com/buildbarn/bonanza/pkg/model/core"
 	model_starlark_pb "github.com/buildbarn/bonanza/pkg/proto/model/starlark"
 	"github.com/buildbarn/bonanza/pkg/starlark/unpack"
-	"github.com/buildbarn/bonanza/pkg/storage/dag"
 
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/emptypb"
@@ -55,15 +54,15 @@ func (a *Attr) Hash(thread *starlark.Thread) (uint32, error) {
 	return 0, fmt.Errorf("attr.%s cannot be hashed", a.attrType.Type())
 }
 
-func (a *Attr) Encode(path map[starlark.Value]struct{}, options *ValueEncodingOptions) (model_core.PatchedMessage[*model_starlark_pb.Attr, dag.ObjectContentsWalker], bool, error) {
-	patcher := model_core.NewReferenceMessagePatcher[dag.ObjectContentsWalker]()
+func (a *Attr) Encode(path map[starlark.Value]struct{}, options *ValueEncodingOptions) (model_core.PatchedMessage[*model_starlark_pb.Attr, model_core.CreatedObjectTree], bool, error) {
+	patcher := model_core.NewReferenceMessagePatcher[model_core.CreatedObjectTree]()
 	var attr model_starlark_pb.Attr
 	var needsCode bool
 
 	if a.defaultValue != nil {
 		defaultValue, defaultValueNeedsCode, err := EncodeValue(a.defaultValue, path, nil, options)
 		if err != nil {
-			return model_core.PatchedMessage[*model_starlark_pb.Attr, dag.ObjectContentsWalker]{}, false, err
+			return model_core.PatchedMessage[*model_starlark_pb.Attr, model_core.CreatedObjectTree]{}, false, err
 		}
 		attr.Default = defaultValue.Message
 		patcher.Merge(defaultValue.Patcher)
@@ -71,15 +70,15 @@ func (a *Attr) Encode(path map[starlark.Value]struct{}, options *ValueEncodingOp
 	}
 
 	if err := a.attrType.Encode(&attr); err != nil {
-		return model_core.PatchedMessage[*model_starlark_pb.Attr, dag.ObjectContentsWalker]{}, false, err
+		return model_core.PatchedMessage[*model_starlark_pb.Attr, model_core.CreatedObjectTree]{}, false, err
 	}
 	return model_core.NewPatchedMessage(&attr, patcher), needsCode, nil
 }
 
-func (a *Attr) EncodeValue(path map[starlark.Value]struct{}, currentIdentifier *pg_label.CanonicalStarlarkIdentifier, options *ValueEncodingOptions) (model_core.PatchedMessage[*model_starlark_pb.Value, dag.ObjectContentsWalker], bool, error) {
+func (a *Attr) EncodeValue(path map[starlark.Value]struct{}, currentIdentifier *pg_label.CanonicalStarlarkIdentifier, options *ValueEncodingOptions) (model_core.PatchedMessage[*model_starlark_pb.Value, model_core.CreatedObjectTree], bool, error) {
 	attr, needsCode, err := a.Encode(path, options)
 	if err != nil {
-		return model_core.PatchedMessage[*model_starlark_pb.Value, dag.ObjectContentsWalker]{}, false, err
+		return model_core.PatchedMessage[*model_starlark_pb.Value, model_core.CreatedObjectTree]{}, false, err
 	}
 	return model_core.NewPatchedMessage(
 		&model_starlark_pb.Value{
@@ -532,9 +531,9 @@ func (stringListDictAttrType) IsOutput() (string, bool) {
 	return "", false
 }
 
-func encodeNamedAttrs(attrs map[pg_label.StarlarkIdentifier]*Attr, path map[starlark.Value]struct{}, options *ValueEncodingOptions) (model_core.PatchedMessage[[]*model_starlark_pb.NamedAttr, dag.ObjectContentsWalker], bool, error) {
+func encodeNamedAttrs(attrs map[pg_label.StarlarkIdentifier]*Attr, path map[starlark.Value]struct{}, options *ValueEncodingOptions) (model_core.PatchedMessage[[]*model_starlark_pb.NamedAttr, model_core.CreatedObjectTree], bool, error) {
 	encodedAttrs := make([]*model_starlark_pb.NamedAttr, 0, len(attrs))
-	patcher := model_core.NewReferenceMessagePatcher[dag.ObjectContentsWalker]()
+	patcher := model_core.NewReferenceMessagePatcher[model_core.CreatedObjectTree]()
 	needsCode := false
 	for _, name := range slices.SortedFunc(
 		maps.Keys(attrs),
@@ -542,7 +541,7 @@ func encodeNamedAttrs(attrs map[pg_label.StarlarkIdentifier]*Attr, path map[star
 	) {
 		attr, attrNeedsCode, err := attrs[name].Encode(path, options)
 		if err != nil {
-			return model_core.PatchedMessage[[]*model_starlark_pb.NamedAttr, dag.ObjectContentsWalker]{}, false, fmt.Errorf("attr %#v: %w", name, err)
+			return model_core.PatchedMessage[[]*model_starlark_pb.NamedAttr, model_core.CreatedObjectTree]{}, false, fmt.Errorf("attr %#v: %w", name, err)
 		}
 		encodedAttrs = append(encodedAttrs, &model_starlark_pb.NamedAttr{
 			Name: name.String(),

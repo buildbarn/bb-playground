@@ -12,7 +12,6 @@ import (
 	model_starlark "github.com/buildbarn/bonanza/pkg/model/starlark"
 	model_analysis_pb "github.com/buildbarn/bonanza/pkg/proto/model/analysis"
 	pg_starlark "github.com/buildbarn/bonanza/pkg/starlark"
-	"github.com/buildbarn/bonanza/pkg/storage/dag"
 
 	"go.starlark.net/starlark"
 )
@@ -29,7 +28,7 @@ type moduleExtensionUser struct {
 
 type usedModuleExtensionOptions struct {
 	environment UsedModuleExtensionsEnvironment
-	patcher     *model_core.ReferenceMessagePatcher[dag.ObjectContentsWalker]
+	patcher     *model_core.ReferenceMessagePatcher[model_core.CreatedObjectTree]
 }
 
 type usedModuleExtensionProxy struct {
@@ -164,7 +163,7 @@ func (usedModuleExtensionExtractingModuleDotBazelHandler) UseRepoRule(repoRuleBz
 func (c *baseComputer) ComputeUsedModuleExtensionsValue(ctx context.Context, key *model_analysis_pb.UsedModuleExtensions_Key, e UsedModuleExtensionsEnvironment) (PatchedUsedModuleExtensionsValue, error) {
 	options := usedModuleExtensionOptions{
 		environment: e,
-		patcher:     model_core.NewReferenceMessagePatcher[dag.ObjectContentsWalker](),
+		patcher:     model_core.NewReferenceMessagePatcher[model_core.CreatedObjectTree](),
 	}
 	usedModuleExtensions := map[label.ModuleExtension]*usedModuleExtension{}
 	isRoot := true
@@ -208,6 +207,6 @@ func (c *baseComputer) ComputeUsedModuleExtensionsValue(ctx context.Context, key
 		&model_analysis_pb.UsedModuleExtensions_Value{
 			ModuleExtensions: sortedModuleExtensions,
 		},
-		options.patcher,
+		model_core.MapCreatedObjectsToWalkers(options.patcher),
 	), nil
 }

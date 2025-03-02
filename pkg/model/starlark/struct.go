@@ -16,7 +16,6 @@ import (
 	model_parser "github.com/buildbarn/bonanza/pkg/model/parser"
 	model_core_pb "github.com/buildbarn/bonanza/pkg/proto/model/core"
 	model_starlark_pb "github.com/buildbarn/bonanza/pkg/proto/model/starlark"
-	"github.com/buildbarn/bonanza/pkg/storage/dag"
 	"github.com/buildbarn/bonanza/pkg/storage/object"
 
 	"go.starlark.net/starlark"
@@ -243,25 +242,25 @@ func (s *Struct) ToDict() map[string]any {
 	return dict
 }
 
-func (s *Struct) EncodeStructFields(path map[starlark.Value]struct{}, options *ValueEncodingOptions) (model_core.PatchedMessage[*model_starlark_pb.Struct_Fields, dag.ObjectContentsWalker], bool, error) {
+func (s *Struct) EncodeStructFields(path map[starlark.Value]struct{}, options *ValueEncodingOptions) (model_core.PatchedMessage[*model_starlark_pb.Struct_Fields, model_core.CreatedObjectTree], bool, error) {
 	listBuilder := newListBuilder(options)
 	needsCode := false
 	for i, value := range s.values {
-		var encodedValue model_core.PatchedMessage[*model_starlark_pb.Value, dag.ObjectContentsWalker]
+		var encodedValue model_core.PatchedMessage[*model_starlark_pb.Value, model_core.CreatedObjectTree]
 		switch typedValue := value.(type) {
 		case starlark.Value:
 			var fieldNeedsCode bool
 			var err error
 			encodedValue, fieldNeedsCode, err = EncodeValue(typedValue, path, nil, options)
 			if err != nil {
-				return model_core.PatchedMessage[*model_starlark_pb.Struct_Fields, dag.ObjectContentsWalker]{}, false, fmt.Errorf("field %#v: %w", s.keys[i], err)
+				return model_core.PatchedMessage[*model_starlark_pb.Struct_Fields, model_core.CreatedObjectTree]{}, false, fmt.Errorf("field %#v: %w", s.keys[i], err)
 			}
 			needsCode = needsCode || fieldNeedsCode
 		case model_core.Message[*model_starlark_pb.Value]:
 			encodedValue = model_core.NewPatchedMessageFromExisting(
 				typedValue,
-				func(index int) dag.ObjectContentsWalker {
-					return dag.ExistingObjectContentsWalker
+				func(index int) model_core.CreatedObjectTree {
+					return model_core.ExistingCreatedObjectTree
 				},
 			)
 		default:
@@ -275,13 +274,13 @@ func (s *Struct) EncodeStructFields(path map[starlark.Value]struct{}, options *V
 			},
 			encodedValue.Patcher,
 		)); err != nil {
-			return model_core.PatchedMessage[*model_starlark_pb.Struct_Fields, dag.ObjectContentsWalker]{}, false, err
+			return model_core.PatchedMessage[*model_starlark_pb.Struct_Fields, model_core.CreatedObjectTree]{}, false, err
 		}
 	}
 
 	values, err := listBuilder.FinalizeList()
 	if err != nil {
-		return model_core.PatchedMessage[*model_starlark_pb.Struct_Fields, dag.ObjectContentsWalker]{}, false, err
+		return model_core.PatchedMessage[*model_starlark_pb.Struct_Fields, model_core.CreatedObjectTree]{}, false, err
 	}
 
 	return model_core.NewPatchedMessage(
@@ -293,19 +292,19 @@ func (s *Struct) EncodeStructFields(path map[starlark.Value]struct{}, options *V
 	), needsCode, nil
 }
 
-func (s *Struct) Encode(path map[starlark.Value]struct{}, options *ValueEncodingOptions) (model_core.PatchedMessage[*model_starlark_pb.Struct, dag.ObjectContentsWalker], bool, error) {
+func (s *Struct) Encode(path map[starlark.Value]struct{}, options *ValueEncodingOptions) (model_core.PatchedMessage[*model_starlark_pb.Struct, model_core.CreatedObjectTree], bool, error) {
 	var providerInstanceProperties *model_starlark_pb.Provider_InstanceProperties
 	if pip := s.providerInstanceProperties; pip != nil {
 		var err error
 		providerInstanceProperties, err = pip.Encode()
 		if err != nil {
-			return model_core.PatchedMessage[*model_starlark_pb.Struct, dag.ObjectContentsWalker]{}, false, err
+			return model_core.PatchedMessage[*model_starlark_pb.Struct, model_core.CreatedObjectTree]{}, false, err
 		}
 	}
 
 	fields, needsCode, err := s.EncodeStructFields(path, options)
 	if err != nil {
-		return model_core.PatchedMessage[*model_starlark_pb.Struct, dag.ObjectContentsWalker]{}, false, err
+		return model_core.PatchedMessage[*model_starlark_pb.Struct, model_core.CreatedObjectTree]{}, false, err
 	}
 
 	return model_core.NewPatchedMessage(
@@ -317,10 +316,10 @@ func (s *Struct) Encode(path map[starlark.Value]struct{}, options *ValueEncoding
 	), needsCode, nil
 }
 
-func (s *Struct) EncodeValue(path map[starlark.Value]struct{}, currentIdentifier *pg_label.CanonicalStarlarkIdentifier, options *ValueEncodingOptions) (model_core.PatchedMessage[*model_starlark_pb.Value, dag.ObjectContentsWalker], bool, error) {
+func (s *Struct) EncodeValue(path map[starlark.Value]struct{}, currentIdentifier *pg_label.CanonicalStarlarkIdentifier, options *ValueEncodingOptions) (model_core.PatchedMessage[*model_starlark_pb.Value, model_core.CreatedObjectTree], bool, error) {
 	encodedStruct, needsCode, err := s.Encode(path, options)
 	if err != nil {
-		return model_core.PatchedMessage[*model_starlark_pb.Value, dag.ObjectContentsWalker]{}, false, err
+		return model_core.PatchedMessage[*model_starlark_pb.Value, model_core.CreatedObjectTree]{}, false, err
 	}
 	return model_core.NewPatchedMessage(
 		&model_starlark_pb.Value{

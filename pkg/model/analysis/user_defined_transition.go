@@ -47,9 +47,9 @@ func (c *baseComputer) applyTransition(
 	thread *starlark.Thread,
 	outputs map[string]starlark.Value,
 	valueEncodingOptions *model_starlark.ValueEncodingOptions,
-) (model_core.PatchedMessage[*model_core_pb.Reference, dag.ObjectContentsWalker], error) {
+) (model_core.PatchedMessage[*model_core_pb.Reference, model_core.CreatedObjectTree], error) {
 	if len(outputs) != len(expectedOutputs) {
-		return model_core.PatchedMessage[*model_core_pb.Reference, dag.ObjectContentsWalker]{}, fmt.Errorf("output dictionary contains %d keys, while the transition's definition only has %d outputs", len(outputs), len(expectedOutputs))
+		return model_core.PatchedMessage[*model_core_pb.Reference, model_core.CreatedObjectTree]{}, fmt.Errorf("output dictionary contains %d keys, while the transition's definition only has %d outputs", len(outputs), len(expectedOutputs))
 	}
 
 	var errIter error
@@ -74,7 +74,7 @@ func (c *baseComputer) applyTransition(
 		btree.NewObjectCreatingNodeMerger(
 			model_encoding.NewChainedBinaryEncoder(nil),
 			c.buildSpecificationReference.GetReferenceFormat(),
-			/* parentNodeComputer = */ func(createdObject model_core.CreatedObject[dag.ObjectContentsWalker], childNodes []*model_analysis_pb.Configuration_BuildSettingOverride) (model_core.PatchedMessage[*model_analysis_pb.Configuration_BuildSettingOverride, dag.ObjectContentsWalker], error) {
+			/* parentNodeComputer = */ func(createdObject model_core.CreatedObject[model_core.CreatedObjectTree], childNodes []*model_analysis_pb.Configuration_BuildSettingOverride) (model_core.PatchedMessage[*model_analysis_pb.Configuration_BuildSettingOverride, model_core.CreatedObjectTree], error) {
 				var firstLabel string
 				switch firstEntry := childNodes[0].Level.(type) {
 				case *model_analysis_pb.Configuration_BuildSettingOverride_Leaf_:
@@ -82,14 +82,14 @@ func (c *baseComputer) applyTransition(
 				case *model_analysis_pb.Configuration_BuildSettingOverride_Parent_:
 					firstLabel = firstEntry.Parent.FirstLabel
 				}
-				patcher := model_core.NewReferenceMessagePatcher[dag.ObjectContentsWalker]()
+				patcher := model_core.NewReferenceMessagePatcher[model_core.CreatedObjectTree]()
 				return model_core.NewPatchedMessage(
 					&model_analysis_pb.Configuration_BuildSettingOverride{
 						Level: &model_analysis_pb.Configuration_BuildSettingOverride_Parent_{
 							Parent: &model_analysis_pb.Configuration_BuildSettingOverride_Parent{
 								Reference: patcher.AddReference(
 									createdObject.Contents.GetReference(),
-									dag.NewSimpleObjectContentsWalker(createdObject.Contents, createdObject.Metadata),
+									model_core.CreatedObjectTree(createdObject),
 								),
 								FirstLabel: firstLabel,
 							},
@@ -111,7 +111,7 @@ func (c *baseComputer) applyTransition(
 		} else {
 			level, ok := existingOverride.Message.Level.(*model_analysis_pb.Configuration_BuildSettingOverride_Leaf_)
 			if !ok {
-				return model_core.PatchedMessage[*model_core_pb.Reference, dag.ObjectContentsWalker]{}, errors.New("build setting override is not a valid leaf")
+				return model_core.PatchedMessage[*model_core_pb.Reference, model_core.CreatedObjectTree]{}, errors.New("build setting override is not a valid leaf")
 			}
 			cmp = strings.Compare(level.Leaf.Label, expectedOutputs[0].label)
 		}
@@ -120,8 +120,8 @@ func (c *baseComputer) applyTransition(
 			treeBuilder.PushChild(
 				model_core.NewPatchedMessageFromExisting(
 					existingOverride,
-					func(index int) dag.ObjectContentsWalker {
-						return dag.ExistingObjectContentsWalker
+					func(index int) model_core.CreatedObjectTree {
+						return model_core.ExistingCreatedObjectTree
 					},
 				),
 			)
@@ -132,11 +132,11 @@ func (c *baseComputer) applyTransition(
 			expectedOutputs = expectedOutputs[1:]
 			literalValue, ok := outputs[expectedOutput.key]
 			if !ok {
-				return model_core.PatchedMessage[*model_core_pb.Reference, dag.ObjectContentsWalker]{}, fmt.Errorf("no value for output %#v has been provided", expectedOutput.label)
+				return model_core.PatchedMessage[*model_core_pb.Reference, model_core.CreatedObjectTree]{}, fmt.Errorf("no value for output %#v has been provided", expectedOutput.label)
 			}
 			canonicalizedValue, err := expectedOutput.canonicalizer.Canonicalize(thread, literalValue)
 			if err != nil {
-				return model_core.PatchedMessage[*model_core_pb.Reference, dag.ObjectContentsWalker]{}, fmt.Errorf("failed to canonicalize output %#v: %w", expectedOutput.label, err)
+				return model_core.PatchedMessage[*model_core_pb.Reference, model_core.CreatedObjectTree]{}, fmt.Errorf("failed to canonicalize output %#v: %w", expectedOutput.label, err)
 			}
 			encodedValue, _, err := model_starlark.EncodeValue(
 				canonicalizedValue,
@@ -145,7 +145,7 @@ func (c *baseComputer) applyTransition(
 				valueEncodingOptions,
 			)
 			if err != nil {
-				return model_core.PatchedMessage[*model_core_pb.Reference, dag.ObjectContentsWalker]{}, fmt.Errorf("failed to encode \"build_setting_default\": %w", err)
+				return model_core.PatchedMessage[*model_core_pb.Reference, model_core.CreatedObjectTree]{}, fmt.Errorf("failed to encode \"build_setting_default\": %w", err)
 			}
 
 			// Only store the build setting override if its
@@ -173,18 +173,18 @@ func (c *baseComputer) applyTransition(
 		}
 	}
 	if errIter != nil {
-		return model_core.PatchedMessage[*model_core_pb.Reference, dag.ObjectContentsWalker]{}, errIter
+		return model_core.PatchedMessage[*model_core_pb.Reference, model_core.CreatedObjectTree]{}, errIter
 	}
 	buildSettingOverrides, err := treeBuilder.FinalizeList()
 	if err != nil {
-		return model_core.PatchedMessage[*model_core_pb.Reference, dag.ObjectContentsWalker]{}, fmt.Errorf("failed to finalize build setting overrides: %w", err)
+		return model_core.PatchedMessage[*model_core_pb.Reference, model_core.CreatedObjectTree]{}, fmt.Errorf("failed to finalize build setting overrides: %w", err)
 	}
 
 	newConfiguration := &model_analysis_pb.Configuration{
 		BuildSettingOverrides: buildSettingOverrides.Message,
 	}
 	if proto.Size(newConfiguration) == 0 {
-		return model_core.NewSimplePatchedMessage[dag.ObjectContentsWalker, *model_core_pb.Reference](nil), nil
+		return model_core.NewSimplePatchedMessage[model_core.CreatedObjectTree, *model_core_pb.Reference](nil), nil
 	}
 
 	createdConfiguration, err := model_core.MarshalAndEncodePatchedMessage(
@@ -193,13 +193,13 @@ func (c *baseComputer) applyTransition(
 		c.getValueObjectEncoder(),
 	)
 	if err != nil {
-		return model_core.PatchedMessage[*model_core_pb.Reference, dag.ObjectContentsWalker]{}, fmt.Errorf("failed to marshal configuration: %w", err)
+		return model_core.PatchedMessage[*model_core_pb.Reference, model_core.CreatedObjectTree]{}, fmt.Errorf("failed to marshal configuration: %w", err)
 	}
-	configurationReferencePatcher := model_core.NewReferenceMessagePatcher[dag.ObjectContentsWalker]()
+	configurationReferencePatcher := model_core.NewReferenceMessagePatcher[model_core.CreatedObjectTree]()
 	return model_core.NewPatchedMessage(
 		configurationReferencePatcher.AddReference(
 			createdConfiguration.Contents.GetReference(),
-			dag.NewSimpleObjectContentsWalker(createdConfiguration.Contents, createdConfiguration.Metadata),
+			model_core.CreatedObjectTree(createdConfiguration),
 		),
 		configurationReferencePatcher,
 	), nil
@@ -569,7 +569,7 @@ func (c *baseComputer) ComputeUserDefinedTransitionValue(ctx context.Context, ke
 		return PatchedUserDefinedTransitionValue{}, errors.New("transition did not yield a list or dict")
 	}
 
-	patcher := model_core.NewReferenceMessagePatcher[dag.ObjectContentsWalker]()
+	patcher := model_core.NewReferenceMessagePatcher[model_core.CreatedObjectTree]()
 	entries := make([]*model_analysis_pb.UserDefinedTransition_Value_Success_Entry, 0, len(outputsDict))
 	for i, key := range slices.Sorted(maps.Keys(outputsDict)) {
 		outputConfigurationReference, err := c.applyTransition(ctx, configuration, buildSettingOverrideListReader, expectedOutputs, thread, outputsDict[key], valueEncodingOptions)
@@ -590,7 +590,7 @@ func (c *baseComputer) ComputeUserDefinedTransitionValue(ctx context.Context, ke
 				},
 			},
 		},
-		Patcher: patcher,
+		Patcher: model_core.MapCreatedObjectsToWalkers(patcher),
 	}, nil
 }
 

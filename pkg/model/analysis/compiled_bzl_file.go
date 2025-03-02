@@ -97,7 +97,7 @@ func (c *baseComputer) ComputeCompiledBzlFileValue(ctx context.Context, key *mod
 		Message: &model_analysis_pb.CompiledBzlFile_Value{
 			CompiledProgram: compiledProgram.Message,
 		},
-		Patcher: compiledProgram.Patcher,
+		Patcher: model_core.MapCreatedObjectsToWalkers(compiledProgram.Patcher),
 	}, nil
 }
 

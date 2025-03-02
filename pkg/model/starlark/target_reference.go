@@ -10,7 +10,6 @@ import (
 	pg_label "github.com/buildbarn/bonanza/pkg/label"
 	model_core "github.com/buildbarn/bonanza/pkg/model/core"
 	model_starlark_pb "github.com/buildbarn/bonanza/pkg/proto/model/starlark"
-	"github.com/buildbarn/bonanza/pkg/storage/dag"
 
 	"go.starlark.net/starlark"
 	"go.starlark.net/syntax"
@@ -162,7 +161,7 @@ func (tr *TargetReference) Get(thread *starlark.Thread, v starlark.Value) (starl
 	return providerValue, true, nil
 }
 
-func (tr *TargetReference) EncodeValue(path map[starlark.Value]struct{}, currentIdentifier *pg_label.CanonicalStarlarkIdentifier, options *ValueEncodingOptions) (model_core.PatchedMessage[*model_starlark_pb.Value, dag.ObjectContentsWalker], bool, error) {
+func (tr *TargetReference) EncodeValue(path map[starlark.Value]struct{}, currentIdentifier *pg_label.CanonicalStarlarkIdentifier, options *ValueEncodingOptions) (model_core.PatchedMessage[*model_starlark_pb.Value, model_core.CreatedObjectTree], bool, error) {
 	return model_core.NewPatchedMessageFromExisting(
 		model_core.NewNestedMessage(tr.encodedProviders, &model_starlark_pb.Value{
 			Kind: &model_starlark_pb.Value_TargetReference{
@@ -172,8 +171,8 @@ func (tr *TargetReference) EncodeValue(path map[starlark.Value]struct{}, current
 				},
 			},
 		}),
-		func(index int) dag.ObjectContentsWalker {
-			return dag.ExistingObjectContentsWalker
+		func(index int) model_core.CreatedObjectTree {
+			return model_core.ExistingCreatedObjectTree
 		},
 	), false, nil
 }

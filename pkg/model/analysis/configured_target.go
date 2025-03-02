@@ -631,7 +631,7 @@ func (c *baseComputer) ComputeConfiguredTargetValue(ctx context.Context, key mod
 		}
 
 		encodedProviderInstances := make([]*model_starlark_pb.Struct, 0, len(providerInstancesByIdentifier))
-		patcher := model_core.NewReferenceMessagePatcher[dag.ObjectContentsWalker]()
+		patcher := model_core.NewReferenceMessagePatcher[model_core.CreatedObjectTree]()
 		for _, providerIdentifier := range slices.SortedFunc(
 			maps.Keys(providerInstancesByIdentifier),
 			func(a, b label.CanonicalStarlarkIdentifier) int {
@@ -651,7 +651,7 @@ func (c *baseComputer) ComputeConfiguredTargetValue(ctx context.Context, key mod
 			&model_analysis_pb.ConfiguredTarget_Value{
 				ProviderInstances: encodedProviderInstances,
 			},
-			patcher,
+			model_core.MapCreatedObjectsToWalkers(patcher),
 		), nil
 	case *model_starlark_pb.Target_Definition_SourceFileTarget:
 		// Handcraft a DefaultInfo provider for this source file.

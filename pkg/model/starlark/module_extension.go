@@ -9,7 +9,6 @@ import (
 	pg_label "github.com/buildbarn/bonanza/pkg/label"
 	model_core "github.com/buildbarn/bonanza/pkg/model/core"
 	model_starlark_pb "github.com/buildbarn/bonanza/pkg/proto/model/starlark"
-	"github.com/buildbarn/bonanza/pkg/storage/dag"
 
 	"go.starlark.net/starlark"
 )
@@ -63,10 +62,10 @@ func NewStarlarkModuleExtensionDefinition(implementation NamedFunction, tagClass
 	}
 }
 
-func (med *starlarkModuleExtensionDefinition) EncodeValue(path map[starlark.Value]struct{}, currentIdentifier *pg_label.CanonicalStarlarkIdentifier, options *ValueEncodingOptions) (model_core.PatchedMessage[*model_starlark_pb.Value, dag.ObjectContentsWalker], bool, error) {
+func (med *starlarkModuleExtensionDefinition) EncodeValue(path map[starlark.Value]struct{}, currentIdentifier *pg_label.CanonicalStarlarkIdentifier, options *ValueEncodingOptions) (model_core.PatchedMessage[*model_starlark_pb.Value, model_core.CreatedObjectTree], bool, error) {
 	implementation, needsCode, err := med.implementation.Encode(path, options)
 	if err != nil {
-		return model_core.PatchedMessage[*model_starlark_pb.Value, dag.ObjectContentsWalker]{}, false, err
+		return model_core.PatchedMessage[*model_starlark_pb.Value, model_core.CreatedObjectTree]{}, false, err
 	}
 	patcher := implementation.Patcher
 
@@ -77,7 +76,7 @@ func (med *starlarkModuleExtensionDefinition) EncodeValue(path map[starlark.Valu
 	) {
 		encodedTagClass, tagClassNeedsCode, err := med.tagClasses[name].Encode(path, options)
 		if err != nil {
-			return model_core.PatchedMessage[*model_starlark_pb.Value, dag.ObjectContentsWalker]{}, false, err
+			return model_core.PatchedMessage[*model_starlark_pb.Value, model_core.CreatedObjectTree]{}, false, err
 		}
 		tagClasses = append(tagClasses, &model_starlark_pb.ModuleExtension_NamedTagClass{
 			Name:     name.String(),
@@ -110,11 +109,11 @@ func NewProtoModuleExtensionDefinition(message model_core.Message[*model_starlar
 	}
 }
 
-func (med *protoModuleExtensionDefinition) EncodeValue(path map[starlark.Value]struct{}, currentIdentifier *pg_label.CanonicalStarlarkIdentifier, options *ValueEncodingOptions) (model_core.PatchedMessage[*model_starlark_pb.Value, dag.ObjectContentsWalker], bool, error) {
+func (med *protoModuleExtensionDefinition) EncodeValue(path map[starlark.Value]struct{}, currentIdentifier *pg_label.CanonicalStarlarkIdentifier, options *ValueEncodingOptions) (model_core.PatchedMessage[*model_starlark_pb.Value, model_core.CreatedObjectTree], bool, error) {
 	patchedMessage := model_core.NewPatchedMessageFromExisting(
 		med.message,
-		func(index int) dag.ObjectContentsWalker {
-			return dag.ExistingObjectContentsWalker
+		func(index int) model_core.CreatedObjectTree {
+			return model_core.ExistingCreatedObjectTree
 		},
 	)
 	return model_core.NewPatchedMessage(

@@ -8,7 +8,6 @@ import (
 	model_core "github.com/buildbarn/bonanza/pkg/model/core"
 	model_starlark_pb "github.com/buildbarn/bonanza/pkg/proto/model/starlark"
 	"github.com/buildbarn/bonanza/pkg/starlark/unpack"
-	"github.com/buildbarn/bonanza/pkg/storage/dag"
 
 	"google.golang.org/protobuf/types/known/emptypb"
 
@@ -81,8 +80,8 @@ func (td *referenceTransitionDefinition) GetUserDefinedTransitionIdentifier() (s
 	return userDefined.UserDefined, nil
 }
 
-func (td *referenceTransitionDefinition) EncodeValue(path map[starlark.Value]struct{}, currentIdentifier *pg_label.CanonicalStarlarkIdentifier, options *ValueEncodingOptions) (model_core.PatchedMessage[*model_starlark_pb.Value, dag.ObjectContentsWalker], bool, error) {
-	return model_core.NewSimplePatchedMessage[dag.ObjectContentsWalker](
+func (td *referenceTransitionDefinition) EncodeValue(path map[starlark.Value]struct{}, currentIdentifier *pg_label.CanonicalStarlarkIdentifier, options *ValueEncodingOptions) (model_core.PatchedMessage[*model_starlark_pb.Value, model_core.CreatedObjectTree], bool, error) {
+	return model_core.NewSimplePatchedMessage[model_core.CreatedObjectTree](
 		&model_starlark_pb.Value{
 			Kind: &model_starlark_pb.Value_Transition{
 				Transition: &model_starlark_pb.Transition{
@@ -163,14 +162,14 @@ func (td *userDefinedTransitionDefinition) GetUserDefinedTransitionIdentifier() 
 	return td.Identifier.String(), nil
 }
 
-func (td *userDefinedTransitionDefinition) EncodeValue(path map[starlark.Value]struct{}, currentIdentifier *pg_label.CanonicalStarlarkIdentifier, options *ValueEncodingOptions) (model_core.PatchedMessage[*model_starlark_pb.Value, dag.ObjectContentsWalker], bool, error) {
+func (td *userDefinedTransitionDefinition) EncodeValue(path map[starlark.Value]struct{}, currentIdentifier *pg_label.CanonicalStarlarkIdentifier, options *ValueEncodingOptions) (model_core.PatchedMessage[*model_starlark_pb.Value, model_core.CreatedObjectTree], bool, error) {
 	if td.Identifier == nil {
-		return model_core.PatchedMessage[*model_starlark_pb.Value, dag.ObjectContentsWalker]{}, false, errors.New("transition does not have a name")
+		return model_core.PatchedMessage[*model_starlark_pb.Value, model_core.CreatedObjectTree]{}, false, errors.New("transition does not have a name")
 	}
 	if currentIdentifier == nil || *currentIdentifier != *td.Identifier {
 		// Not the canonical identifier under which this
 		// transition is known. Emit a reference.
-		return model_core.NewSimplePatchedMessage[dag.ObjectContentsWalker](
+		return model_core.NewSimplePatchedMessage[model_core.CreatedObjectTree](
 			&model_starlark_pb.Value{
 				Kind: &model_starlark_pb.Value_Transition{
 					Transition: &model_starlark_pb.Transition{
@@ -189,7 +188,7 @@ func (td *userDefinedTransitionDefinition) EncodeValue(path map[starlark.Value]s
 
 	implementation, needsCode, err := td.implementation.Encode(path, options)
 	if err != nil {
-		return model_core.PatchedMessage[*model_starlark_pb.Value, dag.ObjectContentsWalker]{}, false, err
+		return model_core.PatchedMessage[*model_starlark_pb.Value, model_core.CreatedObjectTree]{}, false, err
 	}
 	return model_core.NewPatchedMessage(
 		&model_starlark_pb.Value{

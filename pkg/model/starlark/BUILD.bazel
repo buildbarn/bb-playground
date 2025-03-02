@@ -48,7 +48,6 @@ go_library(
         "//pkg/proto/model/core",
         "//pkg/proto/model/starlark",
         "//pkg/starlark/unpack",
-        "//pkg/storage/dag",
         "//pkg/storage/object",
         "@com_github_buildbarn_bb_storage//pkg/filesystem/path",
         "@net_starlark_go//lib/json",

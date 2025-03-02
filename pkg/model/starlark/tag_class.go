@@ -6,7 +6,6 @@ import (
 	pg_label "github.com/buildbarn/bonanza/pkg/label"
 	model_core "github.com/buildbarn/bonanza/pkg/model/core"
 	model_starlark_pb "github.com/buildbarn/bonanza/pkg/proto/model/starlark"
-	"github.com/buildbarn/bonanza/pkg/storage/dag"
 
 	"go.starlark.net/starlark"
 )
@@ -44,10 +43,10 @@ func (TagClass) Hash(thread *starlark.Thread) (uint32, error) {
 	return 0, errors.New("tag_class cannot be hashed")
 }
 
-func (tc *TagClass) EncodeValue(path map[starlark.Value]struct{}, currentIdentifier *pg_label.CanonicalStarlarkIdentifier, options *ValueEncodingOptions) (model_core.PatchedMessage[*model_starlark_pb.Value, dag.ObjectContentsWalker], bool, error) {
+func (tc *TagClass) EncodeValue(path map[starlark.Value]struct{}, currentIdentifier *pg_label.CanonicalStarlarkIdentifier, options *ValueEncodingOptions) (model_core.PatchedMessage[*model_starlark_pb.Value, model_core.CreatedObjectTree], bool, error) {
 	tagClass, needsCode, err := tc.TagClassDefinition.Encode(path, options)
 	if err != nil {
-		return model_core.PatchedMessage[*model_starlark_pb.Value, dag.ObjectContentsWalker]{}, false, err
+		return model_core.PatchedMessage[*model_starlark_pb.Value, model_core.CreatedObjectTree]{}, false, err
 	}
 	return model_core.NewPatchedMessage(
 		&model_starlark_pb.Value{
@@ -60,7 +59,7 @@ func (tc *TagClass) EncodeValue(path map[starlark.Value]struct{}, currentIdentif
 }
 
 type TagClassDefinition interface {
-	Encode(path map[starlark.Value]struct{}, options *ValueEncodingOptions) (model_core.PatchedMessage[*model_starlark_pb.TagClass, dag.ObjectContentsWalker], bool, error)
+	Encode(path map[starlark.Value]struct{}, options *ValueEncodingOptions) (model_core.PatchedMessage[*model_starlark_pb.TagClass, model_core.CreatedObjectTree], bool, error)
 }
 
 type starlarkTagClassDefinition struct {
@@ -73,10 +72,10 @@ func NewStarlarkTagClassDefinition(attrs map[pg_label.StarlarkIdentifier]*Attr) 
 	}
 }
 
-func (tcd *starlarkTagClassDefinition) Encode(path map[starlark.Value]struct{}, options *ValueEncodingOptions) (model_core.PatchedMessage[*model_starlark_pb.TagClass, dag.ObjectContentsWalker], bool, error) {
+func (tcd *starlarkTagClassDefinition) Encode(path map[starlark.Value]struct{}, options *ValueEncodingOptions) (model_core.PatchedMessage[*model_starlark_pb.TagClass, model_core.CreatedObjectTree], bool, error) {
 	encodedAttrs, needsCode, err := encodeNamedAttrs(tcd.attrs, path, options)
 	if err != nil {
-		return model_core.PatchedMessage[*model_starlark_pb.TagClass, dag.ObjectContentsWalker]{}, false, nil
+		return model_core.PatchedMessage[*model_starlark_pb.TagClass, model_core.CreatedObjectTree]{}, false, nil
 	}
 	return model_core.NewPatchedMessage(
 		&model_starlark_pb.TagClass{
@@ -96,11 +95,11 @@ func NewProtoTagClassDefinition(message model_core.Message[*model_starlark_pb.Ta
 	}
 }
 
-func (tcd *protoTagClassDefinition) Encode(path map[starlark.Value]struct{}, options *ValueEncodingOptions) (model_core.PatchedMessage[*model_starlark_pb.TagClass, dag.ObjectContentsWalker], bool, error) {
+func (tcd *protoTagClassDefinition) Encode(path map[starlark.Value]struct{}, options *ValueEncodingOptions) (model_core.PatchedMessage[*model_starlark_pb.TagClass, model_core.CreatedObjectTree], bool, error) {
 	return model_core.NewPatchedMessageFromExisting(
 		tcd.message,
-		func(index int) dag.ObjectContentsWalker {
-			return dag.ExistingObjectContentsWalker
+		func(index int) model_core.CreatedObjectTree {
+			return model_core.ExistingCreatedObjectTree
 		},
 	), false, nil
 }

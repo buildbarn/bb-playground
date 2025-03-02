@@ -11,7 +11,6 @@ import (
 	model_core "github.com/buildbarn/bonanza/pkg/model/core"
 	model_starlark_pb "github.com/buildbarn/bonanza/pkg/proto/model/starlark"
 	"github.com/buildbarn/bonanza/pkg/starlark/unpack"
-	"github.com/buildbarn/bonanza/pkg/storage/dag"
 
 	"go.starlark.net/starlark"
 )
@@ -175,14 +174,14 @@ func (rr *repositoryRule) CallInternal(thread *starlark.Thread, args starlark.Tu
 	)
 }
 
-func (rr *repositoryRule) EncodeValue(path map[starlark.Value]struct{}, currentIdentifier *pg_label.CanonicalStarlarkIdentifier, options *ValueEncodingOptions) (model_core.PatchedMessage[*model_starlark_pb.Value, dag.ObjectContentsWalker], bool, error) {
+func (rr *repositoryRule) EncodeValue(path map[starlark.Value]struct{}, currentIdentifier *pg_label.CanonicalStarlarkIdentifier, options *ValueEncodingOptions) (model_core.PatchedMessage[*model_starlark_pb.Value, model_core.CreatedObjectTree], bool, error) {
 	if rr.Identifier == nil {
-		return model_core.PatchedMessage[*model_starlark_pb.Value, dag.ObjectContentsWalker]{}, false, errors.New("repository_rule does not have a name")
+		return model_core.PatchedMessage[*model_starlark_pb.Value, model_core.CreatedObjectTree]{}, false, errors.New("repository_rule does not have a name")
 	}
 	if currentIdentifier == nil || *currentIdentifier != *rr.Identifier {
 		// Not the canonical identifier under which this
 		// repository rule is known. Emit a reference.
-		return model_core.NewSimplePatchedMessage[dag.ObjectContentsWalker](
+		return model_core.NewSimplePatchedMessage[model_core.CreatedObjectTree](
 			&model_starlark_pb.Value{
 				Kind: &model_starlark_pb.Value_RepositoryRule{
 					RepositoryRule: &model_starlark_pb.RepositoryRule{
@@ -197,7 +196,7 @@ func (rr *repositoryRule) EncodeValue(path map[starlark.Value]struct{}, currentI
 
 	definition, needsCode, err := rr.definition.Encode(path, options)
 	if err != nil {
-		return model_core.PatchedMessage[*model_starlark_pb.Value, dag.ObjectContentsWalker]{}, false, err
+		return model_core.PatchedMessage[*model_starlark_pb.Value, model_core.CreatedObjectTree]{}, false, err
 	}
 	return model_core.NewPatchedMessage(
 		&model_starlark_pb.Value{
@@ -214,7 +213,7 @@ func (rr *repositoryRule) EncodeValue(path map[starlark.Value]struct{}, currentI
 }
 
 type RepositoryRuleDefinition interface {
-	Encode(path map[starlark.Value]struct{}, options *ValueEncodingOptions) (model_core.PatchedMessage[*model_starlark_pb.RepositoryRule_Definition, dag.ObjectContentsWalker], bool, error)
+	Encode(path map[starlark.Value]struct{}, options *ValueEncodingOptions) (model_core.PatchedMessage[*model_starlark_pb.RepositoryRule_Definition, model_core.CreatedObjectTree], bool, error)
 	GetAttrsCheap(thread *starlark.Thread) (map[pg_label.StarlarkIdentifier]*Attr, error)
 }
 
@@ -230,15 +229,15 @@ func NewStarlarkRepositoryRuleDefinition(implementation NamedFunction, attrs map
 	}
 }
 
-func (rrd *starlarkRepositoryRuleDefinition) Encode(path map[starlark.Value]struct{}, options *ValueEncodingOptions) (model_core.PatchedMessage[*model_starlark_pb.RepositoryRule_Definition, dag.ObjectContentsWalker], bool, error) {
+func (rrd *starlarkRepositoryRuleDefinition) Encode(path map[starlark.Value]struct{}, options *ValueEncodingOptions) (model_core.PatchedMessage[*model_starlark_pb.RepositoryRule_Definition, model_core.CreatedObjectTree], bool, error) {
 	implementation, implementationNeedsCode, err := rrd.implementation.Encode(path, options)
 	if err != nil {
-		return model_core.PatchedMessage[*model_starlark_pb.RepositoryRule_Definition, dag.ObjectContentsWalker]{}, false, err
+		return model_core.PatchedMessage[*model_starlark_pb.RepositoryRule_Definition, model_core.CreatedObjectTree]{}, false, err
 	}
 
 	namedAttrs, namedAttrsNeedCode, err := encodeNamedAttrs(rrd.attrs, path, options)
 	if err != nil {
-		return model_core.PatchedMessage[*model_starlark_pb.RepositoryRule_Definition, dag.ObjectContentsWalker]{}, false, err
+		return model_core.PatchedMessage[*model_starlark_pb.RepositoryRule_Definition, model_core.CreatedObjectTree]{}, false, err
 	}
 
 	return model_core.NewPatchedMessage(
@@ -265,7 +264,7 @@ func NewProtoRepositoryRuleDefinition(message model_core.Message[*model_starlark
 	}
 }
 
-func (rrd *protoRepositoryRuleDefinition) Encode(path map[starlark.Value]struct{}, options *ValueEncodingOptions) (model_core.PatchedMessage[*model_starlark_pb.RepositoryRule_Definition, dag.ObjectContentsWalker], bool, error) {
+func (rrd *protoRepositoryRuleDefinition) Encode(path map[starlark.Value]struct{}, options *ValueEncodingOptions) (model_core.PatchedMessage[*model_starlark_pb.RepositoryRule_Definition, model_core.CreatedObjectTree], bool, error) {
 	panic("rule definition was already encoded previously")
 }
 

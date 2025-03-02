@@ -13,7 +13,6 @@ import (
 	model_core "github.com/buildbarn/bonanza/pkg/model/core"
 	model_starlark_pb "github.com/buildbarn/bonanza/pkg/proto/model/starlark"
 	"github.com/buildbarn/bonanza/pkg/starlark/unpack"
-	"github.com/buildbarn/bonanza/pkg/storage/dag"
 
 	"go.starlark.net/starlark"
 )
@@ -268,7 +267,7 @@ func (r *rule) CallInternal(thread *starlark.Thread, args starlark.Tuple, kwargs
 	}
 
 	var attrValues []*model_starlark_pb.RuleTarget_AttrValue
-	patcher := model_core.NewReferenceMessagePatcher[dag.ObjectContentsWalker]()
+	patcher := model_core.NewReferenceMessagePatcher[model_core.CreatedObjectTree]()
 	valueEncodingOptions := thread.Local(ValueEncodingOptionsKey).(*ValueEncodingOptions)
 	for i, attrName := range attrNames {
 		attr := attrs[attrName]
@@ -357,7 +356,7 @@ func (r *rule) CallInternal(thread *starlark.Thread, args starlark.Tuple, kwargs
 		}
 	}
 
-	var encodedBuildSettingDefault model_core.PatchedMessage[*model_starlark_pb.Value, dag.ObjectContentsWalker]
+	var encodedBuildSettingDefault model_core.PatchedMessage[*model_starlark_pb.Value, model_core.CreatedObjectTree]
 	if buildSetting != nil {
 		encodedBuildSettingDefault, _, err = EncodeValue(
 			buildSettingDefault,
@@ -422,14 +421,14 @@ func (r *rule) CallInternal(thread *starlark.Thread, args starlark.Tuple, kwargs
 	)
 }
 
-func (r *rule) EncodeValue(path map[starlark.Value]struct{}, currentIdentifier *pg_label.CanonicalStarlarkIdentifier, options *ValueEncodingOptions) (model_core.PatchedMessage[*model_starlark_pb.Value, dag.ObjectContentsWalker], bool, error) {
+func (r *rule) EncodeValue(path map[starlark.Value]struct{}, currentIdentifier *pg_label.CanonicalStarlarkIdentifier, options *ValueEncodingOptions) (model_core.PatchedMessage[*model_starlark_pb.Value, model_core.CreatedObjectTree], bool, error) {
 	if r.Identifier == nil {
-		return model_core.PatchedMessage[*model_starlark_pb.Value, dag.ObjectContentsWalker]{}, false, errors.New("rule does not have a name")
+		return model_core.PatchedMessage[*model_starlark_pb.Value, model_core.CreatedObjectTree]{}, false, errors.New("rule does not have a name")
 	}
 	if currentIdentifier == nil || *currentIdentifier != *r.Identifier {
 		// Not the canonical identifier under which this rule is
 		// known. Emit a reference.
-		return model_core.NewSimplePatchedMessage[dag.ObjectContentsWalker](&model_starlark_pb.Value{
+		return model_core.NewSimplePatchedMessage[model_core.CreatedObjectTree](&model_starlark_pb.Value{
 			Kind: &model_starlark_pb.Value_Rule{
 				Rule: &model_starlark_pb.Rule{
 					Kind: &model_starlark_pb.Rule_Reference{
@@ -442,7 +441,7 @@ func (r *rule) EncodeValue(path map[starlark.Value]struct{}, currentIdentifier *
 
 	definition, needsCode, err := r.definition.Encode(path, options)
 	if err != nil {
-		return model_core.PatchedMessage[*model_starlark_pb.Value, dag.ObjectContentsWalker]{}, false, err
+		return model_core.PatchedMessage[*model_starlark_pb.Value, model_core.CreatedObjectTree]{}, false, err
 	}
 	return model_core.NewPatchedMessage(
 		&model_starlark_pb.Value{
@@ -459,7 +458,7 @@ func (r *rule) EncodeValue(path map[starlark.Value]struct{}, currentIdentifier *
 }
 
 type RuleDefinition interface {
-	Encode(path map[starlark.Value]struct{}, options *ValueEncodingOptions) (model_core.PatchedMessage[*model_starlark_pb.Rule_Definition, dag.ObjectContentsWalker], bool, error)
+	Encode(path map[starlark.Value]struct{}, options *ValueEncodingOptions) (model_core.PatchedMessage[*model_starlark_pb.Rule_Definition, model_core.CreatedObjectTree], bool, error)
 	GetAttrsCheap(thread *starlark.Thread) (map[pg_label.StarlarkIdentifier]*Attr, error)
 	GetBuildSetting(thread *starlark.Thread) (*BuildSetting, error)
 	GetInitializer(thread *starlark.Thread) (*NamedFunction, error)
@@ -502,8 +501,8 @@ func NewStarlarkRuleDefinition(
 	}
 }
 
-func (rd *starlarkRuleDefinition) Encode(path map[starlark.Value]struct{}, options *ValueEncodingOptions) (model_core.PatchedMessage[*model_starlark_pb.Rule_Definition, dag.ObjectContentsWalker], bool, error) {
-	patcher := model_core.NewReferenceMessagePatcher[dag.ObjectContentsWalker]()
+func (rd *starlarkRuleDefinition) Encode(path map[starlark.Value]struct{}, options *ValueEncodingOptions) (model_core.PatchedMessage[*model_starlark_pb.Rule_Definition, model_core.CreatedObjectTree], bool, error) {
+	patcher := model_core.NewReferenceMessagePatcher[model_core.CreatedObjectTree]()
 
 	var buildSetting *model_starlark_pb.BuildSetting
 	if rd.buildSetting != nil {
@@ -520,7 +519,7 @@ func (rd *starlarkRuleDefinition) Encode(path map[starlark.Value]struct{}, optio
 
 	implementation, needsCode, err := rd.implementation.Encode(path, options)
 	if err != nil {
-		return model_core.PatchedMessage[*model_starlark_pb.Rule_Definition, dag.ObjectContentsWalker]{}, false, err
+		return model_core.PatchedMessage[*model_starlark_pb.Rule_Definition, model_core.CreatedObjectTree]{}, false, err
 	}
 	patcher.Merge(implementation.Patcher)
 
@@ -528,7 +527,7 @@ func (rd *starlarkRuleDefinition) Encode(path map[starlark.Value]struct{}, optio
 	if rd.initializer != nil {
 		initializer, initializerNeedsCode, err := rd.initializer.Encode(path, options)
 		if err != nil {
-			return model_core.PatchedMessage[*model_starlark_pb.Rule_Definition, dag.ObjectContentsWalker]{}, false, err
+			return model_core.PatchedMessage[*model_starlark_pb.Rule_Definition, model_core.CreatedObjectTree]{}, false, err
 		}
 		initializerMessage = initializer.Message
 		needsCode = needsCode || initializerNeedsCode
@@ -537,7 +536,7 @@ func (rd *starlarkRuleDefinition) Encode(path map[starlark.Value]struct{}, optio
 
 	namedAttrs, namedAttrsNeedCode, err := encodeNamedAttrs(rd.attrs, path, options)
 	if err != nil {
-		return model_core.PatchedMessage[*model_starlark_pb.Rule_Definition, dag.ObjectContentsWalker]{}, false, err
+		return model_core.PatchedMessage[*model_starlark_pb.Rule_Definition, model_core.CreatedObjectTree]{}, false, err
 	}
 	needsCode = needsCode || namedAttrsNeedCode
 	patcher.Merge(namedAttrs.Patcher)
@@ -546,14 +545,14 @@ func (rd *starlarkRuleDefinition) Encode(path map[starlark.Value]struct{}, optio
 	if rd.cfg != nil {
 		cfgTransitionIdentifier, err = rd.cfg.GetUserDefinedTransitionIdentifier()
 		if err != nil {
-			return model_core.PatchedMessage[*model_starlark_pb.Rule_Definition, dag.ObjectContentsWalker]{}, false, err
+			return model_core.PatchedMessage[*model_starlark_pb.Rule_Definition, model_core.CreatedObjectTree]{}, false, err
 		}
 	}
 
 	subruleIdentifiers := make([]string, 0, len(rd.subrules))
 	for i, subrule := range rd.subrules {
 		if subrule.Identifier == nil {
-			return model_core.PatchedMessage[*model_starlark_pb.Rule_Definition, dag.ObjectContentsWalker]{}, false, fmt.Errorf("subrule at index %d does not have an identifier", i)
+			return model_core.PatchedMessage[*model_starlark_pb.Rule_Definition, model_core.CreatedObjectTree]{}, false, fmt.Errorf("subrule at index %d does not have an identifier", i)
 		}
 		subruleIdentifiers = append(subruleIdentifiers, subrule.Identifier.String())
 	}
@@ -601,7 +600,7 @@ func NewProtoRuleDefinition(message model_core.Message[*model_starlark_pb.Rule_D
 	}
 }
 
-func (rd *protoRuleDefinition) Encode(path map[starlark.Value]struct{}, options *ValueEncodingOptions) (model_core.PatchedMessage[*model_starlark_pb.Rule_Definition, dag.ObjectContentsWalker], bool, error) {
+func (rd *protoRuleDefinition) Encode(path map[starlark.Value]struct{}, options *ValueEncodingOptions) (model_core.PatchedMessage[*model_starlark_pb.Rule_Definition, model_core.CreatedObjectTree], bool, error) {
 	panic("rule definition was already encoded previously")
 }
 
@@ -648,7 +647,7 @@ func NewReloadingRuleDefinition(identifier pg_label.CanonicalStarlarkIdentifier)
 	}
 }
 
-func (rd *reloadingRuleDefinition) Encode(path map[starlark.Value]struct{}, options *ValueEncodingOptions) (model_core.PatchedMessage[*model_starlark_pb.Rule_Definition, dag.ObjectContentsWalker], bool, error) {
+func (rd *reloadingRuleDefinition) Encode(path map[starlark.Value]struct{}, options *ValueEncodingOptions) (model_core.PatchedMessage[*model_starlark_pb.Rule_Definition, model_core.CreatedObjectTree], bool, error) {
 	panic("rule definition was already encoded previously")
 }
 

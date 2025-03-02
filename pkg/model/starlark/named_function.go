@@ -9,7 +9,6 @@ import (
 	model_core "github.com/buildbarn/bonanza/pkg/model/core"
 	model_starlark_pb "github.com/buildbarn/bonanza/pkg/proto/model/starlark"
 	"github.com/buildbarn/bonanza/pkg/starlark/unpack"
-	"github.com/buildbarn/bonanza/pkg/storage/dag"
 
 	"go.starlark.net/starlark"
 	"go.starlark.net/syntax"
@@ -45,10 +44,10 @@ func (f NamedFunction) Hash(thread *starlark.Thread) (uint32, error) {
 	return 0, errors.New("function cannot be hashed")
 }
 
-func (f NamedFunction) EncodeValue(path map[starlark.Value]struct{}, currentIdentifier *pg_label.CanonicalStarlarkIdentifier, options *ValueEncodingOptions) (model_core.PatchedMessage[*model_starlark_pb.Value, dag.ObjectContentsWalker], bool, error) {
+func (f NamedFunction) EncodeValue(path map[starlark.Value]struct{}, currentIdentifier *pg_label.CanonicalStarlarkIdentifier, options *ValueEncodingOptions) (model_core.PatchedMessage[*model_starlark_pb.Value, model_core.CreatedObjectTree], bool, error) {
 	function, needsCode, err := f.NamedFunctionDefinition.Encode(path, options)
 	if err != nil {
-		return model_core.PatchedMessage[*model_starlark_pb.Value, dag.ObjectContentsWalker]{}, false, err
+		return model_core.PatchedMessage[*model_starlark_pb.Value, model_core.CreatedObjectTree]{}, false, err
 	}
 	return model_core.NewPatchedMessage(
 		&model_starlark_pb.Value{
@@ -62,7 +61,7 @@ func (f NamedFunction) EncodeValue(path map[starlark.Value]struct{}, currentIden
 
 type NamedFunctionDefinition interface {
 	CallInternal(thread *starlark.Thread, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error)
-	Encode(path map[starlark.Value]struct{}, options *ValueEncodingOptions) (model_core.PatchedMessage[*model_starlark_pb.Function, dag.ObjectContentsWalker], bool, error)
+	Encode(path map[starlark.Value]struct{}, options *ValueEncodingOptions) (model_core.PatchedMessage[*model_starlark_pb.Function, model_core.CreatedObjectTree], bool, error)
 	Name() string
 	Position() syntax.Position
 }
@@ -77,8 +76,8 @@ func NewStarlarkNamedFunctionDefinition(function *starlark.Function) NamedFuncti
 	}
 }
 
-func (d starlarkNamedFunctionDefinition) Encode(path map[starlark.Value]struct{}, options *ValueEncodingOptions) (model_core.PatchedMessage[*model_starlark_pb.Function, dag.ObjectContentsWalker], bool, error) {
-	patcher := model_core.NewReferenceMessagePatcher[dag.ObjectContentsWalker]()
+func (d starlarkNamedFunctionDefinition) Encode(path map[starlark.Value]struct{}, options *ValueEncodingOptions) (model_core.PatchedMessage[*model_starlark_pb.Function, model_core.CreatedObjectTree], bool, error) {
+	patcher := model_core.NewReferenceMessagePatcher[model_core.CreatedObjectTree]()
 	position := d.Function.Position()
 	filename := position.Filename()
 	needsCode := filename == options.CurrentFilename.String()
@@ -87,7 +86,7 @@ func (d starlarkNamedFunctionDefinition) Encode(path map[starlark.Value]struct{}
 	var closure *model_starlark_pb.Function_Closure
 	if position.Col != 1 || name == "lambda" {
 		if _, ok := path[d]; ok {
-			return model_core.PatchedMessage[*model_starlark_pb.Function, dag.ObjectContentsWalker]{}, false, errors.New("value is defined recursively")
+			return model_core.PatchedMessage[*model_starlark_pb.Function, model_core.CreatedObjectTree]{}, false, errors.New("value is defined recursively")
 		}
 		path[d] = struct{}{}
 		defer delete(path, d)
@@ -98,7 +97,7 @@ func (d starlarkNamedFunctionDefinition) Encode(path map[starlark.Value]struct{}
 			if defaultValue := d.Function.RawDefault(index); defaultValue != nil {
 				encodedDefaultValue, defaultValueNeedsCode, err := EncodeValue(defaultValue, path, nil, options)
 				if err != nil {
-					return model_core.PatchedMessage[*model_starlark_pb.Function, dag.ObjectContentsWalker]{}, false, fmt.Errorf("default parameter %d: %w", index, err)
+					return model_core.PatchedMessage[*model_starlark_pb.Function, model_core.CreatedObjectTree]{}, false, fmt.Errorf("default parameter %d: %w", index, err)
 				}
 				defaultParameters = append(defaultParameters, &model_starlark_pb.Function_Closure_DefaultParameter{
 					Value: encodedDefaultValue.Message,
@@ -116,7 +115,7 @@ func (d starlarkNamedFunctionDefinition) Encode(path map[starlark.Value]struct{}
 			_, freeVar := d.Function.FreeVar(index)
 			encodedFreeVar, freeVarNeedsCode, err := EncodeValue(freeVar, path, nil, options)
 			if err != nil {
-				return model_core.PatchedMessage[*model_starlark_pb.Function, dag.ObjectContentsWalker]{}, false, fmt.Errorf("free variable %d: %w", index, err)
+				return model_core.PatchedMessage[*model_starlark_pb.Function, model_core.CreatedObjectTree]{}, false, fmt.Errorf("free variable %d: %w", index, err)
 			}
 			freeVars = append(freeVars, encodedFreeVar.Message)
 			patcher.Merge(encodedFreeVar.Patcher)
@@ -215,11 +214,11 @@ func (d *protoNamedFunctionDefinition) CallInternal(thread *starlark.Thread, arg
 	return function.CallInternal(thread, args, kwargs)
 }
 
-func (d *protoNamedFunctionDefinition) Encode(path map[starlark.Value]struct{}, options *ValueEncodingOptions) (model_core.PatchedMessage[*model_starlark_pb.Function, dag.ObjectContentsWalker], bool, error) {
+func (d *protoNamedFunctionDefinition) Encode(path map[starlark.Value]struct{}, options *ValueEncodingOptions) (model_core.PatchedMessage[*model_starlark_pb.Function, model_core.CreatedObjectTree], bool, error) {
 	return model_core.NewPatchedMessageFromExisting(
 		d.message,
-		func(index int) dag.ObjectContentsWalker {
-			return dag.ExistingObjectContentsWalker
+		func(index int) model_core.CreatedObjectTree {
+			return model_core.ExistingCreatedObjectTree
 		},
 	), false, nil
 }

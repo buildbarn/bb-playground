@@ -17,7 +17,6 @@ import (
 	model_parser "github.com/buildbarn/bonanza/pkg/model/parser"
 	model_core_pb "github.com/buildbarn/bonanza/pkg/proto/model/core"
 	model_starlark_pb "github.com/buildbarn/bonanza/pkg/proto/model/starlark"
-	"github.com/buildbarn/bonanza/pkg/storage/dag"
 	"github.com/buildbarn/bonanza/pkg/storage/object"
 
 	"google.golang.org/protobuf/proto"
@@ -43,7 +42,7 @@ type ValueEncodingOptions struct {
 // of one entry in leaves, and a minimum of two entries in parents. This
 // ensures that very large values are stored in separate objects, while
 // ensuring that the B-tree converges to a single root.
-func newSplitBTreeBuilder[T proto.Message](options *ValueEncodingOptions, parentNodeComputer btree.ParentNodeComputer[T, dag.ObjectContentsWalker]) btree.Builder[T, dag.ObjectContentsWalker] {
+func newSplitBTreeBuilder[T proto.Message](options *ValueEncodingOptions, parentNodeComputer btree.ParentNodeComputer[T, model_core.CreatedObjectTree]) btree.Builder[T, model_core.CreatedObjectTree] {
 	return btree.NewSplitProllyBuilder(
 		options.ObjectMinimumSizeBytes,
 		options.ObjectMaximumSizeBytes,
@@ -55,18 +54,18 @@ func newSplitBTreeBuilder[T proto.Message](options *ValueEncodingOptions, parent
 	)
 }
 
-func newListBuilder(options *ValueEncodingOptions) btree.Builder[*model_starlark_pb.List_Element, dag.ObjectContentsWalker] {
+func newListBuilder(options *ValueEncodingOptions) btree.Builder[*model_starlark_pb.List_Element, model_core.CreatedObjectTree] {
 	return newSplitBTreeBuilder(
 		options,
-		/* parentNodeComputer = */ func(createdObject model_core.CreatedObject[dag.ObjectContentsWalker], childNodes []*model_starlark_pb.List_Element) (model_core.PatchedMessage[*model_starlark_pb.List_Element, dag.ObjectContentsWalker], error) {
-			patcher := model_core.NewReferenceMessagePatcher[dag.ObjectContentsWalker]()
+		/* parentNodeComputer = */ func(createdObject model_core.CreatedObject[model_core.CreatedObjectTree], childNodes []*model_starlark_pb.List_Element) (model_core.PatchedMessage[*model_starlark_pb.List_Element, model_core.CreatedObjectTree], error) {
+			patcher := model_core.NewReferenceMessagePatcher[model_core.CreatedObjectTree]()
 			return model_core.NewPatchedMessage(
 				&model_starlark_pb.List_Element{
 					Level: &model_starlark_pb.List_Element_Parent_{
 						Parent: &model_starlark_pb.List_Element_Parent{
 							Reference: patcher.AddReference(
 								createdObject.Contents.GetReference(),
-								dag.NewSimpleObjectContentsWalker(createdObject.Contents, createdObject.Metadata),
+								model_core.CreatedObjectTree(createdObject),
 							),
 						},
 					},
@@ -78,24 +77,24 @@ func newListBuilder(options *ValueEncodingOptions) btree.Builder[*model_starlark
 }
 
 type EncodableValue interface {
-	EncodeValue(path map[starlark.Value]struct{}, currentIdentifier *pg_label.CanonicalStarlarkIdentifier, options *ValueEncodingOptions) (model_core.PatchedMessage[*model_starlark_pb.Value, dag.ObjectContentsWalker], bool, error)
+	EncodeValue(path map[starlark.Value]struct{}, currentIdentifier *pg_label.CanonicalStarlarkIdentifier, options *ValueEncodingOptions) (model_core.PatchedMessage[*model_starlark_pb.Value, model_core.CreatedObjectTree], bool, error)
 }
 
-func EncodeCompiledProgram(program *starlark.Program, globals starlark.StringDict, options *ValueEncodingOptions) (model_core.PatchedMessage[*model_starlark_pb.CompiledProgram, dag.ObjectContentsWalker], error) {
+func EncodeCompiledProgram(program *starlark.Program, globals starlark.StringDict, options *ValueEncodingOptions) (model_core.PatchedMessage[*model_starlark_pb.CompiledProgram, model_core.CreatedObjectTree], error) {
 	needsCode := false
 	var globalsKeys []string
 	globalsValuesBuilder := newListBuilder(options)
 	for _, name := range slices.Sorted(maps.Keys(globals)) {
 		identifier, err := pg_label.NewStarlarkIdentifier(name)
 		if err != nil {
-			return model_core.PatchedMessage[*model_starlark_pb.CompiledProgram, dag.ObjectContentsWalker]{}, err
+			return model_core.PatchedMessage[*model_starlark_pb.CompiledProgram, model_core.CreatedObjectTree]{}, err
 		}
 		currentIdentifier := options.CurrentFilename.AppendStarlarkIdentifier(identifier)
 		value := globals[name]
 		if _, ok := value.(NamedGlobal); ok || identifier.IsPublic() {
 			encodedValue, valueNeedsCode, err := EncodeValue(value, map[starlark.Value]struct{}{}, &currentIdentifier, options)
 			if err != nil {
-				return model_core.PatchedMessage[*model_starlark_pb.CompiledProgram, dag.ObjectContentsWalker]{}, fmt.Errorf("global %#v: %w", name, err)
+				return model_core.PatchedMessage[*model_starlark_pb.CompiledProgram, model_core.CreatedObjectTree]{}, fmt.Errorf("global %#v: %w", name, err)
 			}
 			needsCode = needsCode || valueNeedsCode
 			globalsKeys = append(globalsKeys, name)
@@ -107,20 +106,20 @@ func EncodeCompiledProgram(program *starlark.Program, globals starlark.StringDic
 				},
 				encodedValue.Patcher,
 			)); err != nil {
-				return model_core.PatchedMessage[*model_starlark_pb.CompiledProgram, dag.ObjectContentsWalker]{}, err
+				return model_core.PatchedMessage[*model_starlark_pb.CompiledProgram, model_core.CreatedObjectTree]{}, err
 			}
 		}
 	}
 
 	globalsValues, err := globalsValuesBuilder.FinalizeList()
 	if err != nil {
-		return model_core.PatchedMessage[*model_starlark_pb.CompiledProgram, dag.ObjectContentsWalker]{}, err
+		return model_core.PatchedMessage[*model_starlark_pb.CompiledProgram, model_core.CreatedObjectTree]{}, err
 	}
 
 	var code bytes.Buffer
 	if needsCode {
 		if err := program.Write(&code); err != nil {
-			return model_core.PatchedMessage[*model_starlark_pb.CompiledProgram, dag.ObjectContentsWalker]{}, err
+			return model_core.PatchedMessage[*model_starlark_pb.CompiledProgram, model_core.CreatedObjectTree]{}, err
 		}
 	}
 
@@ -136,9 +135,9 @@ func EncodeCompiledProgram(program *starlark.Program, globals starlark.StringDic
 	), nil
 }
 
-func EncodeValue(value starlark.Value, path map[starlark.Value]struct{}, currentIdentifier *pg_label.CanonicalStarlarkIdentifier, options *ValueEncodingOptions) (model_core.PatchedMessage[*model_starlark_pb.Value, dag.ObjectContentsWalker], bool, error) {
+func EncodeValue(value starlark.Value, path map[starlark.Value]struct{}, currentIdentifier *pg_label.CanonicalStarlarkIdentifier, options *ValueEncodingOptions) (model_core.PatchedMessage[*model_starlark_pb.Value, model_core.CreatedObjectTree], bool, error) {
 	if value == starlark.None {
-		return model_core.NewSimplePatchedMessage[dag.ObjectContentsWalker](&model_starlark_pb.Value{
+		return model_core.NewSimplePatchedMessage[model_core.CreatedObjectTree](&model_starlark_pb.Value{
 			Kind: &model_starlark_pb.Value_None{
 				None: &emptypb.Empty{},
 			},
@@ -146,41 +145,41 @@ func EncodeValue(value starlark.Value, path map[starlark.Value]struct{}, current
 	}
 	switch typedValue := value.(type) {
 	case starlark.Bool:
-		return model_core.NewSimplePatchedMessage[dag.ObjectContentsWalker](&model_starlark_pb.Value{
+		return model_core.NewSimplePatchedMessage[model_core.CreatedObjectTree](&model_starlark_pb.Value{
 			Kind: &model_starlark_pb.Value_Bool{
 				Bool: bool(typedValue),
 			},
 		}), false, nil
 	case *starlark.Builtin:
-		return model_core.NewSimplePatchedMessage[dag.ObjectContentsWalker](&model_starlark_pb.Value{
+		return model_core.NewSimplePatchedMessage[model_core.CreatedObjectTree](&model_starlark_pb.Value{
 			Kind: &model_starlark_pb.Value_Builtin{
 				Builtin: typedValue.Name(),
 			},
 		}), false, nil
 	case starlark.Bytes:
-		return model_core.NewSimplePatchedMessage[dag.ObjectContentsWalker](&model_starlark_pb.Value{
+		return model_core.NewSimplePatchedMessage[model_core.CreatedObjectTree](&model_starlark_pb.Value{
 			Kind: &model_starlark_pb.Value_Bytes{
 				Bytes: []byte(typedValue),
 			},
 		}), false, nil
 	case *starlark.Dict:
 		if _, ok := path[value]; ok {
-			return model_core.PatchedMessage[*model_starlark_pb.Value, dag.ObjectContentsWalker]{}, false, errors.New("value is defined recursively")
+			return model_core.PatchedMessage[*model_starlark_pb.Value, model_core.CreatedObjectTree]{}, false, errors.New("value is defined recursively")
 		}
 		path[value] = struct{}{}
 		defer delete(path, value)
 
 		treeBuilder := newSplitBTreeBuilder(
 			options,
-			/* parentNodeComputer = */ func(createdObject model_core.CreatedObject[dag.ObjectContentsWalker], childNodes []*model_starlark_pb.Dict_Entry) (model_core.PatchedMessage[*model_starlark_pb.Dict_Entry, dag.ObjectContentsWalker], error) {
-				patcher := model_core.NewReferenceMessagePatcher[dag.ObjectContentsWalker]()
+			/* parentNodeComputer = */ func(createdObject model_core.CreatedObject[model_core.CreatedObjectTree], childNodes []*model_starlark_pb.Dict_Entry) (model_core.PatchedMessage[*model_starlark_pb.Dict_Entry, model_core.CreatedObjectTree], error) {
+				patcher := model_core.NewReferenceMessagePatcher[model_core.CreatedObjectTree]()
 				return model_core.NewPatchedMessage(
 					&model_starlark_pb.Dict_Entry{
 						Level: &model_starlark_pb.Dict_Entry_Parent_{
 							Parent: &model_starlark_pb.Dict_Entry_Parent{
 								Reference: patcher.AddReference(
 									createdObject.Contents.GetReference(),
-									dag.NewSimpleObjectContentsWalker(createdObject.Contents, createdObject.Metadata),
+									model_core.CreatedObjectTree(createdObject),
 								),
 							},
 						},
@@ -194,11 +193,11 @@ func EncodeValue(value starlark.Value, path map[starlark.Value]struct{}, current
 		for key, value := range starlark.Entries(nil, typedValue) {
 			encodedKey, keyNeedsCode, err := EncodeValue(key, path, nil, options)
 			if err != nil {
-				return model_core.PatchedMessage[*model_starlark_pb.Value, dag.ObjectContentsWalker]{}, false, fmt.Errorf("in key: %w", err)
+				return model_core.PatchedMessage[*model_starlark_pb.Value, model_core.CreatedObjectTree]{}, false, fmt.Errorf("in key: %w", err)
 			}
 			encodedValue, valueNeedsCode, err := EncodeValue(value, path, nil, options)
 			if err != nil {
-				return model_core.PatchedMessage[*model_starlark_pb.Value, dag.ObjectContentsWalker]{}, false, fmt.Errorf("in value: %w", err)
+				return model_core.PatchedMessage[*model_starlark_pb.Value, model_core.CreatedObjectTree]{}, false, fmt.Errorf("in value: %w", err)
 			}
 			encodedKey.Patcher.Merge(encodedValue.Patcher)
 			needsCode = needsCode || keyNeedsCode || valueNeedsCode
@@ -213,13 +212,13 @@ func EncodeValue(value starlark.Value, path map[starlark.Value]struct{}, current
 				},
 				encodedKey.Patcher,
 			)); err != nil {
-				return model_core.PatchedMessage[*model_starlark_pb.Value, dag.ObjectContentsWalker]{}, false, err
+				return model_core.PatchedMessage[*model_starlark_pb.Value, model_core.CreatedObjectTree]{}, false, err
 			}
 		}
 
 		entries, err := treeBuilder.FinalizeList()
 		if err != nil {
-			return model_core.PatchedMessage[*model_starlark_pb.Value, dag.ObjectContentsWalker]{}, false, err
+			return model_core.PatchedMessage[*model_starlark_pb.Value, model_core.CreatedObjectTree]{}, false, err
 		}
 
 		// TODO: This should use inlinedtree to ensure the
@@ -239,7 +238,7 @@ func EncodeValue(value starlark.Value, path map[starlark.Value]struct{}, current
 			EncodeValue(path, currentIdentifier, options)
 	case starlark.Int:
 		bigInt := typedValue.BigInt()
-		return model_core.NewSimplePatchedMessage[dag.ObjectContentsWalker](&model_starlark_pb.Value{
+		return model_core.NewSimplePatchedMessage[model_core.CreatedObjectTree](&model_starlark_pb.Value{
 			Kind: &model_starlark_pb.Value_Int{
 				Int: &model_starlark_pb.Int{
 					AbsoluteValue: bigInt.Bytes(),
@@ -249,7 +248,7 @@ func EncodeValue(value starlark.Value, path map[starlark.Value]struct{}, current
 		}), false, nil
 	case *starlark.List:
 		if _, ok := path[value]; ok {
-			return model_core.PatchedMessage[*model_starlark_pb.Value, dag.ObjectContentsWalker]{}, false, errors.New("value is defined recursively")
+			return model_core.PatchedMessage[*model_starlark_pb.Value, model_core.CreatedObjectTree]{}, false, errors.New("value is defined recursively")
 		}
 		path[value] = struct{}{}
 		defer delete(path, value)
@@ -259,7 +258,7 @@ func EncodeValue(value starlark.Value, path map[starlark.Value]struct{}, current
 		for value := range starlark.Elements(typedValue) {
 			encodedValue, valueNeedsCode, err := EncodeValue(value, path, nil, options)
 			if err != nil {
-				return model_core.PatchedMessage[*model_starlark_pb.Value, dag.ObjectContentsWalker]{}, false, err
+				return model_core.PatchedMessage[*model_starlark_pb.Value, model_core.CreatedObjectTree]{}, false, err
 			}
 			needsCode = needsCode || valueNeedsCode
 			if err := listBuilder.PushChild(model_core.NewPatchedMessage(
@@ -270,13 +269,13 @@ func EncodeValue(value starlark.Value, path map[starlark.Value]struct{}, current
 				},
 				encodedValue.Patcher,
 			)); err != nil {
-				return model_core.PatchedMessage[*model_starlark_pb.Value, dag.ObjectContentsWalker]{}, false, err
+				return model_core.PatchedMessage[*model_starlark_pb.Value, model_core.CreatedObjectTree]{}, false, err
 			}
 		}
 
 		elements, err := listBuilder.FinalizeList()
 		if err != nil {
-			return model_core.PatchedMessage[*model_starlark_pb.Value, dag.ObjectContentsWalker]{}, false, err
+			return model_core.PatchedMessage[*model_starlark_pb.Value, model_core.CreatedObjectTree]{}, false, err
 		}
 
 		// TODO: This should use inlinedtree to ensure the
@@ -292,19 +291,19 @@ func EncodeValue(value starlark.Value, path map[starlark.Value]struct{}, current
 			elements.Patcher,
 		), needsCode, nil
 	case starlark.String:
-		return model_core.NewSimplePatchedMessage[dag.ObjectContentsWalker](&model_starlark_pb.Value{
+		return model_core.NewSimplePatchedMessage[model_core.CreatedObjectTree](&model_starlark_pb.Value{
 			Kind: &model_starlark_pb.Value_Str{
 				Str: string(typedValue),
 			},
 		}), false, nil
 	case starlark.Tuple:
 		encodedValues := make([]*model_starlark_pb.Value, 0, len(typedValue))
-		patcher := model_core.NewReferenceMessagePatcher[dag.ObjectContentsWalker]()
+		patcher := model_core.NewReferenceMessagePatcher[model_core.CreatedObjectTree]()
 		needsCode := false
 		for _, value := range typedValue {
 			encodedValue, valueNeedsCode, err := EncodeValue(value, path, nil, options)
 			if err != nil {
-				return model_core.PatchedMessage[*model_starlark_pb.Value, dag.ObjectContentsWalker]{}, false, err
+				return model_core.PatchedMessage[*model_starlark_pb.Value, model_core.CreatedObjectTree]{}, false, err
 			}
 			encodedValues = append(encodedValues, encodedValue.Message)
 			patcher.Merge(encodedValue.Patcher)
@@ -323,9 +322,9 @@ func EncodeValue(value starlark.Value, path map[starlark.Value]struct{}, current
 	case EncodableValue:
 		return typedValue.EncodeValue(path, currentIdentifier, options)
 	case nil:
-		return model_core.PatchedMessage[*model_starlark_pb.Value, dag.ObjectContentsWalker]{}, false, errors.New("no value provided")
+		return model_core.PatchedMessage[*model_starlark_pb.Value, model_core.CreatedObjectTree]{}, false, errors.New("no value provided")
 	default:
-		return model_core.PatchedMessage[*model_starlark_pb.Value, dag.ObjectContentsWalker]{}, false, fmt.Errorf("value of type %s cannot be encoded", value.Type())
+		return model_core.PatchedMessage[*model_starlark_pb.Value, model_core.CreatedObjectTree]{}, false, fmt.Errorf("value of type %s cannot be encoded", value.Type())
 	}
 }
 

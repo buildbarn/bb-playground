@@ -8,7 +8,6 @@ import (
 	model_core "github.com/buildbarn/bonanza/pkg/model/core"
 	model_starlark_pb "github.com/buildbarn/bonanza/pkg/proto/model/starlark"
 	"github.com/buildbarn/bonanza/pkg/starlark/unpack"
-	"github.com/buildbarn/bonanza/pkg/storage/dag"
 
 	"go.starlark.net/starlark"
 	"go.starlark.net/syntax"
@@ -188,18 +187,18 @@ func (r *Runfiles) doMergeAll(thread *starlark.Thread, b *starlark.Builtin, args
 	return mergeRunfiles(thread, transitiveFiles, transitiveRootSymlinks, transitiveSymlinks)
 }
 
-func (r *Runfiles) EncodeValue(path map[starlark.Value]struct{}, currentIdentifier *pg_label.CanonicalStarlarkIdentifier, options *ValueEncodingOptions) (model_core.PatchedMessage[*model_starlark_pb.Value, dag.ObjectContentsWalker], bool, error) {
+func (r *Runfiles) EncodeValue(path map[starlark.Value]struct{}, currentIdentifier *pg_label.CanonicalStarlarkIdentifier, options *ValueEncodingOptions) (model_core.PatchedMessage[*model_starlark_pb.Value, model_core.CreatedObjectTree], bool, error) {
 	files, filesNeedsCode, err := r.files.Encode(path, options)
 	if err != nil {
-		return model_core.PatchedMessage[*model_starlark_pb.Value, dag.ObjectContentsWalker]{}, false, fmt.Errorf("files: %w", err)
+		return model_core.PatchedMessage[*model_starlark_pb.Value, model_core.CreatedObjectTree]{}, false, fmt.Errorf("files: %w", err)
 	}
 	rootSymlinks, rootSymlinksNeedsCode, err := r.rootSymlinks.Encode(path, options)
 	if err != nil {
-		return model_core.PatchedMessage[*model_starlark_pb.Value, dag.ObjectContentsWalker]{}, false, fmt.Errorf("root symlinks: %w", err)
+		return model_core.PatchedMessage[*model_starlark_pb.Value, model_core.CreatedObjectTree]{}, false, fmt.Errorf("root symlinks: %w", err)
 	}
 	symlinks, symlinksNeedsCode, err := r.symlinks.Encode(path, options)
 	if err != nil {
-		return model_core.PatchedMessage[*model_starlark_pb.Value, dag.ObjectContentsWalker]{}, false, fmt.Errorf("symlinks: %w", err)
+		return model_core.PatchedMessage[*model_starlark_pb.Value, model_core.CreatedObjectTree]{}, false, fmt.Errorf("symlinks: %w", err)
 	}
 
 	files.Patcher.Merge(rootSymlinks.Patcher)

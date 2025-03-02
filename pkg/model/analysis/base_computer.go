@@ -449,7 +449,7 @@ func (c *baseComputer) ComputeRepoDefaultAttrsValue(ctx context.Context, key *mo
 		&model_analysis_pb.RepoDefaultAttrs_Value{
 			InheritableAttrs: defaultAttrs.Message,
 		},
-		defaultAttrs.Patcher,
+		model_core.MapCreatedObjectsToWalkers(defaultAttrs.Patcher),
 	), nil
 }
 

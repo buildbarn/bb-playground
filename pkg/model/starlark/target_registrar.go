@@ -7,7 +7,6 @@ import (
 	model_core "github.com/buildbarn/bonanza/pkg/model/core"
 	"github.com/buildbarn/bonanza/pkg/model/core/inlinedtree"
 	model_starlark_pb "github.com/buildbarn/bonanza/pkg/proto/model/starlark"
-	"github.com/buildbarn/bonanza/pkg/storage/dag"
 )
 
 type TargetRegistrar struct {
@@ -16,27 +15,27 @@ type TargetRegistrar struct {
 
 	// Mutable fields.
 	defaultInheritableAttrs               model_core.Message[*model_starlark_pb.InheritableAttrs]
-	createDefaultInheritableAttrsMetadata func(index int) dag.ObjectContentsWalker
+	createDefaultInheritableAttrsMetadata func(index int) model_core.CreatedObjectTree
 	setDefaultInheritableAttrs            bool
-	targets                               map[string]model_core.PatchedMessage[*model_starlark_pb.Target_Definition, dag.ObjectContentsWalker]
+	targets                               map[string]model_core.PatchedMessage[*model_starlark_pb.Target_Definition, model_core.CreatedObjectTree]
 }
 
 func NewTargetRegistrar(inlinedTreeOptions *inlinedtree.Options, defaultInheritableAttrs model_core.Message[*model_starlark_pb.InheritableAttrs]) *TargetRegistrar {
 	return &TargetRegistrar{
 		inlinedTreeOptions:      inlinedTreeOptions,
 		defaultInheritableAttrs: defaultInheritableAttrs,
-		createDefaultInheritableAttrsMetadata: func(index int) dag.ObjectContentsWalker {
-			return dag.ExistingObjectContentsWalker
+		createDefaultInheritableAttrsMetadata: func(index int) model_core.CreatedObjectTree {
+			return model_core.ExistingCreatedObjectTree
 		},
-		targets: map[string]model_core.PatchedMessage[*model_starlark_pb.Target_Definition, dag.ObjectContentsWalker]{},
+		targets: map[string]model_core.PatchedMessage[*model_starlark_pb.Target_Definition, model_core.CreatedObjectTree]{},
 	}
 }
 
-func (tr *TargetRegistrar) GetTargets() map[string]model_core.PatchedMessage[*model_starlark_pb.Target_Definition, dag.ObjectContentsWalker] {
+func (tr *TargetRegistrar) GetTargets() map[string]model_core.PatchedMessage[*model_starlark_pb.Target_Definition, model_core.CreatedObjectTree] {
 	return tr.targets
 }
 
-func (tr *TargetRegistrar) getVisibilityPackageGroup(visibility []pg_label.ResolvedLabel) (model_core.PatchedMessage[*model_starlark_pb.PackageGroup, dag.ObjectContentsWalker], error) {
+func (tr *TargetRegistrar) getVisibilityPackageGroup(visibility []pg_label.ResolvedLabel) (model_core.PatchedMessage[*model_starlark_pb.PackageGroup, model_core.CreatedObjectTree], error) {
 	if len(visibility) > 0 {
 		// Explicit visibility provided. Construct new package group.
 		return NewPackageGroupFromVisibility(visibility, tr.inlinedTreeOptions)
@@ -50,7 +49,7 @@ func (tr *TargetRegistrar) getVisibilityPackageGroup(visibility []pg_label.Resol
 	), nil
 }
 
-func (tr *TargetRegistrar) registerExplicitTarget(name string, target model_core.PatchedMessage[*model_starlark_pb.Target_Definition, dag.ObjectContentsWalker]) error {
+func (tr *TargetRegistrar) registerExplicitTarget(name string, target model_core.PatchedMessage[*model_starlark_pb.Target_Definition, model_core.CreatedObjectTree]) error {
 	if tr.targets[name].IsSet() {
 		return fmt.Errorf("package contains multiple targets with name %#v", name)
 	}
@@ -60,6 +59,6 @@ func (tr *TargetRegistrar) registerExplicitTarget(name string, target model_core
 
 func (tr *TargetRegistrar) registerImplicitTarget(name string) {
 	if _, ok := tr.targets[name]; !ok {
-		tr.targets[name] = model_core.PatchedMessage[*model_starlark_pb.Target_Definition, dag.ObjectContentsWalker]{}
+		tr.targets[name] = model_core.PatchedMessage[*model_starlark_pb.Target_Definition, model_core.CreatedObjectTree]{}
 	}
 }

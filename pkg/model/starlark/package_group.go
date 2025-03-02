@@ -11,7 +11,6 @@ import (
 	model_core "github.com/buildbarn/bonanza/pkg/model/core"
 	"github.com/buildbarn/bonanza/pkg/model/core/inlinedtree"
 	model_starlark_pb "github.com/buildbarn/bonanza/pkg/proto/model/starlark"
-	"github.com/buildbarn/bonanza/pkg/storage/dag"
 
 	"google.golang.org/protobuf/proto"
 )
@@ -63,16 +62,16 @@ func (n *packageGroupNode) lookupPackage(canonicalPackage pg_label.CanonicalPack
 
 // toProto converts the data contained in a tree of packageGroupNode to
 // its Protobuf message counterpart.
-func (n *packageGroupNode) toProto(inlinedTreeOptions *inlinedtree.Options) (model_core.PatchedMessage[*model_starlark_pb.PackageGroup_Subpackages, dag.ObjectContentsWalker], error) {
-	inlineCandidates := make(inlinedtree.CandidateList[*model_starlark_pb.PackageGroup_Subpackages, dag.ObjectContentsWalker], 0, 2)
+func (n *packageGroupNode) toProto(inlinedTreeOptions *inlinedtree.Options) (model_core.PatchedMessage[*model_starlark_pb.PackageGroup_Subpackages, model_core.CreatedObjectTree], error) {
+	inlineCandidates := make(inlinedtree.CandidateList[*model_starlark_pb.PackageGroup_Subpackages, model_core.CreatedObjectTree], 0, 2)
 	defer inlineCandidates.Discard()
 
 	// Set the IncludeSubpackages field.
-	inlineCandidates = append(inlineCandidates, inlinedtree.Candidate[*model_starlark_pb.PackageGroup_Subpackages, dag.ObjectContentsWalker]{
-		ExternalMessage: model_core.NewSimplePatchedMessage[dag.ObjectContentsWalker](proto.Message(nil)),
+	inlineCandidates = append(inlineCandidates, inlinedtree.Candidate[*model_starlark_pb.PackageGroup_Subpackages, model_core.CreatedObjectTree]{
+		ExternalMessage: model_core.NewSimplePatchedMessage[model_core.CreatedObjectTree](proto.Message(nil)),
 		ParentAppender: func(
-			subpackages model_core.PatchedMessage[*model_starlark_pb.PackageGroup_Subpackages, dag.ObjectContentsWalker],
-			externalObject model_core.CreatedObject[dag.ObjectContentsWalker],
+			subpackages model_core.PatchedMessage[*model_starlark_pb.PackageGroup_Subpackages, model_core.CreatedObjectTree],
+			externalObject model_core.CreatedObject[model_core.CreatedObjectTree],
 		) {
 			subpackages.Message.IncludeSubpackages = n.includeSubpackages
 		},
@@ -83,12 +82,12 @@ func (n *packageGroupNode) toProto(inlinedTreeOptions *inlinedtree.Options) (mod
 		overrides := model_starlark_pb.PackageGroup_Subpackages_Overrides{
 			Packages: make([]*model_starlark_pb.PackageGroup_Package, 0, len(n.subpackages)),
 		}
-		patcher := model_core.NewReferenceMessagePatcher[dag.ObjectContentsWalker]()
+		patcher := model_core.NewReferenceMessagePatcher[model_core.CreatedObjectTree]()
 		for _, component := range slices.Sorted(maps.Keys(n.subpackages)) {
 			nChild := n.subpackages[component]
 			subpackages, err := nChild.toProto(inlinedTreeOptions)
 			if err != nil {
-				return model_core.PatchedMessage[*model_starlark_pb.PackageGroup_Subpackages, dag.ObjectContentsWalker]{}, err
+				return model_core.PatchedMessage[*model_starlark_pb.PackageGroup_Subpackages, model_core.CreatedObjectTree]{}, err
 			}
 			overrides.Packages = append(overrides.Packages, &model_starlark_pb.PackageGroup_Package{
 				Component:      component,
@@ -98,11 +97,11 @@ func (n *packageGroupNode) toProto(inlinedTreeOptions *inlinedtree.Options) (mod
 			patcher.Merge(subpackages.Patcher)
 		}
 
-		inlineCandidates = append(inlineCandidates, inlinedtree.Candidate[*model_starlark_pb.PackageGroup_Subpackages, dag.ObjectContentsWalker]{
+		inlineCandidates = append(inlineCandidates, inlinedtree.Candidate[*model_starlark_pb.PackageGroup_Subpackages, model_core.CreatedObjectTree]{
 			ExternalMessage: model_core.NewPatchedMessage[proto.Message](&overrides, patcher),
 			ParentAppender: func(
-				subpackages model_core.PatchedMessage[*model_starlark_pb.PackageGroup_Subpackages, dag.ObjectContentsWalker],
-				externalObject model_core.CreatedObject[dag.ObjectContentsWalker],
+				subpackages model_core.PatchedMessage[*model_starlark_pb.PackageGroup_Subpackages, model_core.CreatedObjectTree],
+				externalObject model_core.CreatedObject[model_core.CreatedObjectTree],
 			) {
 				if externalObject.Contents == nil {
 					subpackages.Message.Overrides = &model_starlark_pb.PackageGroup_Subpackages_OverridesInline{
@@ -112,7 +111,7 @@ func (n *packageGroupNode) toProto(inlinedTreeOptions *inlinedtree.Options) (mod
 					subpackages.Message.Overrides = &model_starlark_pb.PackageGroup_Subpackages_OverridesExternal{
 						OverridesExternal: subpackages.Patcher.AddReference(
 							externalObject.Contents.GetReference(),
-							dag.NewSimpleObjectContentsWalker(externalObject.Contents, externalObject.Metadata),
+							model_core.CreatedObjectTree(externalObject),
 						),
 					}
 				}
@@ -126,7 +125,7 @@ func (n *packageGroupNode) toProto(inlinedTreeOptions *inlinedtree.Options) (mod
 // NewPackageGroupFromVisibility generates a PackageGroup message based
 // on a sequence of "visibility" labels provided to repo(), package(),
 // or rule targets.
-func NewPackageGroupFromVisibility(visibility []pg_label.ResolvedLabel, inlinedTreeOptions *inlinedtree.Options) (model_core.PatchedMessage[*model_starlark_pb.PackageGroup, dag.ObjectContentsWalker], error) {
+func NewPackageGroupFromVisibility(visibility []pg_label.ResolvedLabel, inlinedTreeOptions *inlinedtree.Options) (model_core.PatchedMessage[*model_starlark_pb.PackageGroup, model_core.CreatedObjectTree], error) {
 	tree := packageGroupNode{
 		subpackages: map[string]*packageGroupNode{},
 	}
@@ -154,16 +153,16 @@ func NewPackageGroupFromVisibility(visibility []pg_label.ResolvedLabel, inlinedT
 			switch targetName {
 			case "private":
 				if len(visibility) > 1 {
-					return model_core.PatchedMessage[*model_starlark_pb.PackageGroup, dag.ObjectContentsWalker]{}, errors.New("//visibility:private may not be combined with other labels")
+					return model_core.PatchedMessage[*model_starlark_pb.PackageGroup, model_core.CreatedObjectTree]{}, errors.New("//visibility:private may not be combined with other labels")
 				}
-				return model_core.NewSimplePatchedMessage[dag.ObjectContentsWalker](&model_starlark_pb.PackageGroup{
+				return model_core.NewSimplePatchedMessage[model_core.CreatedObjectTree](&model_starlark_pb.PackageGroup{
 					Tree: &model_starlark_pb.PackageGroup_Subpackages{},
 				}), nil
 			case "public":
 				if len(visibility) > 1 {
-					return model_core.PatchedMessage[*model_starlark_pb.PackageGroup, dag.ObjectContentsWalker]{}, errors.New("//visibility:public may not be combined with other labels")
+					return model_core.PatchedMessage[*model_starlark_pb.PackageGroup, model_core.CreatedObjectTree]{}, errors.New("//visibility:public may not be combined with other labels")
 				}
-				return model_core.NewSimplePatchedMessage[dag.ObjectContentsWalker](&model_starlark_pb.PackageGroup{
+				return model_core.NewSimplePatchedMessage[model_core.CreatedObjectTree](&model_starlark_pb.PackageGroup{
 					Tree: &model_starlark_pb.PackageGroup_Subpackages{
 						IncludeSubpackages: true,
 					},
@@ -194,7 +193,7 @@ func NewPackageGroupFromVisibility(visibility []pg_label.ResolvedLabel, inlinedT
 
 	treeProto, err := tree.toProto(inlinedTreeOptions)
 	if err != nil {
-		return model_core.PatchedMessage[*model_starlark_pb.PackageGroup, dag.ObjectContentsWalker]{}, err
+		return model_core.PatchedMessage[*model_starlark_pb.PackageGroup, model_core.CreatedObjectTree]{}, err
 	}
 
 	sort.Strings(includePackageGroups)

@@ -9,7 +9,6 @@ import (
 	pg_label "github.com/buildbarn/bonanza/pkg/label"
 	model_core "github.com/buildbarn/bonanza/pkg/model/core"
 	model_starlark_pb "github.com/buildbarn/bonanza/pkg/proto/model/starlark"
-	"github.com/buildbarn/bonanza/pkg/storage/dag"
 
 	"go.starlark.net/starlark"
 )
@@ -74,14 +73,14 @@ func (sr *Subrule) CallInternal(thread *starlark.Thread, args starlark.Tuple, kw
 	return subruleInvoker.(SubruleInvoker)(*sr.Identifier, args, kwargs)
 }
 
-func (sr *Subrule) EncodeValue(path map[starlark.Value]struct{}, currentIdentifier *pg_label.CanonicalStarlarkIdentifier, options *ValueEncodingOptions) (model_core.PatchedMessage[*model_starlark_pb.Value, dag.ObjectContentsWalker], bool, error) {
+func (sr *Subrule) EncodeValue(path map[starlark.Value]struct{}, currentIdentifier *pg_label.CanonicalStarlarkIdentifier, options *ValueEncodingOptions) (model_core.PatchedMessage[*model_starlark_pb.Value, model_core.CreatedObjectTree], bool, error) {
 	if sr.Identifier == nil {
-		return model_core.PatchedMessage[*model_starlark_pb.Value, dag.ObjectContentsWalker]{}, false, errors.New("subrule does not have a name")
+		return model_core.PatchedMessage[*model_starlark_pb.Value, model_core.CreatedObjectTree]{}, false, errors.New("subrule does not have a name")
 	}
 	if currentIdentifier == nil || *currentIdentifier != *sr.Identifier {
 		// Not the canonical identifier under which this subrule
 		// is known. Emit a reference.
-		return model_core.NewSimplePatchedMessage[dag.ObjectContentsWalker](
+		return model_core.NewSimplePatchedMessage[model_core.CreatedObjectTree](
 			&model_starlark_pb.Value{
 				Kind: &model_starlark_pb.Value_Subrule{
 					Subrule: &model_starlark_pb.Subrule{
@@ -96,7 +95,7 @@ func (sr *Subrule) EncodeValue(path map[starlark.Value]struct{}, currentIdentifi
 
 	definition, needsCode, err := sr.definition.Encode(path, options)
 	if err != nil {
-		return model_core.PatchedMessage[*model_starlark_pb.Value, dag.ObjectContentsWalker]{}, false, err
+		return model_core.PatchedMessage[*model_starlark_pb.Value, model_core.CreatedObjectTree]{}, false, err
 	}
 	return model_core.NewPatchedMessage(
 		&model_starlark_pb.Value{
@@ -113,7 +112,7 @@ func (sr *Subrule) EncodeValue(path map[starlark.Value]struct{}, currentIdentifi
 }
 
 type SubruleDefinition interface {
-	Encode(path map[starlark.Value]struct{}, options *ValueEncodingOptions) (model_core.PatchedMessage[*model_starlark_pb.Subrule_Definition, dag.ObjectContentsWalker], bool, error)
+	Encode(path map[starlark.Value]struct{}, options *ValueEncodingOptions) (model_core.PatchedMessage[*model_starlark_pb.Subrule_Definition, model_core.CreatedObjectTree], bool, error)
 }
 
 type starlarkSubruleDefinition struct {
@@ -134,18 +133,18 @@ func NewStarlarkSubruleDefinition(
 	}
 }
 
-func (sd *starlarkSubruleDefinition) Encode(path map[starlark.Value]struct{}, options *ValueEncodingOptions) (model_core.PatchedMessage[*model_starlark_pb.Subrule_Definition, dag.ObjectContentsWalker], bool, error) {
-	patcher := model_core.NewReferenceMessagePatcher[dag.ObjectContentsWalker]()
+func (sd *starlarkSubruleDefinition) Encode(path map[starlark.Value]struct{}, options *ValueEncodingOptions) (model_core.PatchedMessage[*model_starlark_pb.Subrule_Definition, model_core.CreatedObjectTree], bool, error) {
+	patcher := model_core.NewReferenceMessagePatcher[model_core.CreatedObjectTree]()
 
 	implementation, needsCode, err := sd.implementation.Encode(path, options)
 	if err != nil {
-		return model_core.PatchedMessage[*model_starlark_pb.Subrule_Definition, dag.ObjectContentsWalker]{}, false, err
+		return model_core.PatchedMessage[*model_starlark_pb.Subrule_Definition, model_core.CreatedObjectTree]{}, false, err
 	}
 	patcher.Merge(implementation.Patcher)
 
 	namedAttrs, namedAttrsNeedCode, err := encodeNamedAttrs(sd.attrs, path, options)
 	if err != nil {
-		return model_core.PatchedMessage[*model_starlark_pb.Subrule_Definition, dag.ObjectContentsWalker]{}, false, err
+		return model_core.PatchedMessage[*model_starlark_pb.Subrule_Definition, model_core.CreatedObjectTree]{}, false, err
 	}
 	needsCode = needsCode || namedAttrsNeedCode
 	patcher.Merge(namedAttrs.Patcher)
@@ -153,7 +152,7 @@ func (sd *starlarkSubruleDefinition) Encode(path map[starlark.Value]struct{}, op
 	subruleIdentifiers := make([]string, 0, len(sd.subrules))
 	for i, subrule := range sd.subrules {
 		if subrule.Identifier == nil {
-			return model_core.PatchedMessage[*model_starlark_pb.Subrule_Definition, dag.ObjectContentsWalker]{}, false, fmt.Errorf("subrule at index %d does not have an identifier", i)
+			return model_core.PatchedMessage[*model_starlark_pb.Subrule_Definition, model_core.CreatedObjectTree]{}, false, fmt.Errorf("subrule at index %d does not have an identifier", i)
 		}
 		subruleIdentifiers = append(subruleIdentifiers, subrule.Identifier.String())
 	}
@@ -179,6 +178,6 @@ func NewProtoSubruleDefinition(message model_core.Message[*model_starlark_pb.Sub
 	}
 }
 
-func (sd *protoSubruleDefinition) Encode(path map[starlark.Value]struct{}, options *ValueEncodingOptions) (model_core.PatchedMessage[*model_starlark_pb.Subrule_Definition, dag.ObjectContentsWalker], bool, error) {
+func (sd *protoSubruleDefinition) Encode(path map[starlark.Value]struct{}, options *ValueEncodingOptions) (model_core.PatchedMessage[*model_starlark_pb.Subrule_Definition, model_core.CreatedObjectTree], bool, error) {
 	panic("rule definition was already encoded previously")
 }

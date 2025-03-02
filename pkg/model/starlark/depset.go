@@ -12,7 +12,6 @@ import (
 	"github.com/buildbarn/bonanza/pkg/model/core/btree"
 	model_parser "github.com/buildbarn/bonanza/pkg/model/parser"
 	model_starlark_pb "github.com/buildbarn/bonanza/pkg/proto/model/starlark"
-	"github.com/buildbarn/bonanza/pkg/storage/dag"
 	"github.com/buildbarn/bonanza/pkg/storage/object"
 
 	"go.starlark.net/starlark"
@@ -188,7 +187,7 @@ func (d *Depset) CompareSameType(thread *starlark.Thread, op syntax.Token, other
 type depsetChildrenEncoder struct {
 	path        map[starlark.Value]struct{}
 	options     *ValueEncodingOptions
-	treeBuilder btree.Builder[*model_starlark_pb.List_Element, dag.ObjectContentsWalker]
+	treeBuilder btree.Builder[*model_starlark_pb.List_Element, model_core.CreatedObjectTree]
 	needsCode   bool
 }
 
@@ -218,8 +217,8 @@ func (e *depsetChildrenEncoder) encode(children any) error {
 		if err := e.treeBuilder.PushChild(
 			model_core.NewPatchedMessageFromExisting(
 				v,
-				func(index int) dag.ObjectContentsWalker {
-					return dag.ExistingObjectContentsWalker
+				func(index int) model_core.CreatedObjectTree {
+					return model_core.ExistingCreatedObjectTree
 				},
 			),
 		); err != nil {
@@ -237,18 +236,18 @@ func (e *depsetChildrenEncoder) encode(children any) error {
 	return nil
 }
 
-func (d *Depset) Encode(path map[starlark.Value]struct{}, options *ValueEncodingOptions) (model_core.PatchedMessage[*model_starlark_pb.Depset, dag.ObjectContentsWalker], bool, error) {
+func (d *Depset) Encode(path map[starlark.Value]struct{}, options *ValueEncodingOptions) (model_core.PatchedMessage[*model_starlark_pb.Depset, model_core.CreatedObjectTree], bool, error) {
 	treeBuilder := newSplitBTreeBuilder(
 		options,
-		/* parentNodeComputer = */ func(createdObject model_core.CreatedObject[dag.ObjectContentsWalker], childNodes []*model_starlark_pb.List_Element) (model_core.PatchedMessage[*model_starlark_pb.List_Element, dag.ObjectContentsWalker], error) {
-			patcher := model_core.NewReferenceMessagePatcher[dag.ObjectContentsWalker]()
+		/* parentNodeComputer = */ func(createdObject model_core.CreatedObject[model_core.CreatedObjectTree], childNodes []*model_starlark_pb.List_Element) (model_core.PatchedMessage[*model_starlark_pb.List_Element, model_core.CreatedObjectTree], error) {
+			patcher := model_core.NewReferenceMessagePatcher[model_core.CreatedObjectTree]()
 			return model_core.NewPatchedMessage(
 				&model_starlark_pb.List_Element{
 					Level: &model_starlark_pb.List_Element_Parent_{
 						Parent: &model_starlark_pb.List_Element_Parent{
 							Reference: patcher.AddReference(
 								createdObject.Contents.GetReference(),
-								dag.NewSimpleObjectContentsWalker(createdObject.Contents, createdObject.Metadata),
+								model_core.CreatedObjectTree(createdObject),
 							),
 						},
 					},
@@ -264,12 +263,12 @@ func (d *Depset) Encode(path map[starlark.Value]struct{}, options *ValueEncoding
 		treeBuilder: treeBuilder,
 	}
 	if err := e.encode(d.children); err != nil {
-		return model_core.PatchedMessage[*model_starlark_pb.Depset, dag.ObjectContentsWalker]{}, false, err
+		return model_core.PatchedMessage[*model_starlark_pb.Depset, model_core.CreatedObjectTree]{}, false, err
 	}
 
 	elements, err := treeBuilder.FinalizeList()
 	if err != nil {
-		return model_core.PatchedMessage[*model_starlark_pb.Depset, dag.ObjectContentsWalker]{}, false, err
+		return model_core.PatchedMessage[*model_starlark_pb.Depset, model_core.CreatedObjectTree]{}, false, err
 	}
 
 	return model_core.NewPatchedMessage(
@@ -281,10 +280,10 @@ func (d *Depset) Encode(path map[starlark.Value]struct{}, options *ValueEncoding
 	), e.needsCode, nil
 }
 
-func (d *Depset) EncodeValue(path map[starlark.Value]struct{}, currentIdentifier *pg_label.CanonicalStarlarkIdentifier, options *ValueEncodingOptions) (model_core.PatchedMessage[*model_starlark_pb.Value, dag.ObjectContentsWalker], bool, error) {
+func (d *Depset) EncodeValue(path map[starlark.Value]struct{}, currentIdentifier *pg_label.CanonicalStarlarkIdentifier, options *ValueEncodingOptions) (model_core.PatchedMessage[*model_starlark_pb.Value, model_core.CreatedObjectTree], bool, error) {
 	encodedDepset, needsCode, err := d.Encode(path, options)
 	if err != nil {
-		return model_core.PatchedMessage[*model_starlark_pb.Value, dag.ObjectContentsWalker]{}, false, err
+		return model_core.PatchedMessage[*model_starlark_pb.Value, model_core.CreatedObjectTree]{}, false, err
 	}
 	return model_core.NewPatchedMessage(
 		&model_starlark_pb.Value{

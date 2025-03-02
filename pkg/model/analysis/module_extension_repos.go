@@ -20,7 +20,6 @@ import (
 	model_analysis_pb "github.com/buildbarn/bonanza/pkg/proto/model/analysis"
 	model_starlark_pb "github.com/buildbarn/bonanza/pkg/proto/model/starlark"
 	"github.com/buildbarn/bonanza/pkg/starlark/unpack"
-	"github.com/buildbarn/bonanza/pkg/storage/dag"
 	"github.com/buildbarn/bonanza/pkg/storage/object"
 
 	"go.starlark.net/starlark"
@@ -341,7 +340,7 @@ func (c *baseComputer) ComputeModuleExtensionReposValue(ctx context.Context, key
 		btree.NewObjectCreatingNodeMerger(
 			model_encoding.NewChainedBinaryEncoder(nil),
 			c.buildSpecificationReference.GetReferenceFormat(),
-			/* parentNodeComputer = */ func(createdObject model_core.CreatedObject[dag.ObjectContentsWalker], childNodes []*model_analysis_pb.ModuleExtensionRepos_Value_Repo) (model_core.PatchedMessage[*model_analysis_pb.ModuleExtensionRepos_Value_Repo, dag.ObjectContentsWalker], error) {
+			/* parentNodeComputer = */ func(createdObject model_core.CreatedObject[model_core.CreatedObjectTree], childNodes []*model_analysis_pb.ModuleExtensionRepos_Value_Repo) (model_core.PatchedMessage[*model_analysis_pb.ModuleExtensionRepos_Value_Repo, model_core.CreatedObjectTree], error) {
 				var firstName string
 				switch firstElement := childNodes[0].Level.(type) {
 				case *model_analysis_pb.ModuleExtensionRepos_Value_Repo_Leaf:
@@ -349,14 +348,14 @@ func (c *baseComputer) ComputeModuleExtensionReposValue(ctx context.Context, key
 				case *model_analysis_pb.ModuleExtensionRepos_Value_Repo_Parent_:
 					firstName = firstElement.Parent.FirstName
 				}
-				patcher := model_core.NewReferenceMessagePatcher[dag.ObjectContentsWalker]()
+				patcher := model_core.NewReferenceMessagePatcher[model_core.CreatedObjectTree]()
 				return model_core.NewPatchedMessage(
 					&model_analysis_pb.ModuleExtensionRepos_Value_Repo{
 						Level: &model_analysis_pb.ModuleExtensionRepos_Value_Repo_Parent_{
 							Parent: &model_analysis_pb.ModuleExtensionRepos_Value_Repo_Parent{
 								Reference: patcher.AddReference(
 									createdObject.Contents.GetReference(),
-									dag.NewSimpleObjectContentsWalker(createdObject.Contents, createdObject.Metadata),
+									model_core.CreatedObjectTree(createdObject),
 								),
 								FirstName: firstName,
 							},
@@ -392,6 +391,6 @@ func (c *baseComputer) ComputeModuleExtensionReposValue(ctx context.Context, key
 		Message: &model_analysis_pb.ModuleExtensionRepos_Value{
 			Repos: reposList.Message,
 		},
-		Patcher: reposList.Patcher,
+		Patcher: model_core.MapCreatedObjectsToWalkers(reposList.Patcher),
 	}, nil
 }

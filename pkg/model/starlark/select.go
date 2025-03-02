@@ -11,7 +11,6 @@ import (
 	model_core "github.com/buildbarn/bonanza/pkg/model/core"
 	model_starlark_pb "github.com/buildbarn/bonanza/pkg/proto/model/starlark"
 	"github.com/buildbarn/bonanza/pkg/starlark/unpack"
-	"github.com/buildbarn/bonanza/pkg/storage/dag"
 
 	"go.starlark.net/starlark"
 	"go.starlark.net/syntax"
@@ -107,9 +106,9 @@ func (s *Select) Binary(thread *starlark.Thread, op syntax.Token, y starlark.Val
 	}, nil
 }
 
-func (s *Select) EncodeGroups(path map[starlark.Value]struct{}, options *ValueEncodingOptions) (model_core.PatchedMessage[[]*model_starlark_pb.Select_Group, dag.ObjectContentsWalker], bool, error) {
+func (s *Select) EncodeGroups(path map[starlark.Value]struct{}, options *ValueEncodingOptions) (model_core.PatchedMessage[[]*model_starlark_pb.Select_Group, model_core.CreatedObjectTree], bool, error) {
 	groups := make([]*model_starlark_pb.Select_Group, 0, len(s.groups))
-	patcher := model_core.NewReferenceMessagePatcher[dag.ObjectContentsWalker]()
+	patcher := model_core.NewReferenceMessagePatcher[model_core.CreatedObjectTree]()
 	needsCode := false
 
 	for _, group := range s.groups {
@@ -123,7 +122,7 @@ func (s *Select) EncodeGroups(path map[starlark.Value]struct{}, options *ValueEn
 		) {
 			value, valueNeedsCode, err := EncodeValue(group.conditions[condition], path, nil, options)
 			if err != nil {
-				return model_core.PatchedMessage[[]*model_starlark_pb.Select_Group, dag.ObjectContentsWalker]{}, false, err
+				return model_core.PatchedMessage[[]*model_starlark_pb.Select_Group, model_core.CreatedObjectTree]{}, false, err
 			}
 
 			encodedGroup.Conditions = append(encodedGroup.Conditions, &model_starlark_pb.Select_Condition{
@@ -137,7 +136,7 @@ func (s *Select) EncodeGroups(path map[starlark.Value]struct{}, options *ValueEn
 		if group.defaultValue != nil {
 			value, valueNeedsCode, err := EncodeValue(group.defaultValue, path, nil, options)
 			if err != nil {
-				return model_core.PatchedMessage[[]*model_starlark_pb.Select_Group, dag.ObjectContentsWalker]{}, false, err
+				return model_core.PatchedMessage[[]*model_starlark_pb.Select_Group, model_core.CreatedObjectTree]{}, false, err
 			}
 			needsCode = needsCode || valueNeedsCode
 
@@ -157,10 +156,10 @@ func (s *Select) EncodeGroups(path map[starlark.Value]struct{}, options *ValueEn
 	return model_core.NewPatchedMessage(groups, patcher), needsCode, nil
 }
 
-func (s *Select) EncodeValue(path map[starlark.Value]struct{}, currentIdentifier *pg_label.CanonicalStarlarkIdentifier, options *ValueEncodingOptions) (model_core.PatchedMessage[*model_starlark_pb.Value, dag.ObjectContentsWalker], bool, error) {
+func (s *Select) EncodeValue(path map[starlark.Value]struct{}, currentIdentifier *pg_label.CanonicalStarlarkIdentifier, options *ValueEncodingOptions) (model_core.PatchedMessage[*model_starlark_pb.Value, model_core.CreatedObjectTree], bool, error) {
 	groups, needsCode, err := s.EncodeGroups(path, options)
 	if err != nil {
-		return model_core.PatchedMessage[*model_starlark_pb.Value, dag.ObjectContentsWalker]{}, false, err
+		return model_core.PatchedMessage[*model_starlark_pb.Value, model_core.CreatedObjectTree]{}, false, err
 	}
 
 	concatenationOperator := model_starlark_pb.Select_NONE

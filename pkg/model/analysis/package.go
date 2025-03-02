@@ -17,7 +17,6 @@ import (
 	model_starlark "github.com/buildbarn/bonanza/pkg/model/starlark"
 	model_analysis_pb "github.com/buildbarn/bonanza/pkg/proto/model/analysis"
 	model_starlark_pb "github.com/buildbarn/bonanza/pkg/proto/model/starlark"
-	"github.com/buildbarn/bonanza/pkg/storage/dag"
 	"github.com/buildbarn/bonanza/pkg/storage/object"
 
 	"go.starlark.net/starlark"
@@ -144,7 +143,7 @@ func (c *baseComputer) ComputePackageValue(ctx context.Context, key *model_analy
 			btree.NewObjectCreatingNodeMerger(
 				model_encoding.NewChainedBinaryEncoder(nil),
 				c.buildSpecificationReference.GetReferenceFormat(),
-				/* parentNodeComputer = */ func(createdObject model_core.CreatedObject[dag.ObjectContentsWalker], childNodes []*model_analysis_pb.Package_Value_Target) (model_core.PatchedMessage[*model_analysis_pb.Package_Value_Target, dag.ObjectContentsWalker], error) {
+				/* parentNodeComputer = */ func(createdObject model_core.CreatedObject[model_core.CreatedObjectTree], childNodes []*model_analysis_pb.Package_Value_Target) (model_core.PatchedMessage[*model_analysis_pb.Package_Value_Target, model_core.CreatedObjectTree], error) {
 					var firstName string
 					switch firstElement := childNodes[0].Level.(type) {
 					case *model_analysis_pb.Package_Value_Target_Leaf:
@@ -152,14 +151,14 @@ func (c *baseComputer) ComputePackageValue(ctx context.Context, key *model_analy
 					case *model_analysis_pb.Package_Value_Target_Parent_:
 						firstName = firstElement.Parent.FirstName
 					}
-					patcher := model_core.NewReferenceMessagePatcher[dag.ObjectContentsWalker]()
+					patcher := model_core.NewReferenceMessagePatcher[model_core.CreatedObjectTree]()
 					return model_core.NewPatchedMessage(
 						&model_analysis_pb.Package_Value_Target{
 							Level: &model_analysis_pb.Package_Value_Target_Parent_{
 								Parent: &model_analysis_pb.Package_Value_Target_Parent{
 									Reference: patcher.AddReference(
 										createdObject.Contents.GetReference(),
-										dag.NewSimpleObjectContentsWalker(createdObject.Contents, createdObject.Metadata),
+										model_core.CreatedObjectTree(createdObject),
 									),
 									FirstName: firstName,
 								},
@@ -179,7 +178,7 @@ func (c *baseComputer) ComputePackageValue(ctx context.Context, key *model_analy
 				// provided explicitly. Assume it refers
 				// to a source file with private
 				// visibility.
-				target = model_core.NewSimplePatchedMessage[dag.ObjectContentsWalker](
+				target = model_core.NewSimplePatchedMessage[model_core.CreatedObjectTree](
 					&model_starlark_pb.Target_Definition{
 						Kind: &model_starlark_pb.Target_Definition_SourceFileTarget{
 							SourceFileTarget: &model_starlark_pb.SourceFileTarget{
@@ -215,7 +214,7 @@ func (c *baseComputer) ComputePackageValue(ctx context.Context, key *model_analy
 			Message: &model_analysis_pb.Package_Value{
 				Targets: targetsList.Message,
 			},
-			Patcher: targetsList.Patcher,
+			Patcher: model_core.MapCreatedObjectsToWalkers(targetsList.Patcher),
 		}, nil
 	}
 
