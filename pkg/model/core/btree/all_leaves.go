@@ -21,13 +21,13 @@ func AllLeaves[
 	},
 ](
 	ctx context.Context,
-	reader model_parser.ParsedObjectReader[object.LocalReference, model_core.Message[[]TMessagePtr]],
-	root model_core.Message[[]TMessagePtr],
-	traverser func(model_core.Message[TMessagePtr]) (*model_core_pb.Reference, error),
+	reader model_parser.ParsedObjectReader[object.LocalReference, model_core.Message[[]TMessagePtr, object.OutgoingReferences]],
+	root model_core.Message[[]TMessagePtr, object.OutgoingReferences],
+	traverser func(model_core.Message[TMessagePtr, object.OutgoingReferences]) (*model_core_pb.Reference, error),
 	errOut *error,
-) iter.Seq[model_core.Message[TMessagePtr]] {
-	lists := []model_core.Message[[]TMessagePtr]{root}
-	return func(yield func(model_core.Message[TMessagePtr]) bool) {
+) iter.Seq[model_core.Message[TMessagePtr, object.OutgoingReferences]] {
+	lists := []model_core.Message[[]TMessagePtr, object.OutgoingReferences]{root}
+	return func(yield func(model_core.Message[TMessagePtr, object.OutgoingReferences]) bool) {
 		for len(lists) > 0 {
 			lastList := &lists[len(lists)-1]
 			if len(lastList.Message) == 0 {

@@ -10,6 +10,7 @@ import (
 	pg_label "github.com/buildbarn/bonanza/pkg/label"
 	model_core "github.com/buildbarn/bonanza/pkg/model/core"
 	model_starlark_pb "github.com/buildbarn/bonanza/pkg/proto/model/starlark"
+	"github.com/buildbarn/bonanza/pkg/storage/object"
 
 	"go.starlark.net/starlark"
 	"go.starlark.net/syntax"
@@ -17,12 +18,12 @@ import (
 
 type TargetReference struct {
 	label            pg_label.ResolvedLabel
-	encodedProviders model_core.Message[[]*model_starlark_pb.Struct]
+	encodedProviders model_core.Message[[]*model_starlark_pb.Struct, object.OutgoingReferences]
 
 	decodedProviders []atomic.Pointer[Struct]
 }
 
-func NewTargetReference(label pg_label.ResolvedLabel, providers model_core.Message[[]*model_starlark_pb.Struct]) starlark.Value {
+func NewTargetReference(label pg_label.ResolvedLabel, providers model_core.Message[[]*model_starlark_pb.Struct, object.OutgoingReferences]) starlark.Value {
 	return &TargetReference{
 		label:            label,
 		encodedProviders: providers,

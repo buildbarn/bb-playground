@@ -11,6 +11,7 @@ import (
 	model_core "github.com/buildbarn/bonanza/pkg/model/core"
 	model_starlark_pb "github.com/buildbarn/bonanza/pkg/proto/model/starlark"
 	"github.com/buildbarn/bonanza/pkg/starlark/unpack"
+	"github.com/buildbarn/bonanza/pkg/storage/object"
 
 	"go.starlark.net/starlark"
 )
@@ -254,11 +255,11 @@ func (rrd *starlarkRepositoryRuleDefinition) GetAttrsCheap(thread *starlark.Thre
 }
 
 type protoRepositoryRuleDefinition struct {
-	message         model_core.Message[*model_starlark_pb.RepositoryRule_Definition]
+	message         model_core.Message[*model_starlark_pb.RepositoryRule_Definition, object.OutgoingReferences]
 	protoAttrsCache protoAttrsCache
 }
 
-func NewProtoRepositoryRuleDefinition(message model_core.Message[*model_starlark_pb.RepositoryRule_Definition]) RepositoryRuleDefinition {
+func NewProtoRepositoryRuleDefinition(message model_core.Message[*model_starlark_pb.RepositoryRule_Definition, object.OutgoingReferences]) RepositoryRuleDefinition {
 	return &protoRepositoryRuleDefinition{
 		message: message,
 	}

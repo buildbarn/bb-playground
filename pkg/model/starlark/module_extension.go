@@ -9,6 +9,7 @@ import (
 	pg_label "github.com/buildbarn/bonanza/pkg/label"
 	model_core "github.com/buildbarn/bonanza/pkg/model/core"
 	model_starlark_pb "github.com/buildbarn/bonanza/pkg/proto/model/starlark"
+	"github.com/buildbarn/bonanza/pkg/storage/object"
 
 	"go.starlark.net/starlark"
 )
@@ -100,10 +101,10 @@ func (med *starlarkModuleExtensionDefinition) EncodeValue(path map[starlark.Valu
 }
 
 type protoModuleExtensionDefinition struct {
-	message model_core.Message[*model_starlark_pb.ModuleExtension]
+	message model_core.Message[*model_starlark_pb.ModuleExtension, object.OutgoingReferences]
 }
 
-func NewProtoModuleExtensionDefinition(message model_core.Message[*model_starlark_pb.ModuleExtension]) ModuleExtensionDefinition {
+func NewProtoModuleExtensionDefinition(message model_core.Message[*model_starlark_pb.ModuleExtension, object.OutgoingReferences]) ModuleExtensionDefinition {
 	return &protoModuleExtensionDefinition{
 		message: message,
 	}

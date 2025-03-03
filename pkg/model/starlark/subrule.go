@@ -9,6 +9,7 @@ import (
 	pg_label "github.com/buildbarn/bonanza/pkg/label"
 	model_core "github.com/buildbarn/bonanza/pkg/model/core"
 	model_starlark_pb "github.com/buildbarn/bonanza/pkg/proto/model/starlark"
+	"github.com/buildbarn/bonanza/pkg/storage/object"
 
 	"go.starlark.net/starlark"
 )
@@ -169,10 +170,10 @@ func (sd *starlarkSubruleDefinition) Encode(path map[starlark.Value]struct{}, op
 }
 
 type protoSubruleDefinition struct {
-	message model_core.Message[*model_starlark_pb.Subrule_Definition]
+	message model_core.Message[*model_starlark_pb.Subrule_Definition, object.OutgoingReferences]
 }
 
-func NewProtoSubruleDefinition(message model_core.Message[*model_starlark_pb.Subrule_Definition]) SubruleDefinition {
+func NewProtoSubruleDefinition(message model_core.Message[*model_starlark_pb.Subrule_Definition, object.OutgoingReferences]) SubruleDefinition {
 	return &protoSubruleDefinition{
 		message: message,
 	}

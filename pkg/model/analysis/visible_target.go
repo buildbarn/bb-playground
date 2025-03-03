@@ -20,7 +20,7 @@ import (
 )
 
 type getValueFromSelectGroupEnvironment interface {
-	GetSelectValue(*model_analysis_pb.Select_Key) model_core.Message[*model_analysis_pb.Select_Value]
+	GetSelectValue(*model_analysis_pb.Select_Key) model_core.Message[*model_analysis_pb.Select_Value, object.OutgoingReferences]
 }
 
 func getValueFromSelectGroup(e getValueFromSelectGroupEnvironment, selectGroup *model_starlark_pb.Select_Group, permitNoMatch bool) (*model_starlark_pb.Value, error) {
@@ -58,7 +58,7 @@ func getValueFromSelectGroup(e getValueFromSelectGroupEnvironment, selectGroup *
 	}
 }
 
-func checkVisibility(fromPackage label.CanonicalPackage, toLabel label.CanonicalLabel, toLabelVisibility model_core.Message[*model_starlark_pb.PackageGroup]) error {
+func checkVisibility(fromPackage label.CanonicalPackage, toLabel label.CanonicalLabel, toLabelVisibility model_core.Message[*model_starlark_pb.PackageGroup, object.OutgoingReferences]) error {
 	// Always permit access from within the same package.
 	if fromPackage == toLabel.GetCanonicalPackage() {
 		return nil
@@ -70,7 +70,7 @@ func checkVisibility(fromPackage label.CanonicalPackage, toLabel label.Canonical
 	for {
 		// Determine whether there are any overrides present at
 		// this level in the tree.
-		var overrides model_core.Message[*model_starlark_pb.PackageGroup_Subpackages_Overrides]
+		var overrides model_core.Message[*model_starlark_pb.PackageGroup_Subpackages_Overrides, object.OutgoingReferences]
 		switch o := subpackages.Message.GetOverrides().(type) {
 		case *model_starlark_pb.PackageGroup_Subpackages_OverridesInline:
 			overrides = model_core.NewNestedMessage(subpackages, o.OverridesInline)
@@ -125,7 +125,7 @@ func checkVisibility(fromPackage label.CanonicalPackage, toLabel label.Canonical
 	}
 }
 
-func checkRuleTargetVisibility(fromPackage label.CanonicalPackage, ruleTargetLabel label.CanonicalLabel, ruleTarget model_core.Message[*model_starlark_pb.RuleTarget]) error {
+func checkRuleTargetVisibility(fromPackage label.CanonicalPackage, ruleTargetLabel label.CanonicalLabel, ruleTarget model_core.Message[*model_starlark_pb.RuleTarget, object.OutgoingReferences]) error {
 	inheritableAttrs := ruleTarget.Message.InheritableAttrs
 	if inheritableAttrs == nil {
 		return fmt.Errorf("rule target %#v has no inheritable attrs", ruleTargetLabel)
@@ -137,7 +137,7 @@ func checkRuleTargetVisibility(fromPackage label.CanonicalPackage, ruleTargetLab
 	)
 }
 
-func (c *baseComputer) ComputeVisibleTargetValue(ctx context.Context, key model_core.Message[*model_analysis_pb.VisibleTarget_Key], e VisibleTargetEnvironment) (PatchedVisibleTargetValue, error) {
+func (c *baseComputer) ComputeVisibleTargetValue(ctx context.Context, key model_core.Message[*model_analysis_pb.VisibleTarget_Key, object.OutgoingReferences], e VisibleTargetEnvironment) (PatchedVisibleTargetValue, error) {
 	fromPackage, err := label.NewCanonicalPackage(key.Message.FromPackage)
 	if err != nil {
 		return PatchedVisibleTargetValue{}, fmt.Errorf("invalid from package: %w", err)

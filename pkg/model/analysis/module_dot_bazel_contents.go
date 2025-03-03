@@ -15,11 +15,12 @@ import (
 	model_filesystem_pb "github.com/buildbarn/bonanza/pkg/proto/model/filesystem"
 	pg_starlark "github.com/buildbarn/bonanza/pkg/starlark"
 	"github.com/buildbarn/bonanza/pkg/storage/dag"
+	"github.com/buildbarn/bonanza/pkg/storage/object"
 )
 
 type parseLocalModuleDotBazelEnvironment interface {
 	parseModuleDotBazelFileEnvironment
-	GetFilePropertiesValue(key *model_analysis_pb.FileProperties_Key) model_core.Message[*model_analysis_pb.FileProperties_Value]
+	GetFilePropertiesValue(key *model_analysis_pb.FileProperties_Key) model_core.Message[*model_analysis_pb.FileProperties_Value, object.OutgoingReferences]
 }
 
 func (c *baseComputer) parseLocalModuleInstanceModuleDotBazel(ctx context.Context, moduleInstance label.ModuleInstance, e parseLocalModuleDotBazelEnvironment, handler pg_starlark.RootModuleDotBazelHandler) error {
@@ -46,7 +47,7 @@ func (c *baseComputer) parseLocalModuleInstanceModuleDotBazel(ctx context.Contex
 
 type parseActiveModuleDotBazelEnvironment interface {
 	parseModuleDotBazelFileEnvironment
-	GetModuleDotBazelContentsValue(key *model_analysis_pb.ModuleDotBazelContents_Key) model_core.Message[*model_analysis_pb.ModuleDotBazelContents_Value]
+	GetModuleDotBazelContentsValue(key *model_analysis_pb.ModuleDotBazelContents_Key) model_core.Message[*model_analysis_pb.ModuleDotBazelContents_Value, object.OutgoingReferences]
 }
 
 func (c *baseComputer) parseActiveModuleInstanceModuleDotBazel(ctx context.Context, moduleInstance label.ModuleInstance, e parseActiveModuleDotBazelEnvironment, handler pg_starlark.RootModuleDotBazelHandler) error {
@@ -70,7 +71,7 @@ type parseModuleDotBazelFileEnvironment interface {
 	GetFileReaderValue(key *model_analysis_pb.FileReader_Key) (*model_filesystem.FileReader, bool)
 }
 
-func (c *baseComputer) parseModuleDotBazel(ctx context.Context, moduleContentsMsg model_core.Message[*model_filesystem_pb.FileContents], moduleInstance label.ModuleInstance, e parseModuleDotBazelFileEnvironment, handler pg_starlark.RootModuleDotBazelHandler) error {
+func (c *baseComputer) parseModuleDotBazel(ctx context.Context, moduleContentsMsg model_core.Message[*model_filesystem_pb.FileContents, object.OutgoingReferences], moduleInstance label.ModuleInstance, e parseModuleDotBazelFileEnvironment, handler pg_starlark.RootModuleDotBazelHandler) error {
 	fileReader, gotFileReader := e.GetFileReaderValue(&model_analysis_pb.FileReader_Key{})
 	if !gotFileReader {
 		return evaluation.ErrMissingDependency
@@ -102,7 +103,7 @@ type visitModuleDotBazelFilesBreadthFirstEnvironment interface {
 
 	GetFileReaderValue(*model_analysis_pb.FileReader_Key) (*model_filesystem.FileReader, bool)
 	GetModulesWithMultipleVersionsObjectValue(*model_analysis_pb.ModulesWithMultipleVersionsObject_Key) (map[label.Module]OverrideVersions, bool)
-	GetRootModuleValue(*model_analysis_pb.RootModule_Key) model_core.Message[*model_analysis_pb.RootModule_Value]
+	GetRootModuleValue(*model_analysis_pb.RootModule_Key) model_core.Message[*model_analysis_pb.RootModule_Value, object.OutgoingReferences]
 }
 
 type dependencQueueingModuleDotBazelHandler struct {

@@ -41,7 +41,7 @@ func (registeredExecutionPlatformExtractingModuleDotBazelHandler) Module(name la
 	return nil
 }
 
-func (c *baseComputer) extractFromPlatformInfoConstraints(ctx context.Context, value model_core.Message[*model_starlark_pb.Value]) ([]*model_analysis_pb.Constraint, error) {
+func (c *baseComputer) extractFromPlatformInfoConstraints(ctx context.Context, value model_core.Message[*model_starlark_pb.Value, object.OutgoingReferences]) ([]*model_analysis_pb.Constraint, error) {
 	dict, ok := value.Message.Kind.(*model_starlark_pb.Value_Dict)
 	if !ok {
 		return nil, errors.New("constraints field of PlatformInfo")

@@ -20,7 +20,7 @@ import (
 	"github.com/buildbarn/bonanza/pkg/storage/object"
 )
 
-func (c *baseComputer) decodeStringDict(ctx context.Context, d model_core.Message[*model_starlark_pb.Value]) (map[string]string, error) {
+func (c *baseComputer) decodeStringDict(ctx context.Context, d model_core.Message[*model_starlark_pb.Value, object.OutgoingReferences]) (map[string]string, error) {
 	dict, ok := d.Message.GetKind().(*model_starlark_pb.Value_Dict)
 	if !ok {
 		return nil, errors.New("not a dict")

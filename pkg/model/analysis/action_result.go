@@ -25,7 +25,7 @@ import (
 	"google.golang.org/grpc/status"
 )
 
-func (c *baseComputer) ComputeActionResultValue(ctx context.Context, key model_core.Message[*model_analysis_pb.ActionResult_Key], e ActionResultEnvironment) (PatchedActionResultValue, error) {
+func (c *baseComputer) ComputeActionResultValue(ctx context.Context, key model_core.Message[*model_analysis_pb.ActionResult_Key, object.OutgoingReferences], e ActionResultEnvironment) (PatchedActionResultValue, error) {
 	commandEncodersValue := e.GetCommandEncodersValue(&model_analysis_pb.CommandEncoders_Key{})
 	if !commandEncodersValue.IsSet() {
 		return PatchedActionResultValue{}, evaluation.ErrMissingDependency
@@ -142,12 +142,12 @@ func (c *baseComputer) convertDictToEnvironmentVariableList(environment map[stri
 	return environmentVariablesBuilder.FinalizeList()
 }
 
-func (c *baseComputer) getOutputsFromActionResult(ctx context.Context, actionResult model_core.Message[*model_analysis_pb.ActionResult_Value], directoryAccessParameters *model_filesystem.DirectoryAccessParameters) (model_core.Message[*model_command_pb.Outputs], error) {
+func (c *baseComputer) getOutputsFromActionResult(ctx context.Context, actionResult model_core.Message[*model_analysis_pb.ActionResult_Value, object.OutgoingReferences], directoryAccessParameters *model_filesystem.DirectoryAccessParameters) (model_core.Message[*model_command_pb.Outputs, object.OutgoingReferences], error) {
 	if actionResult.Message.OutputsReference == nil {
 		// Action did not yield any outputs. Return an empty
 		// outputs message, so any code that attempts to access
 		// individual outputs behaves well.
-		return model_core.NewSimpleMessage(&model_command_pb.Outputs{}), nil
+		return model_core.NewMessage(&model_command_pb.Outputs{}, object.OutgoingReferences(object.OutgoingReferencesList{})), nil
 	}
 
 	outputsReader := model_parser.NewStorageBackedParsedObjectReader(
@@ -157,7 +157,7 @@ func (c *baseComputer) getOutputsFromActionResult(ctx context.Context, actionRes
 	)
 	outputsReference, err := actionResult.GetOutgoingReference(actionResult.Message.OutputsReference)
 	if err != nil {
-		return model_core.Message[*model_command_pb.Outputs]{}, fmt.Errorf("invalid command outputs reference index: %w", err)
+		return model_core.Message[*model_command_pb.Outputs, object.OutgoingReferences]{}, fmt.Errorf("invalid command outputs reference index: %w", err)
 	}
 	outputs, _, err := outputsReader.ReadParsedObject(ctx, outputsReference)
 	return outputs, err

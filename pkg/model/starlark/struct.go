@@ -124,7 +124,7 @@ func (s *Struct) fieldAtIndex(thread *starlark.Thread, index int) (starlark.Valu
 	switch typedValue := s.values[index].(type) {
 	case starlark.Value:
 		return typedValue, nil
-	case model_core.Message[*model_starlark_pb.Value]:
+	case model_core.Message[*model_starlark_pb.Value, object.OutgoingReferences]:
 		if decodedValue := s.decodedValues[index].Load(); decodedValue != nil {
 			return *decodedValue, nil
 		}
@@ -256,7 +256,7 @@ func (s *Struct) EncodeStructFields(path map[starlark.Value]struct{}, options *V
 				return model_core.PatchedMessage[*model_starlark_pb.Struct_Fields, model_core.CreatedObjectTree]{}, false, fmt.Errorf("field %#v: %w", s.keys[i], err)
 			}
 			needsCode = needsCode || fieldNeedsCode
-		case model_core.Message[*model_starlark_pb.Value]:
+		case model_core.Message[*model_starlark_pb.Value, object.OutgoingReferences]:
 			encodedValue = model_core.NewPatchedMessageFromExisting(
 				typedValue,
 				func(index int) model_core.CreatedObjectTree {
@@ -345,20 +345,21 @@ func (s *Struct) GetProviderIdentifier() (pg_label.CanonicalStarlarkIdentifier, 
 
 func AllStructFields(
 	ctx context.Context,
-	reader model_parser.ParsedObjectReader[object.LocalReference, model_core.Message[[]*model_starlark_pb.List_Element]],
-	structFields model_core.Message[*model_starlark_pb.Struct_Fields],
+	reader model_parser.ParsedObjectReader[object.LocalReference, model_core.Message[[]*model_starlark_pb.List_Element, object.OutgoingReferences]],
+	structFields model_core.Message[*model_starlark_pb.Struct_Fields, object.OutgoingReferences],
 	errOut *error,
-) iter.Seq2[string, model_core.Message[*model_starlark_pb.Value]] {
+) iter.Seq2[string, model_core.Message[*model_starlark_pb.Value, object.OutgoingReferences]] {
 	if structFields.Message == nil {
 		*errOut = errors.New("no struct fields provided")
-		return func(yield func(string, model_core.Message[*model_starlark_pb.Value]) bool) {}
+		return func(yield func(string, model_core.Message[*model_starlark_pb.Value, object.OutgoingReferences]) bool) {
+		}
 	}
 
 	allLeaves := btree.AllLeaves(
 		ctx,
 		reader,
 		model_core.NewNestedMessage(structFields, structFields.Message.Values),
-		func(element model_core.Message[*model_starlark_pb.List_Element]) (*model_core_pb.Reference, error) {
+		func(element model_core.Message[*model_starlark_pb.List_Element, object.OutgoingReferences]) (*model_core_pb.Reference, error) {
 			if level, ok := element.Message.Level.(*model_starlark_pb.List_Element_Parent_); ok {
 				return level.Parent.Reference, nil
 			}
@@ -368,8 +369,8 @@ func AllStructFields(
 	)
 
 	keys := structFields.Message.Keys
-	return func(yield func(string, model_core.Message[*model_starlark_pb.Value]) bool) {
-		allLeaves(func(entry model_core.Message[*model_starlark_pb.List_Element]) bool {
+	return func(yield func(string, model_core.Message[*model_starlark_pb.Value, object.OutgoingReferences]) bool) {
+		allLeaves(func(entry model_core.Message[*model_starlark_pb.List_Element, object.OutgoingReferences]) bool {
 			leaf, ok := entry.Message.Level.(*model_starlark_pb.List_Element_Leaf)
 			if !ok {
 				*errOut = errors.New("not a valid leaf entry")
@@ -390,12 +391,12 @@ func AllStructFields(
 
 func GetStructFieldValue(
 	ctx context.Context,
-	reader model_parser.ParsedObjectReader[object.LocalReference, model_core.Message[[]*model_starlark_pb.List_Element]],
-	structFields model_core.Message[*model_starlark_pb.Struct_Fields],
+	reader model_parser.ParsedObjectReader[object.LocalReference, model_core.Message[[]*model_starlark_pb.List_Element, object.OutgoingReferences]],
+	structFields model_core.Message[*model_starlark_pb.Struct_Fields, object.OutgoingReferences],
 	key string,
-) (model_core.Message[*model_starlark_pb.Value], error) {
+) (model_core.Message[*model_starlark_pb.Value, object.OutgoingReferences], error) {
 	if structFields.Message == nil {
-		return model_core.Message[*model_starlark_pb.Value]{}, errors.New("no struct fields provided")
+		return model_core.Message[*model_starlark_pb.Value, object.OutgoingReferences]{}, errors.New("no struct fields provided")
 	}
 
 	keys := structFields.Message.Keys
@@ -404,7 +405,7 @@ func GetStructFieldValue(
 		func(i int) int { return strings.Compare(key, keys[i]) },
 	)
 	if !ok {
-		return model_core.Message[*model_starlark_pb.Value]{}, errors.New("struct field not found")
+		return model_core.Message[*model_starlark_pb.Value, object.OutgoingReferences]{}, errors.New("struct field not found")
 	}
 
 	contiguousLength := len(keys)
@@ -431,6 +432,6 @@ func GetStructFieldValue(
 				index--
 			}
 		}
-		return model_core.Message[*model_starlark_pb.Value]{}, errors.New("number of keys does not match number of values")
+		return model_core.Message[*model_starlark_pb.Value, object.OutgoingReferences]{}, errors.New("number of keys does not match number of values")
 	}
 }

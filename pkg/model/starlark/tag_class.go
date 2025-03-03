@@ -6,6 +6,7 @@ import (
 	pg_label "github.com/buildbarn/bonanza/pkg/label"
 	model_core "github.com/buildbarn/bonanza/pkg/model/core"
 	model_starlark_pb "github.com/buildbarn/bonanza/pkg/proto/model/starlark"
+	"github.com/buildbarn/bonanza/pkg/storage/object"
 
 	"go.starlark.net/starlark"
 )
@@ -86,10 +87,10 @@ func (tcd *starlarkTagClassDefinition) Encode(path map[starlark.Value]struct{}, 
 }
 
 type protoTagClassDefinition struct {
-	message model_core.Message[*model_starlark_pb.TagClass]
+	message model_core.Message[*model_starlark_pb.TagClass, object.OutgoingReferences]
 }
 
-func NewProtoTagClassDefinition(message model_core.Message[*model_starlark_pb.TagClass]) TagClassDefinition {
+func NewProtoTagClassDefinition(message model_core.Message[*model_starlark_pb.TagClass, object.OutgoingReferences]) TagClassDefinition {
 	return &protoTagClassDefinition{
 		message: message,
 	}

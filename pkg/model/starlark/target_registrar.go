@@ -7,6 +7,7 @@ import (
 	model_core "github.com/buildbarn/bonanza/pkg/model/core"
 	"github.com/buildbarn/bonanza/pkg/model/core/inlinedtree"
 	model_starlark_pb "github.com/buildbarn/bonanza/pkg/proto/model/starlark"
+	"github.com/buildbarn/bonanza/pkg/storage/object"
 )
 
 type TargetRegistrar struct {
@@ -14,13 +15,13 @@ type TargetRegistrar struct {
 	inlinedTreeOptions *inlinedtree.Options
 
 	// Mutable fields.
-	defaultInheritableAttrs               model_core.Message[*model_starlark_pb.InheritableAttrs]
+	defaultInheritableAttrs               model_core.Message[*model_starlark_pb.InheritableAttrs, object.OutgoingReferences]
 	createDefaultInheritableAttrsMetadata func(index int) model_core.CreatedObjectTree
 	setDefaultInheritableAttrs            bool
 	targets                               map[string]model_core.PatchedMessage[*model_starlark_pb.Target_Definition, model_core.CreatedObjectTree]
 }
 
-func NewTargetRegistrar(inlinedTreeOptions *inlinedtree.Options, defaultInheritableAttrs model_core.Message[*model_starlark_pb.InheritableAttrs]) *TargetRegistrar {
+func NewTargetRegistrar(inlinedTreeOptions *inlinedtree.Options, defaultInheritableAttrs model_core.Message[*model_starlark_pb.InheritableAttrs, object.OutgoingReferences]) *TargetRegistrar {
 	return &TargetRegistrar{
 		inlinedTreeOptions:      inlinedTreeOptions,
 		defaultInheritableAttrs: defaultInheritableAttrs,

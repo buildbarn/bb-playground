@@ -142,7 +142,7 @@ func (d *objectBackedDirectory) lookupFile(fileNode *model_filesystem_pb.FileNod
 		return nil, virtual.StatusErrIO
 	}
 	fileContents, err := model_filesystem.NewFileContentsEntryFromProto(
-		model_core.Message[*model_filesystem_pb.FileContents]{
+		model_core.Message[*model_filesystem_pb.FileContents, object.OutgoingReferences]{
 			Message:            properties.Contents,
 			OutgoingReferences: leavesReferences,
 		},

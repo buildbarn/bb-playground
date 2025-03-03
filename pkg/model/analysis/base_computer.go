@@ -91,8 +91,8 @@ func (c *baseComputer) getInlinedTreeOptions() *inlinedtree.Options {
 }
 
 type resolveApparentEnvironment interface {
-	GetCanonicalRepoNameValue(*model_analysis_pb.CanonicalRepoName_Key) model_core.Message[*model_analysis_pb.CanonicalRepoName_Value]
-	GetRootModuleValue(*model_analysis_pb.RootModule_Key) model_core.Message[*model_analysis_pb.RootModule_Value]
+	GetCanonicalRepoNameValue(*model_analysis_pb.CanonicalRepoName_Key) model_core.Message[*model_analysis_pb.CanonicalRepoName_Value, object.OutgoingReferences]
+	GetRootModuleValue(*model_analysis_pb.RootModule_Key) model_core.Message[*model_analysis_pb.RootModule_Value, object.OutgoingReferences]
 }
 
 type canonicalizable[T any] interface {
@@ -139,7 +139,7 @@ func resolveApparent[TCanonical any, TApparent canonicalizable[TCanonical]](e re
 
 type loadBzlGlobalsEnvironment interface {
 	resolveApparentEnvironment
-	GetBuiltinsModuleNamesValue(key *model_analysis_pb.BuiltinsModuleNames_Key) model_core.Message[*model_analysis_pb.BuiltinsModuleNames_Value]
+	GetBuiltinsModuleNamesValue(key *model_analysis_pb.BuiltinsModuleNames_Key) model_core.Message[*model_analysis_pb.BuiltinsModuleNames_Value, object.OutgoingReferences]
 	GetCompiledBzlFileDecodedGlobalsValue(key *model_analysis_pb.CompiledBzlFileDecodedGlobals_Key) (starlark.StringDict, bool)
 }
 
@@ -453,7 +453,7 @@ func (c *baseComputer) ComputeRepoDefaultAttrsValue(ctx context.Context, key *mo
 	), nil
 }
 
-func (c *baseComputer) ComputeTargetCompletionValue(ctx context.Context, key model_core.Message[*model_analysis_pb.TargetCompletion_Key], e TargetCompletionEnvironment) (PatchedTargetCompletionValue, error) {
+func (c *baseComputer) ComputeTargetCompletionValue(ctx context.Context, key model_core.Message[*model_analysis_pb.TargetCompletion_Key, object.OutgoingReferences], e TargetCompletionEnvironment) (PatchedTargetCompletionValue, error) {
 	configurationReference := model_core.NewPatchedMessageFromExisting(
 		model_core.NewNestedMessage(key, key.Message.ConfigurationReference),
 		func(index int) dag.ObjectContentsWalker {

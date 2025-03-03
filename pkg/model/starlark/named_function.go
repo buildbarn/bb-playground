@@ -9,6 +9,7 @@ import (
 	model_core "github.com/buildbarn/bonanza/pkg/model/core"
 	model_starlark_pb "github.com/buildbarn/bonanza/pkg/proto/model/starlark"
 	"github.com/buildbarn/bonanza/pkg/starlark/unpack"
+	"github.com/buildbarn/bonanza/pkg/storage/object"
 
 	"go.starlark.net/starlark"
 	"go.starlark.net/syntax"
@@ -146,11 +147,11 @@ type FunctionFactoryResolver = func(filename pg_label.CanonicalLabel) (*starlark
 const FunctionFactoryResolverKey = "function_factory_resolver"
 
 type protoNamedFunctionDefinition struct {
-	message  model_core.Message[*model_starlark_pb.Function]
+	message  model_core.Message[*model_starlark_pb.Function, object.OutgoingReferences]
 	function atomic.Pointer[starlark.Function]
 }
 
-func NewProtoNamedFunctionDefinition(message model_core.Message[*model_starlark_pb.Function]) NamedFunctionDefinition {
+func NewProtoNamedFunctionDefinition(message model_core.Message[*model_starlark_pb.Function, object.OutgoingReferences]) NamedFunctionDefinition {
 	return &protoNamedFunctionDefinition{
 		message: message,
 	}

@@ -20,7 +20,7 @@ import (
 )
 
 type expandCanonicalTargetPatternEnvironment interface {
-	GetTargetPatternExpansionValue(*model_analysis_pb.TargetPatternExpansion_Key) model_core.Message[*model_analysis_pb.TargetPatternExpansion_Value]
+	GetTargetPatternExpansionValue(*model_analysis_pb.TargetPatternExpansion_Key) model_core.Message[*model_analysis_pb.TargetPatternExpansion_Value, object.OutgoingReferences]
 }
 
 // expandCanonicalTargetPattern returns canonical labels for each target
@@ -56,7 +56,7 @@ func (c *baseComputer) expandCanonicalTargetPattern(
 				model_parser.NewMessageListObjectParser[object.LocalReference, model_analysis_pb.TargetPatternExpansion_Value_TargetLabel](),
 			),
 			model_core.NewNestedMessage(targetPatternExpansion, targetPatternExpansion.Message.TargetLabels),
-			func(entry model_core.Message[*model_analysis_pb.TargetPatternExpansion_Value_TargetLabel]) (*model_core_pb.Reference, error) {
+			func(entry model_core.Message[*model_analysis_pb.TargetPatternExpansion_Value_TargetLabel, object.OutgoingReferences]) (*model_core_pb.Reference, error) {
 				if level, ok := entry.Message.Level.(*model_analysis_pb.TargetPatternExpansion_Value_TargetLabel_Parent_); ok {
 					return level.Parent.Reference, nil
 				}
@@ -224,7 +224,7 @@ func (c *baseComputer) ComputeTargetPatternExpansionValue(ctx context.Context, k
 func (c *baseComputer) addPackageToTargetPatternExpansion(
 	ctx context.Context,
 	canonicalPackage label.CanonicalPackage,
-	packageValue model_core.Message[*model_analysis_pb.Package_Value],
+	packageValue model_core.Message[*model_analysis_pb.Package_Value, object.OutgoingReferences],
 	includeFileTargets bool,
 	treeBuilder btree.Builder[*model_analysis_pb.TargetPatternExpansion_Value_TargetLabel, dag.ObjectContentsWalker],
 ) error {
@@ -237,7 +237,7 @@ func (c *baseComputer) addPackageToTargetPatternExpansion(
 			model_parser.NewMessageListObjectParser[object.LocalReference, model_analysis_pb.Package_Value_Target](),
 		),
 		model_core.NewNestedMessage(packageValue, packageValue.Message.Targets),
-		func(entry model_core.Message[*model_analysis_pb.Package_Value_Target]) (*model_core_pb.Reference, error) {
+		func(entry model_core.Message[*model_analysis_pb.Package_Value_Target, object.OutgoingReferences]) (*model_core_pb.Reference, error) {
 			if level, ok := entry.Message.Level.(*model_analysis_pb.Package_Value_Target_Parent_); ok {
 				return level.Parent.Reference, nil
 			}

@@ -20,10 +20,10 @@ func Find[
 	},
 ](
 	ctx context.Context,
-	reader model_parser.ParsedObjectReader[object.LocalReference, model_core.Message[[]TMessagePtr]],
-	list model_core.Message[[]TMessagePtr],
+	reader model_parser.ParsedObjectReader[object.LocalReference, model_core.Message[[]TMessagePtr, object.OutgoingReferences]],
+	list model_core.Message[[]TMessagePtr, object.OutgoingReferences],
 	cmp func(TMessagePtr) (int, *model_core_pb.Reference),
-) (model_core.Message[TMessagePtr], error) {
+) (model_core.Message[TMessagePtr, object.OutgoingReferences], error) {
 	for {
 		low, high := 0, len(list.Message)
 		var childReference *model_core_pb.Reference
@@ -53,17 +53,17 @@ func Find[
 		if childReference == nil {
 			// Found no exact match, and also did not find a
 			// child that may include a matching entry.
-			return model_core.Message[TMessagePtr]{}, nil
+			return model_core.Message[TMessagePtr, object.OutgoingReferences]{}, nil
 		}
 
 		// Load the child from storage and continue searching.
 		objectReference, err := list.GetOutgoingReference(childReference)
 		if err != nil {
-			return model_core.Message[TMessagePtr]{}, err
+			return model_core.Message[TMessagePtr, object.OutgoingReferences]{}, err
 		}
 		list, _, err = reader.ReadParsedObject(ctx, objectReference)
 		if err != nil {
-			return model_core.Message[TMessagePtr]{}, err
+			return model_core.Message[TMessagePtr, object.OutgoingReferences]{}, err
 		}
 	}
 }

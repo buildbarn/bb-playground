@@ -19,10 +19,10 @@ import (
 	"github.com/buildbarn/bonanza/pkg/storage/object"
 )
 
-func (c *baseComputer) getConfigurationByReference(ctx context.Context, configurationReference model_core.Message[*model_core_pb.Reference]) (model_core.Message[*model_analysis_pb.Configuration], error) {
+func (c *baseComputer) getConfigurationByReference(ctx context.Context, configurationReference model_core.Message[*model_core_pb.Reference, object.OutgoingReferences]) (model_core.Message[*model_analysis_pb.Configuration, object.OutgoingReferences], error) {
 	if configurationReference.Message == nil {
 		// Empty configuration.
-		return model_core.Message[*model_analysis_pb.Configuration]{
+		return model_core.Message[*model_analysis_pb.Configuration, object.OutgoingReferences]{
 			Message:            &model_analysis_pb.Configuration{},
 			OutgoingReferences: object.OutgoingReferencesList{},
 		}, nil
@@ -30,7 +30,7 @@ func (c *baseComputer) getConfigurationByReference(ctx context.Context, configur
 
 	actualConfigurationReference, err := configurationReference.GetOutgoingReference(configurationReference.Message)
 	if err != nil {
-		return model_core.Message[*model_analysis_pb.Configuration]{}, fmt.Errorf("invalid configuration reference: %w", err)
+		return model_core.Message[*model_analysis_pb.Configuration, object.OutgoingReferences]{}, fmt.Errorf("invalid configuration reference: %w", err)
 	}
 	configurationReader := model_parser.NewStorageBackedParsedObjectReader(
 		c.objectDownloader,
@@ -39,14 +39,14 @@ func (c *baseComputer) getConfigurationByReference(ctx context.Context, configur
 	)
 	configuration, _, err := configurationReader.ReadParsedObject(ctx, actualConfigurationReference)
 	if err != nil {
-		return model_core.Message[*model_analysis_pb.Configuration]{}, fmt.Errorf("failed to read configuration: %w", err)
+		return model_core.Message[*model_analysis_pb.Configuration, object.OutgoingReferences]{}, fmt.Errorf("failed to read configuration: %w", err)
 	}
 	return configuration, nil
 }
 
 var commandLineOptionPlatformsLabel = label.MustNewCanonicalLabel("@@bazel_tools+//command_line_option:platforms")
 
-func (c *baseComputer) ComputeCompatibleToolchainsForTypeValue(ctx context.Context, key model_core.Message[*model_analysis_pb.CompatibleToolchainsForType_Key], e CompatibleToolchainsForTypeEnvironment) (PatchedCompatibleToolchainsForTypeValue, error) {
+func (c *baseComputer) ComputeCompatibleToolchainsForTypeValue(ctx context.Context, key model_core.Message[*model_analysis_pb.CompatibleToolchainsForType_Key, object.OutgoingReferences], e CompatibleToolchainsForTypeEnvironment) (PatchedCompatibleToolchainsForTypeValue, error) {
 	registeredToolchains := e.GetRegisteredToolchainsForTypeValue(&model_analysis_pb.RegisteredToolchainsForType_Key{
 		ToolchainType: key.Message.ToolchainType,
 	})

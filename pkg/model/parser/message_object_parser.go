@@ -31,16 +31,16 @@ func NewMessageObjectParser[
 		*TMessage
 		proto.Message
 	},
-]() ObjectParser[TReference, model_core.Message[TMessagePtr]] {
+]() ObjectParser[TReference, model_core.Message[TMessagePtr, object.OutgoingReferences]] {
 	return &messageObjectParser[TReference, TMessage, TMessagePtr]{}
 }
 
-func (p *messageObjectParser[TReference, TMessage, TMessagePtr]) ParseObject(ctx context.Context, reference TReference, outgoingReferences object.OutgoingReferences, data []byte) (model_core.Message[TMessagePtr], int, error) {
+func (p *messageObjectParser[TReference, TMessage, TMessagePtr]) ParseObject(ctx context.Context, reference TReference, outgoingReferences object.OutgoingReferences, data []byte) (model_core.Message[TMessagePtr, object.OutgoingReferences], int, error) {
 	var message TMessage
 	if err := proto.Unmarshal(data, TMessagePtr(&message)); err != nil {
-		return model_core.Message[TMessagePtr]{}, 0, util.StatusWrapWithCode(err, codes.InvalidArgument, "Failed to unmarshal message")
+		return model_core.Message[TMessagePtr, object.OutgoingReferences]{}, 0, util.StatusWrapWithCode(err, codes.InvalidArgument, "Failed to unmarshal message")
 	}
-	return model_core.Message[TMessagePtr]{
+	return model_core.Message[TMessagePtr, object.OutgoingReferences]{
 		Message:            &message,
 		OutgoingReferences: outgoingReferences.GetOutgoingReferencesList(),
 	}, reference.GetSizeBytes(), nil

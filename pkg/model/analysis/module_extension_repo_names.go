@@ -32,7 +32,7 @@ func (c *baseComputer) ComputeModuleExtensionRepoNamesValue(ctx context.Context,
 			model_parser.NewMessageListObjectParser[object.LocalReference, model_analysis_pb.ModuleExtensionRepos_Value_Repo](),
 		),
 		model_core.NewNestedMessage(moduleExtensionReposValue, moduleExtensionReposValue.Message.Repos),
-		func(entry model_core.Message[*model_analysis_pb.ModuleExtensionRepos_Value_Repo]) (*model_core_pb.Reference, error) {
+		func(entry model_core.Message[*model_analysis_pb.ModuleExtensionRepos_Value_Repo, object.OutgoingReferences]) (*model_core_pb.Reference, error) {
 			if parent, ok := entry.Message.Level.(*model_analysis_pb.ModuleExtensionRepos_Value_Repo_Parent_); ok {
 				return parent.Parent.Reference, nil
 			}

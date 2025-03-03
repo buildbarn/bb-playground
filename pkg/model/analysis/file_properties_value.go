@@ -28,7 +28,7 @@ type reposFilePropertiesResolver struct {
 	environment            FilePropertiesEnvironment
 
 	stack          []model_filesystem.DirectoryInfo
-	fileProperties model_core.Message[*model_filesystem_pb.FileProperties]
+	fileProperties model_core.Message[*model_filesystem_pb.FileProperties, object.OutgoingReferences]
 	gotTerminal    bool
 }
 

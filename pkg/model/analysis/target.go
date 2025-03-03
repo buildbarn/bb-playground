@@ -18,7 +18,7 @@ import (
 	"github.com/buildbarn/bonanza/pkg/storage/object"
 )
 
-func (c *baseComputer) lookupTargetDefinitionInTargetList(ctx context.Context, targetList model_core.Message[[]*model_analysis_pb.Package_Value_Target], targetName label.TargetName) (model_core.Message[*model_starlark_pb.Target_Definition], error) {
+func (c *baseComputer) lookupTargetDefinitionInTargetList(ctx context.Context, targetList model_core.Message[[]*model_analysis_pb.Package_Value_Target, object.OutgoingReferences], targetName label.TargetName) (model_core.Message[*model_starlark_pb.Target_Definition, object.OutgoingReferences], error) {
 	targetNameStr := targetName.String()
 	target, err := btree.Find(
 		ctx,
@@ -40,19 +40,19 @@ func (c *baseComputer) lookupTargetDefinitionInTargetList(ctx context.Context, t
 		},
 	)
 	if err != nil {
-		return model_core.Message[*model_starlark_pb.Target_Definition]{}, err
+		return model_core.Message[*model_starlark_pb.Target_Definition, object.OutgoingReferences]{}, err
 	}
 	if !target.IsSet() {
-		return model_core.Message[*model_starlark_pb.Target_Definition]{}, nil
+		return model_core.Message[*model_starlark_pb.Target_Definition, object.OutgoingReferences]{}, nil
 	}
 
 	level, ok := target.Message.Level.(*model_analysis_pb.Package_Value_Target_Leaf)
 	if !ok {
-		return model_core.Message[*model_starlark_pb.Target_Definition]{}, errors.New("target list has an unknown level type")
+		return model_core.Message[*model_starlark_pb.Target_Definition, object.OutgoingReferences]{}, errors.New("target list has an unknown level type")
 	}
 	definition := level.Leaf.Definition
 	if definition == nil {
-		return model_core.Message[*model_starlark_pb.Target_Definition]{}, errors.New("target does not have a definition")
+		return model_core.Message[*model_starlark_pb.Target_Definition, object.OutgoingReferences]{}, errors.New("target does not have a definition")
 	}
 	return model_core.NewNestedMessage(targetList, definition), nil
 }

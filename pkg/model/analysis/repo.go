@@ -112,15 +112,15 @@ type changeTrackingDirectory struct {
 	// are still identical to the original version. If not set, the
 	// directory has been accessed and potentially modified,
 	// requiring it to be recomputed and uploaded once again.
-	currentReference model_core.Message[*model_filesystem_pb.DirectoryReference]
+	currentReference model_core.Message[*model_filesystem_pb.DirectoryReference, object.OutgoingReferences]
 
 	directories map[path.Component]*changeTrackingDirectory
 	files       map[path.Component]*changeTrackingFile
 	symlinks    map[path.Component]string
 }
 
-func (d *changeTrackingDirectory) setContents(contents model_core.Message[*model_filesystem_pb.Directory], options *changeTrackingDirectoryLoadOptions) error {
-	var leaves model_core.Message[*model_filesystem_pb.Leaves]
+func (d *changeTrackingDirectory) setContents(contents model_core.Message[*model_filesystem_pb.Directory, object.OutgoingReferences], options *changeTrackingDirectoryLoadOptions) error {
+	var leaves model_core.Message[*model_filesystem_pb.Leaves, object.OutgoingReferences]
 	switch leavesType := contents.Message.Leaves.(type) {
 	case *model_filesystem_pb.Directory_LeavesExternal:
 		leavesReference, err := contents.GetOutgoingReference(leavesType.LeavesExternal.Reference)
@@ -225,8 +225,8 @@ func (d *changeTrackingDirectory) setFile(loadOptions *changeTrackingDirectoryLo
 
 type changeTrackingDirectoryLoadOptions struct {
 	context         context.Context
-	directoryReader model_parser.ParsedObjectReader[object.LocalReference, model_core.Message[*model_filesystem_pb.Directory]]
-	leavesReader    model_parser.ParsedObjectReader[object.LocalReference, model_core.Message[*model_filesystem_pb.Leaves]]
+	directoryReader model_parser.ParsedObjectReader[object.LocalReference, model_core.Message[*model_filesystem_pb.Directory, object.OutgoingReferences]]
+	leavesReader    model_parser.ParsedObjectReader[object.LocalReference, model_core.Message[*model_filesystem_pb.Leaves, object.OutgoingReferences]]
 }
 
 func (d *changeTrackingDirectory) maybeLoadContents(options *changeTrackingDirectoryLoadOptions) error {
@@ -260,7 +260,7 @@ type changeTrackingFileContents interface {
 }
 
 type unmodifiedFileContents struct {
-	contents model_core.Message[*model_filesystem_pb.FileContents]
+	contents model_core.Message[*model_filesystem_pb.FileContents, object.OutgoingReferences]
 }
 
 func (fc unmodifiedFileContents) createFileMerkleTree(ctx context.Context, options *capturableChangeTrackingDirectoryOptions) (model_core.PatchedMessage[*model_filesystem_pb.FileContents, model_core.FileBackedObjectLocation], error) {
@@ -330,7 +330,7 @@ func (r *changeTrackingDirectoryResolver) OnUp() (path.ComponentWalker, error) {
 
 type capturableChangeTrackingDirectoryOptions struct {
 	context                context.Context
-	directoryReader        model_parser.ParsedObjectReader[object.LocalReference, model_core.Message[*model_filesystem_pb.Directory]]
+	directoryReader        model_parser.ParsedObjectReader[object.LocalReference, model_core.Message[*model_filesystem_pb.Directory, object.OutgoingReferences]]
 	fileCreationParameters *model_filesystem.FileCreationParameters
 	fileMerkleTreeCapturer model_filesystem.FileMerkleTreeCapturer[model_core.FileBackedObjectLocation]
 	patchedFiles           io.ReaderAt
@@ -819,7 +819,7 @@ func (c *baseComputer) applyPatches(
 	}
 
 	rootDirectory := &changeTrackingDirectory{
-		currentReference: model_core.Message[*model_filesystem_pb.DirectoryReference]{
+		currentReference: model_core.Message[*model_filesystem_pb.DirectoryReference, object.OutgoingReferences]{
 			Message:            rootRef,
 			OutgoingReferences: rootOutgoingRefs,
 		},
@@ -1017,18 +1017,18 @@ func newRepositoryOS(thread *starlark.Thread, repoPlatform *model_analysis_pb.Re
 }
 
 type moduleOrRepositoryContextEnvironment interface {
-	GetActionResultValue(model_core.PatchedMessage[*model_analysis_pb.ActionResult_Key, dag.ObjectContentsWalker]) model_core.Message[*model_analysis_pb.ActionResult_Value]
+	GetActionResultValue(model_core.PatchedMessage[*model_analysis_pb.ActionResult_Key, dag.ObjectContentsWalker]) model_core.Message[*model_analysis_pb.ActionResult_Value, object.OutgoingReferences]
 	GetCommandEncoderObjectValue(*model_analysis_pb.CommandEncoderObject_Key) (model_encoding.BinaryEncoder, bool)
 	GetDirectoryCreationParametersObjectValue(*model_analysis_pb.DirectoryCreationParametersObject_Key) (*model_filesystem.DirectoryCreationParameters, bool)
-	GetDirectoryCreationParametersValue(*model_analysis_pb.DirectoryCreationParameters_Key) model_core.Message[*model_analysis_pb.DirectoryCreationParameters_Value]
+	GetDirectoryCreationParametersValue(*model_analysis_pb.DirectoryCreationParameters_Key) model_core.Message[*model_analysis_pb.DirectoryCreationParameters_Value, object.OutgoingReferences]
 	GetFileCreationParametersObjectValue(*model_analysis_pb.FileCreationParametersObject_Key) (*model_filesystem.FileCreationParameters, bool)
-	GetFileCreationParametersValue(*model_analysis_pb.FileCreationParameters_Key) model_core.Message[*model_analysis_pb.FileCreationParameters_Value]
+	GetFileCreationParametersValue(*model_analysis_pb.FileCreationParameters_Key) model_core.Message[*model_analysis_pb.FileCreationParameters_Value, object.OutgoingReferences]
 	GetFileReaderValue(*model_analysis_pb.FileReader_Key) (*model_filesystem.FileReader, bool)
-	GetHttpArchiveContentsValue(*model_analysis_pb.HttpArchiveContents_Key) model_core.Message[*model_analysis_pb.HttpArchiveContents_Value]
-	GetHttpFileContentsValue(*model_analysis_pb.HttpFileContents_Key) model_core.Message[*model_analysis_pb.HttpFileContents_Value]
-	GetRegisteredRepoPlatformValue(*model_analysis_pb.RegisteredRepoPlatform_Key) model_core.Message[*model_analysis_pb.RegisteredRepoPlatform_Value]
-	GetRepoValue(*model_analysis_pb.Repo_Key) model_core.Message[*model_analysis_pb.Repo_Value]
-	GetRootModuleValue(*model_analysis_pb.RootModule_Key) model_core.Message[*model_analysis_pb.RootModule_Value]
+	GetHttpArchiveContentsValue(*model_analysis_pb.HttpArchiveContents_Key) model_core.Message[*model_analysis_pb.HttpArchiveContents_Value, object.OutgoingReferences]
+	GetHttpFileContentsValue(*model_analysis_pb.HttpFileContents_Key) model_core.Message[*model_analysis_pb.HttpFileContents_Value, object.OutgoingReferences]
+	GetRegisteredRepoPlatformValue(*model_analysis_pb.RegisteredRepoPlatform_Key) model_core.Message[*model_analysis_pb.RegisteredRepoPlatform_Value, object.OutgoingReferences]
+	GetRepoValue(*model_analysis_pb.Repo_Key) model_core.Message[*model_analysis_pb.Repo_Value, object.OutgoingReferences]
+	GetRootModuleValue(*model_analysis_pb.RootModule_Key) model_core.Message[*model_analysis_pb.RootModule_Value, object.OutgoingReferences]
 	GetStableInputRootPathObjectValue(*model_analysis_pb.StableInputRootPathObject_Key) (*model_starlark.BarePath, bool)
 }
 
@@ -1047,7 +1047,7 @@ type moduleOrRepositoryContext struct {
 	fileCreationParametersMessage      *model_filesystem_pb.FileCreationParameters
 	fileReader                         *model_filesystem.FileReader
 	pathUnpackerInto                   unpack.UnpackerInto[*model_starlark.BarePath]
-	repoPlatform                       model_core.Message[*model_analysis_pb.RegisteredRepoPlatform_Value]
+	repoPlatform                       model_core.Message[*model_analysis_pb.RegisteredRepoPlatform_Value, object.OutgoingReferences]
 	virtualRootScopeWalkerFactory      *path.VirtualRootScopeWalkerFactory
 
 	inputRootDirectory *changeTrackingDirectory
@@ -2499,7 +2499,7 @@ func (c *baseComputer) fetchModuleExtensionRepo(ctx context.Context, canonicalRe
 	)
 }
 
-func (c *baseComputer) fetchRepo(ctx context.Context, canonicalRepo label.CanonicalRepo, apparentRepo label.ApparentRepo, repo model_core.Message[*model_starlark_pb.Repo_Definition], e RepoEnvironment) (PatchedRepoValue, error) {
+func (c *baseComputer) fetchRepo(ctx context.Context, canonicalRepo label.CanonicalRepo, apparentRepo label.ApparentRepo, repo model_core.Message[*model_starlark_pb.Repo_Definition, object.OutgoingReferences], e RepoEnvironment) (PatchedRepoValue, error) {
 	// Obtain the definition of the repository rule used by the repo.
 	rootModuleValue := e.GetRootModuleValue(&model_analysis_pb.RootModule_Key{})
 	allBuiltinsModulesNames := e.GetBuiltinsModuleNamesValue(&model_analysis_pb.BuiltinsModuleNames_Key{})

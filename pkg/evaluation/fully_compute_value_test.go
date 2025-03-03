@@ -8,6 +8,7 @@ import (
 	"github.com/buildbarn/bonanza/pkg/evaluation"
 	model_core "github.com/buildbarn/bonanza/pkg/model/core"
 	"github.com/buildbarn/bonanza/pkg/storage/dag"
+	"github.com/buildbarn/bonanza/pkg/storage/object"
 	"github.com/stretchr/testify/require"
 
 	"google.golang.org/protobuf/proto"
@@ -26,7 +27,7 @@ func TestFullyComputeValue(t *testing.T) {
 		// memoization, this should run in polynomial time.
 		computer := NewMockComputer(ctrl)
 		computer.EXPECT().ComputeMessageValue(gomock.Any(), gomock.Any(), gomock.Any()).
-			DoAndReturn(func(ctx context.Context, key model_core.Message[proto.Message], e evaluation.Environment) (model_core.PatchedMessage[proto.Message, dag.ObjectContentsWalker], error) {
+			DoAndReturn(func(ctx context.Context, key model_core.Message[proto.Message, object.OutgoingReferences], e evaluation.Environment) (model_core.PatchedMessage[proto.Message, dag.ObjectContentsWalker], error) {
 				// Base case: fib(0) and fib(1).
 				k := key.Message.(*wrapperspb.UInt32Value)
 				if k.Value <= 1 {
@@ -59,9 +60,12 @@ func TestFullyComputeValue(t *testing.T) {
 		m, err := evaluation.FullyComputeValue(
 			ctx,
 			computer,
-			model_core.NewSimpleMessage[proto.Message](&wrapperspb.UInt32Value{
-				Value: 93,
-			}),
+			model_core.NewMessage[proto.Message, object.OutgoingReferences](
+				&wrapperspb.UInt32Value{
+					Value: 93,
+				},
+				object.OutgoingReferencesList{},
+			),
 			valueChildrenStorer.Call,
 		)
 		require.NoError(t, err)

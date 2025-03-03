@@ -104,14 +104,14 @@ func (c *baseComputer) ComputePackageValue(ctx context.Context, key *model_analy
 		targetRegistrar := model_starlark.NewTargetRegistrar(c.getInlinedTreeOptions(), repoDefaultAttrs)
 		thread.SetLocal(model_starlark.TargetRegistrarKey, targetRegistrar)
 
-		thread.SetLocal(model_starlark.GlobalResolverKey, func(identifier label.CanonicalStarlarkIdentifier) (model_core.Message[*model_starlark_pb.Value], error) {
+		thread.SetLocal(model_starlark.GlobalResolverKey, func(identifier label.CanonicalStarlarkIdentifier) (model_core.Message[*model_starlark_pb.Value, object.OutgoingReferences], error) {
 			canonicalLabel := identifier.GetCanonicalLabel()
 			compiledBzlFile := e.GetCompiledBzlFileValue(&model_analysis_pb.CompiledBzlFile_Key{
 				Label:               canonicalLabel.String(),
 				BuiltinsModuleNames: trimBuiltinModuleNames(builtinsModuleNames, canonicalLabel.GetCanonicalRepo().GetModuleInstance().GetModule()),
 			})
 			if !compiledBzlFile.IsSet() {
-				return model_core.Message[*model_starlark_pb.Value]{}, evaluation.ErrMissingDependency
+				return model_core.Message[*model_starlark_pb.Value, object.OutgoingReferences]{}, evaluation.ErrMissingDependency
 			}
 			return model_starlark.GetStructFieldValue(
 				ctx,

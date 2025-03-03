@@ -25,16 +25,16 @@ import (
 // elements. Only parents are deduplicated.
 func AllListLeafElementsSkippingDuplicateParents(
 	ctx context.Context,
-	reader model_parser.ParsedObjectReader[object.LocalReference, model_core.Message[[]*model_starlark_pb.List_Element]],
-	rootList model_core.Message[[]*model_starlark_pb.List_Element],
+	reader model_parser.ParsedObjectReader[object.LocalReference, model_core.Message[[]*model_starlark_pb.List_Element, object.OutgoingReferences]],
+	rootList model_core.Message[[]*model_starlark_pb.List_Element, object.OutgoingReferences],
 	listsSeen map[object.LocalReference]struct{},
 	errOut *error,
-) iter.Seq[model_core.Message[*model_starlark_pb.Value]] {
+) iter.Seq[model_core.Message[*model_starlark_pb.Value, object.OutgoingReferences]] {
 	allLeaves := btree.AllLeaves(
 		ctx,
 		reader,
 		rootList,
-		func(element model_core.Message[*model_starlark_pb.List_Element]) (*model_core_pb.Reference, error) {
+		func(element model_core.Message[*model_starlark_pb.List_Element, object.OutgoingReferences]) (*model_core_pb.Reference, error) {
 			if level, ok := element.Message.Level.(*model_starlark_pb.List_Element_Parent_); ok {
 				listReferenceMessage := level.Parent.Reference
 				listReference, err := element.GetOutgoingReference(level.Parent.Reference)
@@ -55,8 +55,8 @@ func AllListLeafElementsSkippingDuplicateParents(
 		},
 		errOut,
 	)
-	return func(yield func(model_core.Message[*model_starlark_pb.Value]) bool) {
-		allLeaves(func(entry model_core.Message[*model_starlark_pb.List_Element]) bool {
+	return func(yield func(model_core.Message[*model_starlark_pb.Value, object.OutgoingReferences]) bool) {
+		allLeaves(func(entry model_core.Message[*model_starlark_pb.List_Element, object.OutgoingReferences]) bool {
 			switch level := entry.Message.Level.(type) {
 			case *model_starlark_pb.List_Element_Leaf:
 				return yield(model_core.NewNestedMessage(entry, level.Leaf))

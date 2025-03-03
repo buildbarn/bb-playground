@@ -199,7 +199,7 @@ func (e *builderExecutor) Execute(ctx context.Context, action *model_build_pb.Ac
 			e.cacheDirectory,
 			e.executionClient,
 		)),
-		model_core.NewSimpleMessage[proto.Message](&model_analysis_pb.BuildResult_Key{}),
+		model_core.NewMessage[proto.Message, object.OutgoingReferences](&model_analysis_pb.BuildResult_Key{}, object.OutgoingReferencesList{}),
 		func(references []object.LocalReference, objectContentsWalkers []dag.ObjectContentsWalker) error {
 			for i, reference := range references {
 				if err := dag.UploadDAG(

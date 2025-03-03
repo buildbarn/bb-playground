@@ -13,6 +13,7 @@ import (
 	model_core "github.com/buildbarn/bonanza/pkg/model/core"
 	model_starlark_pb "github.com/buildbarn/bonanza/pkg/proto/model/starlark"
 	"github.com/buildbarn/bonanza/pkg/starlark/unpack"
+	"github.com/buildbarn/bonanza/pkg/storage/object"
 
 	"go.starlark.net/starlark"
 )
@@ -590,11 +591,11 @@ func (rd *starlarkRuleDefinition) GetTest(thread *starlark.Thread) (bool, error)
 }
 
 type protoRuleDefinition struct {
-	message         model_core.Message[*model_starlark_pb.Rule_Definition]
+	message         model_core.Message[*model_starlark_pb.Rule_Definition, object.OutgoingReferences]
 	protoAttrsCache protoAttrsCache
 }
 
-func NewProtoRuleDefinition(message model_core.Message[*model_starlark_pb.Rule_Definition]) RuleDefinition {
+func NewProtoRuleDefinition(message model_core.Message[*model_starlark_pb.Rule_Definition, object.OutgoingReferences]) RuleDefinition {
 	return &protoRuleDefinition{
 		message: message,
 	}
@@ -637,7 +638,7 @@ type reloadingRuleDefinition struct {
 	base       atomic.Pointer[RuleDefinition]
 }
 
-type GlobalResolver = func(identifier pg_label.CanonicalStarlarkIdentifier) (model_core.Message[*model_starlark_pb.Value], error)
+type GlobalResolver = func(identifier pg_label.CanonicalStarlarkIdentifier) (model_core.Message[*model_starlark_pb.Value, object.OutgoingReferences], error)
 
 const GlobalResolverKey = "global_resolver"
 

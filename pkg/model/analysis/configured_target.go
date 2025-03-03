@@ -39,8 +39,8 @@ var (
 )
 
 type constraintValuesToConstraintsEnvironment interface {
-	GetConfiguredTargetValue(model_core.PatchedMessage[*model_analysis_pb.ConfiguredTarget_Key, dag.ObjectContentsWalker]) model_core.Message[*model_analysis_pb.ConfiguredTarget_Value]
-	GetVisibleTargetValue(model_core.PatchedMessage[*model_analysis_pb.VisibleTarget_Key, dag.ObjectContentsWalker]) model_core.Message[*model_analysis_pb.VisibleTarget_Value]
+	GetConfiguredTargetValue(model_core.PatchedMessage[*model_analysis_pb.ConfiguredTarget_Key, dag.ObjectContentsWalker]) model_core.Message[*model_analysis_pb.ConfiguredTarget_Value, object.OutgoingReferences]
+	GetVisibleTargetValue(model_core.PatchedMessage[*model_analysis_pb.VisibleTarget_Key, dag.ObjectContentsWalker]) model_core.Message[*model_analysis_pb.VisibleTarget_Value, object.OutgoingReferences]
 }
 
 // constraintValuesToConstraints converts a list of labels of constraint
@@ -307,7 +307,7 @@ func getSingleFileConfiguredTargetValue(file *model_starlark_pb.File) PatchedCon
 	)
 }
 
-func (c *baseComputer) ComputeConfiguredTargetValue(ctx context.Context, key model_core.Message[*model_analysis_pb.ConfiguredTarget_Key], e ConfiguredTargetEnvironment) (PatchedConfiguredTargetValue, error) {
+func (c *baseComputer) ComputeConfiguredTargetValue(ctx context.Context, key model_core.Message[*model_analysis_pb.ConfiguredTarget_Key, object.OutgoingReferences], e ConfiguredTargetEnvironment) (PatchedConfiguredTargetValue, error) {
 	targetLabel, err := label.NewCanonicalLabel(key.Message.Label)
 	if err != nil {
 		return PatchedConfiguredTargetValue{}, fmt.Errorf("invalid target label: %w", err)
@@ -671,9 +671,9 @@ type ruleContext struct {
 	environment            ConfiguredTargetEnvironment
 	ruleIdentifier         label.CanonicalStarlarkIdentifier
 	targetLabel            label.CanonicalLabel
-	configurationReference model_core.Message[*model_core_pb.Reference]
-	ruleDefinition         model_core.Message[*model_starlark_pb.Rule_Definition]
-	ruleTarget             model_core.Message[*model_starlark_pb.RuleTarget]
+	configurationReference model_core.Message[*model_core_pb.Reference, object.OutgoingReferences]
+	ruleDefinition         model_core.Message[*model_starlark_pb.Rule_Definition, object.OutgoingReferences]
+	ruleTarget             model_core.Message[*model_starlark_pb.RuleTarget, object.OutgoingReferences]
 	attrs                  []starlark.Value
 	buildSettingValue      starlark.Value
 	executables            []starlark.Value
@@ -752,7 +752,7 @@ func (rc *ruleContext) Attr(thread *starlark.Thread, name string) (starlark.Valu
 				return nil, err
 			}
 
-			var encodedValue model_core.Message[*model_starlark_pb.Value]
+			var encodedValue model_core.Message[*model_starlark_pb.Value, object.OutgoingReferences]
 			if override.IsSet() {
 				overrideLeaf, ok := override.Message.Level.(*model_analysis_pb.Configuration_BuildSettingOverride_Leaf_)
 				if !ok {
@@ -894,7 +894,7 @@ func (rc *ruleContext) Attr(thread *starlark.Thread, name string) (starlark.Valu
 	}
 }
 
-func (rc *ruleContext) configureAttr(thread *starlark.Thread, namedAttr *model_starlark_pb.NamedAttr, valueParts model_core.Message[[]*model_starlark_pb.Value], visibilityFromPackage label.CanonicalPackage) (starlark.Value, error) {
+func (rc *ruleContext) configureAttr(thread *starlark.Thread, namedAttr *model_starlark_pb.NamedAttr, valueParts model_core.Message[[]*model_starlark_pb.Value, object.OutgoingReferences], visibilityFromPackage label.CanonicalPackage) (starlark.Value, error) {
 	// See if any transitions need to be applied.
 	var cfg *model_starlark_pb.Transition_Reference
 	isScalar := false
@@ -907,23 +907,23 @@ func (rc *ruleContext) configureAttr(thread *starlark.Thread, namedAttr *model_s
 	case *model_starlark_pb.Attr_LabelList:
 		cfg = attrType.LabelList.ListValueOptions.GetCfg()
 	}
-	var configurationReferences []model_core.Message[*model_core_pb.Reference]
+	var configurationReferences []model_core.Message[*model_core_pb.Reference, object.OutgoingReferences]
 	mayHaveMultipleConfigurations := false
 	if cfg != nil {
 		switch tr := cfg.Kind.(type) {
 		case *model_starlark_pb.Transition_Reference_ExecGroup:
 			// TODO: Actually transition to the exec platform!
-			configurationReferences = []model_core.Message[*model_core_pb.Reference]{
+			configurationReferences = []model_core.Message[*model_core_pb.Reference, object.OutgoingReferences]{
 				rc.configurationReference,
 			}
 		case *model_starlark_pb.Transition_Reference_None:
 			// Use the empty configuration.
-			configurationReferences = []model_core.Message[*model_core_pb.Reference]{
-				model_core.NewSimpleMessage[*model_core_pb.Reference](nil),
+			configurationReferences = []model_core.Message[*model_core_pb.Reference, object.OutgoingReferences]{
+				model_core.NewMessage[*model_core_pb.Reference, object.OutgoingReferences](nil, object.OutgoingReferencesList{}),
 			}
 		case *model_starlark_pb.Transition_Reference_Target:
 			// Don't transition. Use the current target.
-			configurationReferences = []model_core.Message[*model_core_pb.Reference]{
+			configurationReferences = []model_core.Message[*model_core_pb.Reference, object.OutgoingReferences]{
 				rc.configurationReference,
 			}
 		case *model_starlark_pb.Transition_Reference_Unconfigured:
@@ -947,7 +947,7 @@ func (rc *ruleContext) configureAttr(thread *starlark.Thread, namedAttr *model_s
 			case *model_analysis_pb.UserDefinedTransition_Value_TransitionDependsOnAttrs:
 				return nil, fmt.Errorf("TODO: support transitions that depends on attrs")
 			case *model_analysis_pb.UserDefinedTransition_Value_Success_:
-				configurationReferences = make([]model_core.Message[*model_core_pb.Reference], 0, len(result.Success.Entries))
+				configurationReferences = make([]model_core.Message[*model_core_pb.Reference, object.OutgoingReferences], 0, len(result.Success.Entries))
 				for _, entry := range result.Success.Entries {
 					configurationReferences = append(configurationReferences, model_core.NewNestedMessage(transitionValue, entry.OutputConfigurationReference))
 				}
@@ -973,7 +973,7 @@ func (rc *ruleContext) configureAttr(thread *starlark.Thread, namedAttr *model_s
 					// not contain any providers.
 					return model_starlark.NewTargetReference(
 						resolvedLabel,
-						model_core.Message[[]*model_starlark_pb.Struct]{},
+						model_core.Message[[]*model_starlark_pb.Struct, object.OutgoingReferences]{},
 					), nil
 				}),
 			)
@@ -1191,11 +1191,11 @@ func (ruleContext) doTargetPlatformHasConstraint(thread *starlark.Thread, b *sta
 	return nil, errors.New("TODO: Implement target platform has constraint")
 }
 
-func (rc *ruleContext) getAttrValueParts(namedAttr *model_starlark_pb.NamedAttr) (valueParts model_core.Message[[]*model_starlark_pb.Value], visibilityFromPackage label.CanonicalPackage, err error) {
+func (rc *ruleContext) getAttrValueParts(namedAttr *model_starlark_pb.NamedAttr) (valueParts model_core.Message[[]*model_starlark_pb.Value, object.OutgoingReferences], visibilityFromPackage label.CanonicalPackage, err error) {
 	attr := namedAttr.Attr
 	var badCanonicalPackage label.CanonicalPackage
 	if attr == nil {
-		return model_core.Message[[]*model_starlark_pb.Value]{}, badCanonicalPackage, fmt.Errorf("attr %#v misses a definition", namedAttr.Name)
+		return model_core.Message[[]*model_starlark_pb.Value, object.OutgoingReferences]{}, badCanonicalPackage, fmt.Errorf("attr %#v misses a definition", namedAttr.Name)
 	}
 
 	if !strings.HasPrefix(namedAttr.Name, "_") {
@@ -1206,18 +1206,18 @@ func (rc *ruleContext) getAttrValueParts(namedAttr *model_starlark_pb.NamedAttr)
 			func(i int) int { return strings.Compare(namedAttr.Name, ruleTargetAttrValues[i].Name) },
 		)
 		if !ok {
-			return model_core.Message[[]*model_starlark_pb.Value]{}, badCanonicalPackage, fmt.Errorf("missing value for attr %#v", namedAttr.Name)
+			return model_core.Message[[]*model_starlark_pb.Value, object.OutgoingReferences]{}, badCanonicalPackage, fmt.Errorf("missing value for attr %#v", namedAttr.Name)
 		}
 
 		selectGroups := ruleTargetAttrValues[ruleTargetAttrValueIndex].ValueParts
 		if len(selectGroups) == 0 {
-			return model_core.Message[[]*model_starlark_pb.Value]{}, badCanonicalPackage, fmt.Errorf("attr %#v has no select groups", namedAttr.Name)
+			return model_core.Message[[]*model_starlark_pb.Value, object.OutgoingReferences]{}, badCanonicalPackage, fmt.Errorf("attr %#v has no select groups", namedAttr.Name)
 		}
 		valueParts := make([]*model_starlark_pb.Value, 0, len(selectGroups))
 		for _, selectGroup := range selectGroups {
 			valuePart, err := getValueFromSelectGroup(rc.environment, selectGroup, false)
 			if err != nil {
-				return model_core.Message[[]*model_starlark_pb.Value]{}, badCanonicalPackage, err
+				return model_core.Message[[]*model_starlark_pb.Value, object.OutgoingReferences]{}, badCanonicalPackage, err
 			}
 			valueParts = append(valueParts, valuePart)
 		}
@@ -1239,7 +1239,7 @@ func (rc *ruleContext) getAttrValueParts(namedAttr *model_starlark_pb.NamedAttr)
 
 	// No value provided. Use the default value from the rule definition.
 	if attr.Default == nil {
-		return model_core.Message[[]*model_starlark_pb.Value]{}, badCanonicalPackage, fmt.Errorf("missing value for mandatory attr %#v", namedAttr.Name)
+		return model_core.Message[[]*model_starlark_pb.Value, object.OutgoingReferences]{}, badCanonicalPackage, fmt.Errorf("missing value for mandatory attr %#v", namedAttr.Name)
 	}
 	return model_core.NewNestedMessage(rc.ruleDefinition, []*model_starlark_pb.Value{attr.Default}),
 		rc.ruleIdentifier.GetCanonicalLabel().GetCanonicalPackage(),
@@ -2017,7 +2017,7 @@ func (rcf *ruleContextFiles) Attr(thread *starlark.Thread, name string) (starlar
 		missingDependencies := false
 		var filesDepsetElements []any
 		for _, valuePart := range valueParts.Message {
-			var labelList model_core.Message[[]*model_starlark_pb.List_Element]
+			var labelList model_core.Message[[]*model_starlark_pb.List_Element, object.OutgoingReferences]
 			if listValue, ok := valuePart.Kind.(*model_starlark_pb.Value_List); ok {
 				labelList = model_core.NewNestedMessage(valueParts, listValue.List.Elements)
 			} else {
@@ -2404,12 +2404,12 @@ type ruleContextExecGroupState struct {
 }
 
 type getProviderFromConfiguredTargetEnvironment interface {
-	GetConfiguredTargetValue(key model_core.PatchedMessage[*model_analysis_pb.ConfiguredTarget_Key, dag.ObjectContentsWalker]) model_core.Message[*model_analysis_pb.ConfiguredTarget_Value]
+	GetConfiguredTargetValue(key model_core.PatchedMessage[*model_analysis_pb.ConfiguredTarget_Key, dag.ObjectContentsWalker]) model_core.Message[*model_analysis_pb.ConfiguredTarget_Value, object.OutgoingReferences]
 }
 
 // getProviderFromConfiguredTarget looks up a single provider that is
 // provided by a configured target
-func getProviderFromConfiguredTarget(e getProviderFromConfiguredTargetEnvironment, targetLabel string, configurationReference model_core.PatchedMessage[*model_core_pb.Reference, dag.ObjectContentsWalker], providerIdentifier label.CanonicalStarlarkIdentifier) (model_core.Message[*model_starlark_pb.Struct_Fields], error) {
+func getProviderFromConfiguredTarget(e getProviderFromConfiguredTargetEnvironment, targetLabel string, configurationReference model_core.PatchedMessage[*model_core_pb.Reference, dag.ObjectContentsWalker], providerIdentifier label.CanonicalStarlarkIdentifier) (model_core.Message[*model_starlark_pb.Struct_Fields, object.OutgoingReferences], error) {
 	configuredTargetValue := e.GetConfiguredTargetValue(
 		model_core.PatchedMessage[*model_analysis_pb.ConfiguredTarget_Key, dag.ObjectContentsWalker]{
 			Message: &model_analysis_pb.ConfiguredTarget_Key{
@@ -2420,7 +2420,7 @@ func getProviderFromConfiguredTarget(e getProviderFromConfiguredTargetEnvironmen
 		},
 	)
 	if !configuredTargetValue.IsSet() {
-		return model_core.Message[*model_starlark_pb.Struct_Fields]{}, evaluation.ErrMissingDependency
+		return model_core.Message[*model_starlark_pb.Struct_Fields, object.OutgoingReferences]{}, evaluation.ErrMissingDependency
 	}
 
 	providerIdentifierStr := providerIdentifier.String()
@@ -2433,7 +2433,7 @@ func getProviderFromConfiguredTarget(e getProviderFromConfiguredTargetEnvironmen
 	); ok {
 		return model_core.NewNestedMessage(configuredTargetValue, providerInstances[providerIndex].Fields), nil
 	}
-	return model_core.Message[*model_starlark_pb.Struct_Fields]{}, fmt.Errorf("target did not yield provider %#v", providerIdentifierStr)
+	return model_core.Message[*model_starlark_pb.Struct_Fields, object.OutgoingReferences]{}, fmt.Errorf("target did not yield provider %#v", providerIdentifierStr)
 }
 
 type args struct{}
