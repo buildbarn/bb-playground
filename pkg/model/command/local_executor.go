@@ -769,7 +769,7 @@ func (f *prepopulatedCapturableFile) CreateFileMerkleTree(ctx context.Context) (
 		}
 		fileContents, err := model_filesystem.CreateChunkDiscardingFileMerkleTree(ctx, f.options.fileCreationParameters, openReadFrozen.Reader)
 		if err != nil {
-			return model_core.PatchedMessage[*model_filesystem_pb.FileContents, dag.ObjectContentsWalker]{}, util.StatusWrap(openReadFrozen.Err, "Failed to create file Merkle tree")
+			return model_core.PatchedMessage[*model_filesystem_pb.FileContents, dag.ObjectContentsWalker]{}, util.StatusWrap(err, "Failed to create file Merkle tree")
 		}
 		return fileContents, nil
 	}
