@@ -160,7 +160,7 @@ func (c *baseComputer) getValueDecodingOptions(ctx context.Context, labelCreator
 func (c *baseComputer) getInlinedTreeOptions() *inlinedtree.Options {
 	return &inlinedtree.Options{
 		ReferenceFormat:  c.getReferenceFormat(),
-		Encoder:          model_encoding.NewChainedBinaryEncoder(nil),
+		Encoder:          c.getValueObjectEncoder(),
 		MaximumSizeBytes: 32 * 1024,
 	}
 }

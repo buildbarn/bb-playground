@@ -10,7 +10,6 @@ import (
 	"github.com/buildbarn/bonanza/pkg/label"
 	model_core "github.com/buildbarn/bonanza/pkg/model/core"
 	"github.com/buildbarn/bonanza/pkg/model/core/btree"
-	model_encoding "github.com/buildbarn/bonanza/pkg/model/encoding"
 	model_analysis_pb "github.com/buildbarn/bonanza/pkg/proto/model/analysis"
 	model_core_pb "github.com/buildbarn/bonanza/pkg/proto/model/core"
 	model_starlark_pb "github.com/buildbarn/bonanza/pkg/proto/model/starlark"
@@ -82,7 +81,7 @@ func (c *baseComputer) ComputeTargetPatternExpansionValue(ctx context.Context, k
 		/* minimumSizeBytes = */ 32*1024,
 		/* maximumSizeBytes = */ 128*1024,
 		btree.NewObjectCreatingNodeMerger(
-			model_encoding.NewChainedBinaryEncoder(nil),
+			c.getValueObjectEncoder(),
 			c.getReferenceFormat(),
 			/* parentNodeComputer = */ func(createdObject model_core.CreatedObject[dag.ObjectContentsWalker], childNodes []*model_analysis_pb.TargetPatternExpansion_Value_TargetLabel) (model_core.PatchedMessage[*model_analysis_pb.TargetPatternExpansion_Value_TargetLabel, dag.ObjectContentsWalker], error) {
 				patcher := model_core.NewReferenceMessagePatcher[dag.ObjectContentsWalker]()

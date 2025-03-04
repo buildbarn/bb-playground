@@ -14,7 +14,6 @@ import (
 	"github.com/buildbarn/bonanza/pkg/label"
 	model_core "github.com/buildbarn/bonanza/pkg/model/core"
 	"github.com/buildbarn/bonanza/pkg/model/core/btree"
-	model_encoding "github.com/buildbarn/bonanza/pkg/model/encoding"
 	model_starlark "github.com/buildbarn/bonanza/pkg/model/starlark"
 	model_analysis_pb "github.com/buildbarn/bonanza/pkg/proto/model/analysis"
 	model_starlark_pb "github.com/buildbarn/bonanza/pkg/proto/model/starlark"
@@ -332,7 +331,7 @@ func (c *baseComputer) ComputeModuleExtensionReposValue(ctx context.Context, key
 		/* minimumSizeBytes = */ 32*1024,
 		/* maximumSizeBytes = */ 128*1024,
 		btree.NewObjectCreatingNodeMerger(
-			model_encoding.NewChainedBinaryEncoder(nil),
+			c.getValueObjectEncoder(),
 			c.getReferenceFormat(),
 			/* parentNodeComputer = */ func(createdObject model_core.CreatedObject[model_core.CreatedObjectTree], childNodes []*model_analysis_pb.ModuleExtensionRepos_Value_Repo) (model_core.PatchedMessage[*model_analysis_pb.ModuleExtensionRepos_Value_Repo, model_core.CreatedObjectTree], error) {
 				var firstName string
