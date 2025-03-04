@@ -146,7 +146,7 @@ func main() {
 			fileFactory,
 			util.DefaultErrorLogger,
 		)
-		rootDirectory := directoryFactory.LookupDirectory(model_filesystem.DirectoryInfo{
+		rootDirectory := directoryFactory.LookupDirectory(model_filesystem.DirectoryInfo[object.LocalReference]{
 			ClusterReference: rootDirectoryLocalReference,
 			DirectoryIndex:   rootDirectoryIndex,
 			DirectoriesCount: uint32(len(rootDirectoryCluster[0].Directories)),

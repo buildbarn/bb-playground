@@ -18,7 +18,7 @@ func TestFileContentsIterator(t *testing.T) {
 		// for files that are small enough that they don't use
 		// any FileContentsLists.
 		iterator := filesystem.NewFileContentsIterator(
-			filesystem.FileContentsEntry{
+			filesystem.FileContentsEntry[object.LocalReference]{
 				Reference: object.MustNewSHA256V1LocalReference("d10d524d6144f4b0b0ffed862d43c19181b133bb149a560b2f86e3dc10f155b0", 21, 0, 0, 0),
 				EndBytes:  21,
 			},
@@ -38,7 +38,7 @@ func TestFileContentsIterator(t *testing.T) {
 		// initially call PushFileContentsList() twice to get to
 		// the first chunk contained in the file.
 		iterator := filesystem.NewFileContentsIterator(
-			filesystem.FileContentsEntry{
+			filesystem.FileContentsEntry[object.LocalReference]{
 				Reference: object.MustNewSHA256V1LocalReference("d10d524d6144f4b0b0ffed862d43c19181b133bb149a560b2f86e3dc10f155b0", 200, 2, 4, 250),
 				EndBytes:  593838,
 			},
@@ -50,7 +50,7 @@ func TestFileContentsIterator(t *testing.T) {
 		require.Equal(t, uint64(328312), offsetBytes)
 		require.Equal(t, uint64(593838), sizeBytes)
 
-		require.NoError(t, iterator.PushFileContentsList(filesystem.FileContentsList{
+		require.NoError(t, iterator.PushFileContentsList(filesystem.FileContentsList[object.LocalReference]{
 			{
 				Reference: object.MustNewSHA256V1LocalReference("519306c1f517f34986b2ec1e74fd425bc39ac3742f68904d849079ae39b64bac", 200, 1, 4, 0),
 				EndBytes:  200322,
@@ -74,7 +74,7 @@ func TestFileContentsIterator(t *testing.T) {
 		require.Equal(t, uint64(127990), offsetBytes)
 		require.Equal(t, uint64(129020), sizeBytes)
 
-		require.NoError(t, iterator.PushFileContentsList(filesystem.FileContentsList{
+		require.NoError(t, iterator.PushFileContentsList(filesystem.FileContentsList[object.LocalReference]{
 			{
 				Reference: object.MustNewSHA256V1LocalReference("970438fd5db3b492cecf04d2f34a78a6f0ddd6b144632f3965c522c2e46e2574", 31037, 0, 0, 0),
 				EndBytes:  31037,
@@ -113,7 +113,7 @@ func TestFileContentsIterator(t *testing.T) {
 		testutil.RequireEqualStatus(
 			t,
 			status.Error(codes.InvalidArgument, "Parts in the file contents list have a total size of 119583 bytes, while 128107 bytes were expected"),
-			iterator.PushFileContentsList(filesystem.FileContentsList{
+			iterator.PushFileContentsList(filesystem.FileContentsList[object.LocalReference]{
 				{
 					Reference: object.MustNewSHA256V1LocalReference("c501a73d54408966d253888d4e0f3e6cab3be40a575d4fc6bcd09b0163947f2f", 36492, 0, 0, 0),
 					EndBytes:  36492,

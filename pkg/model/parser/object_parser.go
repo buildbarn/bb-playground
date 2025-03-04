@@ -7,5 +7,5 @@ import (
 )
 
 type ObjectParser[TReference, TParsedObject any] interface {
-	ParseObject(ctx context.Context, reference TReference, outgoingReferences object.OutgoingReferences[object.LocalReference], data []byte) (TParsedObject, int, error)
+	ParseObject(ctx context.Context, reference TReference, outgoingReferences object.OutgoingReferences[TReference], data []byte) (TParsedObject, int, error)
 }

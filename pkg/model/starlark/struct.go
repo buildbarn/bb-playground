@@ -345,7 +345,7 @@ func (s *Struct) GetProviderIdentifier() (pg_label.CanonicalStarlarkIdentifier, 
 
 func AllStructFields(
 	ctx context.Context,
-	dereferencer dereference.Dereferencer[model_core.Message[[]*model_starlark_pb.List_Element, object.OutgoingReferences[object.LocalReference]], object.OutgoingReferences[object.LocalReference]],
+	dereferencer dereference.Dereferencer[model_core.Message[[]*model_starlark_pb.List_Element, object.OutgoingReferences[object.LocalReference]], object.LocalReference],
 	structFields model_core.Message[*model_starlark_pb.Struct_Fields, object.OutgoingReferences[object.LocalReference]],
 	errOut *error,
 ) iter.Seq2[string, model_core.Message[*model_starlark_pb.Value, object.OutgoingReferences[object.LocalReference]]] {
@@ -391,7 +391,7 @@ func AllStructFields(
 
 func GetStructFieldValue(
 	ctx context.Context,
-	dereferencer dereference.Dereferencer[model_core.Message[[]*model_starlark_pb.List_Element, object.OutgoingReferences[object.LocalReference]], object.OutgoingReferences[object.LocalReference]],
+	dereferencer dereference.Dereferencer[model_core.Message[[]*model_starlark_pb.List_Element, object.OutgoingReferences[object.LocalReference]], object.LocalReference],
 	structFields model_core.Message[*model_starlark_pb.Struct_Fields, object.OutgoingReferences[object.LocalReference]],
 	key string,
 ) (model_core.Message[*model_starlark_pb.Value, object.OutgoingReferences[object.LocalReference]], error) {

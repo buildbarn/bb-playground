@@ -43,12 +43,12 @@ type baseComputer struct {
 	// TODO: These should likely be removed and instantiated later
 	// on, so that we can encrypt all data in storage.
 	valueDereferencers                                 model_starlark.ValueDereferencers
-	commandOutputsDereferencer                         dereference.Dereferencer[model_core.Message[*model_command_pb.Outputs, object.OutgoingReferences[object.LocalReference]], object.OutgoingReferences[object.LocalReference]]
-	configurationBuildSettingOverrideDereferencer      dereference.Dereferencer[model_core.Message[[]*model_analysis_pb.Configuration_BuildSettingOverride, object.OutgoingReferences[object.LocalReference]], object.OutgoingReferences[object.LocalReference]]
-	configurationDereferencer                          dereference.Dereferencer[model_core.Message[*model_analysis_pb.Configuration, object.OutgoingReferences[object.LocalReference]], object.OutgoingReferences[object.LocalReference]]
-	moduleExtensionReposValueRepoDereferencer          dereference.Dereferencer[model_core.Message[[]*model_analysis_pb.ModuleExtensionRepos_Value_Repo, object.OutgoingReferences[object.LocalReference]], object.OutgoingReferences[object.LocalReference]]
-	packageValueTargetDereferencer                     dereference.Dereferencer[model_core.Message[[]*model_analysis_pb.Package_Value_Target, object.OutgoingReferences[object.LocalReference]], object.OutgoingReferences[object.LocalReference]]
-	targetPatternExpansionValueTargetLabelDereferencer dereference.Dereferencer[model_core.Message[[]*model_analysis_pb.TargetPatternExpansion_Value_TargetLabel, object.OutgoingReferences[object.LocalReference]], object.OutgoingReferences[object.LocalReference]]
+	commandOutputsDereferencer                         dereference.Dereferencer[model_core.Message[*model_command_pb.Outputs, object.OutgoingReferences[object.LocalReference]], object.LocalReference]
+	configurationBuildSettingOverrideDereferencer      dereference.Dereferencer[model_core.Message[[]*model_analysis_pb.Configuration_BuildSettingOverride, object.OutgoingReferences[object.LocalReference]], object.LocalReference]
+	configurationDereferencer                          dereference.Dereferencer[model_core.Message[*model_analysis_pb.Configuration, object.OutgoingReferences[object.LocalReference]], object.LocalReference]
+	moduleExtensionReposValueRepoDereferencer          dereference.Dereferencer[model_core.Message[[]*model_analysis_pb.ModuleExtensionRepos_Value_Repo, object.OutgoingReferences[object.LocalReference]], object.LocalReference]
+	packageValueTargetDereferencer                     dereference.Dereferencer[model_core.Message[[]*model_analysis_pb.Package_Value_Target, object.OutgoingReferences[object.LocalReference]], object.LocalReference]
+	targetPatternExpansionValueTargetLabelDereferencer dereference.Dereferencer[model_core.Message[[]*model_analysis_pb.TargetPatternExpansion_Value_TargetLabel, object.OutgoingReferences[object.LocalReference]], object.LocalReference]
 }
 
 func NewBaseComputer(
@@ -448,7 +448,7 @@ func (c *baseComputer) ComputeDirectoryAccessParametersValue(ctx context.Context
 	}), nil
 }
 
-func (c *baseComputer) ComputeFileReaderValue(ctx context.Context, key *model_analysis_pb.FileReader_Key, e FileReaderEnvironment) (*model_filesystem.FileReader, error) {
+func (c *baseComputer) ComputeFileReaderValue(ctx context.Context, key *model_analysis_pb.FileReader_Key, e FileReaderEnvironment) (*model_filesystem.FileReader[object.LocalReference], error) {
 	fileAccessParametersValue := e.GetFileAccessParametersValue(&model_analysis_pb.FileAccessParameters_Key{})
 	if !fileAccessParametersValue.IsSet() {
 		return nil, evaluation.ErrMissingDependency

@@ -24,8 +24,8 @@ import (
 // "../${repo}/${file}" to resolve properly.
 type reposFilePropertiesResolver struct {
 	context               context.Context
-	directoryDereferencer dereference.Dereferencer[model_core.Message[*model_filesystem_pb.Directory, object.OutgoingReferences[object.LocalReference]], object.OutgoingReferences[object.LocalReference]]
-	leavesDereferencer    dereference.Dereferencer[model_core.Message[*model_filesystem_pb.Leaves, object.OutgoingReferences[object.LocalReference]], object.OutgoingReferences[object.LocalReference]]
+	directoryDereferencer dereference.Dereferencer[model_core.Message[*model_filesystem_pb.Directory, object.OutgoingReferences[object.LocalReference]], object.LocalReference]
+	leavesDereferencer    dereference.Dereferencer[model_core.Message[*model_filesystem_pb.Leaves, object.OutgoingReferences[object.LocalReference]], object.LocalReference]
 	environment           FilePropertiesEnvironment
 
 	currentDirectoryReference model_core.Message[*model_core_pb.Reference, object.OutgoingReferences[object.LocalReference]]

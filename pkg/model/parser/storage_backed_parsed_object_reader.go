@@ -8,21 +8,21 @@ import (
 	"github.com/buildbarn/bonanza/pkg/storage/object"
 )
 
-type storageBackedParsedObjectReader[TReference, TParsedObject any] struct {
-	downloader object.Downloader[TReference]
+type storageBackedParsedObjectReader[TParsedObject any] struct {
+	downloader object.Downloader[object.LocalReference]
 	encoder    encoding.BinaryEncoder
-	parser     ObjectParser[TReference, TParsedObject]
+	parser     ObjectParser[object.LocalReference, TParsedObject]
 }
 
-func NewStorageBackedParsedObjectReader[TReference, TParsedObject any](downloader object.Downloader[TReference], encoder encoding.BinaryEncoder, parser ObjectParser[TReference, TParsedObject]) ParsedObjectReader[TReference, TParsedObject] {
-	return &storageBackedParsedObjectReader[TReference, TParsedObject]{
+func NewStorageBackedParsedObjectReader[TParsedObject any](downloader object.Downloader[object.LocalReference], encoder encoding.BinaryEncoder, parser ObjectParser[object.LocalReference, TParsedObject]) ParsedObjectReader[object.LocalReference, TParsedObject] {
+	return &storageBackedParsedObjectReader[TParsedObject]{
 		downloader: downloader,
 		encoder:    encoder,
 		parser:     parser,
 	}
 }
 
-func (r *storageBackedParsedObjectReader[TReference, TParsedObject]) ReadParsedObject(ctx context.Context, reference TReference) (TParsedObject, int, error) {
+func (r *storageBackedParsedObjectReader[TParsedObject]) ReadParsedObject(ctx context.Context, reference object.LocalReference) (TParsedObject, int, error) {
 	var badParsedObject TParsedObject
 	contents, err := r.downloader.DownloadObject(ctx, reference)
 	if err != nil {

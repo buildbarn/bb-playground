@@ -68,7 +68,7 @@ func (c *baseComputer) parseActiveModuleInstanceModuleDotBazel(ctx context.Conte
 }
 
 type parseModuleDotBazelFileEnvironment interface {
-	GetFileReaderValue(key *model_analysis_pb.FileReader_Key) (*model_filesystem.FileReader, bool)
+	GetFileReaderValue(key *model_analysis_pb.FileReader_Key) (*model_filesystem.FileReader[object.LocalReference], bool)
 }
 
 func (c *baseComputer) parseModuleDotBazel(ctx context.Context, moduleContentsMsg model_core.Message[*model_filesystem_pb.FileContents, object.OutgoingReferences[object.LocalReference]], moduleInstance label.ModuleInstance, e parseModuleDotBazelFileEnvironment, handler pg_starlark.RootModuleDotBazelHandler) error {
@@ -101,7 +101,7 @@ func (c *baseComputer) parseModuleDotBazel(ctx context.Context, moduleContentsMs
 type visitModuleDotBazelFilesBreadthFirstEnvironment interface {
 	parseActiveModuleDotBazelEnvironment
 
-	GetFileReaderValue(*model_analysis_pb.FileReader_Key) (*model_filesystem.FileReader, bool)
+	GetFileReaderValue(*model_analysis_pb.FileReader_Key) (*model_filesystem.FileReader[object.LocalReference], bool)
 	GetModulesWithMultipleVersionsObjectValue(*model_analysis_pb.ModulesWithMultipleVersionsObject_Key) (map[label.Module]OverrideVersions, bool)
 	GetRootModuleValue(*model_analysis_pb.RootModule_Key) model_core.Message[*model_analysis_pb.RootModule_Value, object.OutgoingReferences[object.LocalReference]]
 }

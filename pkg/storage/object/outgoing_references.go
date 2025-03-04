@@ -7,7 +7,11 @@ package object
 type OutgoingReferences[TReference any] interface {
 	GetDegree() int
 	GetOutgoingReference(index int) TReference
-	GetOutgoingReferencesList() OutgoingReferencesList
+
+	// If the OutgoingReferences object is part of a larger object
+	// (e.g., part of object.Contents), copy it, so that the
+	// original instance may be garbage ollected.
+	DetachOutgoingReferences() OutgoingReferences[TReference]
 }
 
 // OutgoingReferencesList is a list of outgoing references of an object
@@ -24,7 +28,7 @@ func (l OutgoingReferencesList) GetOutgoingReference(index int) LocalReference {
 	return l[index]
 }
 
-func (l OutgoingReferencesList) GetOutgoingReferencesList() OutgoingReferencesList {
-	// References are already stored in a list.
+func (l OutgoingReferencesList) DetachOutgoingReferences() OutgoingReferences[LocalReference] {
+	// Underlying slice is already detached.
 	return l
 }

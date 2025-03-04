@@ -183,7 +183,7 @@
             "imports": {
                "model_filesystem": "github.com/buildbarn/bonanza/pkg/model/filesystem"
             },
-            "type": "*model_filesystem.FileReader"
+            "type": "*model_filesystem.FileReader[object.LocalReference]"
          }
       },
       "HttpArchiveContents": {

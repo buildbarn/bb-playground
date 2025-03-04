@@ -75,7 +75,7 @@ func (c *Contents) GetOutgoingReference(i int) LocalReference {
 	}
 }
 
-func (c *Contents) GetOutgoingReferencesList() OutgoingReferencesList {
+func (c *Contents) DetachOutgoingReferences() OutgoingReferences[LocalReference] {
 	degree := c.GetDegree()
 	l := make(OutgoingReferencesList, 0, degree)
 	for i := 0; i < degree; i++ {

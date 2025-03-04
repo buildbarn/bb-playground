@@ -25,12 +25,12 @@ import (
 
 type ObjectBackedDirectoryFactory struct {
 	handleAllocator        virtual.ResolvableHandleAllocator
-	directoryClusterReader model_parser.ParsedObjectReader[object.LocalReference, model_filesystem.DirectoryCluster]
+	directoryClusterReader model_parser.ParsedObjectReader[object.LocalReference, model_filesystem.DirectoryCluster[object.LocalReference]]
 	fileFactory            FileFactory
 	errorLogger            util.ErrorLogger
 }
 
-func NewObjectBackedDirectoryFactory(handleAllocation virtual.ResolvableHandleAllocation, directoryClusterReader model_parser.ParsedObjectReader[object.LocalReference, model_filesystem.DirectoryCluster], fileFactory FileFactory, errorLogger util.ErrorLogger) *ObjectBackedDirectoryFactory {
+func NewObjectBackedDirectoryFactory(handleAllocation virtual.ResolvableHandleAllocation, directoryClusterReader model_parser.ParsedObjectReader[object.LocalReference, model_filesystem.DirectoryCluster[object.LocalReference]], fileFactory FileFactory, errorLogger util.ErrorLogger) *ObjectBackedDirectoryFactory {
 	df := &ObjectBackedDirectoryFactory{
 		directoryClusterReader: directoryClusterReader,
 		fileFactory:            fileFactory,
@@ -80,7 +80,7 @@ func (df *ObjectBackedDirectoryFactory) resolveHandle(r io.ByteReader) (virtual.
 			return virtual.DirectoryChild{}, virtual.StatusErrBadHandle
 		}
 		return virtual.DirectoryChild{}.FromDirectory(
-			df.LookupDirectory(model_filesystem.DirectoryInfo{
+			df.LookupDirectory(model_filesystem.DirectoryInfo[object.LocalReference]{
 				ClusterReference: clusterReference,
 				DirectoryIndex:   directoryIndex,
 				DirectoriesCount: directoriesCount,
@@ -105,7 +105,7 @@ func (df *ObjectBackedDirectoryFactory) resolveHandle(r io.ByteReader) (virtual.
 	return virtual.DirectoryChild{}.FromLeaf(df.createSymlink(clusterReference, directoryIndex, symlinkIndex, symlinks[symlinkIndex-1].Target)), virtual.StatusOK
 }
 
-func (df *ObjectBackedDirectoryFactory) LookupDirectory(info model_filesystem.DirectoryInfo) virtual.Directory {
+func (df *ObjectBackedDirectoryFactory) LookupDirectory(info model_filesystem.DirectoryInfo[object.LocalReference]) virtual.Directory {
 	handle := varint.AppendForward(nil, info.ClusterReference.GetReferenceFormat().ToProto())
 	handle = append(handle, info.ClusterReference.GetRawReference()...)
 	handle = varint.AppendForward(handle, info.DirectoryIndex)
@@ -131,7 +131,7 @@ type objectBackedDirectory struct {
 	virtual.ReadOnlyDirectory
 
 	factory *ObjectBackedDirectoryFactory
-	info    model_filesystem.DirectoryInfo
+	info    model_filesystem.DirectoryInfo[object.LocalReference]
 }
 
 func (d *objectBackedDirectory) lookupFile(fileNode *model_filesystem_pb.FileNode, leavesReferences object.OutgoingReferences[object.LocalReference]) (virtual.Leaf, virtual.Status) {
@@ -166,7 +166,7 @@ func (d *objectBackedDirectory) VirtualGetAttributes(ctx context.Context, reques
 	attributes.SetSizeBytes(uint64(d.info.ClusterReference.GetSizeBytes()))
 }
 
-func (d *objectBackedDirectory) getDirectory(ctx context.Context) (*model_filesystem.Directory, virtual.Status) {
+func (d *objectBackedDirectory) getDirectory(ctx context.Context) (*model_filesystem.Directory[object.LocalReference], virtual.Status) {
 	df := d.factory
 	cluster, _, err := df.directoryClusterReader.ReadParsedObject(ctx, d.info.ClusterReference)
 	if err != nil {

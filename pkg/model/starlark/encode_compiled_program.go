@@ -358,8 +358,8 @@ func DecodeGlobals(encodedGlobals model_core.Message[*model_starlark_pb.Struct_F
 const ValueDecodingOptionsKey = "value_decoding_options"
 
 type ValueDereferencers struct {
-	Dict dereference.Dereferencer[model_core.Message[[]*model_starlark_pb.Dict_Entry, object.OutgoingReferences[object.LocalReference]], object.OutgoingReferences[object.LocalReference]]
-	List dereference.Dereferencer[model_core.Message[[]*model_starlark_pb.List_Element, object.OutgoingReferences[object.LocalReference]], object.OutgoingReferences[object.LocalReference]]
+	Dict dereference.Dereferencer[model_core.Message[[]*model_starlark_pb.Dict_Entry, object.OutgoingReferences[object.LocalReference]], object.LocalReference]
+	List dereference.Dereferencer[model_core.Message[[]*model_starlark_pb.List_Element, object.OutgoingReferences[object.LocalReference]], object.LocalReference]
 }
 
 type ValueDecodingOptions struct {

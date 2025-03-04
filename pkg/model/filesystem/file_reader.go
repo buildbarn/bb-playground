@@ -6,28 +6,33 @@ import (
 
 	"github.com/buildbarn/bb-storage/pkg/util"
 	model_parser "github.com/buildbarn/bonanza/pkg/model/parser"
-	"github.com/buildbarn/bonanza/pkg/storage/object"
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
 
-type FileReader struct {
-	fileContentsListReader model_parser.ParsedObjectReader[object.LocalReference, FileContentsList]
-	fileChunkReader        model_parser.ParsedObjectReader[object.LocalReference, []byte]
+type FileReaderReference interface {
+	FileContentsIteratorReference
+
+	GetDegree() int
 }
 
-func NewFileReader(
-	fileContentsListReader model_parser.ParsedObjectReader[object.LocalReference, FileContentsList],
-	fileChunkReader model_parser.ParsedObjectReader[object.LocalReference, []byte],
-) *FileReader {
-	return &FileReader{
+type FileReader[TReference FileReaderReference] struct {
+	fileContentsListReader model_parser.ParsedObjectReader[TReference, FileContentsList[TReference]]
+	fileChunkReader        model_parser.ParsedObjectReader[TReference, []byte]
+}
+
+func NewFileReader[TReference FileReaderReference](
+	fileContentsListReader model_parser.ParsedObjectReader[TReference, FileContentsList[TReference]],
+	fileChunkReader model_parser.ParsedObjectReader[TReference, []byte],
+) *FileReader[TReference] {
+	return &FileReader[TReference]{
 		fileContentsListReader: fileContentsListReader,
 		fileChunkReader:        fileChunkReader,
 	}
 }
 
-func (fr *FileReader) FileReadAll(ctx context.Context, fileContents FileContentsEntry, maximumSizeBytes uint64) ([]byte, error) {
+func (fr *FileReader[TReference]) FileReadAll(ctx context.Context, fileContents FileContentsEntry[TReference], maximumSizeBytes uint64) ([]byte, error) {
 	if fileContents.EndBytes > maximumSizeBytes {
 		return nil, status.Errorf(codes.InvalidArgument, "File is %d bytes in size, which exceeds the permitted maximum of %d bytes", fileContents.EndBytes, maximumSizeBytes)
 	}
@@ -38,7 +43,7 @@ func (fr *FileReader) FileReadAll(ctx context.Context, fileContents FileContents
 	return p, nil
 }
 
-func (fr *FileReader) readNextChunk(ctx context.Context, fileContentsIterator *FileContentsIterator) ([]byte, error) {
+func (fr *FileReader[TReference]) readNextChunk(ctx context.Context, fileContentsIterator *FileContentsIterator[TReference]) ([]byte, error) {
 	for {
 		partReference, partOffsetBytes, partSizeBytes := fileContentsIterator.GetCurrentPart()
 		if partReference.GetDegree() == 0 {
@@ -66,7 +71,7 @@ func (fr *FileReader) readNextChunk(ctx context.Context, fileContentsIterator *F
 	}
 }
 
-func (fr *FileReader) FileReadAt(ctx context.Context, fileContents FileContentsEntry, p []byte, offsetBytes uint64) (int, error) {
+func (fr *FileReader[TReference]) FileReadAt(ctx context.Context, fileContents FileContentsEntry[TReference], p []byte, offsetBytes uint64) (int, error) {
 	// TODO: Any chance we can use parallelism here to read multiple chunks?
 	fileContentsIterator := NewFileContentsIterator(fileContents, offsetBytes)
 	nRead := 0
@@ -82,8 +87,8 @@ func (fr *FileReader) FileReadAt(ctx context.Context, fileContents FileContentsE
 	return nRead, nil
 }
 
-func (fr *FileReader) FileOpenRead(ctx context.Context, fileContents FileContentsEntry, offsetBytes uint64) *SequentialFileReader {
-	return &SequentialFileReader{
+func (fr *FileReader[TReference]) FileOpenRead(ctx context.Context, fileContents FileContentsEntry[TReference], offsetBytes uint64) *SequentialFileReader[TReference] {
+	return &SequentialFileReader[TReference]{
 		context:              ctx,
 		fileReader:           fr,
 		fileContentsIterator: NewFileContentsIterator(fileContents, offsetBytes),
@@ -92,24 +97,24 @@ func (fr *FileReader) FileOpenRead(ctx context.Context, fileContents FileContent
 	}
 }
 
-func (fr *FileReader) FileOpenReadAt(ctx context.Context, fileContents FileContentsEntry) io.ReaderAt {
-	return &randomAccessFileReader{
+func (fr *FileReader[TReference]) FileOpenReadAt(ctx context.Context, fileContents FileContentsEntry[TReference]) io.ReaderAt {
+	return &randomAccessFileReader[TReference]{
 		context:      ctx,
 		fileReader:   fr,
 		fileContents: fileContents,
 	}
 }
 
-type SequentialFileReader struct {
+type SequentialFileReader[TReference FileReaderReference] struct {
 	context              context.Context
-	fileReader           *FileReader
-	fileContentsIterator FileContentsIterator
+	fileReader           *FileReader[TReference]
+	fileContentsIterator FileContentsIterator[TReference]
 	chunk                []byte
 	offsetBytes          uint64
 	sizeBytes            uint64
 }
 
-func (r *SequentialFileReader) Read(p []byte) (int, error) {
+func (r *SequentialFileReader[TReference]) Read(p []byte) (int, error) {
 	nRead := 0
 	for {
 		// Copy data from a previously read chunk.
@@ -134,7 +139,7 @@ func (r *SequentialFileReader) Read(p []byte) (int, error) {
 	}
 }
 
-func (r *SequentialFileReader) ReadByte() (byte, error) {
+func (r *SequentialFileReader[TReference]) ReadByte() (byte, error) {
 	var b [1]byte
 	if n, err := r.Read(b[:]); n == 0 {
 		return 0, err
@@ -142,13 +147,13 @@ func (r *SequentialFileReader) ReadByte() (byte, error) {
 	return b[0], nil
 }
 
-type randomAccessFileReader struct {
+type randomAccessFileReader[TReference FileReaderReference] struct {
 	context      context.Context
-	fileReader   *FileReader
-	fileContents FileContentsEntry
+	fileReader   *FileReader[TReference]
+	fileContents FileContentsEntry[TReference]
 }
 
-func (r *randomAccessFileReader) ReadAt(p []byte, offsetBytes int64) (int, error) {
+func (r *randomAccessFileReader[TReference]) ReadAt(p []byte, offsetBytes int64) (int, error) {
 	// Limit the read operation to the size of the file.
 	if uint64(offsetBytes) > r.fileContents.EndBytes {
 		return 0, io.EOF

@@ -22,7 +22,7 @@ func Find[
 	TReference any,
 ](
 	ctx context.Context,
-	dereferencer dereference.Dereferencer[model_core.Message[[]TMessagePtr, TOutgoingReferences], TOutgoingReferences],
+	dereferencer dereference.Dereferencer[model_core.Message[[]TMessagePtr, TOutgoingReferences], TReference],
 	list model_core.Message[[]TMessagePtr, TOutgoingReferences],
 	cmp func(TMessagePtr) (int, *model_core_pb.Reference),
 ) (model_core.Message[TMessagePtr, TOutgoingReferences], error) {

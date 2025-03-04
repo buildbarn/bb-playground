@@ -18,7 +18,7 @@ import (
 
 type objectBackedInitialContentsFetcherOptions struct {
 	context                context.Context
-	directoryClusterReader model_parser.ParsedObjectReader[object.LocalReference, model_filesystem.DirectoryCluster]
+	directoryClusterReader model_parser.ParsedObjectReader[object.LocalReference, model_filesystem.DirectoryCluster[object.LocalReference]]
 	fileFactory            FileFactory
 	symlinkFactory         virtual.SymlinkFactory
 }
@@ -29,7 +29,7 @@ type objectBackedInitialContentsFetcher struct {
 	directoryIndex   uint
 }
 
-func NewObjectBackedInitialContentsFetcher(ctx context.Context, directoryClusterReader model_parser.ParsedObjectReader[object.LocalReference, model_filesystem.DirectoryCluster], fileFactory FileFactory, symlinkFactory virtual.SymlinkFactory, rootClusterReference object.LocalReference) virtual.InitialContentsFetcher {
+func NewObjectBackedInitialContentsFetcher(ctx context.Context, directoryClusterReader model_parser.ParsedObjectReader[object.LocalReference, model_filesystem.DirectoryCluster[object.LocalReference]], fileFactory FileFactory, symlinkFactory virtual.SymlinkFactory, rootClusterReference object.LocalReference) virtual.InitialContentsFetcher {
 	return &objectBackedInitialContentsFetcher{
 		options: &objectBackedInitialContentsFetcherOptions{
 			context:                ctx,
@@ -41,7 +41,7 @@ func NewObjectBackedInitialContentsFetcher(ctx context.Context, directoryCluster
 	}
 }
 
-func (icf *objectBackedInitialContentsFetcher) getDirectory() (*model_filesystem.Directory, error) {
+func (icf *objectBackedInitialContentsFetcher) getDirectory() (*model_filesystem.Directory[object.LocalReference], error) {
 	options := icf.options
 	cluster, _, err := options.directoryClusterReader.ReadParsedObject(options.context, icf.clusterReference)
 	if err != nil {

@@ -16,23 +16,17 @@ import (
 // Simple implementations of Dereferencer may always attempt to download
 // objects from storage. More complex implementations may provide
 // caching.
-//
-// By extending TOutgoingReferences, it is possible to let objects
-// reference each other directory, making it possible to implement
-// Dereferencer in such a way that it merely extracts the target object
-// from TOutgoingReferences. This removes the need for having a central
-// namespace in which objects live.
-type Dereferencer[TValue any, TOutgoingReferences any] interface {
-	Dereference(ctx context.Context, outgoingReferences TOutgoingReferences, index int) (TValue, error)
+type Dereferencer[TValue any, TReference any] interface {
+	Dereference(ctx context.Context, reference TReference) (TValue, error)
 }
 
 // Dereference a model_core_pb.Reference. This is a helper function for
 // following references that are stored in Protobuf messages.
-func Dereference[TValue any, TOutgoingReferences object.OutgoingReferences[TReference], TReference any](ctx context.Context, dereferencer Dereferencer[TValue, TOutgoingReferences], m model_core.Message[*model_core_pb.Reference, TOutgoingReferences]) (TValue, error) {
-	index, err := model_core.GetIndexFromReferenceMessage(m.Message, m.OutgoingReferences.GetDegree())
+func Dereference[TValue any, TOutgoingReferences object.OutgoingReferences[TReference], TReference any](ctx context.Context, dereferencer Dereferencer[TValue, TReference], m model_core.Message[*model_core_pb.Reference, TOutgoingReferences]) (TValue, error) {
+	reference, err := model_core.FlattenReference(m)
 	if err != nil {
 		var badValue TValue
 		return badValue, err
 	}
-	return dereferencer.Dereference(ctx, m.OutgoingReferences, index)
+	return dereferencer.Dereference(ctx, reference)
 }

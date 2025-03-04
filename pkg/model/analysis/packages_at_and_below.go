@@ -89,8 +89,8 @@ func (c *baseComputer) ComputePackagesAtAndBelowValue(ctx context.Context, key *
 
 type packageExistenceChecker struct {
 	context                  context.Context
-	directoryDereferencer    dereference.Dereferencer[model_core.Message[*model_filesystem_pb.Directory, object.OutgoingReferences[object.LocalReference]], object.OutgoingReferences[object.LocalReference]]
-	leavesDereferencer       dereference.Dereferencer[model_core.Message[*model_filesystem_pb.Leaves, object.OutgoingReferences[object.LocalReference]], object.OutgoingReferences[object.LocalReference]]
+	directoryDereferencer    dereference.Dereferencer[model_core.Message[*model_filesystem_pb.Directory, object.OutgoingReferences[object.LocalReference]], object.LocalReference]
+	leavesDereferencer       dereference.Dereferencer[model_core.Message[*model_filesystem_pb.Leaves, object.OutgoingReferences[object.LocalReference]], object.LocalReference]
 	packagesBelowBasePackage []string
 }
 

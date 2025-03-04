@@ -19,34 +19,34 @@ import (
 // contained in a single object in storage. Directories are stored in
 // topological order, meaning that the root directory is located at
 // index zero.
-type DirectoryCluster []Directory
+type DirectoryCluster[TReference any] []Directory[TReference]
 
 // Directory contained in a DirectoryCluster.
-type Directory struct {
-	Directories []DirectoryNode
-	Leaves      model_core.Message[*model_filesystem_pb.Leaves, object.OutgoingReferences[object.LocalReference]]
-	Raw         model_core.Message[*model_filesystem_pb.Directory, object.OutgoingReferences[object.LocalReference]]
+type Directory[TReference any] struct {
+	Directories []DirectoryNode[TReference]
+	Leaves      model_core.Message[*model_filesystem_pb.Leaves, object.OutgoingReferences[TReference]]
+	Raw         model_core.Message[*model_filesystem_pb.Directory, object.OutgoingReferences[TReference]]
 }
 
 // DirectoryInfo holds all of the properties of a directory that could
 // be derived from its parent directory.
-type DirectoryInfo struct {
-	ClusterReference object.LocalReference
+type DirectoryInfo[TReference any] struct {
+	ClusterReference TReference
 	DirectoryIndex   uint
 	DirectoriesCount uint32
 }
 
 // NewDirectoryInfoFromDirectoryReference creates a DirectoryInfo based
 // on the contents of a DirectoryReference message.
-func NewDirectoryInfoFromDirectoryReference(directoryReference model_core.Message[*model_filesystem_pb.DirectoryReference, object.OutgoingReferences[object.LocalReference]]) (DirectoryInfo, error) {
+func NewDirectoryInfoFromDirectoryReference[TReference any](directoryReference model_core.Message[*model_filesystem_pb.DirectoryReference, object.OutgoingReferences[TReference]]) (DirectoryInfo[TReference], error) {
 	if directoryReference.Message == nil {
-		return DirectoryInfo{}, status.Error(codes.InvalidArgument, "No directory reference provided")
+		return DirectoryInfo[TReference]{}, status.Error(codes.InvalidArgument, "No directory reference provided")
 	}
 	clusterReference, err := model_core.FlattenReference(model_core.NewNestedMessage(directoryReference, directoryReference.Message.Reference))
 	if err != nil {
-		return DirectoryInfo{}, err
+		return DirectoryInfo[TReference]{}, err
 	}
-	return DirectoryInfo{
+	return DirectoryInfo[TReference]{
 		ClusterReference: clusterReference,
 		DirectoryIndex:   0,
 		DirectoriesCount: directoryReference.Message.DirectoriesCount,
@@ -55,32 +55,31 @@ func NewDirectoryInfoFromDirectoryReference(directoryReference model_core.Messag
 
 // DirectoryNode contains the name and properties of a directory that is
 // contained within another directory.
-type DirectoryNode struct {
+type DirectoryNode[TReference any] struct {
 	Name path.Component
-	Info DirectoryInfo
+	Info DirectoryInfo[TReference]
 }
 
 // DirectoryClusterObjectParserReference is a constraint on the reference types
 // accepted by the ObjectParser returned by NewDirectoryClusterObjectParser.
 type DirectoryClusterObjectParserReference[T any] interface {
 	GetLocalReference() object.LocalReference
-	WithLocalReference(localReference object.LocalReference) T
 }
 
 type directoryClusterObjectParser[TReference DirectoryClusterObjectParserReference[TReference]] struct {
-	leavesReader parser.ParsedObjectReader[TReference, model_core.Message[*model_filesystem_pb.Leaves, object.OutgoingReferences[object.LocalReference]]]
+	leavesReader parser.ParsedObjectReader[TReference, model_core.Message[*model_filesystem_pb.Leaves, object.OutgoingReferences[TReference]]]
 }
 
 // NewDirectoryClusterObjectParser creates an ObjectParser that is
 // capable of parsing directory objects. These directory objects may
 // either be empty, contain subdirectories, or leaves.
-func NewDirectoryClusterObjectParser[TReference DirectoryClusterObjectParserReference[TReference]](leavesReader parser.ParsedObjectReader[TReference, model_core.Message[*model_filesystem_pb.Leaves, object.OutgoingReferences[object.LocalReference]]]) parser.ObjectParser[TReference, DirectoryCluster] {
+func NewDirectoryClusterObjectParser[TReference DirectoryClusterObjectParserReference[TReference]](leavesReader parser.ParsedObjectReader[TReference, model_core.Message[*model_filesystem_pb.Leaves, object.OutgoingReferences[TReference]]]) parser.ObjectParser[TReference, DirectoryCluster[TReference]] {
 	return &directoryClusterObjectParser[TReference]{
 		leavesReader: leavesReader,
 	}
 }
 
-func (p *directoryClusterObjectParser[TReference]) ParseObject(ctx context.Context, reference TReference, outgoingReferences object.OutgoingReferences[object.LocalReference], data []byte) (DirectoryCluster, int, error) {
+func (p *directoryClusterObjectParser[TReference]) ParseObject(ctx context.Context, reference TReference, outgoingReferences object.OutgoingReferences[TReference], data []byte) (DirectoryCluster[TReference], int, error) {
 	var d model_filesystem_pb.Directory
 	if err := proto.Unmarshal(data, &d); err != nil {
 		return nil, 0, util.StatusWrapWithCode(err, codes.InvalidArgument, "Failed to parse directory")
@@ -89,13 +88,13 @@ func (p *directoryClusterObjectParser[TReference]) ParseObject(ctx context.Conte
 	// Recursively visit all Directory messages contained in the
 	// object and store them in a list. This allows the caller to
 	// address each directory separately.
-	var cluster DirectoryCluster
+	var cluster DirectoryCluster[TReference]
 	_, externalLeavesTotalSizeBytes, err := p.addDirectoriesToCluster(
 		ctx,
 		&cluster,
-		model_core.Message[*model_filesystem_pb.Directory, object.OutgoingReferences[object.LocalReference]]{
+		model_core.Message[*model_filesystem_pb.Directory, object.OutgoingReferences[TReference]]{
 			Message:            &d,
-			OutgoingReferences: outgoingReferences.GetOutgoingReferencesList(),
+			OutgoingReferences: outgoingReferences.DetachOutgoingReferences(),
 		},
 		reference,
 		nil,
@@ -106,17 +105,16 @@ func (p *directoryClusterObjectParser[TReference]) ParseObject(ctx context.Conte
 	return cluster, reference.GetLocalReference().GetSizeBytes() + externalLeavesTotalSizeBytes, nil
 }
 
-func (p *directoryClusterObjectParser[TReference]) addDirectoriesToCluster(ctx context.Context, c *DirectoryCluster, d model_core.Message[*model_filesystem_pb.Directory, object.OutgoingReferences[object.LocalReference]], reference TReference, dTrace *path.Trace) (uint, int, error) {
+func (p *directoryClusterObjectParser[TReference]) addDirectoriesToCluster(ctx context.Context, c *DirectoryCluster[TReference], d model_core.Message[*model_filesystem_pb.Directory, object.OutgoingReferences[TReference]], reference TReference, dTrace *path.Trace) (uint, int, error) {
 	directoryIndex := uint(len(*c))
 	*c = append(
 		*c,
-		Directory{
-			Directories: make([]DirectoryNode, 0, len(d.Message.Directories)),
+		Directory[TReference]{
+			Directories: make([]DirectoryNode[TReference], 0, len(d.Message.Directories)),
 			Raw:         d,
 		},
 	)
 
-	localReference := reference.GetLocalReference()
 	externalLeavesTotalSizeBytes := 0
 	switch leaves := d.Message.Leaves.(type) {
 	case *model_filesystem_pb.Directory_LeavesExternal:
@@ -124,7 +122,7 @@ func (p *directoryClusterObjectParser[TReference]) addDirectoriesToCluster(ctx c
 		if err != nil {
 			return 0, 0, util.StatusWrapf(err, "Invalid reference for leaves for directory %#v", dTrace.GetUNIXString())
 		}
-		leavesObject, externalLeavesSizeBytes, err := p.leavesReader.ReadParsedObject(ctx, reference.WithLocalReference(leavesReference))
+		leavesObject, externalLeavesSizeBytes, err := p.leavesReader.ReadParsedObject(ctx, leavesReference)
 		if err != nil {
 			return 0, 0, util.StatusWrapf(err, "Leaves for directory %#v with reference %s", dTrace.GetUNIXString(), leavesReference)
 		}
@@ -151,7 +149,7 @@ func (p *directoryClusterObjectParser[TReference]) addDirectoriesToCluster(ctx c
 			}
 			(*c)[directoryIndex].Directories = append(
 				(*c)[directoryIndex].Directories,
-				DirectoryNode{
+				DirectoryNode[TReference]{
 					Name: name,
 					Info: directoryInfo,
 				},
@@ -172,10 +170,10 @@ func (p *directoryClusterObjectParser[TReference]) addDirectoriesToCluster(ctx c
 			}
 			(*c)[directoryIndex].Directories = append(
 				(*c)[directoryIndex].Directories,
-				DirectoryNode{
+				DirectoryNode[TReference]{
 					Name: name,
-					Info: DirectoryInfo{
-						ClusterReference: localReference,
+					Info: DirectoryInfo[TReference]{
+						ClusterReference: reference,
 						DirectoryIndex:   childDirectoryIndex,
 						DirectoriesCount: uint32(len((*c)[childDirectoryIndex].Directories)),
 					},

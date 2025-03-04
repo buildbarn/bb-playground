@@ -60,7 +60,7 @@ func (ff *resolvableHandleAllocatingFileFactory) resolveHandle(r io.ByteReader) 
 
 	return virtual.DirectoryChild{}.FromLeaf(
 		ff.LookupFile(
-			model_filesystem.FileContentsEntry{
+			model_filesystem.FileContentsEntry[object.LocalReference]{
 				EndBytes:  endBytes,
 				Reference: reference,
 			},
@@ -69,7 +69,7 @@ func (ff *resolvableHandleAllocatingFileFactory) resolveHandle(r io.ByteReader) 
 	), virtual.StatusOK
 }
 
-func computeFileID(fileContents model_filesystem.FileContentsEntry, isExecutable bool) io.WriterTo {
+func computeFileID(fileContents model_filesystem.FileContentsEntry[object.LocalReference], isExecutable bool) io.WriterTo {
 	handle := varint.AppendForward(nil, fileContents.Reference.GetReferenceFormat().ToProto())
 	handle = append(handle, fileContents.Reference.GetRawReference()...)
 	handle = varint.AppendForward(handle, fileContents.EndBytes)
@@ -81,7 +81,7 @@ func computeFileID(fileContents model_filesystem.FileContentsEntry, isExecutable
 	return bytes.NewBuffer(handle)
 }
 
-func (ff *resolvableHandleAllocatingFileFactory) LookupFile(fileContents model_filesystem.FileContentsEntry, isExecutable bool) virtual.LinkableLeaf {
+func (ff *resolvableHandleAllocatingFileFactory) LookupFile(fileContents model_filesystem.FileContentsEntry[object.LocalReference], isExecutable bool) virtual.LinkableLeaf {
 	return ff.handleAllocator.
 		New(computeFileID(fileContents, isExecutable)).
 		AsLinkableLeaf(ff.base.LookupFile(fileContents, isExecutable))

@@ -32,11 +32,11 @@ func NewMessageListObjectParser[
 		*TMessage
 		proto.Message
 	},
-]() ObjectParser[TReference, model_core.Message[[]TMessagePtr, object.OutgoingReferences[object.LocalReference]]] {
+]() ObjectParser[TReference, model_core.Message[[]TMessagePtr, object.OutgoingReferences[TReference]]] {
 	return &messageListObjectParser[TReference, TMessage, TMessagePtr]{}
 }
 
-func (p *messageListObjectParser[TReference, TMessage, TMessagePtr]) ParseObject(ctx context.Context, reference TReference, outgoingReferences object.OutgoingReferences[object.LocalReference], data []byte) (model_core.Message[[]TMessagePtr, object.OutgoingReferences[object.LocalReference]], int, error) {
+func (p *messageListObjectParser[TReference, TMessage, TMessagePtr]) ParseObject(ctx context.Context, reference TReference, outgoingReferences object.OutgoingReferences[TReference], data []byte) (model_core.Message[[]TMessagePtr, object.OutgoingReferences[TReference]], int, error) {
 	originalDataLength := len(data)
 	var elements []TMessagePtr
 	for len(data) > 0 {
@@ -44,26 +44,26 @@ func (p *messageListObjectParser[TReference, TMessage, TMessagePtr]) ParseObject
 		offset := originalDataLength - len(data)
 		length, lengthLength := varint.ConsumeForward[uint](data)
 		if lengthLength < 0 {
-			return model_core.Message[[]TMessagePtr, object.OutgoingReferences[object.LocalReference]]{}, 0, status.Errorf(codes.InvalidArgument, "Invalid element length at offset %d", offset)
+			return model_core.Message[[]TMessagePtr, object.OutgoingReferences[TReference]]{}, 0, status.Errorf(codes.InvalidArgument, "Invalid element length at offset %d", offset)
 		}
 
 		// Validate the size.
 		data = data[lengthLength:]
 		if length > uint(len(data)) {
-			return model_core.Message[[]TMessagePtr, object.OutgoingReferences[object.LocalReference]]{}, 0, status.Errorf(codes.InvalidArgument, "Length of element at offset %d is %d bytes, which exceeds maximum permitted size of %d bytes", offset, length, len(data))
+			return model_core.Message[[]TMessagePtr, object.OutgoingReferences[TReference]]{}, 0, status.Errorf(codes.InvalidArgument, "Length of element at offset %d is %d bytes, which exceeds maximum permitted size of %d bytes", offset, length, len(data))
 		}
 
 		// Unmarshal the element.
 		var element TMessage
 		if err := proto.Unmarshal(data[:length], TMessagePtr(&element)); err != nil {
-			return model_core.Message[[]TMessagePtr, object.OutgoingReferences[object.LocalReference]]{}, 0, util.StatusWrapfWithCode(err, codes.InvalidArgument, "Failed to unmarshal element at offset %d", offset)
+			return model_core.Message[[]TMessagePtr, object.OutgoingReferences[TReference]]{}, 0, util.StatusWrapfWithCode(err, codes.InvalidArgument, "Failed to unmarshal element at offset %d", offset)
 		}
 		elements = append(elements, &element)
 		data = data[length:]
 	}
 
-	return model_core.Message[[]TMessagePtr, object.OutgoingReferences[object.LocalReference]]{
+	return model_core.Message[[]TMessagePtr, object.OutgoingReferences[TReference]]{
 		Message:            elements,
-		OutgoingReferences: outgoingReferences.GetOutgoingReferencesList(),
+		OutgoingReferences: outgoingReferences.DetachOutgoingReferences(),
 	}, reference.GetSizeBytes(), nil
 }

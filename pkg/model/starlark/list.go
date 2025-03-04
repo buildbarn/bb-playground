@@ -25,7 +25,7 @@ import (
 // elements. Only parents are deduplicated.
 func AllListLeafElementsSkippingDuplicateParents[TOutgoingReferences object.OutgoingReferences[object.LocalReference]](
 	ctx context.Context,
-	dereferencer dereference.Dereferencer[model_core.Message[[]*model_starlark_pb.List_Element, TOutgoingReferences], TOutgoingReferences],
+	dereferencer dereference.Dereferencer[model_core.Message[[]*model_starlark_pb.List_Element, TOutgoingReferences], object.LocalReference],
 	rootList model_core.Message[[]*model_starlark_pb.List_Element, TOutgoingReferences],
 	listsSeen map[object.LocalReference]struct{},
 	errOut *error,

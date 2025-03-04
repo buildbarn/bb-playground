@@ -15,7 +15,7 @@ import (
 
 func AllDictLeafEntries[TOutgoingReferences object.OutgoingReferences[object.LocalReference]](
 	ctx context.Context,
-	dereferencer dereference.Dereferencer[model_core.Message[[]*model_starlark_pb.Dict_Entry, TOutgoingReferences], TOutgoingReferences],
+	dereferencer dereference.Dereferencer[model_core.Message[[]*model_starlark_pb.Dict_Entry, TOutgoingReferences], object.LocalReference],
 	rootDict model_core.Message[*model_starlark_pb.Dict, TOutgoingReferences],
 	errOut *error,
 ) iter.Seq[model_core.Message[*model_starlark_pb.Dict_Entry_Leaf, TOutgoingReferences]] {

@@ -3,38 +3,40 @@ package filesystem
 import (
 	"sort"
 
-	"github.com/buildbarn/bonanza/pkg/storage/object"
-
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
 
-type fileContentsSpan struct {
+type fileContentsSpan[TReference any] struct {
 	startBytes uint64
-	list       FileContentsList
+	list       FileContentsList[TReference]
 }
 
 // FileContentsIterator is a helper type for iterating over the chunks
 // of a concatenated file sequentially.
-type FileContentsIterator struct {
-	spans              []fileContentsSpan
+type FileContentsIterator[TReference any] struct {
+	spans              []fileContentsSpan[TReference]
 	initialOffsetBytes uint64
+}
+
+type FileContentsIteratorReference interface {
+	GetHeight() int
 }
 
 // NewFileContentsIterator creates a FileContentsIterator that starts
 // iteration at the provided offset within the file. It is the caller's
 // responsibility to ensure the provided offset is less than the size of
 // the file.
-func NewFileContentsIterator(root FileContentsEntry, initialOffsetBytes uint64) FileContentsIterator {
-	return FileContentsIterator{
+func NewFileContentsIterator[TReference FileContentsIteratorReference](root FileContentsEntry[TReference], initialOffsetBytes uint64) FileContentsIterator[TReference] {
+	return FileContentsIterator[TReference]{
 		spans: append(
-			make([]fileContentsSpan, 0, root.Reference.GetHeight()+1),
-			fileContentsSpan{
-				list: FileContentsList{
+			make([]fileContentsSpan[TReference], 0, root.Reference.GetHeight()+1),
+			fileContentsSpan[TReference]{
+				list: FileContentsList[TReference]{
 					root,
 					// Sentinel to permit calling ToNextPart()
 					// while at the end of the file.
-					FileContentsEntry{},
+					FileContentsEntry[TReference]{},
 				},
 			},
 		),
@@ -50,7 +52,7 @@ func NewFileContentsIterator(root FileContentsEntry, initialOffsetBytes uint64) 
 // It is the caller's responsibility to track whether iteration has
 // reached the end of the file. Once the end of the file has been
 // reached, GetCurrentPart() may no longer be called.
-func (i *FileContentsIterator) GetCurrentPart() (reference object.LocalReference, offsetBytes, sizeBytes uint64) {
+func (i *FileContentsIterator[TReference]) GetCurrentPart() (reference TReference, offsetBytes, sizeBytes uint64) {
 	lastSpan := &i.spans[len(i.spans)-1]
 	return lastSpan.list[0].Reference, i.initialOffsetBytes, lastSpan.list[0].EndBytes - lastSpan.startBytes
 }
@@ -60,7 +62,7 @@ func (i *FileContentsIterator) GetCurrentPart() (reference object.LocalReference
 // FileContentsList. After calling this method, another call to
 // GetCurrentPart() can be made to retry resolution of the part within
 // the provided FileContentsList.
-func (i *FileContentsIterator) PushFileContentsList(list FileContentsList) error {
+func (i *FileContentsIterator[TReference]) PushFileContentsList(list FileContentsList[TReference]) error {
 	lastSpan := &i.spans[len(i.spans)-1]
 	if actualSizeBytes, expectedSizeBytes := list[len(list)-1].EndBytes, lastSpan.list[0].EndBytes-lastSpan.startBytes; actualSizeBytes != expectedSizeBytes {
 		return status.Errorf(codes.InvalidArgument, "Parts in the file contents list have a total size of %d bytes, while %d bytes were expected", actualSizeBytes, expectedSizeBytes)
@@ -76,7 +78,7 @@ func (i *FileContentsIterator) PushFileContentsList(list FileContentsList) error
 		startBytes = list[n].EndBytes
 		toSkip = n + 1
 	}
-	i.spans = append(i.spans, fileContentsSpan{
+	i.spans = append(i.spans, fileContentsSpan[TReference]{
 		startBytes: startBytes,
 		list:       list[toSkip:],
 	})
@@ -88,7 +90,7 @@ func (i *FileContentsIterator) PushFileContentsList(list FileContentsList) error
 // current part refers to a chunk of data. The next call to
 // GetCurrentPart() will return the reference of the part that is stored
 // after the current one.
-func (i *FileContentsIterator) ToNextPart() {
+func (i *FileContentsIterator[TReference]) ToNextPart() {
 	for len(i.spans[len(i.spans)-1].list) == 1 {
 		i.spans = i.spans[:len(i.spans)-1]
 	}

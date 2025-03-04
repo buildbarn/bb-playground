@@ -16,22 +16,27 @@ import (
 )
 
 // FileContentsEntry contains the properties of a part of a concatenated file.
-type FileContentsEntry struct {
+type FileContentsEntry[TReference any] struct {
 	EndBytes  uint64
-	Reference object.LocalReference
+	Reference TReference
 }
 
 // NewFileContentsEntryFromProto constructs a FileContentsListEntry
 // based on the contents of a single FileContents Protobuf message,
 // refering to the file as a whole.
-func NewFileContentsEntryFromProto(fileContents model_core.Message[*model_filesystem_pb.FileContents, object.OutgoingReferences[object.LocalReference]], referenceFormat object.ReferenceFormat) (FileContentsEntry, error) {
+func NewFileContentsEntryFromProto[
+	TReference any,
+	TReferenceFormat interface {
+		GetBogusReference() TReference
+	},
+](fileContents model_core.Message[*model_filesystem_pb.FileContents, object.OutgoingReferences[TReference]], referenceFormat TReferenceFormat) (FileContentsEntry[TReference], error) {
 	if fileContents.Message == nil {
 		// File is empty, meaning that it is not backed by any
 		// object. Map all of such files to the bogus reference.
 		// We assume that specifying a size of zero is enough to
 		// prevent the underlying file implementation from
 		// loading any objects from storage.
-		return FileContentsEntry{
+		return FileContentsEntry[TReference]{
 			EndBytes:  0,
 			Reference: referenceFormat.GetBogusReference(),
 		}, nil
@@ -39,9 +44,9 @@ func NewFileContentsEntryFromProto(fileContents model_core.Message[*model_filesy
 
 	reference, err := model_core.FlattenReference(model_core.NewNestedMessage(fileContents, fileContents.Message.Reference))
 	if err != nil {
-		return FileContentsEntry{}, err
+		return FileContentsEntry[TReference]{}, err
 	}
-	return FileContentsEntry{
+	return FileContentsEntry[TReference]{
 		EndBytes:  fileContents.Message.TotalSizeBytes,
 		Reference: reference,
 	}, nil
@@ -50,7 +55,7 @@ func NewFileContentsEntryFromProto(fileContents model_core.Message[*model_filesy
 // FileContentsList contains the properties of parts of a concatenated
 // file. Parts are stored in the order in which they should be
 // concatenated, with EndBytes increasing.
-type FileContentsList []FileContentsEntry
+type FileContentsList[TReference any] []FileContentsEntry[TReference]
 
 // FileContentsListObjectParserReference is a constraint on the
 // reference types accepted by the ObjectParser returned by
@@ -64,11 +69,11 @@ type fileContentsListObjectParser[TReference FileContentsListObjectParserReferen
 // NewFileContentsListObjectParser creates an ObjectParser that is
 // capable of parsing FileContentsList messages, turning them into a
 // list of entries that can be processed by FileContentsIterator.
-func NewFileContentsListObjectParser[TReference FileContentsListObjectParserReference[TReference]]() parser.ObjectParser[TReference, FileContentsList] {
+func NewFileContentsListObjectParser[TReference FileContentsListObjectParserReference[TReference]]() parser.ObjectParser[TReference, FileContentsList[TReference]] {
 	return &fileContentsListObjectParser[TReference]{}
 }
 
-func (p *fileContentsListObjectParser[TReference]) ParseObject(ctx context.Context, reference TReference, outgoingReferences object.OutgoingReferences[object.LocalReference], data []byte) (FileContentsList, int, error) {
+func (p *fileContentsListObjectParser[TReference]) ParseObject(ctx context.Context, reference TReference, outgoingReferences object.OutgoingReferences[TReference], data []byte) (FileContentsList[TReference], int, error) {
 	l, sizeBytes, err := model_parser.NewMessageListObjectParser[TReference, model_filesystem_pb.FileContents]().
 		ParseObject(ctx, reference, outgoingReferences, data)
 	if err != nil {
@@ -79,7 +84,7 @@ func (p *fileContentsListObjectParser[TReference]) ParseObject(ctx context.Conte
 	}
 
 	var endBytes uint64
-	fileContentsList := make(FileContentsList, 0, len(l.Message))
+	fileContentsList := make(FileContentsList[TReference], 0, len(l.Message))
 	for i, part := range l.Message {
 		// Convert 'total_size_bytes' to a cumulative value, to
 		// allow FileContentsIterator to perform binary searching.
@@ -96,7 +101,7 @@ func (p *fileContentsListObjectParser[TReference]) ParseObject(ctx context.Conte
 			return nil, 0, util.StatusWrapf(err, "Invalid reference for part at index %d", i)
 		}
 
-		fileContentsList = append(fileContentsList, FileContentsEntry{
+		fileContentsList = append(fileContentsList, FileContentsEntry[TReference]{
 			EndBytes:  endBytes,
 			Reference: partReference,
 		})

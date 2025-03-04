@@ -187,7 +187,7 @@ func TestFileContentsListObjectParser(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(
 			t,
-			model_filesystem.FileContentsList{
+			model_filesystem.FileContentsList[object.LocalReference]{
 				{
 					EndBytes:  200,
 					Reference: object.MustNewSHA256V1LocalReference("38dc1b3b70088a0bde56511eeb571e0b5aa873407ad198148befb347ef31282a", 200, 0, 0, 0),

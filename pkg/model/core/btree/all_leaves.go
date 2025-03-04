@@ -23,7 +23,7 @@ func AllLeaves[
 	TReference any,
 ](
 	ctx context.Context,
-	dereferencer dereference.Dereferencer[model_core.Message[[]TMessagePtr, TOutgoingReferences], TOutgoingReferences],
+	dereferencer dereference.Dereferencer[model_core.Message[[]TMessagePtr, TOutgoingReferences], TReference],
 	root model_core.Message[[]TMessagePtr, TOutgoingReferences],
 	traverser func(model_core.Message[TMessagePtr, TOutgoingReferences]) (*model_core_pb.Reference, error),
 	errOut *error,

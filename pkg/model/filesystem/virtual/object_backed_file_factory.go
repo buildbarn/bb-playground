@@ -7,15 +7,16 @@ import (
 	"github.com/buildbarn/bb-storage/pkg/filesystem"
 	"github.com/buildbarn/bb-storage/pkg/util"
 	model_filesystem "github.com/buildbarn/bonanza/pkg/model/filesystem"
+	"github.com/buildbarn/bonanza/pkg/storage/object"
 )
 
 type objectBackedFileFactory struct {
 	context     context.Context
-	fileReader  *model_filesystem.FileReader
+	fileReader  *model_filesystem.FileReader[object.LocalReference]
 	errorLogger util.ErrorLogger
 }
 
-func NewObjectBackedFileFactory(ctx context.Context, fileReader *model_filesystem.FileReader, errorLogger util.ErrorLogger) FileFactory {
+func NewObjectBackedFileFactory(ctx context.Context, fileReader *model_filesystem.FileReader[object.LocalReference], errorLogger util.ErrorLogger) FileFactory {
 	return &objectBackedFileFactory{
 		context:     ctx,
 		fileReader:  fileReader,
@@ -23,7 +24,7 @@ func NewObjectBackedFileFactory(ctx context.Context, fileReader *model_filesyste
 	}
 }
 
-func (ff *objectBackedFileFactory) LookupFile(fileContents model_filesystem.FileContentsEntry, isExecutable bool) virtual.LinkableLeaf {
+func (ff *objectBackedFileFactory) LookupFile(fileContents model_filesystem.FileContentsEntry[object.LocalReference], isExecutable bool) virtual.LinkableLeaf {
 	return &objectBackedFile{
 		factory:      ff,
 		fileContents: fileContents,
@@ -33,7 +34,7 @@ func (ff *objectBackedFileFactory) LookupFile(fileContents model_filesystem.File
 
 type objectBackedFile struct {
 	factory      *objectBackedFileFactory
-	fileContents model_filesystem.FileContentsEntry
+	fileContents model_filesystem.FileContentsEntry[object.LocalReference]
 	isExecutable bool
 }
 
@@ -123,7 +124,7 @@ func (objectBackedFile) VirtualWrite(buf []byte, offset uint64) (int, virtual.St
 // used to obtain a reference to the underlying file without recomputing
 // the file's Merkle tree.
 type ApplyGetFileContents struct {
-	FileContents model_filesystem.FileContentsEntry
+	FileContents model_filesystem.FileContentsEntry[object.LocalReference]
 }
 
 func (f *objectBackedFile) VirtualApply(data any) bool {
