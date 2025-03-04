@@ -83,8 +83,8 @@ func (c *baseComputer) constraintValuesToConstraints(ctx context.Context, e cons
 
 		var actualConstraintSetting, actualConstraintValue, defaultConstraintValue *string
 		var errIter error
-		listDereferencer := c.valueDereferencers.List
-		for key, value := range model_starlark.AllStructFields(ctx, listDereferencer, constrainValueInfoProvider, &errIter) {
+		listReader := c.valueReaders.List
+		for key, value := range model_starlark.AllStructFields(ctx, listReader, constrainValueInfoProvider, &errIter) {
 			switch key {
 			case "constraint":
 				constraintSettingInfoProvider, ok := value.Message.Kind.(*model_starlark_pb.Value_Struct)
@@ -94,7 +94,7 @@ func (c *baseComputer) constraintValuesToConstraints(ctx context.Context, e cons
 				var errIter error
 				for key, value := range model_starlark.AllStructFields(
 					ctx,
-					listDereferencer,
+					listReader,
 					model_core.NewNestedMessage(value, constraintSettingInfoProvider.Struct.Fields),
 					&errIter,
 				) {
@@ -726,7 +726,7 @@ func (rc *ruleContext) Attr(thread *starlark.Thread, name string) (starlark.Valu
 			targetLabelStr := rc.targetLabel.String()
 			override, err := btree.Find(
 				rc.context,
-				rc.computer.configurationBuildSettingOverrideDereferencer,
+				rc.computer.configurationBuildSettingOverrideReader,
 				model_core.NewNestedMessage(configuration, configuration.Message.BuildSettingOverrides),
 				func(entry *model_analysis_pb.Configuration_BuildSettingOverride) (int, *model_core_pb.Reference) {
 					switch level := entry.Level.(type) {
@@ -1762,8 +1762,8 @@ func (rce *ruleContextExecutable) Attr(thread *starlark.Thread, name string) (st
 			if err != nil {
 				return nil, fmt.Errorf("attr %#v with label %#v: %w", name, visibleTarget.Message.Label, err)
 			}
-			listDereferencer := rc.computer.valueDereferencers.List
-			filesToRun, err := model_starlark.GetStructFieldValue(rc.context, listDereferencer, defaultInfo, "files_to_run")
+			listReader := rc.computer.valueReaders.List
+			filesToRun, err := model_starlark.GetStructFieldValue(rc.context, listReader, defaultInfo, "files_to_run")
 			if err != nil {
 				return nil, fmt.Errorf("failed to obtain field \"files_to_run\" of DefaultInfo provider of target with label %#v: %w", visibleTarget.Message.Label, err)
 			}
@@ -1773,7 +1773,7 @@ func (rce *ruleContextExecutable) Attr(thread *starlark.Thread, name string) (st
 			}
 			encodedExecutable, err := model_starlark.GetStructFieldValue(
 				rc.context,
-				listDereferencer,
+				listReader,
 				model_core.NewNestedMessage(filesToRun, filesToRunStruct.Struct.Fields),
 				"executable",
 			)
@@ -1889,7 +1889,7 @@ func (rcf *ruleContextFile) Attr(thread *starlark.Thread, name string) (starlark
 			if err != nil {
 				return nil, fmt.Errorf("attr %#v with label %#v: %w", name, visibleTarget.Message.Label, err)
 			}
-			files, err := model_starlark.GetStructFieldValue(rc.context, rc.computer.valueDereferencers.List, defaultInfo, "files")
+			files, err := model_starlark.GetStructFieldValue(rc.context, rc.computer.valueReaders.List, defaultInfo, "files")
 			if err != nil {
 				return nil, fmt.Errorf("failed to obtain field \"files\" of DefaultInfo provider of target with label %#v: %w", visibleTarget.Message.Label, err)
 			}
@@ -1991,7 +1991,7 @@ func (rcf *ruleContextFiles) Attr(thread *starlark.Thread, name string) (starlar
 			return nil, err
 		}
 		labeListParentsSeen := map[object.LocalReference]struct{}{}
-		listDereferencer := rc.computer.valueDereferencers.List
+		listReader := rc.computer.valueReaders.List
 		missingDependencies := false
 		var filesDepsetElements []any
 		for _, valuePart := range valueParts.Message {
@@ -2009,7 +2009,7 @@ func (rcf *ruleContextFiles) Attr(thread *starlark.Thread, name string) (starlar
 			var errIter error
 			for encodedElement := range model_starlark.AllListLeafElementsSkippingDuplicateParents(
 				rc.context,
-				listDereferencer,
+				listReader,
 				labelList,
 				labeListParentsSeen,
 				&errIter,
@@ -2047,7 +2047,7 @@ func (rcf *ruleContextFiles) Attr(thread *starlark.Thread, name string) (starlar
 
 				// Obtain the "files" depset contained within
 				// the DefaultInfo provider.
-				files, err := model_starlark.GetStructFieldValue(rc.context, listDereferencer, defaultInfo, "files")
+				files, err := model_starlark.GetStructFieldValue(rc.context, listReader, defaultInfo, "files")
 				if err != nil {
 					return nil, fmt.Errorf("failed to obtain field \"files\" of DefaultInfo provider of target with label %#v: %w", visibleTarget.Message.Label, err)
 				}

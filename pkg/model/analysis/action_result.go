@@ -13,8 +13,8 @@ import (
 	"github.com/buildbarn/bonanza/pkg/evaluation"
 	model_core "github.com/buildbarn/bonanza/pkg/model/core"
 	"github.com/buildbarn/bonanza/pkg/model/core/btree"
-	"github.com/buildbarn/bonanza/pkg/model/core/dereference"
 	model_encoding "github.com/buildbarn/bonanza/pkg/model/encoding"
+	model_parser "github.com/buildbarn/bonanza/pkg/model/parser"
 	model_analysis_pb "github.com/buildbarn/bonanza/pkg/proto/model/analysis"
 	model_command_pb "github.com/buildbarn/bonanza/pkg/proto/model/command"
 	remoteexecution_pb "github.com/buildbarn/bonanza/pkg/proto/remoteexecution"
@@ -141,7 +141,7 @@ func (c *baseComputer) convertDictToEnvironmentVariableList(environment map[stri
 	return environmentVariablesBuilder.FinalizeList()
 }
 
-func (c *baseComputer) getOutputsFromActionResult(ctx context.Context, actionResult model_core.Message[*model_analysis_pb.ActionResult_Value, object.OutgoingReferences[object.LocalReference]], directoryDereferencers *DirectoryDereferencers) (model_core.Message[*model_command_pb.Outputs, object.OutgoingReferences[object.LocalReference]], error) {
+func (c *baseComputer) getOutputsFromActionResult(ctx context.Context, actionResult model_core.Message[*model_analysis_pb.ActionResult_Value, object.OutgoingReferences[object.LocalReference]], directoryReaders *DirectoryReaders) (model_core.Message[*model_command_pb.Outputs, object.OutgoingReferences[object.LocalReference]], error) {
 	if actionResult.Message.OutputsReference == nil {
 		// Action did not yield any outputs. Return an empty
 		// outputs message, so any code that attempts to access
@@ -149,5 +149,5 @@ func (c *baseComputer) getOutputsFromActionResult(ctx context.Context, actionRes
 		return model_core.NewMessage(&model_command_pb.Outputs{}, object.OutgoingReferences[object.LocalReference](object.OutgoingReferencesList{})), nil
 	}
 
-	return dereference.Dereference(ctx, directoryDereferencers.CommandOutputs, model_core.NewNestedMessage(actionResult, actionResult.Message.OutputsReference))
+	return model_parser.Dereference(ctx, directoryReaders.CommandOutputs, model_core.NewNestedMessage(actionResult, actionResult.Message.OutputsReference))
 }

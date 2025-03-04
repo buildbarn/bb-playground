@@ -5,7 +5,7 @@ import (
 	"iter"
 
 	model_core "github.com/buildbarn/bonanza/pkg/model/core"
-	"github.com/buildbarn/bonanza/pkg/model/core/dereference"
+	model_parser "github.com/buildbarn/bonanza/pkg/model/parser"
 	model_core_pb "github.com/buildbarn/bonanza/pkg/proto/model/core"
 	"github.com/buildbarn/bonanza/pkg/storage/object"
 
@@ -23,7 +23,7 @@ func AllLeaves[
 	TReference any,
 ](
 	ctx context.Context,
-	dereferencer dereference.Dereferencer[model_core.Message[[]TMessagePtr, TOutgoingReferences], TReference],
+	reader model_parser.ParsedObjectReader[TReference, model_core.Message[[]TMessagePtr, TOutgoingReferences]],
 	root model_core.Message[[]TMessagePtr, TOutgoingReferences],
 	traverser func(model_core.Message[TMessagePtr, TOutgoingReferences]) (*model_core_pb.Reference, error),
 	errOut *error,
@@ -48,9 +48,9 @@ func AllLeaves[
 					}
 				} else {
 					// Traverser wants us to enter a child.
-					child, err := dereference.Dereference[model_core.Message[[]TMessagePtr, TOutgoingReferences]](
+					child, err := model_parser.Dereference[model_core.Message[[]TMessagePtr, TOutgoingReferences]](
 						ctx,
-						dereferencer,
+						reader,
 						model_core.NewNestedMessage(*lastList, childReference),
 					)
 					if err != nil {

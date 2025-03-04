@@ -10,7 +10,7 @@ import (
 	"github.com/buildbarn/bb-storage/pkg/filesystem/path"
 	"github.com/buildbarn/bonanza/pkg/evaluation"
 	model_core "github.com/buildbarn/bonanza/pkg/model/core"
-	"github.com/buildbarn/bonanza/pkg/model/core/dereference"
+	model_parser "github.com/buildbarn/bonanza/pkg/model/parser"
 	model_analysis_pb "github.com/buildbarn/bonanza/pkg/proto/model/analysis"
 	model_core_pb "github.com/buildbarn/bonanza/pkg/proto/model/core"
 	model_filesystem_pb "github.com/buildbarn/bonanza/pkg/proto/model/filesystem"
@@ -23,10 +23,10 @@ import (
 // directory, which allows symbolic links with targets of shape
 // "../${repo}/${file}" to resolve properly.
 type reposFilePropertiesResolver struct {
-	context               context.Context
-	directoryDereferencer dereference.Dereferencer[model_core.Message[*model_filesystem_pb.Directory, object.OutgoingReferences[object.LocalReference]], object.LocalReference]
-	leavesDereferencer    dereference.Dereferencer[model_core.Message[*model_filesystem_pb.Leaves, object.OutgoingReferences[object.LocalReference]], object.LocalReference]
-	environment           FilePropertiesEnvironment
+	context         context.Context
+	directoryReader model_parser.ParsedObjectReader[object.LocalReference, model_core.Message[*model_filesystem_pb.Directory, object.OutgoingReferences[object.LocalReference]]]
+	leavesReader    model_parser.ParsedObjectReader[object.LocalReference, model_core.Message[*model_filesystem_pb.Leaves, object.OutgoingReferences[object.LocalReference]]]
+	environment     FilePropertiesEnvironment
 
 	currentDirectoryReference model_core.Message[*model_core_pb.Reference, object.OutgoingReferences[object.LocalReference]]
 	stack                     []model_core.Message[*model_filesystem_pb.Directory, object.OutgoingReferences[object.LocalReference]]
@@ -40,7 +40,7 @@ func (r *reposFilePropertiesResolver) getCurrentLeaves() (model_core.Message[*mo
 	d := r.stack[len(r.stack)-1]
 	switch l := d.Message.Leaves.(type) {
 	case *model_filesystem_pb.Directory_LeavesExternal:
-		return dereference.Dereference(r.context, r.leavesDereferencer, model_core.NewNestedMessage(d, l.LeavesExternal.Reference))
+		return model_parser.Dereference(r.context, r.leavesReader, model_core.NewNestedMessage(d, l.LeavesExternal.Reference))
 	case *model_filesystem_pb.Directory_LeavesInline:
 		return model_core.NewNestedMessage(d, l.LeavesInline), nil
 	default:
@@ -50,7 +50,7 @@ func (r *reposFilePropertiesResolver) getCurrentLeaves() (model_core.Message[*mo
 
 func (r *reposFilePropertiesResolver) dereferenceCurrentDirectory() error {
 	if r.currentDirectoryReference.IsSet() {
-		d, err := dereference.Dereference(r.context, r.directoryDereferencer, r.currentDirectoryReference)
+		d, err := model_parser.Dereference(r.context, r.directoryReader, r.currentDirectoryReference)
 		if err != nil {
 			return err
 		}
@@ -193,16 +193,16 @@ func (r *reposFilePropertiesResolver) OnUp() (path.ComponentWalker, error) {
 }
 
 func (c *baseComputer) ComputeFilePropertiesValue(ctx context.Context, key *model_analysis_pb.FileProperties_Key, e FilePropertiesEnvironment) (PatchedFilePropertiesValue, error) {
-	directoryDereferencers, gotDirectoryDereferencers := e.GetDirectoryDereferencersValue(&model_analysis_pb.DirectoryDereferencers_Key{})
-	if !gotDirectoryDereferencers {
+	directoryReaders, gotDirectoryReaders := e.GetDirectoryReadersValue(&model_analysis_pb.DirectoryReaders_Key{})
+	if !gotDirectoryReaders {
 		return PatchedFilePropertiesValue{}, evaluation.ErrMissingDependency
 	}
 
 	resolver := reposFilePropertiesResolver{
-		context:               ctx,
-		directoryDereferencer: directoryDereferencers.Directory,
-		leavesDereferencer:    directoryDereferencers.Leaves,
-		environment:           e,
+		context:         ctx,
+		directoryReader: directoryReaders.Directory,
+		leavesReader:    directoryReaders.Leaves,
+		environment:     e,
 	}
 
 	canonicalRepo, ok := path.NewComponent(key.CanonicalRepo)

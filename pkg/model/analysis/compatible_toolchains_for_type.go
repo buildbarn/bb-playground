@@ -10,7 +10,7 @@ import (
 	"github.com/buildbarn/bonanza/pkg/label"
 	model_core "github.com/buildbarn/bonanza/pkg/model/core"
 	"github.com/buildbarn/bonanza/pkg/model/core/btree"
-	"github.com/buildbarn/bonanza/pkg/model/core/dereference"
+	model_parser "github.com/buildbarn/bonanza/pkg/model/parser"
 	model_starlark "github.com/buildbarn/bonanza/pkg/model/starlark"
 	model_analysis_pb "github.com/buildbarn/bonanza/pkg/proto/model/analysis"
 	model_core_pb "github.com/buildbarn/bonanza/pkg/proto/model/core"
@@ -27,7 +27,7 @@ func (c *baseComputer) getConfigurationByReference(ctx context.Context, configur
 			OutgoingReferences: object.OutgoingReferencesList{},
 		}, nil
 	}
-	return dereference.Dereference(ctx, c.configurationDereferencer, configurationReference)
+	return model_parser.Dereference(ctx, c.configurationReader, configurationReference)
 }
 
 var commandLineOptionPlatformsLabel = label.MustNewCanonicalLabel("@@bazel_tools+//command_line_option:platforms")
@@ -51,7 +51,7 @@ func (c *baseComputer) ComputeCompatibleToolchainsForTypeValue(ctx context.Conte
 	commandLineOptionPlatformsLabelStr := commandLineOptionPlatformsLabel.String()
 	platformOverride, err := btree.Find(
 		ctx,
-		c.configurationBuildSettingOverrideDereferencer,
+		c.configurationBuildSettingOverrideReader,
 		model_core.NewNestedMessage(configuration, configuration.Message.BuildSettingOverrides),
 		func(entry *model_analysis_pb.Configuration_BuildSettingOverride) (int, *model_core_pb.Reference) {
 			switch level := entry.Level.(type) {
@@ -101,7 +101,7 @@ func (c *baseComputer) ComputeCompatibleToolchainsForTypeValue(ctx context.Conte
 	if err != nil {
 		return PatchedCompatibleToolchainsForTypeValue{}, fmt.Errorf("failed to obtain PlatformInfo provider for target %#v: %w", platformLabel, err)
 	}
-	constraintsValue, err := model_starlark.GetStructFieldValue(ctx, c.valueDereferencers.List, platformInfoProvider, "constraints")
+	constraintsValue, err := model_starlark.GetStructFieldValue(ctx, c.valueReaders.List, platformInfoProvider, "constraints")
 	if err != nil {
 		return PatchedCompatibleToolchainsForTypeValue{}, fmt.Errorf("failed to obtain constraints field of PlatformInfo provider for target %#v: %w", err)
 	}

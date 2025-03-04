@@ -28,7 +28,7 @@ func (c *baseComputer) decodeStringDict(ctx context.Context, d model_core.Messag
 	o := map[string]string{}
 	for entry := range model_starlark.AllDictLeafEntries(
 		ctx,
-		c.valueDereferencers.Dict,
+		c.valueReaders.Dict,
 		model_core.NewNestedMessage(d, dict.Dict),
 		&iterErr,
 	) {
@@ -99,7 +99,7 @@ func (c *baseComputer) ComputeRegisteredRepoPlatformValue(ctx context.Context, k
 	var errIter error
 	for key, value := range model_starlark.AllStructFields(
 		ctx,
-		c.valueDereferencers.List,
+		c.valueReaders.List,
 		platformInfoProvider,
 		&errIter,
 	) {

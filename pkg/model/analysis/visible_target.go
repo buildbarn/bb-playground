@@ -238,7 +238,7 @@ func (c *baseComputer) ComputeVisibleTargetValue(ctx context.Context, key model_
 		toLabelStr := toLabel.String()
 		override, err := btree.Find(
 			ctx,
-			c.configurationBuildSettingOverrideDereferencer,
+			c.configurationBuildSettingOverrideReader,
 			model_core.NewNestedMessage(configuration, configuration.Message.BuildSettingOverrides),
 			func(entry *model_analysis_pb.Configuration_BuildSettingOverride) (int, *model_core_pb.Reference) {
 				switch level := entry.Level.(type) {

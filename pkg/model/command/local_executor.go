@@ -21,7 +21,6 @@ import (
 	"github.com/buildbarn/bb-storage/pkg/util"
 	model_core "github.com/buildbarn/bonanza/pkg/model/core"
 	"github.com/buildbarn/bonanza/pkg/model/core/btree"
-	"github.com/buildbarn/bonanza/pkg/model/core/dereference"
 	model_encoding "github.com/buildbarn/bonanza/pkg/model/encoding"
 	model_filesystem "github.com/buildbarn/bonanza/pkg/model/filesystem"
 	model_filesystem_virtual "github.com/buildbarn/bonanza/pkg/model/filesystem/virtual"
@@ -233,12 +232,10 @@ func (e *localExecutor) Execute(ctx context.Context, action *model_command_pb.Ac
 	var errIter error
 	for element := range btree.AllLeaves(
 		ctx,
-		dereference.NewReadingDereferencer(
-			model_parser.NewStorageBackedParsedObjectReader(
-				objectDownloader,
-				commandEncoder,
-				model_parser.NewMessageListObjectParser[object.LocalReference, model_command_pb.ArgumentList_Element](),
-			),
+		model_parser.NewStorageBackedParsedObjectReader(
+			objectDownloader,
+			commandEncoder,
+			model_parser.NewMessageListObjectParser[object.LocalReference, model_command_pb.ArgumentList_Element](),
 		),
 		model_core.NewNestedMessage(command, command.Message.Arguments),
 		func(element model_core.Message[*model_command_pb.ArgumentList_Element, object.OutgoingReferences[object.LocalReference]]) (*model_core_pb.Reference, error) {
@@ -266,12 +263,10 @@ func (e *localExecutor) Execute(ctx context.Context, action *model_command_pb.Ac
 	environmentVariables := map[string]string{}
 	for entry := range btree.AllLeaves(
 		ctx,
-		dereference.NewReadingDereferencer(
-			model_parser.NewStorageBackedParsedObjectReader(
-				objectDownloader,
-				commandEncoder,
-				model_parser.NewMessageListObjectParser[object.LocalReference, model_command_pb.EnvironmentVariableList_Element](),
-			),
+		model_parser.NewStorageBackedParsedObjectReader(
+			objectDownloader,
+			commandEncoder,
+			model_parser.NewMessageListObjectParser[object.LocalReference, model_command_pb.EnvironmentVariableList_Element](),
 		),
 		model_core.NewNestedMessage(command, command.Message.EnvironmentVariables),
 		func(entry model_core.Message[*model_command_pb.EnvironmentVariableList_Element, object.OutgoingReferences[object.LocalReference]]) (*model_core_pb.Reference, error) {

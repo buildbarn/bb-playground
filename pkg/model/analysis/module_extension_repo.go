@@ -34,7 +34,7 @@ func (c *baseComputer) ComputeModuleExtensionRepoValue(ctx context.Context, key 
 	repoName := apparentRepo.String()
 	repo, err := btree.Find(
 		ctx,
-		c.moduleExtensionReposValueRepoDereferencer,
+		c.moduleExtensionReposValueRepoReader,
 		model_core.NewNestedMessage(moduleExtensionReposValue, moduleExtensionReposValue.Message.Repos),
 		func(entry *model_analysis_pb.ModuleExtensionRepos_Value_Repo) (int, *model_core_pb.Reference) {
 			switch level := entry.Level.(type) {

@@ -4,7 +4,7 @@ import (
 	"context"
 
 	model_core "github.com/buildbarn/bonanza/pkg/model/core"
-	"github.com/buildbarn/bonanza/pkg/model/core/dereference"
+	model_parser "github.com/buildbarn/bonanza/pkg/model/parser"
 	model_core_pb "github.com/buildbarn/bonanza/pkg/proto/model/core"
 	"github.com/buildbarn/bonanza/pkg/storage/object"
 
@@ -22,7 +22,7 @@ func Find[
 	TReference any,
 ](
 	ctx context.Context,
-	dereferencer dereference.Dereferencer[model_core.Message[[]TMessagePtr, TOutgoingReferences], TReference],
+	reader model_parser.ParsedObjectReader[TReference, model_core.Message[[]TMessagePtr, TOutgoingReferences]],
 	list model_core.Message[[]TMessagePtr, TOutgoingReferences],
 	cmp func(TMessagePtr) (int, *model_core_pb.Reference),
 ) (model_core.Message[TMessagePtr, TOutgoingReferences], error) {
@@ -60,7 +60,7 @@ func Find[
 
 		// Load the child from storage and continue searching.
 		var err error
-		list, err = dereference.Dereference(ctx, dereferencer, model_core.NewNestedMessage(list, childReference))
+		list, err = model_parser.Dereference(ctx, reader, model_core.NewNestedMessage(list, childReference))
 		if err != nil {
 			return model_core.Message[TMessagePtr, TOutgoingReferences]{}, err
 		}

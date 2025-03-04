@@ -49,7 +49,7 @@ func (c *baseComputer) ComputePackageValue(ctx context.Context, key *model_analy
 		return PatchedPackageValue{}, err
 	}
 
-	listDereferencer := c.valueDereferencers.List
+	listReader := c.valueReaders.List
 	for _, buildFileName := range buildDotBazelTargetNames {
 		buildFileProperties := e.GetFilePropertiesValue(&model_analysis_pb.FileProperties_Key{
 			CanonicalRepo: canonicalRepo.String(),
@@ -114,7 +114,7 @@ func (c *baseComputer) ComputePackageValue(ctx context.Context, key *model_analy
 			}
 			return model_starlark.GetStructFieldValue(
 				ctx,
-				listDereferencer,
+				listReader,
 				model_core.NewNestedMessage(compiledBzlFile, compiledBzlFile.Message.CompiledProgram.GetGlobals()),
 				identifier.GetStarlarkIdentifier().String(),
 			)

@@ -260,7 +260,7 @@ message DirectoryCreationParametersObject {
   message Key {}
 }
 
-message DirectoryDereferencers {
+message DirectoryReaders {
   message Key {}
 }
 

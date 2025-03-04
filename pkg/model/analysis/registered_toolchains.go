@@ -50,7 +50,7 @@ func (registeredToolchainExtractingModuleDotBazelHandler) RegisterExecutionPlatf
 func (h *registeredToolchainExtractingModuleDotBazelHandler) RegisterToolchains(toolchainTargetPatterns []label.ApparentTargetPattern, devDependency bool) error {
 	if !devDependency || !h.ignoreDevDependencies {
 		missingDependencies := false
-		listDereferencer := h.computer.valueDereferencers.List
+		listReader := h.computer.valueReaders.List
 		for _, apparentToolchainTargetPattern := range toolchainTargetPatterns {
 			canonicalToolchainTargetPattern, err := resolveApparent(h.environment, h.moduleInstance.GetBareCanonicalRepo(), apparentToolchainTargetPattern)
 			if err != nil {
@@ -121,7 +121,7 @@ func (h *registeredToolchainExtractingModuleDotBazelHandler) RegisterToolchains(
 				var errIter error
 				for key, value := range model_starlark.AllStructFields(
 					h.context,
-					listDereferencer,
+					listReader,
 					declaredToolchainInfoProvider,
 					&errIter,
 				) {
@@ -185,7 +185,7 @@ func (h *registeredToolchainExtractingModuleDotBazelHandler) RegisterToolchains(
 					var errIter error
 					for element := range btree.AllLeaves(
 						h.context,
-						listDereferencer,
+						listReader,
 						model_core.NewNestedMessage(targetValue, targetCompatibleWithList.List.Elements),
 						func(element model_core.Message[*model_starlark_pb.List_Element, object.OutgoingReferences[object.LocalReference]]) (*model_core_pb.Reference, error) {
 							if level, ok := element.Message.Level.(*model_starlark_pb.List_Element_Parent_); ok {

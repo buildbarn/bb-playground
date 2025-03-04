@@ -25,7 +25,7 @@ func (c *baseComputer) ComputeModuleExtensionRepoNamesValue(ctx context.Context,
 	var errIter error
 	for entry := range btree.AllLeaves(
 		ctx,
-		c.moduleExtensionReposValueRepoDereferencer,
+		c.moduleExtensionReposValueRepoReader,
 		model_core.NewNestedMessage(moduleExtensionReposValue, moduleExtensionReposValue.Message.Repos),
 		func(entry model_core.Message[*model_analysis_pb.ModuleExtensionRepos_Value_Repo, object.OutgoingReferences[object.LocalReference]]) (*model_core_pb.Reference, error) {
 			if parent, ok := entry.Message.Level.(*model_analysis_pb.ModuleExtensionRepos_Value_Repo_Parent_); ok {

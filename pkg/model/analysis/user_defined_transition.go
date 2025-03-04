@@ -52,7 +52,7 @@ func (c *baseComputer) applyTransition(
 	var errIter error
 	existingIter, existingIterStop := iter.Pull(btree.AllLeaves(
 		ctx,
-		c.configurationBuildSettingOverrideDereferencer,
+		c.configurationBuildSettingOverrideReader,
 		model_core.NewNestedMessage(configuration, configuration.Message.BuildSettingOverrides),
 		func(override model_core.Message[*model_analysis_pb.Configuration_BuildSettingOverride, object.OutgoingReferences[object.LocalReference]]) (*model_core_pb.Reference, error) {
 			if level, ok := override.Message.Level.(*model_analysis_pb.Configuration_BuildSettingOverride_Parent_); ok {
@@ -277,7 +277,7 @@ func (c *baseComputer) ComputeUserDefinedTransitionValue(ctx context.Context, ke
 		// Determine the current value of the build setting.
 		buildSettingOverride, err := btree.Find(
 			ctx,
-			c.configurationBuildSettingOverrideDereferencer,
+			c.configurationBuildSettingOverrideReader,
 			model_core.NewNestedMessage(configuration, configuration.Message.BuildSettingOverrides),
 			func(entry *model_analysis_pb.Configuration_BuildSettingOverride) (int, *model_core_pb.Reference) {
 				switch level := entry.Level.(type) {

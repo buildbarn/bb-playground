@@ -11,7 +11,6 @@ import (
 	"github.com/buildbarn/bonanza/pkg/evaluation"
 	"github.com/buildbarn/bonanza/pkg/label"
 	model_core "github.com/buildbarn/bonanza/pkg/model/core"
-	"github.com/buildbarn/bonanza/pkg/model/core/dereference"
 	"github.com/buildbarn/bonanza/pkg/model/core/inlinedtree"
 	model_encoding "github.com/buildbarn/bonanza/pkg/model/encoding"
 	model_filesystem "github.com/buildbarn/bonanza/pkg/model/filesystem"
@@ -39,16 +38,16 @@ type baseComputer struct {
 	cacheDirectory              filesystem.Directory
 	executionClient             *remoteexecution.Client[*model_command_pb.Action, emptypb.Empty, *emptypb.Empty, *model_command_pb.Result]
 
-	// Dereferencers for various message types.
+	// Readers for various message types.
 	// TODO: These should likely be removed and instantiated later
 	// on, so that we can encrypt all data in storage.
-	valueDereferencers                                 model_starlark.ValueDereferencers
-	commandOutputsDereferencer                         dereference.Dereferencer[model_core.Message[*model_command_pb.Outputs, object.OutgoingReferences[object.LocalReference]], object.LocalReference]
-	configurationBuildSettingOverrideDereferencer      dereference.Dereferencer[model_core.Message[[]*model_analysis_pb.Configuration_BuildSettingOverride, object.OutgoingReferences[object.LocalReference]], object.LocalReference]
-	configurationDereferencer                          dereference.Dereferencer[model_core.Message[*model_analysis_pb.Configuration, object.OutgoingReferences[object.LocalReference]], object.LocalReference]
-	moduleExtensionReposValueRepoDereferencer          dereference.Dereferencer[model_core.Message[[]*model_analysis_pb.ModuleExtensionRepos_Value_Repo, object.OutgoingReferences[object.LocalReference]], object.LocalReference]
-	packageValueTargetDereferencer                     dereference.Dereferencer[model_core.Message[[]*model_analysis_pb.Package_Value_Target, object.OutgoingReferences[object.LocalReference]], object.LocalReference]
-	targetPatternExpansionValueTargetLabelDereferencer dereference.Dereferencer[model_core.Message[[]*model_analysis_pb.TargetPatternExpansion_Value_TargetLabel, object.OutgoingReferences[object.LocalReference]], object.LocalReference]
+	valueReaders                                 model_starlark.ValueReaders
+	commandOutputsReader                         model_parser.ParsedObjectReader[object.LocalReference, model_core.Message[*model_command_pb.Outputs, object.OutgoingReferences[object.LocalReference]]]
+	configurationBuildSettingOverrideReader      model_parser.ParsedObjectReader[object.LocalReference, model_core.Message[[]*model_analysis_pb.Configuration_BuildSettingOverride, object.OutgoingReferences[object.LocalReference]]]
+	configurationReader                          model_parser.ParsedObjectReader[object.LocalReference, model_core.Message[*model_analysis_pb.Configuration, object.OutgoingReferences[object.LocalReference]]]
+	moduleExtensionReposValueRepoReader          model_parser.ParsedObjectReader[object.LocalReference, model_core.Message[[]*model_analysis_pb.ModuleExtensionRepos_Value_Repo, object.OutgoingReferences[object.LocalReference]]]
+	packageValueTargetReader                     model_parser.ParsedObjectReader[object.LocalReference, model_core.Message[[]*model_analysis_pb.Package_Value_Target, object.OutgoingReferences[object.LocalReference]]]
+	targetPatternExpansionValueTargetLabelReader model_parser.ParsedObjectReader[object.LocalReference, model_core.Message[[]*model_analysis_pb.TargetPatternExpansion_Value_TargetLabel, object.OutgoingReferences[object.LocalReference]]]
 }
 
 func NewBaseComputer(
@@ -69,63 +68,47 @@ func NewBaseComputer(
 		cacheDirectory:              cacheDirectory,
 		executionClient:             executionClient,
 
-		valueDereferencers: model_starlark.ValueDereferencers{
-			Dict: dereference.NewReadingDereferencer(
-				model_parser.NewStorageBackedParsedObjectReader(
-					objectDownloader,
-					model_encoding.NewChainedBinaryEncoder(nil),
-					model_parser.NewMessageListObjectParser[object.LocalReference, model_starlark_pb.Dict_Entry](),
-				),
+		valueReaders: model_starlark.ValueReaders{
+			Dict: model_parser.NewStorageBackedParsedObjectReader(
+				objectDownloader,
+				model_encoding.NewChainedBinaryEncoder(nil),
+				model_parser.NewMessageListObjectParser[object.LocalReference, model_starlark_pb.Dict_Entry](),
 			),
-			List: dereference.NewReadingDereferencer(
-				model_parser.NewStorageBackedParsedObjectReader(
-					objectDownloader,
-					model_encoding.NewChainedBinaryEncoder(nil),
-					model_parser.NewMessageListObjectParser[object.LocalReference, model_starlark_pb.List_Element](),
-				),
+			List: model_parser.NewStorageBackedParsedObjectReader(
+				objectDownloader,
+				model_encoding.NewChainedBinaryEncoder(nil),
+				model_parser.NewMessageListObjectParser[object.LocalReference, model_starlark_pb.List_Element](),
 			),
 		},
-		commandOutputsDereferencer: dereference.NewReadingDereferencer(
-			model_parser.NewStorageBackedParsedObjectReader(
-				objectDownloader,
-				model_encoding.NewChainedBinaryEncoder(nil),
-				model_parser.NewMessageObjectParser[object.LocalReference, model_command_pb.Outputs](),
-			),
+		commandOutputsReader: model_parser.NewStorageBackedParsedObjectReader(
+			objectDownloader,
+			model_encoding.NewChainedBinaryEncoder(nil),
+			model_parser.NewMessageObjectParser[object.LocalReference, model_command_pb.Outputs](),
 		),
-		configurationBuildSettingOverrideDereferencer: dereference.NewReadingDereferencer(
-			model_parser.NewStorageBackedParsedObjectReader(
-				objectDownloader,
-				model_encoding.NewChainedBinaryEncoder(nil),
-				model_parser.NewMessageListObjectParser[object.LocalReference, model_analysis_pb.Configuration_BuildSettingOverride](),
-			),
+		configurationBuildSettingOverrideReader: model_parser.NewStorageBackedParsedObjectReader(
+			objectDownloader,
+			model_encoding.NewChainedBinaryEncoder(nil),
+			model_parser.NewMessageListObjectParser[object.LocalReference, model_analysis_pb.Configuration_BuildSettingOverride](),
 		),
-		configurationDereferencer: dereference.NewReadingDereferencer(
-			model_parser.NewStorageBackedParsedObjectReader(
-				objectDownloader,
-				model_encoding.NewChainedBinaryEncoder(nil),
-				model_parser.NewMessageObjectParser[object.LocalReference, model_analysis_pb.Configuration](),
-			),
+		configurationReader: model_parser.NewStorageBackedParsedObjectReader(
+			objectDownloader,
+			model_encoding.NewChainedBinaryEncoder(nil),
+			model_parser.NewMessageObjectParser[object.LocalReference, model_analysis_pb.Configuration](),
 		),
-		moduleExtensionReposValueRepoDereferencer: dereference.NewReadingDereferencer(
-			model_parser.NewStorageBackedParsedObjectReader(
-				objectDownloader,
-				model_encoding.NewChainedBinaryEncoder(nil),
-				model_parser.NewMessageListObjectParser[object.LocalReference, model_analysis_pb.ModuleExtensionRepos_Value_Repo](),
-			),
+		moduleExtensionReposValueRepoReader: model_parser.NewStorageBackedParsedObjectReader(
+			objectDownloader,
+			model_encoding.NewChainedBinaryEncoder(nil),
+			model_parser.NewMessageListObjectParser[object.LocalReference, model_analysis_pb.ModuleExtensionRepos_Value_Repo](),
 		),
-		packageValueTargetDereferencer: dereference.NewReadingDereferencer(
-			model_parser.NewStorageBackedParsedObjectReader(
-				objectDownloader,
-				model_encoding.NewChainedBinaryEncoder(nil),
-				model_parser.NewMessageListObjectParser[object.LocalReference, model_analysis_pb.Package_Value_Target](),
-			),
+		packageValueTargetReader: model_parser.NewStorageBackedParsedObjectReader(
+			objectDownloader,
+			model_encoding.NewChainedBinaryEncoder(nil),
+			model_parser.NewMessageListObjectParser[object.LocalReference, model_analysis_pb.Package_Value_Target](),
 		),
-		targetPatternExpansionValueTargetLabelDereferencer: dereference.NewReadingDereferencer(
-			model_parser.NewStorageBackedParsedObjectReader(
-				objectDownloader,
-				model_encoding.NewChainedBinaryEncoder(nil),
-				model_parser.NewMessageListObjectParser[object.LocalReference, model_analysis_pb.TargetPatternExpansion_Value_TargetLabel](),
-			),
+		targetPatternExpansionValueTargetLabelReader: model_parser.NewStorageBackedParsedObjectReader(
+			objectDownloader,
+			model_encoding.NewChainedBinaryEncoder(nil),
+			model_parser.NewMessageListObjectParser[object.LocalReference, model_analysis_pb.TargetPatternExpansion_Value_TargetLabel](),
 		),
 	}
 }
@@ -151,9 +134,9 @@ func (c *baseComputer) getValueEncodingOptions(currentFilename label.CanonicalLa
 
 func (c *baseComputer) getValueDecodingOptions(ctx context.Context, labelCreator func(label.ResolvedLabel) (starlark.Value, error)) *model_starlark.ValueDecodingOptions {
 	return &model_starlark.ValueDecodingOptions{
-		Context:       ctx,
-		Dereferencers: &c.valueDereferencers,
-		LabelCreator:  labelCreator,
+		Context:      ctx,
+		Readers:      &c.valueReaders,
+		LabelCreator: labelCreator,
 	}
 }
 

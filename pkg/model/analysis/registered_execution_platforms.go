@@ -49,7 +49,7 @@ func (c *baseComputer) extractFromPlatformInfoConstraints(ctx context.Context, v
 	constraints := map[string]string{}
 	for entry := range model_starlark.AllDictLeafEntries(
 		ctx,
-		c.valueDereferencers.Dict,
+		c.valueReaders.Dict,
 		model_core.NewNestedMessage(value, dict.Dict),
 		&iterErr,
 	) {
@@ -78,7 +78,7 @@ func (c *baseComputer) extractFromPlatformInfoConstraints(ctx context.Context, v
 
 func (h *registeredExecutionPlatformExtractingModuleDotBazelHandler) RegisterExecutionPlatforms(platformTargetPatterns []label.ApparentTargetPattern, devDependency bool) error {
 	if !devDependency || !h.ignoreDevDependencies {
-		listDereferencer := h.computer.valueDereferencers.List
+		listReader := h.computer.valueReaders.List
 		for _, apparentPlatformTargetPattern := range platformTargetPatterns {
 			canonicalPlatformTargetPattern, err := resolveApparent(h.environment, h.moduleInstance.GetBareCanonicalRepo(), apparentPlatformTargetPattern)
 			if err != nil {
@@ -107,7 +107,7 @@ func (h *registeredExecutionPlatformExtractingModuleDotBazelHandler) RegisterExe
 				var errIter error
 				for key, value := range model_starlark.AllStructFields(
 					h.context,
-					listDereferencer,
+					listReader,
 					platformInfoProvider,
 					&errIter,
 				) {

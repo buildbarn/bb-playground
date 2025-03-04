@@ -176,7 +176,7 @@ func (c *baseComputer) ComputeCompiledBzlFileGlobalValue(ctx context.Context, ke
 
 	global, err := model_starlark.GetStructFieldValue(
 		ctx,
-		c.valueDereferencers.List,
+		c.valueReaders.List,
 		model_core.NewNestedMessage(compiledBzlFile, compiledBzlFile.Message.CompiledProgram.GetGlobals()),
 		identifier.GetStarlarkIdentifier().String(),
 	)

@@ -139,12 +139,12 @@
             "type": "*model_filesystem.DirectoryCreationParameters"
          }
       },
-      "DirectoryDereferencers": {
+      "DirectoryReaders": {
          "dependsOn": [
             "DirectoryAccessParameters"
          ],
          "nativeValueType": {
-            "type": "*DirectoryDereferencers"
+            "type": "*DirectoryReaders"
          }
       },
       "FileAccessParameters": {
@@ -171,7 +171,7 @@
       "FileProperties": {
          "dependsOn": [
             "BuildSpecification",
-            "DirectoryDereferencers",
+            "DirectoryReaders",
             "Repo"
          ]
       },
@@ -228,7 +228,7 @@
             "CompiledBzlFileGlobal",
             "DirectoryCreationParameters",
             "DirectoryCreationParametersObject",
-            "DirectoryDereferencers",
+            "DirectoryReaders",
             "FileCreationParameters",
             "FileCreationParametersObject",
             "FileReader",
@@ -314,7 +314,7 @@
       },
       "PackagesAtAndBelow": {
          "dependsOn": [
-            "DirectoryDereferencers",
+            "DirectoryReaders",
             "Repo"
          ]
       },
@@ -367,7 +367,7 @@
             "CompiledBzlFileFunctionFactory",
             "DirectoryCreationParameters",
             "DirectoryCreationParametersObject",
-            "DirectoryDereferencers",
+            "DirectoryReaders",
             "FileCreationParameters",
             "FileCreationParametersObject",
             "FileProperties",
@@ -418,7 +418,7 @@
             "CommandEncoderObject",
             "DirectoryCreationParameters",
             "DirectoryCreationParametersObject",
-            "DirectoryDereferencers",
+            "DirectoryReaders",
             "FileCreationParameters",
             "FileReader",
             "RegisteredRepoPlatform"

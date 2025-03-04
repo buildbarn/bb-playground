@@ -25,9 +25,9 @@ import (
 	"github.com/buildbarn/bonanza/pkg/label"
 	model_core "github.com/buildbarn/bonanza/pkg/model/core"
 	"github.com/buildbarn/bonanza/pkg/model/core/btree"
-	"github.com/buildbarn/bonanza/pkg/model/core/dereference"
 	model_encoding "github.com/buildbarn/bonanza/pkg/model/encoding"
 	model_filesystem "github.com/buildbarn/bonanza/pkg/model/filesystem"
+	model_parser "github.com/buildbarn/bonanza/pkg/model/parser"
 	model_starlark "github.com/buildbarn/bonanza/pkg/model/starlark"
 	model_analysis_pb "github.com/buildbarn/bonanza/pkg/proto/model/analysis"
 	model_command_pb "github.com/buildbarn/bonanza/pkg/proto/model/command"
@@ -124,7 +124,7 @@ func (d *changeTrackingDirectory) setContents(contents model_core.Message[*model
 	switch leavesType := contents.Message.Leaves.(type) {
 	case *model_filesystem_pb.Directory_LeavesExternal:
 		var err error
-		leaves, err = dereference.Dereference(options.context, options.leavesDereferencer, model_core.NewNestedMessage(contents, leavesType.LeavesExternal.Reference))
+		leaves, err = model_parser.Dereference(options.context, options.leavesReader, model_core.NewNestedMessage(contents, leavesType.LeavesExternal.Reference))
 		if err != nil {
 			return err
 		}
@@ -221,16 +221,16 @@ func (d *changeTrackingDirectory) setFile(loadOptions *changeTrackingDirectoryLo
 }
 
 type changeTrackingDirectoryLoadOptions struct {
-	context               context.Context
-	directoryDereferencer dereference.Dereferencer[model_core.Message[*model_filesystem_pb.Directory, object.OutgoingReferences[object.LocalReference]], object.LocalReference]
-	leavesDereferencer    dereference.Dereferencer[model_core.Message[*model_filesystem_pb.Leaves, object.OutgoingReferences[object.LocalReference]], object.LocalReference]
+	context         context.Context
+	directoryReader model_parser.ParsedObjectReader[object.LocalReference, model_core.Message[*model_filesystem_pb.Directory, object.OutgoingReferences[object.LocalReference]]]
+	leavesReader    model_parser.ParsedObjectReader[object.LocalReference, model_core.Message[*model_filesystem_pb.Leaves, object.OutgoingReferences[object.LocalReference]]]
 }
 
 func (d *changeTrackingDirectory) maybeLoadContents(options *changeTrackingDirectoryLoadOptions) error {
 	if reference := d.currentReference; reference.IsSet() {
 		// Directory has not been accessed before. Load it from
 		// storage and ingest its contents.
-		directoryMessage, err := dereference.Dereference(options.context, options.directoryDereferencer, model_core.NewNestedMessage(reference, reference.Message.GetReference()))
+		directoryMessage, err := model_parser.Dereference(options.context, options.directoryReader, model_core.NewNestedMessage(reference, reference.Message.GetReference()))
 		if err != nil {
 			return err
 		}
@@ -323,7 +323,7 @@ func (r *changeTrackingDirectoryResolver) OnUp() (path.ComponentWalker, error) {
 
 type capturableChangeTrackingDirectoryOptions struct {
 	context                context.Context
-	directoryDereferencer  dereference.Dereferencer[model_core.Message[*model_filesystem_pb.Directory, object.OutgoingReferences[object.LocalReference]], object.LocalReference]
+	directoryReader        model_parser.ParsedObjectReader[object.LocalReference, model_core.Message[*model_filesystem_pb.Directory, object.OutgoingReferences[object.LocalReference]]]
 	fileCreationParameters *model_filesystem.FileCreationParameters
 	fileMerkleTreeCapturer model_filesystem.FileMerkleTreeCapturer[model_core.FileBackedObjectLocation]
 	patchedFiles           io.ReaderAt
@@ -347,7 +347,7 @@ func (cd *capturableChangeTrackingDirectory) EnterCapturableDirectory(name path.
 		// Directory has not been modified. Load the copy from
 		// storage, so that it may potentially be inlined into
 		// the parent directory.
-		directoryMessage, err := dereference.Dereference(cd.options.context, cd.options.directoryDereferencer, model_core.NewNestedMessage(reference, reference.Message.GetReference()))
+		directoryMessage, err := model_parser.Dereference(cd.options.context, cd.options.directoryReader, model_core.NewNestedMessage(reference, reference.Message.GetReference()))
 		if err != nil {
 			return nil, nil, err
 		}
@@ -788,7 +788,7 @@ type patchToApply struct {
 
 type applyPatchesEnvironment interface {
 	GetDirectoryCreationParametersObjectValue(key *model_analysis_pb.DirectoryCreationParametersObject_Key) (*model_filesystem.DirectoryCreationParameters, bool)
-	GetDirectoryDereferencersValue(key *model_analysis_pb.DirectoryDereferencers_Key) (*DirectoryDereferencers, bool)
+	GetDirectoryReadersValue(key *model_analysis_pb.DirectoryReaders_Key) (*DirectoryReaders, bool)
 	GetFileCreationParametersObjectValue(key *model_analysis_pb.FileCreationParametersObject_Key) (*model_filesystem.FileCreationParameters, bool)
 	GetFileReaderValue(key *model_analysis_pb.FileReader_Key) (*model_filesystem.FileReader[object.LocalReference], bool)
 }
@@ -803,9 +803,9 @@ func (c *baseComputer) applyPatches(
 ) (PatchedRepoValue, error) {
 	fileReader, gotFileReader := e.GetFileReaderValue(&model_analysis_pb.FileReader_Key{})
 	directoryCreationParameters, gotDirectoryCreationParameters := e.GetDirectoryCreationParametersObjectValue(&model_analysis_pb.DirectoryCreationParametersObject_Key{})
-	directoryDereferencers, gotDirectoryDereferencers := e.GetDirectoryDereferencersValue(&model_analysis_pb.DirectoryDereferencers_Key{})
+	directoryReaders, gotDirectoryReaders := e.GetDirectoryReadersValue(&model_analysis_pb.DirectoryReaders_Key{})
 	fileCreationParameters, gotFileCreationParameters := e.GetFileCreationParametersObjectValue(&model_analysis_pb.FileCreationParametersObject_Key{})
-	if !gotFileReader || !gotDirectoryCreationParameters || !gotDirectoryDereferencers || !gotFileCreationParameters {
+	if !gotFileReader || !gotDirectoryCreationParameters || !gotDirectoryReaders || !gotFileCreationParameters {
 		return PatchedRepoValue{}, evaluation.ErrMissingDependency
 	}
 
@@ -818,9 +818,9 @@ func (c *baseComputer) applyPatches(
 
 	// Strip the provided directory prefix.
 	loadOptions := &changeTrackingDirectoryLoadOptions{
-		context:               ctx,
-		directoryDereferencer: directoryDereferencers.Directory,
-		leavesDereferencer:    directoryDereferencers.Leaves,
+		context:         ctx,
+		directoryReader: directoryReaders.Directory,
+		leavesReader:    directoryReaders.Leaves,
 	}
 	rootDirectoryResolver := changeTrackingDirectoryResolver{
 		loadOptions:      loadOptions,
@@ -863,7 +863,7 @@ func (c *baseComputer) applyPatches(
 		ctx,
 		rootDirectory,
 		directoryCreationParameters,
-		directoryDereferencers,
+		directoryReaders,
 		fileCreationParameters,
 		patchedFiles,
 	)
@@ -1003,7 +1003,7 @@ type moduleOrRepositoryContextEnvironment interface {
 	GetCommandEncoderObjectValue(*model_analysis_pb.CommandEncoderObject_Key) (model_encoding.BinaryEncoder, bool)
 	GetDirectoryCreationParametersObjectValue(*model_analysis_pb.DirectoryCreationParametersObject_Key) (*model_filesystem.DirectoryCreationParameters, bool)
 	GetDirectoryCreationParametersValue(*model_analysis_pb.DirectoryCreationParameters_Key) model_core.Message[*model_analysis_pb.DirectoryCreationParameters_Value, object.OutgoingReferences[object.LocalReference]]
-	GetDirectoryDereferencersValue(key *model_analysis_pb.DirectoryDereferencers_Key) (*DirectoryDereferencers, bool)
+	GetDirectoryReadersValue(key *model_analysis_pb.DirectoryReaders_Key) (*DirectoryReaders, bool)
 	GetFileCreationParametersObjectValue(*model_analysis_pb.FileCreationParametersObject_Key) (*model_filesystem.FileCreationParameters, bool)
 	GetFileCreationParametersValue(*model_analysis_pb.FileCreationParameters_Key) model_core.Message[*model_analysis_pb.FileCreationParameters_Value, object.OutgoingReferences[object.LocalReference]]
 	GetFileReaderValue(*model_analysis_pb.FileReader_Key) (*model_filesystem.FileReader[object.LocalReference], bool)
@@ -1025,7 +1025,7 @@ type moduleOrRepositoryContext struct {
 	defaultWorkingDirectoryPath        *model_starlark.BarePath
 	directoryCreationParameters        *model_filesystem.DirectoryCreationParameters
 	directoryCreationParametersMessage *model_filesystem_pb.DirectoryCreationParameters
-	directoryDereferencers             *DirectoryDereferencers
+	directoryReaders                   *DirectoryReaders
 	directoryLoadOptions               *changeTrackingDirectoryLoadOptions
 	fileCreationParameters             *model_filesystem.FileCreationParameters
 	fileCreationParametersMessage      *model_filesystem_pb.FileCreationParameters
@@ -1077,7 +1077,7 @@ func (mrc *moduleOrRepositoryContext) maybeGetCommandEncoder() {
 }
 
 func (mrc *moduleOrRepositoryContext) maybeGetDirectoryCreationParameters() {
-	mrc.maybeGetDirectoryDereferencers()
+	mrc.maybeGetDirectoryReaders()
 	if mrc.directoryCreationParameters == nil {
 		if v, ok := mrc.environment.GetDirectoryCreationParametersObjectValue(&model_analysis_pb.DirectoryCreationParametersObject_Key{}); ok {
 			mrc.directoryCreationParameters = v
@@ -1093,14 +1093,14 @@ func (mrc *moduleOrRepositoryContext) maybeGetDirectoryCreationParametersMessage
 	}
 }
 
-func (mrc *moduleOrRepositoryContext) maybeGetDirectoryDereferencers() {
-	if mrc.directoryDereferencers == nil {
-		if v, ok := mrc.environment.GetDirectoryDereferencersValue(&model_analysis_pb.DirectoryDereferencers_Key{}); ok {
-			mrc.directoryDereferencers = v
+func (mrc *moduleOrRepositoryContext) maybeGetDirectoryReaders() {
+	if mrc.directoryReaders == nil {
+		if v, ok := mrc.environment.GetDirectoryReadersValue(&model_analysis_pb.DirectoryReaders_Key{}); ok {
+			mrc.directoryReaders = v
 			mrc.directoryLoadOptions = &changeTrackingDirectoryLoadOptions{
-				context:               mrc.context,
-				directoryDereferencer: v.Directory,
-				leavesDereferencer:    v.Leaves,
+				context:         mrc.context,
+				directoryReader: v.Directory,
+				leavesReader:    v.Leaves,
 			}
 		}
 	}
@@ -1184,7 +1184,7 @@ func (mrc *moduleOrRepositoryContext) maybeGetStableInputRootPath() error {
 }
 
 func (mrc *moduleOrRepositoryContext) doDownload(thread *starlark.Thread, b *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
-	mrc.maybeGetDirectoryDereferencers()
+	mrc.maybeGetDirectoryReaders()
 	if err := mrc.maybeGetStableInputRootPath(); err != nil {
 		return nil, err
 	}
@@ -1285,7 +1285,7 @@ func (mrc *moduleOrRepositoryContext) doDownload(thread *starlark.Thread, b *sta
 }
 
 func (mrc *moduleOrRepositoryContext) doDownloadAndExtract(thread *starlark.Thread, b *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
-	mrc.maybeGetDirectoryDereferencers()
+	mrc.maybeGetDirectoryReaders()
 	if err := mrc.maybeGetStableInputRootPath(); err != nil {
 		return nil, err
 	}
@@ -1400,7 +1400,7 @@ func (mrc *moduleOrRepositoryContext) doExecute(thread *starlark.Thread, b *star
 	mrc.maybeGetCommandEncoder()
 	mrc.maybeGetDirectoryCreationParameters()
 	mrc.maybeGetDirectoryCreationParametersMessage()
-	mrc.maybeGetDirectoryDereferencers()
+	mrc.maybeGetDirectoryReaders()
 	mrc.maybeGetFileCreationParameters()
 	mrc.maybeGetFileCreationParametersMessage()
 	mrc.maybeGetFileReader()
@@ -1409,7 +1409,7 @@ func (mrc *moduleOrRepositoryContext) doExecute(thread *starlark.Thread, b *star
 	if mrc.commandEncoder == nil ||
 		mrc.directoryCreationParameters == nil ||
 		mrc.directoryCreationParametersMessage == nil ||
-		mrc.directoryDereferencers == nil ||
+		mrc.directoryReaders == nil ||
 		mrc.fileCreationParameters == nil ||
 		mrc.fileCreationParametersMessage == nil ||
 		mrc.fileReader == nil ||
@@ -1562,7 +1562,7 @@ func (mrc *moduleOrRepositoryContext) doExecute(thread *starlark.Thread, b *star
 		return nil, fmt.Errorf("failed to create command: %w", err)
 	}
 
-	inputRootReference, err := mrc.computer.createMerkleTreeFromChangeTrackingDirectory(mrc.context, mrc.inputRootDirectory, mrc.directoryCreationParameters, mrc.directoryDereferencers, mrc.fileCreationParameters, mrc.patchedFiles)
+	inputRootReference, err := mrc.computer.createMerkleTreeFromChangeTrackingDirectory(mrc.context, mrc.inputRootDirectory, mrc.directoryCreationParameters, mrc.directoryReaders, mrc.fileCreationParameters, mrc.patchedFiles)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create Merkle tree of root directory: %w", err)
 	}
@@ -1586,7 +1586,7 @@ func (mrc *moduleOrRepositoryContext) doExecute(thread *starlark.Thread, b *star
 	}
 
 	// Extract standard output and standard error from the results.
-	outputs, err := mrc.computer.getOutputsFromActionResult(mrc.context, actionResult, mrc.directoryDereferencers)
+	outputs, err := mrc.computer.getOutputsFromActionResult(mrc.context, actionResult, mrc.directoryReaders)
 	if err != nil {
 		return nil, fmt.Errorf("failed to obtain outputs from action result: %w", err)
 	}
@@ -1658,7 +1658,7 @@ func (moduleOrRepositoryContext) doExtract(thread *starlark.Thread, b *starlark.
 }
 
 func (mrc *moduleOrRepositoryContext) doFile(thread *starlark.Thread, b *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
-	mrc.maybeGetDirectoryDereferencers()
+	mrc.maybeGetDirectoryReaders()
 	stableInputRootPathError := mrc.maybeGetStableInputRootPath()
 	if mrc.directoryLoadOptions == nil {
 		return nil, evaluation.ErrMissingDependency
@@ -1754,7 +1754,7 @@ func (mrc *moduleOrRepositoryContext) doPath(thread *starlark.Thread, b *starlar
 }
 
 func (mrc *moduleOrRepositoryContext) doRead(thread *starlark.Thread, b *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
-	mrc.maybeGetDirectoryDereferencers()
+	mrc.maybeGetDirectoryReaders()
 	mrc.maybeGetFileReader()
 	if err := mrc.maybeGetStableInputRootPath(); err != nil {
 		return nil, err
@@ -1869,7 +1869,7 @@ func (mrc *moduleOrRepositoryContext) doRead(thread *starlark.Thread, b *starlar
 		return nil, fmt.Errorf("failed to create command: %w", err)
 	}
 
-	inputRootReference, err := mrc.computer.createMerkleTreeFromChangeTrackingDirectory(mrc.context, mrc.inputRootDirectory, mrc.directoryCreationParameters, mrc.directoryDereferencers, mrc.fileCreationParameters, mrc.patchedFiles)
+	inputRootReference, err := mrc.computer.createMerkleTreeFromChangeTrackingDirectory(mrc.context, mrc.inputRootDirectory, mrc.directoryCreationParameters, mrc.directoryReaders, mrc.fileCreationParameters, mrc.patchedFiles)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create Merkle tree of root directory: %w", err)
 	}
@@ -1894,7 +1894,7 @@ func (mrc *moduleOrRepositoryContext) doRead(thread *starlark.Thread, b *starlar
 	}
 
 	// Extract standard output.
-	outputs, err := mrc.computer.getOutputsFromActionResult(mrc.context, actionResult, mrc.directoryDereferencers)
+	outputs, err := mrc.computer.getOutputsFromActionResult(mrc.context, actionResult, mrc.directoryReaders)
 	if err != nil {
 		return nil, fmt.Errorf("failed to obtain outputs from action result: %w", err)
 	}
@@ -1943,14 +1943,14 @@ func (mrc *moduleOrRepositoryContext) doWhich(thread *starlark.Thread, b *starla
 	mrc.maybeGetCommandEncoder()
 	mrc.maybeGetDirectoryCreationParameters()
 	mrc.maybeGetDirectoryCreationParametersMessage()
-	mrc.maybeGetDirectoryDereferencers()
+	mrc.maybeGetDirectoryReaders()
 	mrc.maybeGetFileCreationParametersMessage()
 	mrc.maybeGetFileReader()
 	mrc.maybeGetRepoPlatform()
 	if mrc.commandEncoder == nil ||
 		mrc.directoryCreationParameters == nil ||
 		mrc.directoryCreationParametersMessage == nil ||
-		mrc.directoryDereferencers == nil ||
+		mrc.directoryReaders == nil ||
 		mrc.fileCreationParametersMessage == nil ||
 		mrc.fileReader == nil ||
 		!mrc.repoPlatform.IsSet() {
@@ -2048,7 +2048,7 @@ func (mrc *moduleOrRepositoryContext) doWhich(thread *starlark.Thread, b *starla
 	if actionResult.Message.ExitCode == 0 {
 		// Capture the standard output of "command -v" and trim the
 		// trailing newline character that it adds.
-		outputs, err := mrc.computer.getOutputsFromActionResult(mrc.context, actionResult, mrc.directoryDereferencers)
+		outputs, err := mrc.computer.getOutputsFromActionResult(mrc.context, actionResult, mrc.directoryReaders)
 		if err != nil {
 			return nil, fmt.Errorf("failed to obtain outputs from action result: %w", err)
 		}
@@ -2083,7 +2083,7 @@ func (mrc *moduleOrRepositoryContext) doWhich(thread *starlark.Thread, b *starla
 }
 
 func (mrc *moduleOrRepositoryContext) Exists(p *model_starlark.BarePath) (bool, error) {
-	mrc.maybeGetDirectoryDereferencers()
+	mrc.maybeGetDirectoryReaders()
 	if err := mrc.maybeGetStableInputRootPath(); err != nil {
 		return false, err
 	}
@@ -2185,7 +2185,7 @@ func (mrc *moduleOrRepositoryContext) Exists(p *model_starlark.BarePath) (bool, 
 		return false, fmt.Errorf("failed to create command: %w", err)
 	}
 
-	inputRootReference, err := mrc.computer.createMerkleTreeFromChangeTrackingDirectory(mrc.context, mrc.inputRootDirectory, mrc.directoryCreationParameters, mrc.directoryDereferencers, mrc.fileCreationParameters, mrc.patchedFiles)
+	inputRootReference, err := mrc.computer.createMerkleTreeFromChangeTrackingDirectory(mrc.context, mrc.inputRootDirectory, mrc.directoryCreationParameters, mrc.directoryReaders, mrc.fileCreationParameters, mrc.patchedFiles)
 	if err != nil {
 		return false, fmt.Errorf("failed to create Merkle tree of root directory: %w", err)
 	}
@@ -2512,7 +2512,7 @@ func (c *baseComputer) fetchRepo(ctx context.Context, canonicalRepo label.Canoni
 	attrValues := maps.Collect(
 		model_starlark.AllStructFields(
 			ctx,
-			c.valueDereferencers.List,
+			c.valueReaders.List,
 			model_core.NewNestedMessage(repo, repo.Message.AttrValues),
 			&errIter,
 		),
@@ -2569,7 +2569,7 @@ func (c *baseComputer) fetchRepo(ctx context.Context, canonicalRepo label.Canoni
 
 	// These are needed at the end to create the directory Merkle tree.
 	repositoryContext.maybeGetDirectoryCreationParameters()
-	repositoryContext.maybeGetDirectoryDereferencers()
+	repositoryContext.maybeGetDirectoryReaders()
 	repositoryContext.maybeGetFileCreationParameters()
 
 	repositoryCtx := model_starlark.NewStructFromDict(nil, map[string]any{
@@ -2889,7 +2889,7 @@ func (c *baseComputer) fetchRepo(ctx context.Context, canonicalRepo label.Canoni
 	}
 
 	if repositoryContext.directoryCreationParameters == nil ||
-		repositoryContext.directoryDereferencers == nil ||
+		repositoryContext.directoryReaders == nil ||
 		repositoryContext.fileCreationParameters == nil {
 		return PatchedRepoValue{}, evaluation.ErrMissingDependency
 	}
@@ -2897,13 +2897,13 @@ func (c *baseComputer) fetchRepo(ctx context.Context, canonicalRepo label.Canoni
 		ctx,
 		repoDirectory,
 		repositoryContext.directoryCreationParameters,
-		repositoryContext.directoryDereferencers,
+		repositoryContext.directoryReaders,
 		repositoryContext.fileCreationParameters,
 		repositoryContext.patchedFiles,
 	)
 }
 
-func (c *baseComputer) createMerkleTreeFromChangeTrackingDirectory(ctx context.Context, rootDirectory *changeTrackingDirectory, directoryCreationParameters *model_filesystem.DirectoryCreationParameters, directoryDereferencers *DirectoryDereferencers, fileCreationParameters *model_filesystem.FileCreationParameters, patchedFiles io.ReaderAt) (model_core.PatchedMessage[*model_filesystem_pb.DirectoryReference, dag.ObjectContentsWalker], error) {
+func (c *baseComputer) createMerkleTreeFromChangeTrackingDirectory(ctx context.Context, rootDirectory *changeTrackingDirectory, directoryCreationParameters *model_filesystem.DirectoryCreationParameters, directoryReaders *DirectoryReaders, fileCreationParameters *model_filesystem.FileCreationParameters, patchedFiles io.ReaderAt) (model_core.PatchedMessage[*model_filesystem_pb.DirectoryReference, dag.ObjectContentsWalker], error) {
 	if r := rootDirectory.currentReference; r.IsSet() {
 		// Directory remained completely unmodified. Simply
 		// return the original directory.
@@ -2939,7 +2939,7 @@ func (c *baseComputer) createMerkleTreeFromChangeTrackingDirectory(ctx context.C
 			&capturableChangeTrackingDirectory{
 				options: &capturableChangeTrackingDirectoryOptions{
 					context:                groupCtx,
-					directoryDereferencer:  directoryDereferencers.Directory,
+					directoryReader:        directoryReaders.Directory,
 					fileCreationParameters: fileCreationParameters,
 					fileMerkleTreeCapturer: model_filesystem.NewFileWritingFileMerkleTreeCapturer(fileWritingMerkleTreeCapturer),
 					patchedFiles:           patchedFiles,
@@ -2988,8 +2988,8 @@ func (c *baseComputer) createMerkleTreeFromChangeTrackingDirectory(ctx context.C
 	), nil
 }
 
-func (c *baseComputer) returnRepoMerkleTree(ctx context.Context, rootDirectory *changeTrackingDirectory, directoryCreationParameters *model_filesystem.DirectoryCreationParameters, directoryDereferencers *DirectoryDereferencers, fileCreationParameters *model_filesystem.FileCreationParameters, patchedFiles io.ReaderAt) (PatchedRepoValue, error) {
-	rootDirectoryReference, err := c.createMerkleTreeFromChangeTrackingDirectory(ctx, rootDirectory, directoryCreationParameters, directoryDereferencers, fileCreationParameters, patchedFiles)
+func (c *baseComputer) returnRepoMerkleTree(ctx context.Context, rootDirectory *changeTrackingDirectory, directoryCreationParameters *model_filesystem.DirectoryCreationParameters, directoryReaders *DirectoryReaders, fileCreationParameters *model_filesystem.FileCreationParameters, patchedFiles io.ReaderAt) (PatchedRepoValue, error) {
+	rootDirectoryReference, err := c.createMerkleTreeFromChangeTrackingDirectory(ctx, rootDirectory, directoryCreationParameters, directoryReaders, fileCreationParameters, patchedFiles)
 	if err != nil {
 		return PatchedRepoValue{}, err
 	}

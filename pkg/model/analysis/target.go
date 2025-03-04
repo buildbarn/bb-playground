@@ -21,7 +21,7 @@ func (c *baseComputer) lookupTargetDefinitionInTargetList(ctx context.Context, t
 	targetNameStr := targetName.String()
 	target, err := btree.Find(
 		ctx,
-		c.packageValueTargetDereferencer,
+		c.packageValueTargetReader,
 		targetList,
 		func(entry *model_analysis_pb.Package_Value_Target) (int, *model_core_pb.Reference) {
 			switch level := entry.Level.(type) {

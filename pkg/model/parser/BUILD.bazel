@@ -4,6 +4,7 @@ go_library(
     name = "parser",
     srcs = [
         "caching_parsed_object_reader.go",
+        "dereference.go",
         "message_list_object_parser.go",
         "message_object_parser.go",
         "object_parser.go",
@@ -17,6 +18,7 @@ go_library(
         "//pkg/encoding/varint",
         "//pkg/model/core",
         "//pkg/model/encoding",
+        "//pkg/proto/model/core",
         "//pkg/storage/object",
         "@com_github_buildbarn_bb_storage//pkg/eviction",
         "@com_github_buildbarn_bb_storage//pkg/util",

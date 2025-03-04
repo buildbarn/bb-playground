@@ -48,7 +48,7 @@ func (c *baseComputer) expandCanonicalTargetPattern(
 
 		for entry := range btree.AllLeaves(
 			ctx,
-			c.targetPatternExpansionValueTargetLabelDereferencer,
+			c.targetPatternExpansionValueTargetLabelReader,
 			model_core.NewNestedMessage(targetPatternExpansion, targetPatternExpansion.Message.TargetLabels),
 			func(entry model_core.Message[*model_analysis_pb.TargetPatternExpansion_Value_TargetLabel, object.OutgoingReferences[object.LocalReference]]) (*model_core_pb.Reference, error) {
 				if level, ok := entry.Message.Level.(*model_analysis_pb.TargetPatternExpansion_Value_TargetLabel_Parent_); ok {
@@ -225,7 +225,7 @@ func (c *baseComputer) addPackageToTargetPatternExpansion(
 	var errIter error
 	for entry := range btree.AllLeaves(
 		ctx,
-		c.packageValueTargetDereferencer,
+		c.packageValueTargetReader,
 		model_core.NewNestedMessage(packageValue, packageValue.Message.Targets),
 		func(entry model_core.Message[*model_analysis_pb.Package_Value_Target, object.OutgoingReferences[object.LocalReference]]) (*model_core_pb.Reference, error) {
 			if level, ok := entry.Message.Level.(*model_analysis_pb.Package_Value_Target_Parent_); ok {

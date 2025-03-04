@@ -7,7 +7,7 @@ import (
 
 	model_core "github.com/buildbarn/bonanza/pkg/model/core"
 	"github.com/buildbarn/bonanza/pkg/model/core/btree"
-	"github.com/buildbarn/bonanza/pkg/model/core/dereference"
+	model_parser "github.com/buildbarn/bonanza/pkg/model/parser"
 	model_core_pb "github.com/buildbarn/bonanza/pkg/proto/model/core"
 	model_starlark_pb "github.com/buildbarn/bonanza/pkg/proto/model/starlark"
 	"github.com/buildbarn/bonanza/pkg/storage/object"
@@ -15,13 +15,13 @@ import (
 
 func AllDictLeafEntries[TOutgoingReferences object.OutgoingReferences[object.LocalReference]](
 	ctx context.Context,
-	dereferencer dereference.Dereferencer[model_core.Message[[]*model_starlark_pb.Dict_Entry, TOutgoingReferences], object.LocalReference],
+	reader model_parser.ParsedObjectReader[object.LocalReference, model_core.Message[[]*model_starlark_pb.Dict_Entry, TOutgoingReferences]],
 	rootDict model_core.Message[*model_starlark_pb.Dict, TOutgoingReferences],
 	errOut *error,
 ) iter.Seq[model_core.Message[*model_starlark_pb.Dict_Entry_Leaf, TOutgoingReferences]] {
 	allLeaves := btree.AllLeaves(
 		ctx,
-		dereferencer,
+		reader,
 		model_core.NewNestedMessage(rootDict, rootDict.Message.Entries),
 		func(entry model_core.Message[*model_starlark_pb.Dict_Entry, TOutgoingReferences]) (*model_core_pb.Reference, error) {
 			if parent, ok := entry.Message.Level.(*model_starlark_pb.Dict_Entry_Parent_); ok {

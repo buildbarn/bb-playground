@@ -120,7 +120,7 @@ func (c *baseComputer) ComputeModuleExtensionReposValue(ctx context.Context, key
 	valueDecodingOptions := c.getValueDecodingOptions(ctx, func(resolvedLabel label.ResolvedLabel) (starlark.Value, error) {
 		return model_starlark.NewLabel(resolvedLabel), nil
 	})
-	listDereferencer := c.valueDereferencers.List
+	listReader := c.valueReaders.List
 	tagClassAttrTypes := make([][]model_starlark.AttrType, len(moduleExtensionDefinition.TagClasses))
 	tagClassAttrDefaults := make([][]starlark.Value, len(moduleExtensionDefinition.TagClasses))
 	for _, user := range moduleExtensionUsers {
@@ -148,7 +148,7 @@ func (c *baseComputer) ComputeModuleExtensionReposValue(ctx context.Context, key
 					declaredAttrs := maps.Collect(
 						model_starlark.AllStructFields(
 							ctx,
-							listDereferencer,
+							listReader,
 							model_core.NewNestedMessage(usedModuleExtensionValue, declaredTag.Attrs),
 							&errIter,
 						),
