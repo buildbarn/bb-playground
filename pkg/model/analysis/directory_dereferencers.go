@@ -30,7 +30,7 @@ func (c *baseComputer) ComputeDirectoryDereferencersValue(ctx context.Context, k
 	}
 	directoryAccessParameters, err := model_filesystem.NewDirectoryAccessParametersFromProto(
 		directoryAccessParametersValue.Message.DirectoryAccessParameters,
-		c.buildSpecificationReference.GetReferenceFormat(),
+		c.getReferenceFormat(),
 	)
 	if err != nil {
 		return nil, err

@@ -333,7 +333,7 @@ func (c *baseComputer) ComputeModuleExtensionReposValue(ctx context.Context, key
 		/* maximumSizeBytes = */ 128*1024,
 		btree.NewObjectCreatingNodeMerger(
 			model_encoding.NewChainedBinaryEncoder(nil),
-			c.buildSpecificationReference.GetReferenceFormat(),
+			c.getReferenceFormat(),
 			/* parentNodeComputer = */ func(createdObject model_core.CreatedObject[model_core.CreatedObjectTree], childNodes []*model_analysis_pb.ModuleExtensionRepos_Value_Repo) (model_core.PatchedMessage[*model_analysis_pb.ModuleExtensionRepos_Value_Repo, model_core.CreatedObjectTree], error) {
 				var firstName string
 				switch firstElement := childNodes[0].Level.(type) {

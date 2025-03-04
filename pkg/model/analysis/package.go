@@ -66,7 +66,7 @@ func (c *baseComputer) ComputePackageValue(ctx context.Context, key *model_analy
 		buildFileLabel := canonicalPackage.AppendTargetName(buildFileName)
 		buildFileContentsEntry, err := model_filesystem.NewFileContentsEntryFromProto(
 			model_core.NewNestedMessage(buildFileProperties, buildFileProperties.Message.Exists.Contents),
-			c.buildSpecificationReference.GetReferenceFormat(),
+			c.getReferenceFormat(),
 		)
 		if err != nil {
 			return PatchedPackageValue{}, fmt.Errorf("invalid contents for file %#v: %w", buildFileLabel.String(), err)
@@ -138,7 +138,7 @@ func (c *baseComputer) ComputePackageValue(ctx context.Context, key *model_analy
 			/* maximumSizeBytes = */ 128*1024,
 			btree.NewObjectCreatingNodeMerger(
 				model_encoding.NewChainedBinaryEncoder(nil),
-				c.buildSpecificationReference.GetReferenceFormat(),
+				c.getReferenceFormat(),
 				/* parentNodeComputer = */ func(createdObject model_core.CreatedObject[model_core.CreatedObjectTree], childNodes []*model_analysis_pb.Package_Value_Target) (model_core.PatchedMessage[*model_analysis_pb.Package_Value_Target, model_core.CreatedObjectTree], error) {
 					var firstName string
 					switch firstElement := childNodes[0].Level.(type) {

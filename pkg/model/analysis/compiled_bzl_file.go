@@ -47,7 +47,7 @@ func (c *baseComputer) ComputeCompiledBzlFileValue(ctx context.Context, key *mod
 	}
 	buildFileContentsEntry, err := model_filesystem.NewFileContentsEntryFromProto(
 		model_core.NewNestedMessage(bzlFileProperties, bzlFileProperties.Message.Exists.GetContents()),
-		c.buildSpecificationReference.GetReferenceFormat(),
+		c.getReferenceFormat(),
 	)
 	if err != nil {
 		return PatchedCompiledBzlFileValue{}, fmt.Errorf("invalid file contents: %w", err)

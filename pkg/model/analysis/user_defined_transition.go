@@ -71,7 +71,7 @@ func (c *baseComputer) applyTransition(
 		/* maximumSizeBytes = */ 128*1024,
 		btree.NewObjectCreatingNodeMerger(
 			model_encoding.NewChainedBinaryEncoder(nil),
-			c.buildSpecificationReference.GetReferenceFormat(),
+			c.getReferenceFormat(),
 			/* parentNodeComputer = */ func(createdObject model_core.CreatedObject[model_core.CreatedObjectTree], childNodes []*model_analysis_pb.Configuration_BuildSettingOverride) (model_core.PatchedMessage[*model_analysis_pb.Configuration_BuildSettingOverride, model_core.CreatedObjectTree], error) {
 				var firstLabel string
 				switch firstEntry := childNodes[0].Level.(type) {
@@ -187,7 +187,7 @@ func (c *baseComputer) applyTransition(
 
 	createdConfiguration, err := model_core.MarshalAndEncodePatchedMessage(
 		model_core.NewPatchedMessage(newConfiguration, buildSettingOverrides.Patcher),
-		c.buildSpecificationReference.GetReferenceFormat(),
+		c.getReferenceFormat(),
 		c.getValueObjectEncoder(),
 	)
 	if err != nil {

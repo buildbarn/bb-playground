@@ -27,6 +27,6 @@ func (c *baseComputer) ComputeFileCreationParametersObjectValue(ctx context.Cont
 	}
 	return model_filesystem.NewFileCreationParametersFromProto(
 		fileCreationParameters.Message.FileCreationParameters,
-		c.buildSpecificationReference.GetReferenceFormat(),
+		c.getReferenceFormat(),
 	)
 }

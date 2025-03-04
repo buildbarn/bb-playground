@@ -80,7 +80,7 @@ func (c *baseComputer) parseModuleDotBazel(ctx context.Context, moduleContentsMs
 	moduleTarget := moduleInstance.GetBareCanonicalRepo().GetRootPackage().AppendTargetName(moduleDotBazelTargetName)
 	moduleFileContentsEntry, err := model_filesystem.NewFileContentsEntryFromProto(
 		moduleContentsMsg,
-		c.buildSpecificationReference.GetReferenceFormat(),
+		c.getReferenceFormat(),
 	)
 	if err != nil {
 		return fmt.Errorf("invalid file contents entry for file %#v: %w", moduleTarget.String(), err)

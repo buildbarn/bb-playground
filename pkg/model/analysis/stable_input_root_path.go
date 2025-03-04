@@ -47,7 +47,7 @@ func (c *baseComputer) ComputeStableInputRootPathValue(ctx context.Context, key 
 		return PatchedStableInputRootPathValue{}, err
 	}
 
-	referenceFormat := c.buildSpecificationReference.GetReferenceFormat()
+	referenceFormat := c.getReferenceFormat()
 	createdCommand, err := model_core.MarshalAndEncodePatchedMessage(
 		model_core.NewPatchedMessage(
 			&model_command_pb.Command{

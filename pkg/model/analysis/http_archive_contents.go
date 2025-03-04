@@ -257,7 +257,7 @@ func (c *baseComputer) ComputeHttpArchiveContentsValue(ctx context.Context, key 
 		return PatchedHttpArchiveContentsValue{}, fmt.Errorf("file at URLs %#v does not exist", key.Urls)
 	}
 
-	referenceFormat := c.buildSpecificationReference.GetReferenceFormat()
+	referenceFormat := c.getReferenceFormat()
 	httpFileContentsEntry, err := model_filesystem.NewFileContentsEntryFromProto(
 		model_core.NewNestedMessage(httpFileContentsValue, httpFileContentsValue.Message.Exists.Contents),
 		referenceFormat,

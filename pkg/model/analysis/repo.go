@@ -653,7 +653,7 @@ func (c *baseComputer) fetchModuleFromRegistry(
 	}
 	sourceJSONContentsEntry, err := model_filesystem.NewFileContentsEntryFromProto(
 		model_core.NewNestedMessage(sourceJSONContentsValue, sourceJSONContentsValue.Message.Exists.Contents),
-		c.buildSpecificationReference.GetReferenceFormat(),
+		c.getReferenceFormat(),
 	)
 	if err != nil {
 		return PatchedRepoValue{}, fmt.Errorf("invalid file contents: %w", err)
@@ -714,7 +714,7 @@ func (c *baseComputer) fetchModuleFromRegistry(
 
 		patchContentsEntry, err := model_filesystem.NewFileContentsEntryFromProto(
 			model_core.NewNestedMessage(patchContentsValue, patchContentsValue.Message.Exists.Contents),
-			c.buildSpecificationReference.GetReferenceFormat(),
+			c.getReferenceFormat(),
 		)
 		if err != nil {
 			return PatchedRepoValue{}, fmt.Errorf("invalid file contents for patch %#v: %s", patchEntry.key, err)
@@ -748,7 +748,7 @@ func (c *baseComputer) fetchModuleFromRegistry(
 
 		patchContentsEntry, err := model_filesystem.NewFileContentsEntryFromProto(
 			model_core.NewNestedMessage(patchPropertiesValue, patchPropertiesValue.Message.Exists.Contents),
-			c.buildSpecificationReference.GetReferenceFormat(),
+			c.getReferenceFormat(),
 		)
 		if err != nil {
 			return PatchedRepoValue{}, fmt.Errorf("invalid file contents for patch %#v: %s", patchLabelStr, err)
@@ -879,7 +879,7 @@ func (c *baseComputer) applyPatch(
 	patchedFiles filesystem.FileReader,
 	patchedFilesWriter *model_filesystem.SectionWriter,
 ) error {
-	referenceFormat := c.buildSpecificationReference.GetReferenceFormat()
+	referenceFormat := c.getReferenceFormat()
 
 	patchedFile, err := openFile()
 	if err != nil {
@@ -1452,7 +1452,7 @@ func (mrc *moduleOrRepositoryContext) doExecute(thread *starlark.Thread, b *star
 	// Convert arguments and environment
 	// variables to B-trees, so that they can
 	// be attached to the Command message.
-	referenceFormat := mrc.computer.buildSpecificationReference.GetReferenceFormat()
+	referenceFormat := mrc.computer.getReferenceFormat()
 	argumentsBuilder := btree.NewSplitProllyBuilder(
 		1<<16,
 		1<<18,
@@ -1792,7 +1792,7 @@ func (mrc *moduleOrRepositoryContext) doRead(thread *starlark.Thread, b *starlar
 			return nil, fmt.Errorf("cannot get file %#v: %w", filePath.GetUNIXString(), err)
 		}
 
-		f, err := patchedFile.contents.openRead(mrc.context, mrc.computer.buildSpecificationReference.GetReferenceFormat(), mrc.fileReader, mrc.patchedFiles)
+		f, err := patchedFile.contents.openRead(mrc.context, mrc.computer.getReferenceFormat(), mrc.fileReader, mrc.patchedFiles)
 		if err != nil {
 			return nil, fmt.Errorf("failed to open file %#v: %w", filePath.GetUNIXString(), err)
 		}
@@ -1833,7 +1833,7 @@ func (mrc *moduleOrRepositoryContext) doRead(thread *starlark.Thread, b *starlar
 			environment[environmentVariable.Name] = environmentVariable.Value
 		}
 	}
-	referenceFormat := mrc.computer.buildSpecificationReference.GetReferenceFormat()
+	referenceFormat := mrc.computer.getReferenceFormat()
 	environmentVariableList, err := mrc.computer.convertDictToEnvironmentVariableList(environment, mrc.commandEncoder)
 	if err != nil {
 		return nil, err
@@ -1974,7 +1974,7 @@ func (mrc *moduleOrRepositoryContext) doWhich(thread *starlark.Thread, b *starla
 		return nil, err
 	}
 
-	referenceFormat := mrc.computer.buildSpecificationReference.GetReferenceFormat()
+	referenceFormat := mrc.computer.getReferenceFormat()
 	createdCommand, err := model_core.MarshalAndEncodePatchedMessage(
 		model_core.NewPatchedMessage(
 			&model_command_pb.Command{
@@ -2144,7 +2144,7 @@ func (mrc *moduleOrRepositoryContext) Exists(p *model_starlark.BarePath) (bool, 
 			environment[environmentVariable.Name] = environmentVariable.Value
 		}
 	}
-	referenceFormat := mrc.computer.buildSpecificationReference.GetReferenceFormat()
+	referenceFormat := mrc.computer.getReferenceFormat()
 	environmentVariableList, err := mrc.computer.convertDictToEnvironmentVariableList(environment, mrc.commandEncoder)
 	if err != nil {
 		return false, err
@@ -2699,7 +2699,7 @@ func (c *baseComputer) fetchRepo(ctx context.Context, canonicalRepo label.Canoni
 					strip,
 					repositoryContext.fileReader,
 					func() (io.Reader, error) {
-						return trackedPatchFile.contents.openRead(repositoryContext.context, repositoryContext.computer.buildSpecificationReference.GetReferenceFormat(), repositoryContext.fileReader, repositoryContext.patchedFiles)
+						return trackedPatchFile.contents.openRead(repositoryContext.context, repositoryContext.computer.getReferenceFormat(), repositoryContext.fileReader, repositoryContext.patchedFiles)
 					},
 					repositoryContext.patchedFiles,
 					repositoryContext.patchedFilesWriter,
@@ -2815,7 +2815,7 @@ func (c *baseComputer) fetchRepo(ctx context.Context, canonicalRepo label.Canoni
 				}
 				templateFile, err := f.contents.openRead(
 					repositoryContext.context,
-					c.buildSpecificationReference.GetReferenceFormat(),
+					c.getReferenceFormat(),
 					repositoryContext.fileReader,
 					repositoryContext.patchedFiles,
 				)
@@ -2958,7 +2958,7 @@ func (c *baseComputer) createMerkleTreeFromChangeTrackingDirectory(ctx context.C
 	// response, as that prevents it from being accessed separately.
 	createdRootDirectoryObject, err := model_core.MarshalAndEncodePatchedMessage(
 		createdRootDirectory.Message,
-		c.buildSpecificationReference.GetReferenceFormat(),
+		c.getReferenceFormat(),
 		directoryCreationParameters.GetEncoder(),
 	)
 	if err != nil {

@@ -27,6 +27,6 @@ func (c *baseComputer) ComputeDirectoryCreationParametersObjectValue(ctx context
 	}
 	return model_filesystem.NewDirectoryCreationParametersFromProto(
 		directoryCreationParameters.Message.DirectoryCreationParameters,
-		c.buildSpecificationReference.GetReferenceFormat(),
+		c.getReferenceFormat(),
 	)
 }

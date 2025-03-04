@@ -226,7 +226,7 @@ ProcessModule:
 		// calls to bazel_dep().
 		moduleFileContentsEntry, err := model_filesystem.NewFileContentsEntryFromProto(
 			moduleFileContents,
-			c.buildSpecificationReference.GetReferenceFormat(),
+			c.getReferenceFormat(),
 		)
 		if err != nil {
 			return PatchedModuleRoughBuildListValue{}, fmt.Errorf("invalid file contents: %w", err)

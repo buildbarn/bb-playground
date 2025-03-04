@@ -130,6 +130,10 @@ func NewBaseComputer(
 	}
 }
 
+func (c *baseComputer) getReferenceFormat() object.ReferenceFormat {
+	return c.buildSpecificationReference.GetReferenceFormat()
+}
+
 func (c *baseComputer) getValueObjectEncoder() model_encoding.BinaryEncoder {
 	// TODO: Use a proper encoder!
 	return model_encoding.NewChainedBinaryEncoder(nil)
@@ -139,7 +143,7 @@ func (c *baseComputer) getValueEncodingOptions(currentFilename label.CanonicalLa
 	return &model_starlark.ValueEncodingOptions{
 		CurrentFilename:        currentFilename,
 		ObjectEncoder:          c.getValueObjectEncoder(),
-		ObjectReferenceFormat:  c.buildSpecificationReference.GetReferenceFormat(),
+		ObjectReferenceFormat:  c.getReferenceFormat(),
 		ObjectMinimumSizeBytes: 32 * 1024,
 		ObjectMaximumSizeBytes: 128 * 1024,
 	}
@@ -155,7 +159,7 @@ func (c *baseComputer) getValueDecodingOptions(ctx context.Context, labelCreator
 
 func (c *baseComputer) getInlinedTreeOptions() *inlinedtree.Options {
 	return &inlinedtree.Options{
-		ReferenceFormat:  c.buildSpecificationReference.GetReferenceFormat(),
+		ReferenceFormat:  c.getReferenceFormat(),
 		Encoder:          model_encoding.NewChainedBinaryEncoder(nil),
 		MaximumSizeBytes: 32 * 1024,
 	}
@@ -451,7 +455,7 @@ func (c *baseComputer) ComputeFileReaderValue(ctx context.Context, key *model_an
 	}
 	fileAccessParameters, err := model_filesystem.NewFileAccessParametersFromProto(
 		fileAccessParametersValue.Message.FileAccessParameters,
-		c.buildSpecificationReference.GetReferenceFormat(),
+		c.getReferenceFormat(),
 	)
 	if err != nil {
 		return nil, fmt.Errorf("invalid directory access parameters: %w", err)
@@ -493,7 +497,7 @@ func (c *baseComputer) ComputeRepoDefaultAttrsValue(ctx context.Context, key *mo
 			InheritableAttrs: &model_starlark.DefaultInheritableAttrs,
 		}), nil
 	}
-	referenceFormat := c.buildSpecificationReference.GetReferenceFormat()
+	referenceFormat := c.getReferenceFormat()
 	repoFileContentsEntry, err := model_filesystem.NewFileContentsEntryFromProto(
 		model_core.NewNestedMessage(repoFileProperties, repoFileProperties.Message.Exists.GetContents()),
 		referenceFormat,

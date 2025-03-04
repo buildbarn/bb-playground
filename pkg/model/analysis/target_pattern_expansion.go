@@ -83,7 +83,7 @@ func (c *baseComputer) ComputeTargetPatternExpansionValue(ctx context.Context, k
 		/* maximumSizeBytes = */ 128*1024,
 		btree.NewObjectCreatingNodeMerger(
 			model_encoding.NewChainedBinaryEncoder(nil),
-			c.buildSpecificationReference.GetReferenceFormat(),
+			c.getReferenceFormat(),
 			/* parentNodeComputer = */ func(createdObject model_core.CreatedObject[dag.ObjectContentsWalker], childNodes []*model_analysis_pb.TargetPatternExpansion_Value_TargetLabel) (model_core.PatchedMessage[*model_analysis_pb.TargetPatternExpansion_Value_TargetLabel, dag.ObjectContentsWalker], error) {
 				patcher := model_core.NewReferenceMessagePatcher[dag.ObjectContentsWalker]()
 				return model_core.NewPatchedMessage(

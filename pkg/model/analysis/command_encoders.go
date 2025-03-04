@@ -27,6 +27,6 @@ func (c *baseComputer) ComputeCommandEncoderObjectValue(ctx context.Context, key
 	}
 	return model_encoding.NewBinaryEncoderFromProto(
 		encoders.Message.CommandEncoders,
-		uint32(c.buildSpecificationReference.GetReferenceFormat().GetMaximumObjectSizeBytes()),
+		uint32(c.getReferenceFormat().GetMaximumObjectSizeBytes()),
 	)
 }
