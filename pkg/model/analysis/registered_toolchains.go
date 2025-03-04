@@ -11,7 +11,6 @@ import (
 	"github.com/buildbarn/bonanza/pkg/label"
 	model_core "github.com/buildbarn/bonanza/pkg/model/core"
 	"github.com/buildbarn/bonanza/pkg/model/core/btree"
-	model_parser "github.com/buildbarn/bonanza/pkg/model/parser"
 	model_starlark "github.com/buildbarn/bonanza/pkg/model/starlark"
 	model_analysis_pb "github.com/buildbarn/bonanza/pkg/proto/model/analysis"
 	model_core_pb "github.com/buildbarn/bonanza/pkg/proto/model/core"
@@ -51,6 +50,7 @@ func (registeredToolchainExtractingModuleDotBazelHandler) RegisterExecutionPlatf
 func (h *registeredToolchainExtractingModuleDotBazelHandler) RegisterToolchains(toolchainTargetPatterns []label.ApparentTargetPattern, devDependency bool) error {
 	if !devDependency || !h.ignoreDevDependencies {
 		missingDependencies := false
+		listDereferencer := h.computer.valueDereferencers.List
 		for _, apparentToolchainTargetPattern := range toolchainTargetPatterns {
 			canonicalToolchainTargetPattern, err := resolveApparent(h.environment, h.moduleInstance.GetBareCanonicalRepo(), apparentToolchainTargetPattern)
 			if err != nil {
@@ -121,11 +121,7 @@ func (h *registeredToolchainExtractingModuleDotBazelHandler) RegisterToolchains(
 				var errIter error
 				for key, value := range model_starlark.AllStructFields(
 					h.context,
-					model_parser.NewStorageBackedParsedObjectReader(
-						h.computer.objectDownloader,
-						h.computer.getValueObjectEncoder(),
-						model_parser.NewMessageListObjectParser[object.LocalReference, model_starlark_pb.List_Element](),
-					),
+					listDereferencer,
 					declaredToolchainInfoProvider,
 					&errIter,
 				) {
@@ -189,11 +185,7 @@ func (h *registeredToolchainExtractingModuleDotBazelHandler) RegisterToolchains(
 					var errIter error
 					for element := range btree.AllLeaves(
 						h.context,
-						model_parser.NewStorageBackedParsedObjectReader(
-							h.computer.objectDownloader,
-							h.computer.getValueObjectEncoder(),
-							model_parser.NewMessageListObjectParser[object.LocalReference, model_starlark_pb.List_Element](),
-						),
+						listDereferencer,
 						model_core.NewNestedMessage(targetValue, targetCompatibleWithList.List.Elements),
 						func(element model_core.Message[*model_starlark_pb.List_Element, object.OutgoingReferences]) (*model_core_pb.Reference, error) {
 							if level, ok := element.Message.Level.(*model_starlark_pb.List_Element_Parent_); ok {

@@ -13,7 +13,6 @@ import (
 	"github.com/buildbarn/bonanza/pkg/model/core/btree"
 	model_encoding "github.com/buildbarn/bonanza/pkg/model/encoding"
 	model_filesystem "github.com/buildbarn/bonanza/pkg/model/filesystem"
-	model_parser "github.com/buildbarn/bonanza/pkg/model/parser"
 	model_starlark "github.com/buildbarn/bonanza/pkg/model/starlark"
 	model_analysis_pb "github.com/buildbarn/bonanza/pkg/proto/model/analysis"
 	model_starlark_pb "github.com/buildbarn/bonanza/pkg/proto/model/starlark"
@@ -51,6 +50,7 @@ func (c *baseComputer) ComputePackageValue(ctx context.Context, key *model_analy
 		return PatchedPackageValue{}, err
 	}
 
+	listDereferencer := c.valueDereferencers.List
 	for _, buildFileName := range buildDotBazelTargetNames {
 		buildFileProperties := e.GetFilePropertiesValue(&model_analysis_pb.FileProperties_Key{
 			CanonicalRepo: canonicalRepo.String(),
@@ -115,11 +115,7 @@ func (c *baseComputer) ComputePackageValue(ctx context.Context, key *model_analy
 			}
 			return model_starlark.GetStructFieldValue(
 				ctx,
-				model_parser.NewStorageBackedParsedObjectReader(
-					c.objectDownloader,
-					c.getValueObjectEncoder(),
-					model_parser.NewMessageListObjectParser[object.LocalReference, model_starlark_pb.List_Element](),
-				),
+				listDereferencer,
 				model_core.NewNestedMessage(compiledBzlFile, compiledBzlFile.Message.CompiledProgram.GetGlobals()),
 				identifier.GetStarlarkIdentifier().String(),
 			)

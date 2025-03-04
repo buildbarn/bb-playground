@@ -5,7 +5,7 @@ import (
 	"iter"
 
 	model_core "github.com/buildbarn/bonanza/pkg/model/core"
-	model_parser "github.com/buildbarn/bonanza/pkg/model/parser"
+	"github.com/buildbarn/bonanza/pkg/model/core/dereference"
 	model_core_pb "github.com/buildbarn/bonanza/pkg/proto/model/core"
 	"github.com/buildbarn/bonanza/pkg/storage/object"
 
@@ -19,15 +19,16 @@ func AllLeaves[
 		*TMessage
 		proto.Message
 	},
+	TOutgoingReferences object.OutgoingReferences,
 ](
 	ctx context.Context,
-	reader model_parser.ParsedObjectReader[object.LocalReference, model_core.Message[[]TMessagePtr, object.OutgoingReferences]],
-	root model_core.Message[[]TMessagePtr, object.OutgoingReferences],
-	traverser func(model_core.Message[TMessagePtr, object.OutgoingReferences]) (*model_core_pb.Reference, error),
+	dereferencer dereference.Dereferencer[TOutgoingReferences, model_core.Message[[]TMessagePtr, TOutgoingReferences]],
+	root model_core.Message[[]TMessagePtr, TOutgoingReferences],
+	traverser func(model_core.Message[TMessagePtr, TOutgoingReferences]) (*model_core_pb.Reference, error),
 	errOut *error,
-) iter.Seq[model_core.Message[TMessagePtr, object.OutgoingReferences]] {
-	lists := []model_core.Message[[]TMessagePtr, object.OutgoingReferences]{root}
-	return func(yield func(model_core.Message[TMessagePtr, object.OutgoingReferences]) bool) {
+) iter.Seq[model_core.Message[TMessagePtr, TOutgoingReferences]] {
+	lists := []model_core.Message[[]TMessagePtr, TOutgoingReferences]{root}
+	return func(yield func(model_core.Message[TMessagePtr, TOutgoingReferences]) bool) {
 		for len(lists) > 0 {
 			lastList := &lists[len(lists)-1]
 			if len(lastList.Message) == 0 {
@@ -46,12 +47,11 @@ func AllLeaves[
 					}
 				} else {
 					// Traverser wants us to enter a child.
-					objectReference, err := lastList.GetOutgoingReference(childReference)
-					if err != nil {
-						*errOut = err
-						return
-					}
-					child, _, err := reader.ReadParsedObject(ctx, objectReference)
+					child, err := dereference.Dereference[model_core.Message[[]TMessagePtr, TOutgoingReferences]](
+						ctx,
+						dereferencer,
+						model_core.NewNestedMessage(*lastList, childReference),
+					)
 					if err != nil {
 						*errOut = err
 						return

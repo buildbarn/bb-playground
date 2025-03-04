@@ -10,7 +10,7 @@ import (
 	"github.com/buildbarn/bonanza/pkg/label"
 	model_core "github.com/buildbarn/bonanza/pkg/model/core"
 	"github.com/buildbarn/bonanza/pkg/model/core/btree"
-	model_parser "github.com/buildbarn/bonanza/pkg/model/parser"
+	"github.com/buildbarn/bonanza/pkg/model/core/dereference"
 	model_starlark "github.com/buildbarn/bonanza/pkg/model/starlark"
 	model_analysis_pb "github.com/buildbarn/bonanza/pkg/proto/model/analysis"
 	model_core_pb "github.com/buildbarn/bonanza/pkg/proto/model/core"
@@ -27,21 +27,7 @@ func (c *baseComputer) getConfigurationByReference(ctx context.Context, configur
 			OutgoingReferences: object.OutgoingReferencesList{},
 		}, nil
 	}
-
-	actualConfigurationReference, err := configurationReference.GetOutgoingReference(configurationReference.Message)
-	if err != nil {
-		return model_core.Message[*model_analysis_pb.Configuration, object.OutgoingReferences]{}, fmt.Errorf("invalid configuration reference: %w", err)
-	}
-	configurationReader := model_parser.NewStorageBackedParsedObjectReader(
-		c.objectDownloader,
-		c.getValueObjectEncoder(),
-		model_parser.NewMessageObjectParser[object.LocalReference, model_analysis_pb.Configuration](),
-	)
-	configuration, _, err := configurationReader.ReadParsedObject(ctx, actualConfigurationReference)
-	if err != nil {
-		return model_core.Message[*model_analysis_pb.Configuration, object.OutgoingReferences]{}, fmt.Errorf("failed to read configuration: %w", err)
-	}
-	return configuration, nil
+	return dereference.Dereference(ctx, c.configurationDereferencer, configurationReference)
 }
 
 var commandLineOptionPlatformsLabel = label.MustNewCanonicalLabel("@@bazel_tools+//command_line_option:platforms")
@@ -65,11 +51,7 @@ func (c *baseComputer) ComputeCompatibleToolchainsForTypeValue(ctx context.Conte
 	commandLineOptionPlatformsLabelStr := commandLineOptionPlatformsLabel.String()
 	platformOverride, err := btree.Find(
 		ctx,
-		model_parser.NewStorageBackedParsedObjectReader(
-			c.objectDownloader,
-			c.getValueObjectEncoder(),
-			model_parser.NewMessageListObjectParser[object.LocalReference, model_analysis_pb.Configuration_BuildSettingOverride](),
-		),
+		c.configurationBuildSettingOverrideDereferencer,
 		model_core.NewNestedMessage(configuration, configuration.Message.BuildSettingOverrides),
 		func(entry *model_analysis_pb.Configuration_BuildSettingOverride) (int, *model_core_pb.Reference) {
 			switch level := entry.Level.(type) {
@@ -119,16 +101,7 @@ func (c *baseComputer) ComputeCompatibleToolchainsForTypeValue(ctx context.Conte
 	if err != nil {
 		return PatchedCompatibleToolchainsForTypeValue{}, fmt.Errorf("failed to obtain PlatformInfo provider for target %#v: %w", platformLabel, err)
 	}
-	constraintsValue, err := model_starlark.GetStructFieldValue(
-		ctx,
-		model_parser.NewStorageBackedParsedObjectReader(
-			c.objectDownloader,
-			c.getValueObjectEncoder(),
-			model_parser.NewMessageListObjectParser[object.LocalReference, model_starlark_pb.List_Element](),
-		),
-		platformInfoProvider,
-		"constraints",
-	)
+	constraintsValue, err := model_starlark.GetStructFieldValue(ctx, c.valueDereferencers.List, platformInfoProvider, "constraints")
 	if err != nil {
 		return PatchedCompatibleToolchainsForTypeValue{}, fmt.Errorf("failed to obtain constraints field of PlatformInfo provider for target %#v: %w", err)
 	}

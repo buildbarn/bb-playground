@@ -11,7 +11,6 @@ import (
 	"github.com/buildbarn/bonanza/pkg/evaluation"
 	"github.com/buildbarn/bonanza/pkg/label"
 	model_core "github.com/buildbarn/bonanza/pkg/model/core"
-	model_parser "github.com/buildbarn/bonanza/pkg/model/parser"
 	model_starlark "github.com/buildbarn/bonanza/pkg/model/starlark"
 	model_analysis_pb "github.com/buildbarn/bonanza/pkg/proto/model/analysis"
 	model_core_pb "github.com/buildbarn/bonanza/pkg/proto/model/core"
@@ -29,11 +28,7 @@ func (c *baseComputer) decodeStringDict(ctx context.Context, d model_core.Messag
 	o := map[string]string{}
 	for entry := range model_starlark.AllDictLeafEntries(
 		ctx,
-		model_parser.NewStorageBackedParsedObjectReader(
-			c.objectDownloader,
-			c.getValueObjectEncoder(),
-			model_parser.NewMessageListObjectParser[object.LocalReference, model_starlark_pb.Dict_Entry](),
-		),
+		c.valueDereferencers.Dict,
 		model_core.NewNestedMessage(d, dict.Dict),
 		&iterErr,
 	) {
@@ -104,11 +99,7 @@ func (c *baseComputer) ComputeRegisteredRepoPlatformValue(ctx context.Context, k
 	var errIter error
 	for key, value := range model_starlark.AllStructFields(
 		ctx,
-		model_parser.NewStorageBackedParsedObjectReader(
-			c.objectDownloader,
-			c.getValueObjectEncoder(),
-			model_parser.NewMessageListObjectParser[object.LocalReference, model_starlark_pb.List_Element](),
-		),
+		c.valueDereferencers.List,
 		platformInfoProvider,
 		&errIter,
 	) {

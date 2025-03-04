@@ -65,6 +65,7 @@ go_library(
         "//pkg/label",
         "//pkg/model/core",
         "//pkg/model/core/btree",
+        "//pkg/model/core/dereference",
         "//pkg/model/core/inlinedtree",
         "//pkg/model/encoding",
         "//pkg/model/filesystem",

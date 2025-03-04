@@ -4,7 +4,7 @@ import (
 	"context"
 
 	model_core "github.com/buildbarn/bonanza/pkg/model/core"
-	model_parser "github.com/buildbarn/bonanza/pkg/model/parser"
+	"github.com/buildbarn/bonanza/pkg/model/core/dereference"
 	model_core_pb "github.com/buildbarn/bonanza/pkg/proto/model/core"
 	"github.com/buildbarn/bonanza/pkg/storage/object"
 
@@ -18,12 +18,13 @@ func Find[
 		*TMessage
 		proto.Message
 	},
+	TOutgoingReferences object.OutgoingReferences,
 ](
 	ctx context.Context,
-	reader model_parser.ParsedObjectReader[object.LocalReference, model_core.Message[[]TMessagePtr, object.OutgoingReferences]],
-	list model_core.Message[[]TMessagePtr, object.OutgoingReferences],
+	dereferencer dereference.Dereferencer[TOutgoingReferences, model_core.Message[[]TMessagePtr, TOutgoingReferences]],
+	list model_core.Message[[]TMessagePtr, TOutgoingReferences],
 	cmp func(TMessagePtr) (int, *model_core_pb.Reference),
-) (model_core.Message[TMessagePtr, object.OutgoingReferences], error) {
+) (model_core.Message[TMessagePtr, TOutgoingReferences], error) {
 	for {
 		low, high := 0, len(list.Message)
 		var childReference *model_core_pb.Reference
@@ -53,17 +54,14 @@ func Find[
 		if childReference == nil {
 			// Found no exact match, and also did not find a
 			// child that may include a matching entry.
-			return model_core.Message[TMessagePtr, object.OutgoingReferences]{}, nil
+			return model_core.Message[TMessagePtr, TOutgoingReferences]{}, nil
 		}
 
 		// Load the child from storage and continue searching.
-		objectReference, err := list.GetOutgoingReference(childReference)
+		var err error
+		list, err = dereference.Dereference(ctx, dereferencer, model_core.NewNestedMessage(list, childReference))
 		if err != nil {
-			return model_core.Message[TMessagePtr, object.OutgoingReferences]{}, err
-		}
-		list, _, err = reader.ReadParsedObject(ctx, objectReference)
-		if err != nil {
-			return model_core.Message[TMessagePtr, object.OutgoingReferences]{}, err
+			return model_core.Message[TMessagePtr, TOutgoingReferences]{}, err
 		}
 	}
 }

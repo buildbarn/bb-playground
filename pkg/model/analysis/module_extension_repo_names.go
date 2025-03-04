@@ -7,7 +7,6 @@ import (
 	"github.com/buildbarn/bonanza/pkg/evaluation"
 	model_core "github.com/buildbarn/bonanza/pkg/model/core"
 	"github.com/buildbarn/bonanza/pkg/model/core/btree"
-	model_parser "github.com/buildbarn/bonanza/pkg/model/parser"
 	model_analysis_pb "github.com/buildbarn/bonanza/pkg/proto/model/analysis"
 	model_core_pb "github.com/buildbarn/bonanza/pkg/proto/model/core"
 	"github.com/buildbarn/bonanza/pkg/storage/dag"
@@ -26,11 +25,7 @@ func (c *baseComputer) ComputeModuleExtensionRepoNamesValue(ctx context.Context,
 	var errIter error
 	for entry := range btree.AllLeaves(
 		ctx,
-		model_parser.NewStorageBackedParsedObjectReader(
-			c.objectDownloader,
-			c.getValueObjectEncoder(),
-			model_parser.NewMessageListObjectParser[object.LocalReference, model_analysis_pb.ModuleExtensionRepos_Value_Repo](),
-		),
+		c.moduleExtensionReposValueRepoDereferencer,
 		model_core.NewNestedMessage(moduleExtensionReposValue, moduleExtensionReposValue.Message.Repos),
 		func(entry model_core.Message[*model_analysis_pb.ModuleExtensionRepos_Value_Repo, object.OutgoingReferences]) (*model_core_pb.Reference, error) {
 			if parent, ok := entry.Message.Level.(*model_analysis_pb.ModuleExtensionRepos_Value_Repo_Parent_); ok {

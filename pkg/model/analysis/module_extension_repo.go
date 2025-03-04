@@ -10,11 +10,9 @@ import (
 	"github.com/buildbarn/bonanza/pkg/label"
 	model_core "github.com/buildbarn/bonanza/pkg/model/core"
 	"github.com/buildbarn/bonanza/pkg/model/core/btree"
-	model_parser "github.com/buildbarn/bonanza/pkg/model/parser"
 	model_analysis_pb "github.com/buildbarn/bonanza/pkg/proto/model/analysis"
 	model_core_pb "github.com/buildbarn/bonanza/pkg/proto/model/core"
 	"github.com/buildbarn/bonanza/pkg/storage/dag"
-	"github.com/buildbarn/bonanza/pkg/storage/object"
 )
 
 func (c *baseComputer) ComputeModuleExtensionRepoValue(ctx context.Context, key *model_analysis_pb.ModuleExtensionRepo_Key, e ModuleExtensionRepoEnvironment) (PatchedModuleExtensionRepoValue, error) {
@@ -36,11 +34,7 @@ func (c *baseComputer) ComputeModuleExtensionRepoValue(ctx context.Context, key 
 	repoName := apparentRepo.String()
 	repo, err := btree.Find(
 		ctx,
-		model_parser.NewStorageBackedParsedObjectReader(
-			c.objectDownloader,
-			c.getValueObjectEncoder(),
-			model_parser.NewMessageListObjectParser[object.LocalReference, model_analysis_pb.ModuleExtensionRepos_Value_Repo](),
-		),
+		c.moduleExtensionReposValueRepoDereferencer,
 		model_core.NewNestedMessage(moduleExtensionReposValue, moduleExtensionReposValue.Message.Repos),
 		func(entry *model_analysis_pb.ModuleExtensionRepos_Value_Repo) (int, *model_core_pb.Reference) {
 			switch level := entry.Level.(type) {

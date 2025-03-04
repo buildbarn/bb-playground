@@ -10,7 +10,6 @@ import (
 	pg_label "github.com/buildbarn/bonanza/pkg/label"
 	model_core "github.com/buildbarn/bonanza/pkg/model/core"
 	"github.com/buildbarn/bonanza/pkg/model/core/btree"
-	model_parser "github.com/buildbarn/bonanza/pkg/model/parser"
 	model_starlark_pb "github.com/buildbarn/bonanza/pkg/proto/model/starlark"
 	"github.com/buildbarn/bonanza/pkg/storage/object"
 
@@ -316,7 +315,6 @@ type depsetToListConverter struct {
 	thread *starlark.Thread
 
 	valueDecodingOptions *ValueDecodingOptions
-	reader               model_parser.ParsedObjectReader[object.LocalReference, model_core.Message[[]*model_starlark_pb.List_Element, object.OutgoingReferences]]
 
 	list             []starlark.Value
 	valuesSeen       valueSet
@@ -339,17 +337,12 @@ func (dlc *depsetToListConverter) appendChildren(children any) error {
 				return errors.New("depsets with encoded elements cannot be decoded from within this context")
 			}
 			dlc.valueDecodingOptions = valueDecodingOptionsValue.(*ValueDecodingOptions)
-			dlc.reader = model_parser.NewStorageBackedParsedObjectReader(
-				dlc.valueDecodingOptions.ObjectDownloader,
-				dlc.valueDecodingOptions.ObjectEncoder,
-				model_parser.NewMessageListObjectParser[object.LocalReference, model_starlark_pb.List_Element](),
-			)
 		}
 
 		var errIter error
 		for encodedElement := range AllListLeafElementsSkippingDuplicateParents(
 			dlc.valueDecodingOptions.Context,
-			dlc.reader,
+			dlc.valueDecodingOptions.Dereferencers.List,
 			model_core.NewNestedMessage(v, []*model_starlark_pb.List_Element{v.Message}),
 			dlc.encodedListsSeen,
 			&errIter,

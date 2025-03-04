@@ -13,8 +13,8 @@ import (
 	pg_label "github.com/buildbarn/bonanza/pkg/label"
 	model_core "github.com/buildbarn/bonanza/pkg/model/core"
 	"github.com/buildbarn/bonanza/pkg/model/core/btree"
+	"github.com/buildbarn/bonanza/pkg/model/core/dereference"
 	model_encoding "github.com/buildbarn/bonanza/pkg/model/encoding"
-	model_parser "github.com/buildbarn/bonanza/pkg/model/parser"
 	model_core_pb "github.com/buildbarn/bonanza/pkg/proto/model/core"
 	model_starlark_pb "github.com/buildbarn/bonanza/pkg/proto/model/starlark"
 	"github.com/buildbarn/bonanza/pkg/storage/object"
@@ -333,11 +333,7 @@ func DecodeGlobals(encodedGlobals model_core.Message[*model_starlark_pb.Struct_F
 	var errIter error
 	for key, encodedValue := range AllStructFields(
 		options.Context,
-		model_parser.NewStorageBackedParsedObjectReader(
-			options.ObjectDownloader,
-			options.ObjectEncoder,
-			model_parser.NewMessageListObjectParser[object.LocalReference, model_starlark_pb.List_Element](),
-		),
+		options.Dereferencers.List,
 		encodedGlobals,
 		&errIter,
 	) {
@@ -361,11 +357,15 @@ func DecodeGlobals(encodedGlobals model_core.Message[*model_starlark_pb.Struct_F
 
 const ValueDecodingOptionsKey = "value_decoding_options"
 
+type ValueDereferencers struct {
+	Dict dereference.Dereferencer[object.OutgoingReferences, model_core.Message[[]*model_starlark_pb.Dict_Entry, object.OutgoingReferences]]
+	List dereference.Dereferencer[object.OutgoingReferences, model_core.Message[[]*model_starlark_pb.List_Element, object.OutgoingReferences]]
+}
+
 type ValueDecodingOptions struct {
-	Context          context.Context
-	ObjectDownloader object.Downloader[object.LocalReference]
-	ObjectEncoder    model_encoding.BinaryEncoder
-	LabelCreator     func(pg_label.ResolvedLabel) (starlark.Value, error)
+	Context       context.Context
+	Dereferencers *ValueDereferencers
+	LabelCreator  func(pg_label.ResolvedLabel) (starlark.Value, error)
 }
 
 func DecodeValue(encodedValue model_core.Message[*model_starlark_pb.Value, object.OutgoingReferences], currentIdentifier *pg_label.CanonicalStarlarkIdentifier, options *ValueDecodingOptions) (starlark.Value, error) {
@@ -436,12 +436,7 @@ func DecodeValue(encodedValue model_core.Message[*model_starlark_pb.Value, objec
 			model_core.NewNestedMessage(encodedValue, typedValue.Dict),
 			&dictEntriesDecodingOptions{
 				valueDecodingOptions: options,
-				reader: model_parser.NewStorageBackedParsedObjectReader(
-					options.ObjectDownloader,
-					options.ObjectEncoder,
-					model_parser.NewMessageListObjectParser[object.LocalReference, model_starlark_pb.Dict_Entry](),
-				),
-				out: dict,
+				out:                  dict,
 			},
 		); err != nil {
 			return nil, err
@@ -513,12 +508,7 @@ func DecodeValue(encodedValue model_core.Message[*model_starlark_pb.Value, objec
 			model_core.NewNestedMessage(encodedValue, typedValue.List),
 			&listElementsDecodingOptions{
 				valueDecodingOptions: options,
-				reader: model_parser.NewStorageBackedParsedObjectReader(
-					options.ObjectDownloader,
-					options.ObjectEncoder,
-					model_parser.NewMessageListObjectParser[object.LocalReference, model_starlark_pb.List_Element](),
-				),
-				out: list,
+				out:                  list,
 			}); err != nil {
 			return nil, err
 		}
@@ -810,11 +800,7 @@ func DecodeStruct(m model_core.Message[*model_starlark_pb.Struct, object.Outgoin
 	var errIter error
 	for key, value := range AllStructFields(
 		options.Context,
-		model_parser.NewStorageBackedParsedObjectReader(
-			options.ObjectDownloader,
-			options.ObjectEncoder,
-			model_parser.NewMessageListObjectParser[object.LocalReference, model_starlark_pb.List_Element](),
-		),
+		options.Dereferencers.List,
 		model_core.NewNestedMessage(m, m.Message.Fields),
 		&errIter,
 	) {
@@ -830,7 +816,6 @@ func DecodeStruct(m model_core.Message[*model_starlark_pb.Struct, object.Outgoin
 
 type dictEntriesDecodingOptions struct {
 	valueDecodingOptions *ValueDecodingOptions
-	reader               model_parser.ParsedObjectReader[object.LocalReference, model_core.Message[[]*model_starlark_pb.Dict_Entry, object.OutgoingReferences]]
 	out                  *starlark.Dict
 }
 
@@ -844,7 +829,7 @@ func decodeDictEntries(in model_core.Message[*model_starlark_pb.Dict, object.Out
 	var errIter error
 	for entry := range AllDictLeafEntries(
 		options.valueDecodingOptions.Context,
-		options.reader,
+		options.valueDecodingOptions.Dereferencers.Dict,
 		in,
 		&errIter,
 	) {
@@ -873,7 +858,6 @@ func decodeDictEntries(in model_core.Message[*model_starlark_pb.Dict, object.Out
 
 type listElementsDecodingOptions struct {
 	valueDecodingOptions *ValueDecodingOptions
-	reader               model_parser.ParsedObjectReader[object.LocalReference, model_core.Message[[]*model_starlark_pb.List_Element, object.OutgoingReferences]]
 	out                  *starlark.List
 }
 
@@ -881,7 +865,7 @@ func decodeList_Elements(in model_core.Message[*model_starlark_pb.List, object.O
 	var errIter error
 	for element := range btree.AllLeaves(
 		options.valueDecodingOptions.Context,
-		options.reader,
+		options.valueDecodingOptions.Dereferencers.List,
 		model_core.NewNestedMessage(in, in.Message.Elements),
 		func(element model_core.Message[*model_starlark_pb.List_Element, object.OutgoingReferences]) (*model_core_pb.Reference, error) {
 			if level, ok := element.Message.Level.(*model_starlark_pb.List_Element_Parent_); ok {

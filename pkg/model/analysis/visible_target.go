@@ -11,7 +11,6 @@ import (
 	"github.com/buildbarn/bonanza/pkg/label"
 	model_core "github.com/buildbarn/bonanza/pkg/model/core"
 	"github.com/buildbarn/bonanza/pkg/model/core/btree"
-	model_parser "github.com/buildbarn/bonanza/pkg/model/parser"
 	model_analysis_pb "github.com/buildbarn/bonanza/pkg/proto/model/analysis"
 	model_core_pb "github.com/buildbarn/bonanza/pkg/proto/model/core"
 	model_starlark_pb "github.com/buildbarn/bonanza/pkg/proto/model/starlark"
@@ -239,11 +238,7 @@ func (c *baseComputer) ComputeVisibleTargetValue(ctx context.Context, key model_
 		toLabelStr := toLabel.String()
 		override, err := btree.Find(
 			ctx,
-			model_parser.NewStorageBackedParsedObjectReader(
-				c.objectDownloader,
-				c.getValueObjectEncoder(),
-				model_parser.NewMessageListObjectParser[object.LocalReference, model_analysis_pb.Configuration_BuildSettingOverride](),
-			),
+			c.configurationBuildSettingOverrideDereferencer,
 			model_core.NewNestedMessage(configuration, configuration.Message.BuildSettingOverrides),
 			func(entry *model_analysis_pb.Configuration_BuildSettingOverride) (int, *model_core_pb.Reference) {
 				switch level := entry.Level.(type) {

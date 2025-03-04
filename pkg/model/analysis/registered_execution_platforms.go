@@ -10,7 +10,6 @@ import (
 
 	"github.com/buildbarn/bonanza/pkg/label"
 	model_core "github.com/buildbarn/bonanza/pkg/model/core"
-	model_parser "github.com/buildbarn/bonanza/pkg/model/parser"
 	model_starlark "github.com/buildbarn/bonanza/pkg/model/starlark"
 	model_analysis_pb "github.com/buildbarn/bonanza/pkg/proto/model/analysis"
 	model_core_pb "github.com/buildbarn/bonanza/pkg/proto/model/core"
@@ -50,11 +49,7 @@ func (c *baseComputer) extractFromPlatformInfoConstraints(ctx context.Context, v
 	constraints := map[string]string{}
 	for entry := range model_starlark.AllDictLeafEntries(
 		ctx,
-		model_parser.NewStorageBackedParsedObjectReader(
-			c.objectDownloader,
-			c.getValueObjectEncoder(),
-			model_parser.NewMessageListObjectParser[object.LocalReference, model_starlark_pb.Dict_Entry](),
-		),
+		c.valueDereferencers.Dict,
 		model_core.NewNestedMessage(value, dict.Dict),
 		&iterErr,
 	) {
@@ -83,6 +78,7 @@ func (c *baseComputer) extractFromPlatformInfoConstraints(ctx context.Context, v
 
 func (h *registeredExecutionPlatformExtractingModuleDotBazelHandler) RegisterExecutionPlatforms(platformTargetPatterns []label.ApparentTargetPattern, devDependency bool) error {
 	if !devDependency || !h.ignoreDevDependencies {
+		listDereferencer := h.computer.valueDereferencers.List
 		for _, apparentPlatformTargetPattern := range platformTargetPatterns {
 			canonicalPlatformTargetPattern, err := resolveApparent(h.environment, h.moduleInstance.GetBareCanonicalRepo(), apparentPlatformTargetPattern)
 			if err != nil {
@@ -111,11 +107,7 @@ func (h *registeredExecutionPlatformExtractingModuleDotBazelHandler) RegisterExe
 				var errIter error
 				for key, value := range model_starlark.AllStructFields(
 					h.context,
-					model_parser.NewStorageBackedParsedObjectReader(
-						h.computer.objectDownloader,
-						h.computer.getValueObjectEncoder(),
-						model_parser.NewMessageListObjectParser[object.LocalReference, model_starlark_pb.List_Element](),
-					),
+					listDereferencer,
 					platformInfoProvider,
 					&errIter,
 				) {

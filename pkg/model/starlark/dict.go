@@ -7,23 +7,23 @@ import (
 
 	model_core "github.com/buildbarn/bonanza/pkg/model/core"
 	"github.com/buildbarn/bonanza/pkg/model/core/btree"
-	model_parser "github.com/buildbarn/bonanza/pkg/model/parser"
+	"github.com/buildbarn/bonanza/pkg/model/core/dereference"
 	model_core_pb "github.com/buildbarn/bonanza/pkg/proto/model/core"
 	model_starlark_pb "github.com/buildbarn/bonanza/pkg/proto/model/starlark"
 	"github.com/buildbarn/bonanza/pkg/storage/object"
 )
 
-func AllDictLeafEntries(
+func AllDictLeafEntries[TOutgoingReferences object.OutgoingReferences](
 	ctx context.Context,
-	reader model_parser.ParsedObjectReader[object.LocalReference, model_core.Message[[]*model_starlark_pb.Dict_Entry, object.OutgoingReferences]],
-	rootDict model_core.Message[*model_starlark_pb.Dict, object.OutgoingReferences],
+	dereferencer dereference.Dereferencer[TOutgoingReferences, model_core.Message[[]*model_starlark_pb.Dict_Entry, TOutgoingReferences]],
+	rootDict model_core.Message[*model_starlark_pb.Dict, TOutgoingReferences],
 	errOut *error,
-) iter.Seq[model_core.Message[*model_starlark_pb.Dict_Entry_Leaf, object.OutgoingReferences]] {
+) iter.Seq[model_core.Message[*model_starlark_pb.Dict_Entry_Leaf, TOutgoingReferences]] {
 	allLeaves := btree.AllLeaves(
 		ctx,
-		reader,
+		dereferencer,
 		model_core.NewNestedMessage(rootDict, rootDict.Message.Entries),
-		func(entry model_core.Message[*model_starlark_pb.Dict_Entry, object.OutgoingReferences]) (*model_core_pb.Reference, error) {
+		func(entry model_core.Message[*model_starlark_pb.Dict_Entry, TOutgoingReferences]) (*model_core_pb.Reference, error) {
 			if parent, ok := entry.Message.Level.(*model_starlark_pb.Dict_Entry_Parent_); ok {
 				return parent.Parent.Reference, nil
 			}
@@ -31,8 +31,8 @@ func AllDictLeafEntries(
 		},
 		errOut,
 	)
-	return func(yield func(model_core.Message[*model_starlark_pb.Dict_Entry_Leaf, object.OutgoingReferences]) bool) {
-		allLeaves(func(entry model_core.Message[*model_starlark_pb.Dict_Entry, object.OutgoingReferences]) bool {
+	return func(yield func(model_core.Message[*model_starlark_pb.Dict_Entry_Leaf, TOutgoingReferences]) bool) {
+		allLeaves(func(entry model_core.Message[*model_starlark_pb.Dict_Entry, TOutgoingReferences]) bool {
 			leafEntry, ok := entry.Message.Level.(*model_starlark_pb.Dict_Entry_Leaf_)
 			if !ok {
 				*errOut = errors.New("not a valid leaf entry")

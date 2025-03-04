@@ -7,7 +7,7 @@ import (
 
 	model_core "github.com/buildbarn/bonanza/pkg/model/core"
 	"github.com/buildbarn/bonanza/pkg/model/core/btree"
-	model_parser "github.com/buildbarn/bonanza/pkg/model/parser"
+	"github.com/buildbarn/bonanza/pkg/model/core/dereference"
 	model_core_pb "github.com/buildbarn/bonanza/pkg/proto/model/core"
 	model_starlark_pb "github.com/buildbarn/bonanza/pkg/proto/model/starlark"
 	"github.com/buildbarn/bonanza/pkg/storage/object"
@@ -23,18 +23,18 @@ import (
 //
 // Note that this function does not perform deduplication of leaf
 // elements. Only parents are deduplicated.
-func AllListLeafElementsSkippingDuplicateParents(
+func AllListLeafElementsSkippingDuplicateParents[TOutgoingReferences object.OutgoingReferences](
 	ctx context.Context,
-	reader model_parser.ParsedObjectReader[object.LocalReference, model_core.Message[[]*model_starlark_pb.List_Element, object.OutgoingReferences]],
-	rootList model_core.Message[[]*model_starlark_pb.List_Element, object.OutgoingReferences],
+	dereferencer dereference.Dereferencer[TOutgoingReferences, model_core.Message[[]*model_starlark_pb.List_Element, TOutgoingReferences]],
+	rootList model_core.Message[[]*model_starlark_pb.List_Element, TOutgoingReferences],
 	listsSeen map[object.LocalReference]struct{},
 	errOut *error,
-) iter.Seq[model_core.Message[*model_starlark_pb.Value, object.OutgoingReferences]] {
+) iter.Seq[model_core.Message[*model_starlark_pb.Value, TOutgoingReferences]] {
 	allLeaves := btree.AllLeaves(
 		ctx,
-		reader,
+		dereferencer,
 		rootList,
-		func(element model_core.Message[*model_starlark_pb.List_Element, object.OutgoingReferences]) (*model_core_pb.Reference, error) {
+		func(element model_core.Message[*model_starlark_pb.List_Element, TOutgoingReferences]) (*model_core_pb.Reference, error) {
 			if level, ok := element.Message.Level.(*model_starlark_pb.List_Element_Parent_); ok {
 				listReferenceMessage := level.Parent.Reference
 				listReference, err := element.GetOutgoingReference(level.Parent.Reference)
@@ -55,8 +55,8 @@ func AllListLeafElementsSkippingDuplicateParents(
 		},
 		errOut,
 	)
-	return func(yield func(model_core.Message[*model_starlark_pb.Value, object.OutgoingReferences]) bool) {
-		allLeaves(func(entry model_core.Message[*model_starlark_pb.List_Element, object.OutgoingReferences]) bool {
+	return func(yield func(model_core.Message[*model_starlark_pb.Value, TOutgoingReferences]) bool) {
+		allLeaves(func(entry model_core.Message[*model_starlark_pb.List_Element, TOutgoingReferences]) bool {
 			switch level := entry.Message.Level.(type) {
 			case *model_starlark_pb.List_Element_Leaf:
 				return yield(model_core.NewNestedMessage(entry, level.Leaf))

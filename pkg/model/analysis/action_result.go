@@ -13,6 +13,7 @@ import (
 	"github.com/buildbarn/bonanza/pkg/evaluation"
 	model_core "github.com/buildbarn/bonanza/pkg/model/core"
 	"github.com/buildbarn/bonanza/pkg/model/core/btree"
+	"github.com/buildbarn/bonanza/pkg/model/core/dereference"
 	model_encoding "github.com/buildbarn/bonanza/pkg/model/encoding"
 	model_filesystem "github.com/buildbarn/bonanza/pkg/model/filesystem"
 	model_parser "github.com/buildbarn/bonanza/pkg/model/parser"
@@ -150,15 +151,12 @@ func (c *baseComputer) getOutputsFromActionResult(ctx context.Context, actionRes
 		return model_core.NewMessage(&model_command_pb.Outputs{}, object.OutgoingReferences(object.OutgoingReferencesList{})), nil
 	}
 
-	outputsReader := model_parser.NewStorageBackedParsedObjectReader(
-		c.objectDownloader,
-		directoryAccessParameters.GetEncoder(),
-		model_parser.NewMessageObjectParser[object.LocalReference, model_command_pb.Outputs](),
+	outputsDereferencer := dereference.NewReadingDereferencer(
+		model_parser.NewStorageBackedParsedObjectReader(
+			c.objectDownloader,
+			directoryAccessParameters.GetEncoder(),
+			model_parser.NewMessageObjectParser[object.LocalReference, model_command_pb.Outputs](),
+		),
 	)
-	outputsReference, err := actionResult.GetOutgoingReference(actionResult.Message.OutputsReference)
-	if err != nil {
-		return model_core.Message[*model_command_pb.Outputs, object.OutgoingReferences]{}, fmt.Errorf("invalid command outputs reference index: %w", err)
-	}
-	outputs, _, err := outputsReader.ReadParsedObject(ctx, outputsReference)
-	return outputs, err
+	return dereference.Dereference(ctx, outputsDereferencer, model_core.NewNestedMessage(actionResult, actionResult.Message.OutputsReference))
 }

@@ -13,7 +13,7 @@ import (
 	pg_label "github.com/buildbarn/bonanza/pkg/label"
 	model_core "github.com/buildbarn/bonanza/pkg/model/core"
 	"github.com/buildbarn/bonanza/pkg/model/core/btree"
-	model_parser "github.com/buildbarn/bonanza/pkg/model/parser"
+	"github.com/buildbarn/bonanza/pkg/model/core/dereference"
 	model_core_pb "github.com/buildbarn/bonanza/pkg/proto/model/core"
 	model_starlark_pb "github.com/buildbarn/bonanza/pkg/proto/model/starlark"
 	"github.com/buildbarn/bonanza/pkg/storage/object"
@@ -345,7 +345,7 @@ func (s *Struct) GetProviderIdentifier() (pg_label.CanonicalStarlarkIdentifier, 
 
 func AllStructFields(
 	ctx context.Context,
-	reader model_parser.ParsedObjectReader[object.LocalReference, model_core.Message[[]*model_starlark_pb.List_Element, object.OutgoingReferences]],
+	dereferencer dereference.Dereferencer[object.OutgoingReferences, model_core.Message[[]*model_starlark_pb.List_Element, object.OutgoingReferences]],
 	structFields model_core.Message[*model_starlark_pb.Struct_Fields, object.OutgoingReferences],
 	errOut *error,
 ) iter.Seq2[string, model_core.Message[*model_starlark_pb.Value, object.OutgoingReferences]] {
@@ -357,7 +357,7 @@ func AllStructFields(
 
 	allLeaves := btree.AllLeaves(
 		ctx,
-		reader,
+		dereferencer,
 		model_core.NewNestedMessage(structFields, structFields.Message.Values),
 		func(element model_core.Message[*model_starlark_pb.List_Element, object.OutgoingReferences]) (*model_core_pb.Reference, error) {
 			if level, ok := element.Message.Level.(*model_starlark_pb.List_Element_Parent_); ok {
@@ -391,7 +391,7 @@ func AllStructFields(
 
 func GetStructFieldValue(
 	ctx context.Context,
-	reader model_parser.ParsedObjectReader[object.LocalReference, model_core.Message[[]*model_starlark_pb.List_Element, object.OutgoingReferences]],
+	dereferencer dereference.Dereferencer[object.OutgoingReferences, model_core.Message[[]*model_starlark_pb.List_Element, object.OutgoingReferences]],
 	structFields model_core.Message[*model_starlark_pb.Struct_Fields, object.OutgoingReferences],
 	key string,
 ) (model_core.Message[*model_starlark_pb.Value, object.OutgoingReferences], error) {

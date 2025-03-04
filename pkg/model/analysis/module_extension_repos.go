@@ -15,12 +15,10 @@ import (
 	model_core "github.com/buildbarn/bonanza/pkg/model/core"
 	"github.com/buildbarn/bonanza/pkg/model/core/btree"
 	model_encoding "github.com/buildbarn/bonanza/pkg/model/encoding"
-	model_parser "github.com/buildbarn/bonanza/pkg/model/parser"
 	model_starlark "github.com/buildbarn/bonanza/pkg/model/starlark"
 	model_analysis_pb "github.com/buildbarn/bonanza/pkg/proto/model/analysis"
 	model_starlark_pb "github.com/buildbarn/bonanza/pkg/proto/model/starlark"
 	"github.com/buildbarn/bonanza/pkg/starlark/unpack"
-	"github.com/buildbarn/bonanza/pkg/storage/object"
 
 	"go.starlark.net/starlark"
 )
@@ -123,11 +121,7 @@ func (c *baseComputer) ComputeModuleExtensionReposValue(ctx context.Context, key
 	valueDecodingOptions := c.getValueDecodingOptions(ctx, func(resolvedLabel label.ResolvedLabel) (starlark.Value, error) {
 		return model_starlark.NewLabel(resolvedLabel), nil
 	})
-	listReader := model_parser.NewStorageBackedParsedObjectReader(
-		c.objectDownloader,
-		c.getValueObjectEncoder(),
-		model_parser.NewMessageListObjectParser[object.LocalReference, model_starlark_pb.List_Element](),
-	)
+	listDereferencer := c.valueDereferencers.List
 	tagClassAttrTypes := make([][]model_starlark.AttrType, len(moduleExtensionDefinition.TagClasses))
 	tagClassAttrDefaults := make([][]starlark.Value, len(moduleExtensionDefinition.TagClasses))
 	for _, user := range moduleExtensionUsers {
@@ -155,7 +149,7 @@ func (c *baseComputer) ComputeModuleExtensionReposValue(ctx context.Context, key
 					declaredAttrs := maps.Collect(
 						model_starlark.AllStructFields(
 							ctx,
-							listReader,
+							listDereferencer,
 							model_core.NewNestedMessage(usedModuleExtensionValue, declaredTag.Attrs),
 							&errIter,
 						),

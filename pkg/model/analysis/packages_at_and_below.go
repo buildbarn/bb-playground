@@ -11,6 +11,7 @@ import (
 	"github.com/buildbarn/bonanza/pkg/evaluation"
 	"github.com/buildbarn/bonanza/pkg/label"
 	model_core "github.com/buildbarn/bonanza/pkg/model/core"
+	"github.com/buildbarn/bonanza/pkg/model/core/dereference"
 	model_parser "github.com/buildbarn/bonanza/pkg/model/parser"
 	model_analysis_pb "github.com/buildbarn/bonanza/pkg/proto/model/analysis"
 	model_filesystem_pb "github.com/buildbarn/bonanza/pkg/proto/model/filesystem"
@@ -33,16 +34,14 @@ func (c *baseComputer) ComputePackagesAtAndBelowValue(ctx context.Context, key *
 	}
 
 	// Obtain the root directory of the repo.
-	rootDirectoryReference, err := repoValue.GetOutgoingReference(repoValue.Message.RootDirectoryReference.GetReference())
-	if err != nil {
-		return PatchedPackagesAtAndBelowValue{}, fmt.Errorf("invalid root directory reference: %w", err)
-	}
-	directoryReader := model_parser.NewStorageBackedParsedObjectReader(
-		c.objectDownloader,
-		directoryCreationParameters.GetEncoder(),
-		model_parser.NewMessageObjectParser[object.LocalReference, model_filesystem_pb.Directory](),
+	directoryDereferencer := dereference.NewReadingDereferencer(
+		model_parser.NewStorageBackedParsedObjectReader(
+			c.objectDownloader,
+			directoryCreationParameters.GetEncoder(),
+			model_parser.NewMessageObjectParser[object.LocalReference, model_filesystem_pb.Directory](),
+		),
 	)
-	baseDirectory, _, err := directoryReader.ReadParsedObject(ctx, rootDirectoryReference)
+	baseDirectory, err := dereference.Dereference(ctx, directoryDereferencer, model_core.NewNestedMessage(repoValue, repoValue.Message.RootDirectoryReference.GetReference()))
 	if err != nil {
 		return PatchedPackagesAtAndBelowValue{}, err
 	}
@@ -63,11 +62,7 @@ func (c *baseComputer) ComputePackagesAtAndBelowValue(ctx context.Context, key *
 		}
 		switch contents := directories[directoryIndex].Contents.(type) {
 		case *model_filesystem_pb.DirectoryNode_ContentsExternal:
-			directoryReference, err := baseDirectory.GetOutgoingReference(contents.ContentsExternal.Reference)
-			if err != nil {
-				return PatchedPackagesAtAndBelowValue{}, err
-			}
-			baseDirectory, _, err = directoryReader.ReadParsedObject(ctx, directoryReference)
+			baseDirectory, err = dereference.Dereference(ctx, directoryDereferencer, model_core.NewNestedMessage(baseDirectory, contents.ContentsExternal.Reference))
 			if err != nil {
 				return PatchedPackagesAtAndBelowValue{}, err
 			}
@@ -80,12 +75,14 @@ func (c *baseComputer) ComputePackagesAtAndBelowValue(ctx context.Context, key *
 
 	// Find packages at and below the base package.
 	checker := packageExistenceChecker{
-		context:         ctx,
-		directoryReader: directoryReader,
-		leavesReader: model_parser.NewStorageBackedParsedObjectReader(
-			c.objectDownloader,
-			directoryCreationParameters.GetEncoder(),
-			model_parser.NewMessageObjectParser[object.LocalReference, model_filesystem_pb.Leaves](),
+		context:               ctx,
+		directoryDereferencer: directoryDereferencer,
+		leavesDereferencer: dereference.NewReadingDereferencer(
+			model_parser.NewStorageBackedParsedObjectReader(
+				c.objectDownloader,
+				directoryCreationParameters.GetEncoder(),
+				model_parser.NewMessageObjectParser[object.LocalReference, model_filesystem_pb.Leaves](),
+			),
 		),
 	}
 	packageAtBasePackage, err := checker.directoryIsPackage(baseDirectory)
@@ -104,8 +101,8 @@ func (c *baseComputer) ComputePackagesAtAndBelowValue(ctx context.Context, key *
 
 type packageExistenceChecker struct {
 	context                  context.Context
-	directoryReader          model_parser.ParsedObjectReader[object.LocalReference, model_core.Message[*model_filesystem_pb.Directory, object.OutgoingReferences]]
-	leavesReader             model_parser.ParsedObjectReader[object.LocalReference, model_core.Message[*model_filesystem_pb.Leaves, object.OutgoingReferences]]
+	directoryDereferencer    dereference.Dereferencer[object.OutgoingReferences, model_core.Message[*model_filesystem_pb.Directory, object.OutgoingReferences]]
+	leavesDereferencer       dereference.Dereferencer[object.OutgoingReferences, model_core.Message[*model_filesystem_pb.Leaves, object.OutgoingReferences]]
 	packagesBelowBasePackage []string
 }
 
@@ -113,11 +110,7 @@ func (pec *packageExistenceChecker) directoryIsPackage(d model_core.Message[*mod
 	var leaves *model_filesystem_pb.Leaves
 	switch l := d.Message.Leaves.(type) {
 	case *model_filesystem_pb.Directory_LeavesExternal:
-		leavesReference, err := d.GetOutgoingReference(l.LeavesExternal.Reference)
-		if err != nil {
-			return false, err
-		}
-		externalLeaves, _, err := pec.leavesReader.ReadParsedObject(pec.context, leavesReference)
+		externalLeaves, err := dereference.Dereference(pec.context, pec.leavesDereferencer, model_core.NewNestedMessage(d, l.LeavesExternal.Reference))
 		if err != nil {
 			return false, err
 		}
@@ -154,11 +147,8 @@ func (pec *packageExistenceChecker) findPackagesBelow(d model_core.Message[*mode
 		var childDirectory model_core.Message[*model_filesystem_pb.Directory, object.OutgoingReferences]
 		switch contents := entry.Contents.(type) {
 		case *model_filesystem_pb.DirectoryNode_ContentsExternal:
-			directoryReference, err := d.GetOutgoingReference(contents.ContentsExternal.Reference)
-			if err != nil {
-				return err
-			}
-			childDirectory, _, err = pec.directoryReader.ReadParsedObject(pec.context, directoryReference)
+			var err error
+			childDirectory, err = dereference.Dereference(pec.context, pec.directoryDereferencer, model_core.NewNestedMessage(d, contents.ContentsExternal.Reference))
 			if err != nil {
 				return err
 			}

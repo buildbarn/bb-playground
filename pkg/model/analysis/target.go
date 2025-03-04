@@ -10,7 +10,6 @@ import (
 	"github.com/buildbarn/bonanza/pkg/label"
 	model_core "github.com/buildbarn/bonanza/pkg/model/core"
 	"github.com/buildbarn/bonanza/pkg/model/core/btree"
-	model_parser "github.com/buildbarn/bonanza/pkg/model/parser"
 	model_analysis_pb "github.com/buildbarn/bonanza/pkg/proto/model/analysis"
 	model_core_pb "github.com/buildbarn/bonanza/pkg/proto/model/core"
 	model_starlark_pb "github.com/buildbarn/bonanza/pkg/proto/model/starlark"
@@ -22,11 +21,7 @@ func (c *baseComputer) lookupTargetDefinitionInTargetList(ctx context.Context, t
 	targetNameStr := targetName.String()
 	target, err := btree.Find(
 		ctx,
-		model_parser.NewStorageBackedParsedObjectReader(
-			c.objectDownloader,
-			c.getValueObjectEncoder(),
-			model_parser.NewMessageListObjectParser[object.LocalReference, model_analysis_pb.Package_Value_Target](),
-		),
+		c.packageValueTargetDereferencer,
 		targetList,
 		func(entry *model_analysis_pb.Package_Value_Target) (int, *model_core_pb.Reference) {
 			switch level := entry.Level.(type) {

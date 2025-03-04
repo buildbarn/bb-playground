@@ -11,7 +11,6 @@ import (
 	model_core "github.com/buildbarn/bonanza/pkg/model/core"
 	"github.com/buildbarn/bonanza/pkg/model/core/btree"
 	model_encoding "github.com/buildbarn/bonanza/pkg/model/encoding"
-	model_parser "github.com/buildbarn/bonanza/pkg/model/parser"
 	model_analysis_pb "github.com/buildbarn/bonanza/pkg/proto/model/analysis"
 	model_core_pb "github.com/buildbarn/bonanza/pkg/proto/model/core"
 	model_starlark_pb "github.com/buildbarn/bonanza/pkg/proto/model/starlark"
@@ -50,11 +49,7 @@ func (c *baseComputer) expandCanonicalTargetPattern(
 
 		for entry := range btree.AllLeaves(
 			ctx,
-			model_parser.NewStorageBackedParsedObjectReader(
-				c.objectDownloader,
-				c.getValueObjectEncoder(),
-				model_parser.NewMessageListObjectParser[object.LocalReference, model_analysis_pb.TargetPatternExpansion_Value_TargetLabel](),
-			),
+			c.targetPatternExpansionValueTargetLabelDereferencer,
 			model_core.NewNestedMessage(targetPatternExpansion, targetPatternExpansion.Message.TargetLabels),
 			func(entry model_core.Message[*model_analysis_pb.TargetPatternExpansion_Value_TargetLabel, object.OutgoingReferences]) (*model_core_pb.Reference, error) {
 				if level, ok := entry.Message.Level.(*model_analysis_pb.TargetPatternExpansion_Value_TargetLabel_Parent_); ok {
@@ -231,11 +226,7 @@ func (c *baseComputer) addPackageToTargetPatternExpansion(
 	var errIter error
 	for entry := range btree.AllLeaves(
 		ctx,
-		model_parser.NewStorageBackedParsedObjectReader(
-			c.objectDownloader,
-			c.getValueObjectEncoder(),
-			model_parser.NewMessageListObjectParser[object.LocalReference, model_analysis_pb.Package_Value_Target](),
-		),
+		c.packageValueTargetDereferencer,
 		model_core.NewNestedMessage(packageValue, packageValue.Message.Targets),
 		func(entry model_core.Message[*model_analysis_pb.Package_Value_Target, object.OutgoingReferences]) (*model_core_pb.Reference, error) {
 			if level, ok := entry.Message.Level.(*model_analysis_pb.Package_Value_Target_Parent_); ok {

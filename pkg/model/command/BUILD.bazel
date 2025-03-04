@@ -8,6 +8,7 @@ go_library(
     deps = [
         "//pkg/model/core",
         "//pkg/model/core/btree",
+        "//pkg/model/core/dereference",
         "//pkg/model/encoding",
         "//pkg/model/filesystem",
         "//pkg/model/filesystem/virtual",

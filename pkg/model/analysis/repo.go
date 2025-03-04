@@ -25,6 +25,7 @@ import (
 	"github.com/buildbarn/bonanza/pkg/label"
 	model_core "github.com/buildbarn/bonanza/pkg/model/core"
 	"github.com/buildbarn/bonanza/pkg/model/core/btree"
+	"github.com/buildbarn/bonanza/pkg/model/core/dereference"
 	model_encoding "github.com/buildbarn/bonanza/pkg/model/encoding"
 	model_filesystem "github.com/buildbarn/bonanza/pkg/model/filesystem"
 	model_parser "github.com/buildbarn/bonanza/pkg/model/parser"
@@ -123,11 +124,8 @@ func (d *changeTrackingDirectory) setContents(contents model_core.Message[*model
 	var leaves model_core.Message[*model_filesystem_pb.Leaves, object.OutgoingReferences]
 	switch leavesType := contents.Message.Leaves.(type) {
 	case *model_filesystem_pb.Directory_LeavesExternal:
-		leavesReference, err := contents.GetOutgoingReference(leavesType.LeavesExternal.Reference)
-		if err != nil {
-			return err
-		}
-		leaves, _, err = options.leavesReader.ReadParsedObject(options.context, leavesReference)
+		var err error
+		leaves, err = dereference.Dereference(options.context, options.leavesDereferencer, model_core.NewNestedMessage(contents, leavesType.LeavesExternal.Reference))
 		if err != nil {
 			return err
 		}
@@ -224,20 +222,16 @@ func (d *changeTrackingDirectory) setFile(loadOptions *changeTrackingDirectoryLo
 }
 
 type changeTrackingDirectoryLoadOptions struct {
-	context         context.Context
-	directoryReader model_parser.ParsedObjectReader[object.LocalReference, model_core.Message[*model_filesystem_pb.Directory, object.OutgoingReferences]]
-	leavesReader    model_parser.ParsedObjectReader[object.LocalReference, model_core.Message[*model_filesystem_pb.Leaves, object.OutgoingReferences]]
+	context               context.Context
+	directoryDereferencer dereference.Dereferencer[object.OutgoingReferences, model_core.Message[*model_filesystem_pb.Directory, object.OutgoingReferences]]
+	leavesDereferencer    dereference.Dereferencer[object.OutgoingReferences, model_core.Message[*model_filesystem_pb.Leaves, object.OutgoingReferences]]
 }
 
 func (d *changeTrackingDirectory) maybeLoadContents(options *changeTrackingDirectoryLoadOptions) error {
 	if reference := d.currentReference; reference.IsSet() {
 		// Directory has not been accessed before. Load it from
 		// storage and ingest its contents.
-		objectReference, err := reference.GetOutgoingReference(reference.Message.GetReference())
-		if err != nil {
-			return err
-		}
-		directoryMessage, _, err := options.directoryReader.ReadParsedObject(options.context, objectReference)
+		directoryMessage, err := dereference.Dereference(options.context, options.directoryDereferencer, model_core.NewNestedMessage(reference, reference.Message.GetReference()))
 		if err != nil {
 			return err
 		}
@@ -330,7 +324,7 @@ func (r *changeTrackingDirectoryResolver) OnUp() (path.ComponentWalker, error) {
 
 type capturableChangeTrackingDirectoryOptions struct {
 	context                context.Context
-	directoryReader        model_parser.ParsedObjectReader[object.LocalReference, model_core.Message[*model_filesystem_pb.Directory, object.OutgoingReferences]]
+	directoryDereferencer  dereference.Dereferencer[object.OutgoingReferences, model_core.Message[*model_filesystem_pb.Directory, object.OutgoingReferences]]
 	fileCreationParameters *model_filesystem.FileCreationParameters
 	fileMerkleTreeCapturer model_filesystem.FileMerkleTreeCapturer[model_core.FileBackedObjectLocation]
 	patchedFiles           io.ReaderAt
@@ -354,11 +348,7 @@ func (cd *capturableChangeTrackingDirectory) EnterCapturableDirectory(name path.
 		// Directory has not been modified. Load the copy from
 		// storage, so that it may potentially be inlined into
 		// the parent directory.
-		objectReference, err := reference.GetOutgoingReference(reference.Message.GetReference())
-		if err != nil {
-			return nil, nil, err
-		}
-		directoryMessage, _, err := cd.options.directoryReader.ReadParsedObject(cd.options.context, objectReference)
+		directoryMessage, err := dereference.Dereference(cd.options.context, cd.options.directoryDereferencer, model_core.NewNestedMessage(reference, reference.Message.GetReference()))
 		if err != nil {
 			return nil, nil, err
 		}
@@ -826,20 +816,24 @@ func (c *baseComputer) applyPatches(
 	}
 
 	// Strip the provided directory prefix.
-	directoryReader := model_parser.NewStorageBackedParsedObjectReader(
-		c.objectDownloader,
-		directoryCreationParameters.GetEncoder(),
-		model_parser.NewMessageObjectParser[object.LocalReference, model_filesystem_pb.Directory](),
+	directoryDereferencer := dereference.NewReadingDereferencer(
+		model_parser.NewStorageBackedParsedObjectReader(
+			c.objectDownloader,
+			directoryCreationParameters.GetEncoder(),
+			model_parser.NewMessageObjectParser[object.LocalReference, model_filesystem_pb.Directory](),
+		),
 	)
-	leavesReader := model_parser.NewStorageBackedParsedObjectReader(
-		c.objectDownloader,
-		directoryCreationParameters.GetEncoder(),
-		model_parser.NewMessageObjectParser[object.LocalReference, model_filesystem_pb.Leaves](),
+	leavesDereferencer := dereference.NewReadingDereferencer(
+		model_parser.NewStorageBackedParsedObjectReader(
+			c.objectDownloader,
+			directoryCreationParameters.GetEncoder(),
+			model_parser.NewMessageObjectParser[object.LocalReference, model_filesystem_pb.Leaves](),
+		),
 	)
 	loadOptions := &changeTrackingDirectoryLoadOptions{
-		context:         ctx,
-		directoryReader: directoryReader,
-		leavesReader:    leavesReader,
+		context:               ctx,
+		directoryDereferencer: directoryDereferencer,
+		leavesDereferencer:    leavesDereferencer,
 	}
 	rootDirectoryResolver := changeTrackingDirectoryResolver{
 		loadOptions:      loadOptions,
@@ -1095,22 +1089,26 @@ func (mrc *moduleOrRepositoryContext) maybeGetCommandEncoder() {
 func (mrc *moduleOrRepositoryContext) maybeGetDirectoryCreationParameters() {
 	if mrc.directoryCreationParameters == nil {
 		if v, ok := mrc.environment.GetDirectoryCreationParametersObjectValue(&model_analysis_pb.DirectoryCreationParametersObject_Key{}); ok {
-			directoryReader := model_parser.NewStorageBackedParsedObjectReader(
-				mrc.computer.objectDownloader,
-				v.GetEncoder(),
-				model_parser.NewMessageObjectParser[object.LocalReference, model_filesystem_pb.Directory](),
+			directoryDereferencer := dereference.NewReadingDereferencer(
+				model_parser.NewStorageBackedParsedObjectReader(
+					mrc.computer.objectDownloader,
+					v.GetEncoder(),
+					model_parser.NewMessageObjectParser[object.LocalReference, model_filesystem_pb.Directory](),
+				),
 			)
-			leavesReader := model_parser.NewStorageBackedParsedObjectReader(
-				mrc.computer.objectDownloader,
-				v.GetEncoder(),
-				model_parser.NewMessageObjectParser[object.LocalReference, model_filesystem_pb.Leaves](),
+			leavesDereferencer := dereference.NewReadingDereferencer(
+				model_parser.NewStorageBackedParsedObjectReader(
+					mrc.computer.objectDownloader,
+					v.GetEncoder(),
+					model_parser.NewMessageObjectParser[object.LocalReference, model_filesystem_pb.Leaves](),
+				),
 			)
 
 			mrc.directoryCreationParameters = v
 			mrc.directoryLoadOptions = &changeTrackingDirectoryLoadOptions{
-				context:         mrc.context,
-				directoryReader: directoryReader,
-				leavesReader:    leavesReader,
+				context:               mrc.context,
+				directoryDereferencer: directoryDereferencer,
+				leavesDereferencer:    leavesDereferencer,
 			}
 		}
 	}
@@ -2526,11 +2524,7 @@ func (c *baseComputer) fetchRepo(ctx context.Context, canonicalRepo label.Canoni
 	attrValues := maps.Collect(
 		model_starlark.AllStructFields(
 			ctx,
-			model_parser.NewStorageBackedParsedObjectReader(
-				c.objectDownloader,
-				c.getValueObjectEncoder(),
-				model_parser.NewMessageListObjectParser[object.LocalReference, model_starlark_pb.List_Element](),
-			),
+			c.valueDereferencers.List,
 			model_core.NewNestedMessage(repo, repo.Message.AttrValues),
 			&errIter,
 		),
@@ -2943,10 +2937,12 @@ func (c *baseComputer) createMerkleTreeFromChangeTrackingDirectory(ctx context.C
 
 	group, groupCtx := errgroup.WithContext(ctx)
 	var createdRootDirectory model_filesystem.CreatedDirectory[model_core.FileBackedObjectLocation]
-	directoryReader := model_parser.NewStorageBackedParsedObjectReader(
-		c.objectDownloader,
-		directoryCreationParameters.GetEncoder(),
-		model_parser.NewMessageObjectParser[object.LocalReference, model_filesystem_pb.Directory](),
+	directoryDereferencer := dereference.NewReadingDereferencer(
+		model_parser.NewStorageBackedParsedObjectReader(
+			c.objectDownloader,
+			directoryCreationParameters.GetEncoder(),
+			model_parser.NewMessageObjectParser[object.LocalReference, model_filesystem_pb.Directory](),
+		),
 	)
 	fileWritingMerkleTreeCapturer := model_core.NewFileWritingMerkleTreeCapturer(model_filesystem.NewSectionWriter(merkleTreeNodes))
 	group.Go(func() error {
@@ -2958,7 +2954,7 @@ func (c *baseComputer) createMerkleTreeFromChangeTrackingDirectory(ctx context.C
 			&capturableChangeTrackingDirectory{
 				options: &capturableChangeTrackingDirectoryOptions{
 					context:                groupCtx,
-					directoryReader:        directoryReader,
+					directoryDereferencer:  directoryDereferencer,
 					fileCreationParameters: fileCreationParameters,
 					fileMerkleTreeCapturer: model_filesystem.NewFileWritingFileMerkleTreeCapturer(fileWritingMerkleTreeCapturer),
 					patchedFiles:           patchedFiles,

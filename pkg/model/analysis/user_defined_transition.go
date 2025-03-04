@@ -15,7 +15,6 @@ import (
 	model_core "github.com/buildbarn/bonanza/pkg/model/core"
 	"github.com/buildbarn/bonanza/pkg/model/core/btree"
 	model_encoding "github.com/buildbarn/bonanza/pkg/model/encoding"
-	model_parser "github.com/buildbarn/bonanza/pkg/model/parser"
 	model_starlark "github.com/buildbarn/bonanza/pkg/model/starlark"
 	model_analysis_pb "github.com/buildbarn/bonanza/pkg/proto/model/analysis"
 	model_core_pb "github.com/buildbarn/bonanza/pkg/proto/model/core"
@@ -42,7 +41,6 @@ type expectedTransitionOutput struct {
 func (c *baseComputer) applyTransition(
 	ctx context.Context,
 	configuration model_core.Message[*model_analysis_pb.Configuration, object.OutgoingReferences],
-	buildSettingOverrideListReader model_parser.ParsedObjectReader[object.LocalReference, model_core.Message[[]*model_analysis_pb.Configuration_BuildSettingOverride, object.OutgoingReferences]],
 	expectedOutputs []expectedTransitionOutput,
 	thread *starlark.Thread,
 	outputs map[string]starlark.Value,
@@ -55,7 +53,7 @@ func (c *baseComputer) applyTransition(
 	var errIter error
 	existingIter, existingIterStop := iter.Pull(btree.AllLeaves(
 		ctx,
-		buildSettingOverrideListReader,
+		c.configurationBuildSettingOverrideDereferencer,
 		model_core.NewNestedMessage(configuration, configuration.Message.BuildSettingOverrides),
 		func(override model_core.Message[*model_analysis_pb.Configuration_BuildSettingOverride, object.OutgoingReferences]) (*model_core_pb.Reference, error) {
 			if level, ok := override.Message.Level.(*model_analysis_pb.Configuration_BuildSettingOverride_Parent_); ok {
@@ -242,11 +240,6 @@ func (c *baseComputer) ComputeUserDefinedTransitionValue(ctx context.Context, ke
 	// Collect inputs to provide to the implementation function.
 	missingDependencies := false
 	inputs := starlark.NewDict(len(transitionDefinition.Message.Inputs))
-	buildSettingOverrideListReader := model_parser.NewStorageBackedParsedObjectReader(
-		c.objectDownloader,
-		c.getValueObjectEncoder(),
-		model_parser.NewMessageListObjectParser[object.LocalReference, model_analysis_pb.Configuration_BuildSettingOverride](),
-	)
 	for _, input := range transitionDefinition.Message.Inputs {
 		// Resolve the actual build setting target corresponding
 		// to the string value provided as part of the
@@ -285,7 +278,7 @@ func (c *baseComputer) ComputeUserDefinedTransitionValue(ctx context.Context, ke
 		// Determine the current value of the build setting.
 		buildSettingOverride, err := btree.Find(
 			ctx,
-			buildSettingOverrideListReader,
+			c.configurationBuildSettingOverrideDereferencer,
 			model_core.NewNestedMessage(configuration, configuration.Message.BuildSettingOverrides),
 			func(entry *model_analysis_pb.Configuration_BuildSettingOverride) (int, *model_core_pb.Reference) {
 				switch level := entry.Level.(type) {
@@ -575,7 +568,7 @@ func (c *baseComputer) ComputeUserDefinedTransitionValue(ctx context.Context, ke
 	patcher := model_core.NewReferenceMessagePatcher[model_core.CreatedObjectTree]()
 	entries := make([]*model_analysis_pb.UserDefinedTransition_Value_Success_Entry, 0, len(outputsDict))
 	for i, key := range slices.Sorted(maps.Keys(outputsDict)) {
-		outputConfigurationReference, err := c.applyTransition(ctx, configuration, buildSettingOverrideListReader, expectedOutputs, thread, outputsDict[key], valueEncodingOptions)
+		outputConfigurationReference, err := c.applyTransition(ctx, configuration, expectedOutputs, thread, outputsDict[key], valueEncodingOptions)
 		if err != nil {
 			return PatchedUserDefinedTransitionValue{}, fmt.Errorf("key %#v: %w", i, err)
 		}

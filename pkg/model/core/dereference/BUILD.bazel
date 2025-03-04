@@ -1,0 +1,17 @@
+load("@rules_go//go:def.bzl", "go_library")
+
+go_library(
+    name = "dereference",
+    srcs = [
+        "dereferencer.go",
+        "reading_dereferencer.go",
+    ],
+    importpath = "github.com/buildbarn/bonanza/pkg/model/core/dereference",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//pkg/model/core",
+        "//pkg/model/parser",
+        "//pkg/proto/model/core",
+        "//pkg/storage/object",
+    ],
+)
