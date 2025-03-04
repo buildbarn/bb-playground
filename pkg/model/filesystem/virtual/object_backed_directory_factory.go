@@ -134,7 +134,7 @@ type objectBackedDirectory struct {
 	info    model_filesystem.DirectoryInfo
 }
 
-func (d *objectBackedDirectory) lookupFile(fileNode *model_filesystem_pb.FileNode, leavesReferences object.OutgoingReferences) (virtual.Leaf, virtual.Status) {
+func (d *objectBackedDirectory) lookupFile(fileNode *model_filesystem_pb.FileNode, leavesReferences object.OutgoingReferences[object.LocalReference]) (virtual.Leaf, virtual.Status) {
 	df := d.factory
 	properties := fileNode.Properties
 	if properties == nil {
@@ -142,7 +142,7 @@ func (d *objectBackedDirectory) lookupFile(fileNode *model_filesystem_pb.FileNod
 		return nil, virtual.StatusErrIO
 	}
 	fileContents, err := model_filesystem.NewFileContentsEntryFromProto(
-		model_core.Message[*model_filesystem_pb.FileContents, object.OutgoingReferences]{
+		model_core.Message[*model_filesystem_pb.FileContents, object.OutgoingReferences[object.LocalReference]]{
 			Message:            properties.Contents,
 			OutgoingReferences: leavesReferences,
 		},

@@ -43,7 +43,7 @@ func ParseRepoDotBazel(contents string, filename pg_label.CanonicalLabel, inline
 					b,
 					args,
 					kwargs,
-					model_core.Message[*model_starlark_pb.InheritableAttrs, object.OutgoingReferences]{
+					model_core.Message[*model_starlark_pb.InheritableAttrs, object.OutgoingReferences[object.LocalReference]]{
 						Message:            &DefaultInheritableAttrs,
 						OutgoingReferences: object.OutgoingReferencesList(nil),
 					},
@@ -65,7 +65,7 @@ func ParseRepoDotBazel(contents string, filename pg_label.CanonicalLabel, inline
 
 // getDefaultInheritableAttrs parses the arguments provided to
 // REPO.bazel's repo() function or BUILD.bazel's package() function.
-func getDefaultInheritableAttrs(thread *starlark.Thread, b *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple, previousInheritableAttrs model_core.Message[*model_starlark_pb.InheritableAttrs, object.OutgoingReferences], inlinedTreeOptions *inlinedtree.Options) (model_core.PatchedMessage[*model_starlark_pb.InheritableAttrs, model_core.CreatedObjectTree], error) {
+func getDefaultInheritableAttrs(thread *starlark.Thread, b *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple, previousInheritableAttrs model_core.Message[*model_starlark_pb.InheritableAttrs, object.OutgoingReferences[object.LocalReference]], inlinedTreeOptions *inlinedtree.Options) (model_core.PatchedMessage[*model_starlark_pb.InheritableAttrs, model_core.CreatedObjectTree], error) {
 	if len(args) > 0 {
 		return model_core.PatchedMessage[*model_starlark_pb.InheritableAttrs, model_core.CreatedObjectTree]{}, fmt.Errorf("%s: got %d positional arguments, want 0", b.Name(), len(args))
 	}

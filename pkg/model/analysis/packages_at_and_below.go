@@ -89,12 +89,12 @@ func (c *baseComputer) ComputePackagesAtAndBelowValue(ctx context.Context, key *
 
 type packageExistenceChecker struct {
 	context                  context.Context
-	directoryDereferencer    dereference.Dereferencer[object.OutgoingReferences, model_core.Message[*model_filesystem_pb.Directory, object.OutgoingReferences]]
-	leavesDereferencer       dereference.Dereferencer[object.OutgoingReferences, model_core.Message[*model_filesystem_pb.Leaves, object.OutgoingReferences]]
+	directoryDereferencer    dereference.Dereferencer[model_core.Message[*model_filesystem_pb.Directory, object.OutgoingReferences[object.LocalReference]], object.OutgoingReferences[object.LocalReference]]
+	leavesDereferencer       dereference.Dereferencer[model_core.Message[*model_filesystem_pb.Leaves, object.OutgoingReferences[object.LocalReference]], object.OutgoingReferences[object.LocalReference]]
 	packagesBelowBasePackage []string
 }
 
-func (pec *packageExistenceChecker) directoryIsPackage(d model_core.Message[*model_filesystem_pb.Directory, object.OutgoingReferences]) (bool, error) {
+func (pec *packageExistenceChecker) directoryIsPackage(d model_core.Message[*model_filesystem_pb.Directory, object.OutgoingReferences[object.LocalReference]]) (bool, error) {
 	var leaves *model_filesystem_pb.Leaves
 	switch l := d.Message.Leaves.(type) {
 	case *model_filesystem_pb.Directory_LeavesExternal:
@@ -124,7 +124,7 @@ func (pec *packageExistenceChecker) directoryIsPackage(d model_core.Message[*mod
 	return false, nil
 }
 
-func (pec *packageExistenceChecker) findPackagesBelow(d model_core.Message[*model_filesystem_pb.Directory, object.OutgoingReferences], dTrace *path.Trace) error {
+func (pec *packageExistenceChecker) findPackagesBelow(d model_core.Message[*model_filesystem_pb.Directory, object.OutgoingReferences[object.LocalReference]], dTrace *path.Trace) error {
 	for _, entry := range d.Message.Directories {
 		name, ok := path.NewComponent(entry.Name)
 		if !ok {
@@ -132,7 +132,7 @@ func (pec *packageExistenceChecker) findPackagesBelow(d model_core.Message[*mode
 		}
 		childTrace := dTrace.Append(name)
 
-		var childDirectory model_core.Message[*model_filesystem_pb.Directory, object.OutgoingReferences]
+		var childDirectory model_core.Message[*model_filesystem_pb.Directory, object.OutgoingReferences[object.LocalReference]]
 		switch contents := entry.Contents.(type) {
 		case *model_filesystem_pb.DirectoryNode_ContentsExternal:
 			var err error

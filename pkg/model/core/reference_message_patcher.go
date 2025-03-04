@@ -83,15 +83,25 @@ func (p *ReferenceMessagePatcher[TMetadata]) addReferenceMessage(message *core.R
 	}
 }
 
-func (p *ReferenceMessagePatcher[TMetadata]) addReferenceMessagesRecursively(message protoreflect.Message, outgoingReferences object.OutgoingReferences, createMetadata ReferenceMetadataCreator[TMetadata]) {
+type AddableReference interface {
+	GetLocalReference() object.LocalReference
+}
+
+type referenceMessageAdder[TMetadata ReferenceMetadata, TReference AddableReference] struct {
+	patcher            *ReferenceMessagePatcher[TMetadata]
+	outgoingReferences object.OutgoingReferences[TReference]
+	createMetadata     ReferenceMetadataCreator[TMetadata]
+}
+
+func (a *referenceMessageAdder[TMetadata, TReference]) addReferenceMessagesRecursively(message protoreflect.Message) {
 	if m, ok := message.Interface().(*core.Reference); ok {
 		// If the reference message refers to a valid object,
 		// let it be managed by the patcher. If it is invalid,
 		// we at least change the index to MaxUint32, so that
 		// any future attempts to resolve it will fail.
-		if index, err := GetIndexFromReferenceMessage(m, outgoingReferences.GetDegree()); err == nil {
-			reference := outgoingReferences.GetOutgoingReference(index)
-			p.addReferenceMessage(m, reference, createMetadata(index))
+		if index, err := GetIndexFromReferenceMessage(m, a.outgoingReferences.GetDegree()); err == nil {
+			reference := a.outgoingReferences.GetOutgoingReference(index).GetLocalReference()
+			a.patcher.addReferenceMessage(m, reference, a.createMetadata(index))
 		}
 		m.Index = math.MaxUint32
 	} else {
@@ -101,10 +111,10 @@ func (p *ReferenceMessagePatcher[TMetadata]) addReferenceMessagesRecursively(mes
 					l := value.List()
 					n := l.Len()
 					for i := 0; i < n; i++ {
-						p.addReferenceMessagesRecursively(l.Get(i).Message(), outgoingReferences, createMetadata)
+						a.addReferenceMessagesRecursively(l.Get(i).Message())
 					}
 				} else {
-					p.addReferenceMessagesRecursively(value.Message(), outgoingReferences, createMetadata)
+					a.addReferenceMessagesRecursively(value.Message())
 				}
 			}
 			return true

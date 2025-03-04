@@ -19,10 +19,11 @@ func AllLeaves[
 		*TMessage
 		proto.Message
 	},
-	TOutgoingReferences object.OutgoingReferences,
+	TOutgoingReferences object.OutgoingReferences[TReference],
+	TReference any,
 ](
 	ctx context.Context,
-	dereferencer dereference.Dereferencer[TOutgoingReferences, model_core.Message[[]TMessagePtr, TOutgoingReferences]],
+	dereferencer dereference.Dereferencer[model_core.Message[[]TMessagePtr, TOutgoingReferences], TOutgoingReferences],
 	root model_core.Message[[]TMessagePtr, TOutgoingReferences],
 	traverser func(model_core.Message[TMessagePtr, TOutgoingReferences]) (*model_core_pb.Reference, error),
 	errOut *error,

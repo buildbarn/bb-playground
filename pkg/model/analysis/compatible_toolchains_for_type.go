@@ -19,10 +19,10 @@ import (
 	"github.com/buildbarn/bonanza/pkg/storage/object"
 )
 
-func (c *baseComputer) getConfigurationByReference(ctx context.Context, configurationReference model_core.Message[*model_core_pb.Reference, object.OutgoingReferences]) (model_core.Message[*model_analysis_pb.Configuration, object.OutgoingReferences], error) {
+func (c *baseComputer) getConfigurationByReference(ctx context.Context, configurationReference model_core.Message[*model_core_pb.Reference, object.OutgoingReferences[object.LocalReference]]) (model_core.Message[*model_analysis_pb.Configuration, object.OutgoingReferences[object.LocalReference]], error) {
 	if configurationReference.Message == nil {
 		// Empty configuration.
-		return model_core.Message[*model_analysis_pb.Configuration, object.OutgoingReferences]{
+		return model_core.Message[*model_analysis_pb.Configuration, object.OutgoingReferences[object.LocalReference]]{
 			Message:            &model_analysis_pb.Configuration{},
 			OutgoingReferences: object.OutgoingReferencesList{},
 		}, nil
@@ -32,7 +32,7 @@ func (c *baseComputer) getConfigurationByReference(ctx context.Context, configur
 
 var commandLineOptionPlatformsLabel = label.MustNewCanonicalLabel("@@bazel_tools+//command_line_option:platforms")
 
-func (c *baseComputer) ComputeCompatibleToolchainsForTypeValue(ctx context.Context, key model_core.Message[*model_analysis_pb.CompatibleToolchainsForType_Key, object.OutgoingReferences], e CompatibleToolchainsForTypeEnvironment) (PatchedCompatibleToolchainsForTypeValue, error) {
+func (c *baseComputer) ComputeCompatibleToolchainsForTypeValue(ctx context.Context, key model_core.Message[*model_analysis_pb.CompatibleToolchainsForType_Key, object.OutgoingReferences[object.LocalReference]], e CompatibleToolchainsForTypeEnvironment) (PatchedCompatibleToolchainsForTypeValue, error) {
 	registeredToolchains := e.GetRegisteredToolchainsForTypeValue(&model_analysis_pb.RegisteredToolchainsForType_Key{
 		ToolchainType: key.Message.ToolchainType,
 	})

@@ -241,7 +241,7 @@ func (e *localExecutor) Execute(ctx context.Context, action *model_command_pb.Ac
 			),
 		),
 		model_core.NewNestedMessage(command, command.Message.Arguments),
-		func(element model_core.Message[*model_command_pb.ArgumentList_Element, object.OutgoingReferences]) (*model_core_pb.Reference, error) {
+		func(element model_core.Message[*model_command_pb.ArgumentList_Element, object.OutgoingReferences[object.LocalReference]]) (*model_core_pb.Reference, error) {
 			if level, ok := element.Message.Level.(*model_command_pb.ArgumentList_Element_Parent); ok {
 				return level.Parent, nil
 			}
@@ -274,7 +274,7 @@ func (e *localExecutor) Execute(ctx context.Context, action *model_command_pb.Ac
 			),
 		),
 		model_core.NewNestedMessage(command, command.Message.EnvironmentVariables),
-		func(entry model_core.Message[*model_command_pb.EnvironmentVariableList_Element, object.OutgoingReferences]) (*model_core_pb.Reference, error) {
+		func(entry model_core.Message[*model_command_pb.EnvironmentVariableList_Element, object.OutgoingReferences[object.LocalReference]]) (*model_core_pb.Reference, error) {
 			if level, ok := entry.Message.Level.(*model_command_pb.EnvironmentVariableList_Element_Parent); ok {
 				return level.Parent, nil
 			}
@@ -574,25 +574,25 @@ type prepopulatedCapturableDirectoryOptions struct {
 type prepopulatedCapturableDirectory struct {
 	options         *prepopulatedCapturableDirectoryOptions
 	directory       virtual.PrepopulatedDirectory
-	pattern         model_core.Message[*model_command_pb.PathPattern, object.OutgoingReferences]
-	patternChildren atomic.Pointer[model_core.Message[*model_command_pb.PathPattern_Children, object.OutgoingReferences]]
+	pattern         model_core.Message[*model_command_pb.PathPattern, object.OutgoingReferences[object.LocalReference]]
+	patternChildren atomic.Pointer[model_core.Message[*model_command_pb.PathPattern_Children, object.OutgoingReferences[object.LocalReference]]]
 }
 
-func (d *prepopulatedCapturableDirectory) getPatternChildren() (model_core.Message[*model_command_pb.PathPattern_Children, object.OutgoingReferences], error) {
+func (d *prepopulatedCapturableDirectory) getPatternChildren() (model_core.Message[*model_command_pb.PathPattern_Children, object.OutgoingReferences[object.LocalReference]], error) {
 	if patternChildren := d.patternChildren.Load(); patternChildren != nil {
 		return *patternChildren, nil
 	}
 
-	var patternChildren model_core.Message[*model_command_pb.PathPattern_Children, object.OutgoingReferences]
+	var patternChildren model_core.Message[*model_command_pb.PathPattern_Children, object.OutgoingReferences[object.LocalReference]]
 	switch childrenType := d.pattern.Message.Children.(type) {
 	case *model_command_pb.PathPattern_ChildrenExternal:
-		return model_core.Message[*model_command_pb.PathPattern_Children, object.OutgoingReferences]{}, status.Error(codes.Unimplemented, "TODO: Fetch path pattern from storage")
+		return model_core.Message[*model_command_pb.PathPattern_Children, object.OutgoingReferences[object.LocalReference]]{}, status.Error(codes.Unimplemented, "TODO: Fetch path pattern from storage")
 	case *model_command_pb.PathPattern_ChildrenInline:
 		patternChildren = model_core.NewNestedMessage(d.pattern, childrenType.ChildrenInline)
 	case nil:
 		// Capture all children.
 	default:
-		return model_core.Message[*model_command_pb.PathPattern_Children, object.OutgoingReferences]{}, status.Error(codes.InvalidArgument, "Unknown children type in path pattern")
+		return model_core.Message[*model_command_pb.PathPattern_Children, object.OutgoingReferences[object.LocalReference]]{}, status.Error(codes.InvalidArgument, "Unknown children type in path pattern")
 	}
 
 	d.patternChildren.Store(&patternChildren)
@@ -657,7 +657,7 @@ func (d *prepopulatedCapturableDirectory) EnterCapturableDirectory(name path.Com
 		return nil, nil, err
 	}
 
-	var childPattern model_core.Message[*model_command_pb.PathPattern, object.OutgoingReferences]
+	var childPattern model_core.Message[*model_command_pb.PathPattern, object.OutgoingReferences[object.LocalReference]]
 	if patternChildren.IsSet() {
 		// Determine if the requested directory is part of the
 		// path pattern. If not, hide it.
@@ -681,7 +681,7 @@ func (d *prepopulatedCapturableDirectory) EnterCapturableDirectory(name path.Com
 		// The current directory should be captured without any
 		// filtering. Also don't apply any filtering in the
 		// child directory.
-		childPattern = model_core.NewMessage(&model_command_pb.PathPattern{}, object.OutgoingReferences(object.OutgoingReferencesList{}))
+		childPattern = model_core.NewMessage(&model_command_pb.PathPattern{}, object.OutgoingReferences[object.LocalReference](object.OutgoingReferencesList{}))
 	}
 
 	child, err := d.directory.LookupChild(name)

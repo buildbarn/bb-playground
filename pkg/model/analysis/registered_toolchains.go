@@ -187,7 +187,7 @@ func (h *registeredToolchainExtractingModuleDotBazelHandler) RegisterToolchains(
 						h.context,
 						listDereferencer,
 						model_core.NewNestedMessage(targetValue, targetCompatibleWithList.List.Elements),
-						func(element model_core.Message[*model_starlark_pb.List_Element, object.OutgoingReferences]) (*model_core_pb.Reference, error) {
+						func(element model_core.Message[*model_starlark_pb.List_Element, object.OutgoingReferences[object.LocalReference]]) (*model_core_pb.Reference, error) {
 							if level, ok := element.Message.Level.(*model_starlark_pb.List_Element_Parent_); ok {
 								return level.Parent.Reference, nil
 							}

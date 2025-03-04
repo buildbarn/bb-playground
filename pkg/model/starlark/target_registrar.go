@@ -15,13 +15,13 @@ type TargetRegistrar struct {
 	inlinedTreeOptions *inlinedtree.Options
 
 	// Mutable fields.
-	defaultInheritableAttrs               model_core.Message[*model_starlark_pb.InheritableAttrs, object.OutgoingReferences]
+	defaultInheritableAttrs               model_core.Message[*model_starlark_pb.InheritableAttrs, object.OutgoingReferences[object.LocalReference]]
 	createDefaultInheritableAttrsMetadata func(index int) model_core.CreatedObjectTree
 	setDefaultInheritableAttrs            bool
 	targets                               map[string]model_core.PatchedMessage[*model_starlark_pb.Target_Definition, model_core.CreatedObjectTree]
 }
 
-func NewTargetRegistrar(inlinedTreeOptions *inlinedtree.Options, defaultInheritableAttrs model_core.Message[*model_starlark_pb.InheritableAttrs, object.OutgoingReferences]) *TargetRegistrar {
+func NewTargetRegistrar(inlinedTreeOptions *inlinedtree.Options, defaultInheritableAttrs model_core.Message[*model_starlark_pb.InheritableAttrs, object.OutgoingReferences[object.LocalReference]]) *TargetRegistrar {
 	return &TargetRegistrar{
 		inlinedTreeOptions:      inlinedTreeOptions,
 		defaultInheritableAttrs: defaultInheritableAttrs,

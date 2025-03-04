@@ -21,7 +21,7 @@ type Contents struct {
 	reference       LocalReference
 }
 
-var _ OutgoingReferences = (*Contents)(nil)
+var _ OutgoingReferences[LocalReference] = (*Contents)(nil)
 
 func NewContentsFromProto(reference LocalReference, m *object.Contents) (*Contents, error) {
 	if m == nil {

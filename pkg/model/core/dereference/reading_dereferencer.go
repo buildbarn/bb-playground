@@ -17,13 +17,13 @@ type readingDereferencer[T any] struct {
 //
 // TODO: This implementation should likely be removed in the long run,
 // as it is too simple and inefficient for production workloads.
-func NewReadingDereferencer[T any](reader model_parser.ParsedObjectReader[object.LocalReference, T]) Dereferencer[object.OutgoingReferences, T] {
+func NewReadingDereferencer[T any](reader model_parser.ParsedObjectReader[object.LocalReference, T]) Dereferencer[T, object.OutgoingReferences[object.LocalReference]] {
 	return &readingDereferencer[T]{
 		reader: reader,
 	}
 }
 
-func (d *readingDereferencer[T]) Dereference(ctx context.Context, outgoingReferences object.OutgoingReferences, index int) (T, error) {
+func (d *readingDereferencer[T]) Dereference(ctx context.Context, outgoingReferences object.OutgoingReferences[object.LocalReference], index int) (T, error) {
 	v, _, err := d.reader.ReadParsedObject(ctx, outgoingReferences.GetOutgoingReference(index))
 	return v, err
 }

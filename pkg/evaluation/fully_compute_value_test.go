@@ -27,7 +27,7 @@ func TestFullyComputeValue(t *testing.T) {
 		// memoization, this should run in polynomial time.
 		computer := NewMockComputer(ctrl)
 		computer.EXPECT().ComputeMessageValue(gomock.Any(), gomock.Any(), gomock.Any()).
-			DoAndReturn(func(ctx context.Context, key model_core.Message[proto.Message, object.OutgoingReferences], e evaluation.Environment) (model_core.PatchedMessage[proto.Message, dag.ObjectContentsWalker], error) {
+			DoAndReturn(func(ctx context.Context, key model_core.Message[proto.Message, object.OutgoingReferences[object.LocalReference]], e evaluation.Environment) (model_core.PatchedMessage[proto.Message, dag.ObjectContentsWalker], error) {
 				// Base case: fib(0) and fib(1).
 				k := key.Message.(*wrapperspb.UInt32Value)
 				if k.Value <= 1 {
@@ -60,7 +60,7 @@ func TestFullyComputeValue(t *testing.T) {
 		m, err := evaluation.FullyComputeValue(
 			ctx,
 			computer,
-			model_core.NewMessage[proto.Message, object.OutgoingReferences](
+			model_core.NewMessage[proto.Message, object.OutgoingReferences[object.LocalReference]](
 				&wrapperspb.UInt32Value{
 					Value: 93,
 				},

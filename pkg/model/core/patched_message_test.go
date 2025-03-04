@@ -22,7 +22,7 @@ func TestNewPatchedMessageFromExisting(t *testing.T) {
 		metadata1 := NewMockReferenceMetadata(ctrl)
 		metadataCreator.EXPECT().Call(1).Return(metadata1)
 		m1 := model_core.NewPatchedMessageFromExisting(
-			model_core.Message[*model_filesystem_pb.FileNode, object.OutgoingReferences]{
+			model_core.Message[*model_filesystem_pb.FileNode, object.OutgoingReferences[object.LocalReference]]{
 				Message: &model_filesystem_pb.FileNode{
 					Name: "a",
 					Properties: &model_filesystem_pb.FileProperties{
@@ -67,7 +67,7 @@ func TestNewPatchedMessageFromExisting(t *testing.T) {
 		// any attempt to access them fails.
 		metadataCreator := NewMockReferenceMetadataCreatorForTesting(ctrl)
 		m1 := model_core.NewPatchedMessageFromExisting(
-			model_core.Message[*model_filesystem_pb.FileNode, object.OutgoingReferences]{
+			model_core.Message[*model_filesystem_pb.FileNode, object.OutgoingReferences[object.LocalReference]]{
 				Message: &model_filesystem_pb.FileNode{
 					Name: "hello",
 					Properties: &model_filesystem_pb.FileProperties{

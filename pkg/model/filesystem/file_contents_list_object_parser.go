@@ -24,7 +24,7 @@ type FileContentsEntry struct {
 // NewFileContentsEntryFromProto constructs a FileContentsListEntry
 // based on the contents of a single FileContents Protobuf message,
 // refering to the file as a whole.
-func NewFileContentsEntryFromProto(fileContents model_core.Message[*model_filesystem_pb.FileContents, object.OutgoingReferences], referenceFormat object.ReferenceFormat) (FileContentsEntry, error) {
+func NewFileContentsEntryFromProto(fileContents model_core.Message[*model_filesystem_pb.FileContents, object.OutgoingReferences[object.LocalReference]], referenceFormat object.ReferenceFormat) (FileContentsEntry, error) {
 	if fileContents.Message == nil {
 		// File is empty, meaning that it is not backed by any
 		// object. Map all of such files to the bogus reference.
@@ -37,7 +37,7 @@ func NewFileContentsEntryFromProto(fileContents model_core.Message[*model_filesy
 		}, nil
 	}
 
-	reference, err := fileContents.GetOutgoingReference(fileContents.Message.Reference)
+	reference, err := model_core.FlattenReference(model_core.NewNestedMessage(fileContents, fileContents.Message.Reference))
 	if err != nil {
 		return FileContentsEntry{}, err
 	}
@@ -68,7 +68,7 @@ func NewFileContentsListObjectParser[TReference FileContentsListObjectParserRefe
 	return &fileContentsListObjectParser[TReference]{}
 }
 
-func (p *fileContentsListObjectParser[TReference]) ParseObject(ctx context.Context, reference TReference, outgoingReferences object.OutgoingReferences, data []byte) (FileContentsList, int, error) {
+func (p *fileContentsListObjectParser[TReference]) ParseObject(ctx context.Context, reference TReference, outgoingReferences object.OutgoingReferences[object.LocalReference], data []byte) (FileContentsList, int, error) {
 	l, sizeBytes, err := model_parser.NewMessageListObjectParser[TReference, model_filesystem_pb.FileContents]().
 		ParseObject(ctx, reference, outgoingReferences, data)
 	if err != nil {
@@ -91,7 +91,7 @@ func (p *fileContentsListObjectParser[TReference]) ParseObject(ctx context.Conte
 		}
 		endBytes += part.TotalSizeBytes
 
-		partReference, err := l.GetOutgoingReference(part.Reference)
+		partReference, err := model_core.FlattenReference(model_core.NewNestedMessage(l, part.Reference))
 		if err != nil {
 			return nil, 0, util.StatusWrapf(err, "Invalid reference for part at index %d", i)
 		}

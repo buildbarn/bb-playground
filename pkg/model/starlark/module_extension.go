@@ -101,10 +101,10 @@ func (med *starlarkModuleExtensionDefinition) EncodeValue(path map[starlark.Valu
 }
 
 type protoModuleExtensionDefinition struct {
-	message model_core.Message[*model_starlark_pb.ModuleExtension, object.OutgoingReferences]
+	message model_core.Message[*model_starlark_pb.ModuleExtension, object.OutgoingReferences[object.LocalReference]]
 }
 
-func NewProtoModuleExtensionDefinition(message model_core.Message[*model_starlark_pb.ModuleExtension, object.OutgoingReferences]) ModuleExtensionDefinition {
+func NewProtoModuleExtensionDefinition(message model_core.Message[*model_starlark_pb.ModuleExtension, object.OutgoingReferences[object.LocalReference]]) ModuleExtensionDefinition {
 	return &protoModuleExtensionDefinition{
 		message: message,
 	}

@@ -24,7 +24,7 @@ import (
 	"google.golang.org/grpc/status"
 )
 
-func (c *baseComputer) ComputeActionResultValue(ctx context.Context, key model_core.Message[*model_analysis_pb.ActionResult_Key, object.OutgoingReferences], e ActionResultEnvironment) (PatchedActionResultValue, error) {
+func (c *baseComputer) ComputeActionResultValue(ctx context.Context, key model_core.Message[*model_analysis_pb.ActionResult_Key, object.OutgoingReferences[object.LocalReference]], e ActionResultEnvironment) (PatchedActionResultValue, error) {
 	commandEncodersValue := e.GetCommandEncodersValue(&model_analysis_pb.CommandEncoders_Key{})
 	if !commandEncodersValue.IsSet() {
 		return PatchedActionResultValue{}, evaluation.ErrMissingDependency
@@ -44,13 +44,13 @@ func (c *baseComputer) ComputeActionResultValue(ctx context.Context, key model_c
 	// fingerprint of the action, which the scheduler can use to
 	// keep track of performance characteristics. Compute a hash to
 	// masquerade the actual Command reference.
-	commandReference, err := key.GetOutgoingReference(key.Message.CommandReference)
+	commandReference, err := model_core.FlattenReference(model_core.NewNestedMessage(key, key.Message.CommandReference))
 	if err != nil {
 		return PatchedActionResultValue{}, fmt.Errorf("invalid command reference: %w", err)
 	}
 	commandReferenceSHA256 := sha256.Sum256(commandReference.GetRawReference())
 
-	inputRootReference, err := key.GetOutgoingReference(key.Message.InputRootReference)
+	inputRootReference, err := model_core.FlattenReference(model_core.NewNestedMessage(key, key.Message.InputRootReference))
 	if err != nil {
 		return PatchedActionResultValue{}, fmt.Errorf("invalid input root reference: %w", err)
 	}
@@ -141,12 +141,12 @@ func (c *baseComputer) convertDictToEnvironmentVariableList(environment map[stri
 	return environmentVariablesBuilder.FinalizeList()
 }
 
-func (c *baseComputer) getOutputsFromActionResult(ctx context.Context, actionResult model_core.Message[*model_analysis_pb.ActionResult_Value, object.OutgoingReferences], directoryDereferencers *DirectoryDereferencers) (model_core.Message[*model_command_pb.Outputs, object.OutgoingReferences], error) {
+func (c *baseComputer) getOutputsFromActionResult(ctx context.Context, actionResult model_core.Message[*model_analysis_pb.ActionResult_Value, object.OutgoingReferences[object.LocalReference]], directoryDereferencers *DirectoryDereferencers) (model_core.Message[*model_command_pb.Outputs, object.OutgoingReferences[object.LocalReference]], error) {
 	if actionResult.Message.OutputsReference == nil {
 		// Action did not yield any outputs. Return an empty
 		// outputs message, so any code that attempts to access
 		// individual outputs behaves well.
-		return model_core.NewMessage(&model_command_pb.Outputs{}, object.OutgoingReferences(object.OutgoingReferencesList{})), nil
+		return model_core.NewMessage(&model_command_pb.Outputs{}, object.OutgoingReferences[object.LocalReference](object.OutgoingReferencesList{})), nil
 	}
 
 	return dereference.Dereference(ctx, directoryDereferencers.CommandOutputs, model_core.NewNestedMessage(actionResult, actionResult.Message.OutputsReference))

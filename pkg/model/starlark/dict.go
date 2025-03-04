@@ -13,9 +13,9 @@ import (
 	"github.com/buildbarn/bonanza/pkg/storage/object"
 )
 
-func AllDictLeafEntries[TOutgoingReferences object.OutgoingReferences](
+func AllDictLeafEntries[TOutgoingReferences object.OutgoingReferences[object.LocalReference]](
 	ctx context.Context,
-	dereferencer dereference.Dereferencer[TOutgoingReferences, model_core.Message[[]*model_starlark_pb.Dict_Entry, TOutgoingReferences]],
+	dereferencer dereference.Dereferencer[model_core.Message[[]*model_starlark_pb.Dict_Entry, TOutgoingReferences], TOutgoingReferences],
 	rootDict model_core.Message[*model_starlark_pb.Dict, TOutgoingReferences],
 	errOut *error,
 ) iter.Seq[model_core.Message[*model_starlark_pb.Dict_Entry_Leaf, TOutgoingReferences]] {

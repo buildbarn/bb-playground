@@ -172,7 +172,7 @@ ProcessModule:
 	for len(modulesToCheck) > 0 {
 		module := modulesToCheck[0]
 		modulesToCheck = modulesToCheck[1:]
-		var moduleFileContents model_core.Message[*model_filesystem_pb.FileContents, object.OutgoingReferences]
+		var moduleFileContents model_core.Message[*model_filesystem_pb.FileContents, object.OutgoingReferences[object.LocalReference]]
 		var buildListEntry *model_analysis_pb.BuildListModule
 		if versions, ok := modulesWithOverrides[module.name]; ok {
 			// An override for the module exists. This means

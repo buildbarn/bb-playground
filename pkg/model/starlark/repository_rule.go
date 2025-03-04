@@ -255,11 +255,11 @@ func (rrd *starlarkRepositoryRuleDefinition) GetAttrsCheap(thread *starlark.Thre
 }
 
 type protoRepositoryRuleDefinition struct {
-	message         model_core.Message[*model_starlark_pb.RepositoryRule_Definition, object.OutgoingReferences]
+	message         model_core.Message[*model_starlark_pb.RepositoryRule_Definition, object.OutgoingReferences[object.LocalReference]]
 	protoAttrsCache protoAttrsCache
 }
 
-func NewProtoRepositoryRuleDefinition(message model_core.Message[*model_starlark_pb.RepositoryRule_Definition, object.OutgoingReferences]) RepositoryRuleDefinition {
+func NewProtoRepositoryRuleDefinition(message model_core.Message[*model_starlark_pb.RepositoryRule_Definition, object.OutgoingReferences[object.LocalReference]]) RepositoryRuleDefinition {
 	return &protoRepositoryRuleDefinition{
 		message: message,
 	}

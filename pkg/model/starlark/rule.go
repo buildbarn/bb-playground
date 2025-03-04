@@ -591,11 +591,11 @@ func (rd *starlarkRuleDefinition) GetTest(thread *starlark.Thread) (bool, error)
 }
 
 type protoRuleDefinition struct {
-	message         model_core.Message[*model_starlark_pb.Rule_Definition, object.OutgoingReferences]
+	message         model_core.Message[*model_starlark_pb.Rule_Definition, object.OutgoingReferences[object.LocalReference]]
 	protoAttrsCache protoAttrsCache
 }
 
-func NewProtoRuleDefinition(message model_core.Message[*model_starlark_pb.Rule_Definition, object.OutgoingReferences]) RuleDefinition {
+func NewProtoRuleDefinition(message model_core.Message[*model_starlark_pb.Rule_Definition, object.OutgoingReferences[object.LocalReference]]) RuleDefinition {
 	return &protoRuleDefinition{
 		message: message,
 	}
@@ -638,7 +638,7 @@ type reloadingRuleDefinition struct {
 	base       atomic.Pointer[RuleDefinition]
 }
 
-type GlobalResolver = func(identifier pg_label.CanonicalStarlarkIdentifier) (model_core.Message[*model_starlark_pb.Value, object.OutgoingReferences], error)
+type GlobalResolver = func(identifier pg_label.CanonicalStarlarkIdentifier) (model_core.Message[*model_starlark_pb.Value, object.OutgoingReferences[object.LocalReference]], error)
 
 const GlobalResolverKey = "global_resolver"
 

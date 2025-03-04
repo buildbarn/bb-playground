@@ -27,7 +27,7 @@ func (fd functionDefinition) getKeyType(functionName string, isPatched bool) str
 	} else if isPatched {
 		return fmt.Sprintf("model_core.PatchedMessage[*pb.%s_Key, dag.ObjectContentsWalker]", functionName)
 	} else {
-		return fmt.Sprintf("model_core.Message[*pb.%s_Key, object.OutgoingReferences]", functionName)
+		return fmt.Sprintf("model_core.Message[*pb.%s_Key, object.OutgoingReferences[object.LocalReference]]", functionName)
 	}
 }
 
@@ -41,7 +41,7 @@ func (fd functionDefinition) keyToPatchedMessage() string {
 
 func (fd functionDefinition) typedKeyToArgument(functionName string) string {
 	if fd.KeyContainsReferences {
-		return fmt.Sprintf("model_core.Message[*pb.%s_Key, object.OutgoingReferences]{Message: typedKey, OutgoingReferences: key.OutgoingReferences}", functionName)
+		return fmt.Sprintf("model_core.Message[*pb.%s_Key, object.OutgoingReferences[object.LocalReference]]{Message: typedKey, OutgoingReferences: key.OutgoingReferences}", functionName)
 	} else {
 		return "typedKey"
 	}
@@ -134,7 +134,7 @@ func main() {
 			dependencyDefinition := computerDefinition.Functions[dependencyName]
 			if nativeValueType := dependencyDefinition.NativeValueType; nativeValueType == nil {
 				fmt.Printf(
-					"\tGet%sValue(key %s) model_core.Message[*pb.%s_Value, object.OutgoingReferences]\n",
+					"\tGet%sValue(key %s) model_core.Message[*pb.%s_Value, object.OutgoingReferences[object.LocalReference]]\n",
 					dependencyName,
 					dependencyDefinition.getKeyType(dependencyName, true),
 					dependencyName,
@@ -158,16 +158,16 @@ func main() {
 		functionDefinition := computerDefinition.Functions[functionName]
 		if nativeValueType := functionDefinition.NativeValueType; nativeValueType == nil {
 			fmt.Printf(
-				"func (e *typedEnvironment) Get%sValue(key %s) model_core.Message[*pb.%s_Value, object.OutgoingReferences] {\n",
+				"func (e *typedEnvironment) Get%sValue(key %s) model_core.Message[*pb.%s_Value, object.OutgoingReferences[object.LocalReference]] {\n",
 				functionName,
 				functionDefinition.getKeyType(functionName, true),
 				functionName,
 			)
 			fmt.Printf("\tm := e.base.GetMessageValue(%s)\n", functionDefinition.keyToPatchedMessage())
 			fmt.Printf("\tif !m.IsSet() {\n")
-			fmt.Printf("\t\treturn model_core.Message[*pb.%s_Value, object.OutgoingReferences]{}\n", functionName)
+			fmt.Printf("\t\treturn model_core.Message[*pb.%s_Value, object.OutgoingReferences[object.LocalReference]]{}\n", functionName)
 			fmt.Printf("\t}\n")
-			fmt.Printf("\treturn model_core.Message[*pb.%s_Value, object.OutgoingReferences]{\n", functionName)
+			fmt.Printf("\treturn model_core.Message[*pb.%s_Value, object.OutgoingReferences[object.LocalReference]]{\n", functionName)
 			fmt.Printf("\t\tMessage: m.Message.(*pb.%s_Value),\n", functionName)
 			fmt.Printf("\t\tOutgoingReferences: m.OutgoingReferences,\n")
 			fmt.Printf("\t}\n")
@@ -195,7 +195,7 @@ func main() {
 	fmt.Printf("\treturn &typedComputer{base: base}\n")
 	fmt.Printf("}\n")
 
-	fmt.Printf("func (c *typedComputer) ComputeMessageValue(ctx context.Context, key model_core.Message[proto.Message, object.OutgoingReferences], e evaluation.Environment) (model_core.PatchedMessage[proto.Message, dag.ObjectContentsWalker], error) {\n")
+	fmt.Printf("func (c *typedComputer) ComputeMessageValue(ctx context.Context, key model_core.Message[proto.Message, object.OutgoingReferences[object.LocalReference]], e evaluation.Environment) (model_core.PatchedMessage[proto.Message, dag.ObjectContentsWalker], error) {\n")
 	fmt.Printf("\ttypedE := typedEnvironment{base: e}\n")
 	fmt.Printf("\tswitch typedKey := key.Message.(type) {\n")
 	for _, functionName := range slices.Sorted(maps.Keys(computerDefinition.Functions)) {
@@ -214,7 +214,7 @@ func main() {
 	fmt.Printf("\t}\n")
 	fmt.Printf("}\n")
 
-	fmt.Printf("func (c *typedComputer) ComputeNativeValue(ctx context.Context, key model_core.Message[proto.Message, object.OutgoingReferences], e evaluation.Environment) (any, error) {\n")
+	fmt.Printf("func (c *typedComputer) ComputeNativeValue(ctx context.Context, key model_core.Message[proto.Message, object.OutgoingReferences[object.LocalReference]], e evaluation.Environment) (any, error) {\n")
 	fmt.Printf("\ttypedE := typedEnvironment{base: e}\n")
 	fmt.Printf("\tswitch typedKey := key.Message.(type) {\n")
 	for _, functionName := range slices.Sorted(maps.Keys(computerDefinition.Functions)) {

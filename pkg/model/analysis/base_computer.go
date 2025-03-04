@@ -43,12 +43,12 @@ type baseComputer struct {
 	// TODO: These should likely be removed and instantiated later
 	// on, so that we can encrypt all data in storage.
 	valueDereferencers                                 model_starlark.ValueDereferencers
-	commandOutputsDereferencer                         dereference.Dereferencer[object.OutgoingReferences, model_core.Message[*model_command_pb.Outputs, object.OutgoingReferences]]
-	configurationBuildSettingOverrideDereferencer      dereference.Dereferencer[object.OutgoingReferences, model_core.Message[[]*model_analysis_pb.Configuration_BuildSettingOverride, object.OutgoingReferences]]
-	configurationDereferencer                          dereference.Dereferencer[object.OutgoingReferences, model_core.Message[*model_analysis_pb.Configuration, object.OutgoingReferences]]
-	moduleExtensionReposValueRepoDereferencer          dereference.Dereferencer[object.OutgoingReferences, model_core.Message[[]*model_analysis_pb.ModuleExtensionRepos_Value_Repo, object.OutgoingReferences]]
-	packageValueTargetDereferencer                     dereference.Dereferencer[object.OutgoingReferences, model_core.Message[[]*model_analysis_pb.Package_Value_Target, object.OutgoingReferences]]
-	targetPatternExpansionValueTargetLabelDereferencer dereference.Dereferencer[object.OutgoingReferences, model_core.Message[[]*model_analysis_pb.TargetPatternExpansion_Value_TargetLabel, object.OutgoingReferences]]
+	commandOutputsDereferencer                         dereference.Dereferencer[model_core.Message[*model_command_pb.Outputs, object.OutgoingReferences[object.LocalReference]], object.OutgoingReferences[object.LocalReference]]
+	configurationBuildSettingOverrideDereferencer      dereference.Dereferencer[model_core.Message[[]*model_analysis_pb.Configuration_BuildSettingOverride, object.OutgoingReferences[object.LocalReference]], object.OutgoingReferences[object.LocalReference]]
+	configurationDereferencer                          dereference.Dereferencer[model_core.Message[*model_analysis_pb.Configuration, object.OutgoingReferences[object.LocalReference]], object.OutgoingReferences[object.LocalReference]]
+	moduleExtensionReposValueRepoDereferencer          dereference.Dereferencer[model_core.Message[[]*model_analysis_pb.ModuleExtensionRepos_Value_Repo, object.OutgoingReferences[object.LocalReference]], object.OutgoingReferences[object.LocalReference]]
+	packageValueTargetDereferencer                     dereference.Dereferencer[model_core.Message[[]*model_analysis_pb.Package_Value_Target, object.OutgoingReferences[object.LocalReference]], object.OutgoingReferences[object.LocalReference]]
+	targetPatternExpansionValueTargetLabelDereferencer dereference.Dereferencer[model_core.Message[[]*model_analysis_pb.TargetPatternExpansion_Value_TargetLabel, object.OutgoingReferences[object.LocalReference]], object.OutgoingReferences[object.LocalReference]]
 }
 
 func NewBaseComputer(
@@ -166,8 +166,8 @@ func (c *baseComputer) getInlinedTreeOptions() *inlinedtree.Options {
 }
 
 type resolveApparentEnvironment interface {
-	GetCanonicalRepoNameValue(*model_analysis_pb.CanonicalRepoName_Key) model_core.Message[*model_analysis_pb.CanonicalRepoName_Value, object.OutgoingReferences]
-	GetRootModuleValue(*model_analysis_pb.RootModule_Key) model_core.Message[*model_analysis_pb.RootModule_Value, object.OutgoingReferences]
+	GetCanonicalRepoNameValue(*model_analysis_pb.CanonicalRepoName_Key) model_core.Message[*model_analysis_pb.CanonicalRepoName_Value, object.OutgoingReferences[object.LocalReference]]
+	GetRootModuleValue(*model_analysis_pb.RootModule_Key) model_core.Message[*model_analysis_pb.RootModule_Value, object.OutgoingReferences[object.LocalReference]]
 }
 
 type canonicalizable[T any] interface {
@@ -214,7 +214,7 @@ func resolveApparent[TCanonical any, TApparent canonicalizable[TCanonical]](e re
 
 type loadBzlGlobalsEnvironment interface {
 	resolveApparentEnvironment
-	GetBuiltinsModuleNamesValue(key *model_analysis_pb.BuiltinsModuleNames_Key) model_core.Message[*model_analysis_pb.BuiltinsModuleNames_Value, object.OutgoingReferences]
+	GetBuiltinsModuleNamesValue(key *model_analysis_pb.BuiltinsModuleNames_Key) model_core.Message[*model_analysis_pb.BuiltinsModuleNames_Value, object.OutgoingReferences[object.LocalReference]]
 	GetCompiledBzlFileDecodedGlobalsValue(key *model_analysis_pb.CompiledBzlFileDecodedGlobals_Key) (starlark.StringDict, bool)
 }
 
@@ -528,7 +528,7 @@ func (c *baseComputer) ComputeRepoDefaultAttrsValue(ctx context.Context, key *mo
 	), nil
 }
 
-func (c *baseComputer) ComputeTargetCompletionValue(ctx context.Context, key model_core.Message[*model_analysis_pb.TargetCompletion_Key, object.OutgoingReferences], e TargetCompletionEnvironment) (PatchedTargetCompletionValue, error) {
+func (c *baseComputer) ComputeTargetCompletionValue(ctx context.Context, key model_core.Message[*model_analysis_pb.TargetCompletion_Key, object.OutgoingReferences[object.LocalReference]], e TargetCompletionEnvironment) (PatchedTargetCompletionValue, error) {
 	configurationReference := model_core.NewPatchedMessageFromExisting(
 		model_core.NewNestedMessage(key, key.Message.ConfigurationReference),
 		func(index int) dag.ObjectContentsWalker {

@@ -147,11 +147,11 @@ type FunctionFactoryResolver = func(filename pg_label.CanonicalLabel) (*starlark
 const FunctionFactoryResolverKey = "function_factory_resolver"
 
 type protoNamedFunctionDefinition struct {
-	message  model_core.Message[*model_starlark_pb.Function, object.OutgoingReferences]
+	message  model_core.Message[*model_starlark_pb.Function, object.OutgoingReferences[object.LocalReference]]
 	function atomic.Pointer[starlark.Function]
 }
 
-func NewProtoNamedFunctionDefinition(message model_core.Message[*model_starlark_pb.Function, object.OutgoingReferences]) NamedFunctionDefinition {
+func NewProtoNamedFunctionDefinition(message model_core.Message[*model_starlark_pb.Function, object.OutgoingReferences[object.LocalReference]]) NamedFunctionDefinition {
 	return &protoNamedFunctionDefinition{
 		message: message,
 	}

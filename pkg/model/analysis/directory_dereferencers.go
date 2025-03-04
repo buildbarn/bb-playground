@@ -18,9 +18,9 @@ import (
 // follow references to objects that are encoded using the directory
 // access parameters that are part of the BuildSpecification.
 type DirectoryDereferencers struct {
-	Directory      dereference.Dereferencer[object.OutgoingReferences, model_core.Message[*model_filesystem_pb.Directory, object.OutgoingReferences]]
-	Leaves         dereference.Dereferencer[object.OutgoingReferences, model_core.Message[*model_filesystem_pb.Leaves, object.OutgoingReferences]]
-	CommandOutputs dereference.Dereferencer[object.OutgoingReferences, model_core.Message[*model_command_pb.Outputs, object.OutgoingReferences]]
+	Directory      dereference.Dereferencer[model_core.Message[*model_filesystem_pb.Directory, object.OutgoingReferences[object.LocalReference]], object.OutgoingReferences[object.LocalReference]]
+	Leaves         dereference.Dereferencer[model_core.Message[*model_filesystem_pb.Leaves, object.OutgoingReferences[object.LocalReference]], object.OutgoingReferences[object.LocalReference]]
+	CommandOutputs dereference.Dereferencer[model_core.Message[*model_command_pb.Outputs, object.OutgoingReferences[object.LocalReference]], object.OutgoingReferences[object.LocalReference]]
 }
 
 func (c *baseComputer) ComputeDirectoryDereferencersValue(ctx context.Context, key *model_analysis_pb.DirectoryDereferencers_Key, e DirectoryDereferencersEnvironment) (*DirectoryDereferencers, error) {

@@ -22,13 +22,13 @@ import (
 // Dereferencer in such a way that it merely extracts the target object
 // from TOutgoingReferences. This removes the need for having a central
 // namespace in which objects live.
-type Dereferencer[TOutgoingReferences object.OutgoingReferences, TValue any] interface {
+type Dereferencer[TValue any, TOutgoingReferences any] interface {
 	Dereference(ctx context.Context, outgoingReferences TOutgoingReferences, index int) (TValue, error)
 }
 
 // Dereference a model_core_pb.Reference. This is a helper function for
 // following references that are stored in Protobuf messages.
-func Dereference[TValue any, TOutgoingReferences object.OutgoingReferences](ctx context.Context, dereferencer Dereferencer[TOutgoingReferences, TValue], m model_core.Message[*model_core_pb.Reference, TOutgoingReferences]) (TValue, error) {
+func Dereference[TValue any, TOutgoingReferences object.OutgoingReferences[TReference], TReference any](ctx context.Context, dereferencer Dereferencer[TValue, TOutgoingReferences], m model_core.Message[*model_core_pb.Reference, TOutgoingReferences]) (TValue, error) {
 	index, err := model_core.GetIndexFromReferenceMessage(m.Message, m.OutgoingReferences.GetDegree())
 	if err != nil {
 		var badValue TValue

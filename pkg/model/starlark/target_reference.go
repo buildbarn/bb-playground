@@ -18,12 +18,12 @@ import (
 
 type TargetReference struct {
 	label            pg_label.ResolvedLabel
-	encodedProviders model_core.Message[[]*model_starlark_pb.Struct, object.OutgoingReferences]
+	encodedProviders model_core.Message[[]*model_starlark_pb.Struct, object.OutgoingReferences[object.LocalReference]]
 
 	decodedProviders []atomic.Pointer[Struct]
 }
 
-func NewTargetReference(label pg_label.ResolvedLabel, providers model_core.Message[[]*model_starlark_pb.Struct, object.OutgoingReferences]) starlark.Value {
+func NewTargetReference(label pg_label.ResolvedLabel, providers model_core.Message[[]*model_starlark_pb.Struct, object.OutgoingReferences[object.LocalReference]]) starlark.Value {
 	return &TargetReference{
 		label:            label,
 		encodedProviders: providers,

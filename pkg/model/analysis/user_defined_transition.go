@@ -34,12 +34,12 @@ type expectedTransitionOutput struct {
 	label         string
 	key           string
 	canonicalizer unpack.Canonicalizer
-	defaultValue  model_core.Message[*model_starlark_pb.Value, object.OutgoingReferences]
+	defaultValue  model_core.Message[*model_starlark_pb.Value, object.OutgoingReferences[object.LocalReference]]
 }
 
 func (c *baseComputer) applyTransition(
 	ctx context.Context,
-	configuration model_core.Message[*model_analysis_pb.Configuration, object.OutgoingReferences],
+	configuration model_core.Message[*model_analysis_pb.Configuration, object.OutgoingReferences[object.LocalReference]],
 	expectedOutputs []expectedTransitionOutput,
 	thread *starlark.Thread,
 	outputs map[string]starlark.Value,
@@ -54,7 +54,7 @@ func (c *baseComputer) applyTransition(
 		ctx,
 		c.configurationBuildSettingOverrideDereferencer,
 		model_core.NewNestedMessage(configuration, configuration.Message.BuildSettingOverrides),
-		func(override model_core.Message[*model_analysis_pb.Configuration_BuildSettingOverride, object.OutgoingReferences]) (*model_core_pb.Reference, error) {
+		func(override model_core.Message[*model_analysis_pb.Configuration_BuildSettingOverride, object.OutgoingReferences[object.LocalReference]]) (*model_core_pb.Reference, error) {
 			if level, ok := override.Message.Level.(*model_analysis_pb.Configuration_BuildSettingOverride_Parent_); ok {
 				return level.Parent.Reference, nil
 			}
@@ -202,7 +202,7 @@ func (c *baseComputer) applyTransition(
 	), nil
 }
 
-func (c *baseComputer) ComputeUserDefinedTransitionValue(ctx context.Context, key model_core.Message[*model_analysis_pb.UserDefinedTransition_Key, object.OutgoingReferences], e UserDefinedTransitionEnvironment) (PatchedUserDefinedTransitionValue, error) {
+func (c *baseComputer) ComputeUserDefinedTransitionValue(ctx context.Context, key model_core.Message[*model_analysis_pb.UserDefinedTransition_Key, object.OutgoingReferences[object.LocalReference]], e UserDefinedTransitionEnvironment) (PatchedUserDefinedTransitionValue, error) {
 	transitionIdentifier, err := label.NewCanonicalStarlarkIdentifier(key.Message.TransitionIdentifier)
 	if err != nil {
 		return PatchedUserDefinedTransitionValue{}, fmt.Errorf("invalid transition identifier: %w", key.Message.TransitionIdentifier)
@@ -409,7 +409,7 @@ func (c *baseComputer) ComputeUserDefinedTransitionValue(ctx context.Context, ke
 			continue
 		}
 		var canonicalizer unpack.Canonicalizer
-		var defaultValue model_core.Message[*model_starlark_pb.Value, object.OutgoingReferences]
+		var defaultValue model_core.Message[*model_starlark_pb.Value, object.OutgoingReferences[object.LocalReference]]
 		switch targetKind := targetValue.Message.Definition.GetKind().(type) {
 		case *model_starlark_pb.Target_Definition_LabelSetting:
 			// Build setting is a label_setting() or label_flag().
@@ -420,7 +420,7 @@ func (c *baseComputer) ComputeUserDefinedTransitionValue(ctx context.Context, ke
 						Label: targetKind.LabelSetting.BuildSettingDefault,
 					},
 				},
-				object.OutgoingReferences(object.OutgoingReferencesList{}),
+				object.OutgoingReferences[object.LocalReference](object.OutgoingReferencesList{}),
 			)
 		case *model_starlark_pb.Target_Definition_RuleTarget:
 			// Build setting is written in Starlark.

@@ -24,19 +24,19 @@ import (
 // "../${repo}/${file}" to resolve properly.
 type reposFilePropertiesResolver struct {
 	context               context.Context
-	directoryDereferencer dereference.Dereferencer[object.OutgoingReferences, model_core.Message[*model_filesystem_pb.Directory, object.OutgoingReferences]]
-	leavesDereferencer    dereference.Dereferencer[object.OutgoingReferences, model_core.Message[*model_filesystem_pb.Leaves, object.OutgoingReferences]]
+	directoryDereferencer dereference.Dereferencer[model_core.Message[*model_filesystem_pb.Directory, object.OutgoingReferences[object.LocalReference]], object.OutgoingReferences[object.LocalReference]]
+	leavesDereferencer    dereference.Dereferencer[model_core.Message[*model_filesystem_pb.Leaves, object.OutgoingReferences[object.LocalReference]], object.OutgoingReferences[object.LocalReference]]
 	environment           FilePropertiesEnvironment
 
-	currentDirectoryReference model_core.Message[*model_core_pb.Reference, object.OutgoingReferences]
-	stack                     []model_core.Message[*model_filesystem_pb.Directory, object.OutgoingReferences]
-	fileProperties            model_core.Message[*model_filesystem_pb.FileProperties, object.OutgoingReferences]
+	currentDirectoryReference model_core.Message[*model_core_pb.Reference, object.OutgoingReferences[object.LocalReference]]
+	stack                     []model_core.Message[*model_filesystem_pb.Directory, object.OutgoingReferences[object.LocalReference]]
+	fileProperties            model_core.Message[*model_filesystem_pb.FileProperties, object.OutgoingReferences[object.LocalReference]]
 	gotTerminal               bool
 }
 
 var _ path.ComponentWalker = (*reposFilePropertiesResolver)(nil)
 
-func (r *reposFilePropertiesResolver) getCurrentLeaves() (model_core.Message[*model_filesystem_pb.Leaves, object.OutgoingReferences], error) {
+func (r *reposFilePropertiesResolver) getCurrentLeaves() (model_core.Message[*model_filesystem_pb.Leaves, object.OutgoingReferences[object.LocalReference]], error) {
 	d := r.stack[len(r.stack)-1]
 	switch l := d.Message.Leaves.(type) {
 	case *model_filesystem_pb.Directory_LeavesExternal:
@@ -44,7 +44,7 @@ func (r *reposFilePropertiesResolver) getCurrentLeaves() (model_core.Message[*mo
 	case *model_filesystem_pb.Directory_LeavesInline:
 		return model_core.NewNestedMessage(d, l.LeavesInline), nil
 	default:
-		return model_core.Message[*model_filesystem_pb.Leaves, object.OutgoingReferences]{}, errors.New("unknown leaves type")
+		return model_core.Message[*model_filesystem_pb.Leaves, object.OutgoingReferences[object.LocalReference]]{}, errors.New("unknown leaves type")
 	}
 }
 

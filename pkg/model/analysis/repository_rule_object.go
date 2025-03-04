@@ -69,7 +69,7 @@ type AttrsDict struct {
 	Private starlark.StringDict
 }
 
-func (c *baseComputer) decodeAttrsDict(ctx context.Context, encodedAttrs model_core.Message[[]*model_starlark_pb.NamedAttr, object.OutgoingReferences], labelCreator func(label.ResolvedLabel) (starlark.Value, error)) (AttrsDict, error) {
+func (c *baseComputer) decodeAttrsDict(ctx context.Context, encodedAttrs model_core.Message[[]*model_starlark_pb.NamedAttr, object.OutgoingReferences[object.LocalReference]], labelCreator func(label.ResolvedLabel) (starlark.Value, error)) (AttrsDict, error) {
 	attrsDict := AttrsDict{
 		Private: starlark.StringDict{},
 	}

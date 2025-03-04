@@ -19,7 +19,7 @@ func NewRawObjectParser[TReference RawObjectParserReference]() ObjectParser[TRef
 	return &rawObjectParser[TReference]{}
 }
 
-func (p *rawObjectParser[TReference]) ParseObject(ctx context.Context, reference TReference, outgoingReferences object.OutgoingReferences, data []byte) ([]byte, int, error) {
+func (p *rawObjectParser[TReference]) ParseObject(ctx context.Context, reference TReference, outgoingReferences object.OutgoingReferences[object.LocalReference], data []byte) ([]byte, int, error) {
 	if degree := outgoingReferences.GetDegree(); degree > 0 {
 		return nil, 0, status.Errorf(codes.InvalidArgument, "Object has a degree of %d, while zero was expected", degree)
 	}

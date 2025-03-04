@@ -48,7 +48,7 @@ func constraintsAreCompatible(actual, expected []*model_analysis_pb.Constraint) 
 	return true
 }
 
-func (c *baseComputer) ComputeResolvedToolchainsValue(ctx context.Context, key model_core.Message[*model_analysis_pb.ResolvedToolchains_Key, object.OutgoingReferences], e ResolvedToolchainsEnvironment) (PatchedResolvedToolchainsValue, error) {
+func (c *baseComputer) ComputeResolvedToolchainsValue(ctx context.Context, key model_core.Message[*model_analysis_pb.ResolvedToolchains_Key, object.OutgoingReferences[object.LocalReference]], e ResolvedToolchainsEnvironment) (PatchedResolvedToolchainsValue, error) {
 	// Obtain all compatible execution platforms and toolchains.
 	missingDependencies := false
 	compatibleExecutionPlatforms := e.GetCompatibleExecutionPlatformsValue(&model_analysis_pb.CompatibleExecutionPlatforms_Key{

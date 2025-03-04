@@ -54,7 +54,7 @@ func deduplicateAndAddTransitive(thread *starlark.Thread, children *[]any, trans
 			} else if !alreadySeen {
 				*children = append(*children, v)
 			}
-		case model_core.Message[*model_starlark_pb.List_Element, object.OutgoingReferences]:
+		case model_core.Message[*model_starlark_pb.List_Element, object.OutgoingReferences[object.LocalReference]]:
 			switch level := v.Message.Level.(type) {
 			case *model_starlark_pb.List_Element_Leaf:
 				// Encoded child.
@@ -64,7 +64,7 @@ func deduplicateAndAddTransitive(thread *starlark.Thread, children *[]any, trans
 			case *model_starlark_pb.List_Element_Parent_:
 				// Multiple encoded children. Deduplicate
 				// them by list object reference.
-				listReference, err := v.GetOutgoingReference(level.Parent.Reference)
+				listReference, err := model_core.FlattenReference(model_core.NewNestedMessage(v, level.Parent.Reference))
 				if err != nil {
 					return err
 				}
@@ -212,7 +212,7 @@ func (e *depsetChildrenEncoder) encode(children any) error {
 		); err != nil {
 			return err
 		}
-	case model_core.Message[*model_starlark_pb.List_Element, object.OutgoingReferences]:
+	case model_core.Message[*model_starlark_pb.List_Element, object.OutgoingReferences[object.LocalReference]]:
 		if err := e.treeBuilder.PushChild(
 			model_core.NewPatchedMessageFromExisting(
 				v,
@@ -330,7 +330,7 @@ func (dlc *depsetToListConverter) appendChildren(children any) error {
 		} else if !alreadySeen {
 			dlc.list = append(dlc.list, v)
 		}
-	case model_core.Message[*model_starlark_pb.List_Element, object.OutgoingReferences]:
+	case model_core.Message[*model_starlark_pb.List_Element, object.OutgoingReferences[object.LocalReference]]:
 		if dlc.valueDecodingOptions == nil {
 			valueDecodingOptionsValue := dlc.thread.Local(ValueDecodingOptionsKey)
 			if valueDecodingOptionsValue == nil {

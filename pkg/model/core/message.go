@@ -9,13 +9,13 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
-type Message[TMessage any, TOutgoingReferences object.OutgoingReferences] struct {
+type Message[TMessage any, TOutgoingReferences any] struct {
 	Message            TMessage
 	OutgoingReferences TOutgoingReferences
 }
 
 // NewMessage is a helper function for creating instances of Message.
-func NewMessage[TMessage any, TOutgoingReferences object.OutgoingReferences](
+func NewMessage[TMessage, TOutgoingReferences any](
 	m TMessage,
 	outgoingReferences TOutgoingReferences,
 ) Message[TMessage, TOutgoingReferences] {
@@ -27,7 +27,7 @@ func NewMessage[TMessage any, TOutgoingReferences object.OutgoingReferences](
 
 // NewNestedMessage is a helper function for creating instances of
 // Message that refer to a message that was mebedded into another one.
-func NewNestedMessage[TMessage1, TMessage2 any, TOutgoingReferences object.OutgoingReferences](parent Message[TMessage1, TOutgoingReferences], child TMessage2) Message[TMessage2, TOutgoingReferences] {
+func NewNestedMessage[TMessage1, TMessage2, TOutgoingReferences any](parent Message[TMessage1, TOutgoingReferences], child TMessage2) Message[TMessage2, TOutgoingReferences] {
 	return Message[TMessage2, TOutgoingReferences]{
 		Message:            child,
 		OutgoingReferences: parent.OutgoingReferences,
@@ -46,19 +46,16 @@ func (m *Message[TMessage, TOutgoingReferences]) Clear() {
 	*m = Message[TMessage, TOutgoingReferences]{}
 }
 
-// GetOutgoingReference is a utility function for obtaining an outgoing
-// reference corresponding to Reference message that is a child of the
-// current message.
-func (m *Message[TMessage, TOutgoingReferences]) GetOutgoingReference(reference *model_core_pb.Reference) (object.LocalReference, error) {
-	index, err := GetIndexFromReferenceMessage(reference, m.OutgoingReferences.GetDegree())
+func FlattenReference[TOutgoingReferences object.OutgoingReferences[TReference], TReference any](m Message[*model_core_pb.Reference, TOutgoingReferences]) (TReference, error) {
+	index, err := GetIndexFromReferenceMessage(m.Message, m.OutgoingReferences.GetDegree())
 	if err != nil {
-		var badReference object.LocalReference
+		var badReference TReference
 		return badReference, err
 	}
 	return m.OutgoingReferences.GetOutgoingReference(index), nil
 }
 
-func MessagesEqual[TMessage proto.Message, TOutgoingReferences object.OutgoingReferences](m1, m2 Message[TMessage, TOutgoingReferences]) bool {
+func MessagesEqual[TMessage proto.Message, TOutgoingReferences object.OutgoingReferences[object.LocalReference]](m1, m2 Message[TMessage, TOutgoingReferences]) bool {
 	degree1, degree2 := m1.OutgoingReferences.GetDegree(), m2.OutgoingReferences.GetDegree()
 	if degree1 != degree2 {
 		return false

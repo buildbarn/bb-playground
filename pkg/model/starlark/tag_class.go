@@ -87,10 +87,10 @@ func (tcd *starlarkTagClassDefinition) Encode(path map[starlark.Value]struct{}, 
 }
 
 type protoTagClassDefinition struct {
-	message model_core.Message[*model_starlark_pb.TagClass, object.OutgoingReferences]
+	message model_core.Message[*model_starlark_pb.TagClass, object.OutgoingReferences[object.LocalReference]]
 }
 
-func NewProtoTagClassDefinition(message model_core.Message[*model_starlark_pb.TagClass, object.OutgoingReferences]) TagClassDefinition {
+func NewProtoTagClassDefinition(message model_core.Message[*model_starlark_pb.TagClass, object.OutgoingReferences[object.LocalReference]]) TagClassDefinition {
 	return &protoTagClassDefinition{
 		message: message,
 	}

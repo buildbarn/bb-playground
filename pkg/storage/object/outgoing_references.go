@@ -4,9 +4,9 @@ package object
 // may either be implemented by a simple slice, or it's possible to
 // provide an implementation that reads references directly out of the
 // object's contents.
-type OutgoingReferences interface {
+type OutgoingReferences[TReference any] interface {
 	GetDegree() int
-	GetOutgoingReference(index int) LocalReference
+	GetOutgoingReference(index int) TReference
 	GetOutgoingReferencesList() OutgoingReferencesList
 }
 
@@ -14,7 +14,7 @@ type OutgoingReferences interface {
 // that is backed by a simple slice.
 type OutgoingReferencesList []LocalReference
 
-var _ OutgoingReferences = OutgoingReferencesList{}
+var _ OutgoingReferences[LocalReference] = OutgoingReferencesList{}
 
 func (l OutgoingReferencesList) GetDegree() int {
 	return len(l)

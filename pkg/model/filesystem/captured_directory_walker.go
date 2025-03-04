@@ -63,7 +63,7 @@ func (o *capturedDirectoryWalkerOptions) openFile(pathTrace *path.Trace) (filesy
 
 // gatherWalkersForLeaves creates ObjectContentsWalkers for all files
 // contained in the provided Leaves message.
-func (o *capturedDirectoryWalkerOptions) gatherWalkersForLeaves(leaves *model_filesystem_pb.Leaves, outgoingReferences object.OutgoingReferences, pathTrace *path.Trace, walkers []dag.ObjectContentsWalker) error {
+func (o *capturedDirectoryWalkerOptions) gatherWalkersForLeaves(leaves *model_filesystem_pb.Leaves, outgoingReferences object.OutgoingReferences[object.LocalReference], pathTrace *path.Trace, walkers []dag.ObjectContentsWalker) error {
 	for _, childFile := range leaves.Files {
 		childPathTrace := pathTrace.Append(path.MustNewComponent(childFile.Name))
 		properties := childFile.Properties

@@ -18,10 +18,11 @@ func Find[
 		*TMessage
 		proto.Message
 	},
-	TOutgoingReferences object.OutgoingReferences,
+	TOutgoingReferences object.OutgoingReferences[TReference],
+	TReference any,
 ](
 	ctx context.Context,
-	dereferencer dereference.Dereferencer[TOutgoingReferences, model_core.Message[[]TMessagePtr, TOutgoingReferences]],
+	dereferencer dereference.Dereferencer[model_core.Message[[]TMessagePtr, TOutgoingReferences], TOutgoingReferences],
 	list model_core.Message[[]TMessagePtr, TOutgoingReferences],
 	cmp func(TMessagePtr) (int, *model_core_pb.Reference),
 ) (model_core.Message[TMessagePtr, TOutgoingReferences], error) {

@@ -170,10 +170,10 @@ func (sd *starlarkSubruleDefinition) Encode(path map[starlark.Value]struct{}, op
 }
 
 type protoSubruleDefinition struct {
-	message model_core.Message[*model_starlark_pb.Subrule_Definition, object.OutgoingReferences]
+	message model_core.Message[*model_starlark_pb.Subrule_Definition, object.OutgoingReferences[object.LocalReference]]
 }
 
-func NewProtoSubruleDefinition(message model_core.Message[*model_starlark_pb.Subrule_Definition, object.OutgoingReferences]) SubruleDefinition {
+func NewProtoSubruleDefinition(message model_core.Message[*model_starlark_pb.Subrule_Definition, object.OutgoingReferences[object.LocalReference]]) SubruleDefinition {
 	return &protoSubruleDefinition{
 		message: message,
 	}

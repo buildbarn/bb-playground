@@ -28,12 +28,13 @@ func NewPatchedMessage[TMessage any, TMetadata ReferenceMetadata](
 
 func NewPatchedMessageFromExisting[
 	TMessage any,
-	TOutgoingReferences object.OutgoingReferences,
+	TOutgoingReferences object.OutgoingReferences[TReference],
 	TMetadata ReferenceMetadata,
 	TMessagePtr interface {
 		*TMessage
 		proto.Message
 	},
+	TReference AddableReference,
 ](
 	existing Message[TMessagePtr, TOutgoingReferences],
 	createMetadata ReferenceMetadataCreator[TMetadata],
@@ -47,11 +48,12 @@ func NewPatchedMessageFromExisting[
 	}
 
 	clonedMessage := proto.Clone(existing.Message)
-	patcher.addReferenceMessagesRecursively(
-		clonedMessage.ProtoReflect(),
-		existing.OutgoingReferences,
-		createMetadata,
-	)
+	a := referenceMessageAdder[TMetadata, TReference]{
+		patcher:            patcher,
+		outgoingReferences: existing.OutgoingReferences,
+		createMetadata:     createMetadata,
+	}
+	a.addReferenceMessagesRecursively(clonedMessage.ProtoReflect())
 	return PatchedMessage[TMessagePtr, TMetadata]{
 		Message: clonedMessage.(TMessagePtr),
 		Patcher: patcher,
@@ -83,9 +85,9 @@ func (m *PatchedMessage[T, TMetadata]) Discard() {
 }
 
 // SortAndSetReferences assigns indices to outgoing references
-func (m PatchedMessage[T, TMetadata]) SortAndSetReferences() (Message[T, object.OutgoingReferences], []TMetadata) {
+func (m PatchedMessage[T, TMetadata]) SortAndSetReferences() (Message[T, object.OutgoingReferences[object.LocalReference]], []TMetadata) {
 	references, metadata := m.Patcher.SortAndSetReferences()
-	return Message[T, object.OutgoingReferences]{
+	return Message[T, object.OutgoingReferences[object.LocalReference]]{
 		Message:            m.Message,
 		OutgoingReferences: references,
 	}, metadata
