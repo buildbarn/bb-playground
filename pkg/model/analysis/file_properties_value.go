@@ -10,9 +10,11 @@ import (
 	"github.com/buildbarn/bb-storage/pkg/filesystem/path"
 	"github.com/buildbarn/bonanza/pkg/evaluation"
 	model_core "github.com/buildbarn/bonanza/pkg/model/core"
+	"github.com/buildbarn/bonanza/pkg/model/core/dereference"
 	model_filesystem "github.com/buildbarn/bonanza/pkg/model/filesystem"
 	model_parser "github.com/buildbarn/bonanza/pkg/model/parser"
 	model_analysis_pb "github.com/buildbarn/bonanza/pkg/proto/model/analysis"
+	model_core_pb "github.com/buildbarn/bonanza/pkg/proto/model/core"
 	model_filesystem_pb "github.com/buildbarn/bonanza/pkg/proto/model/filesystem"
 	"github.com/buildbarn/bonanza/pkg/storage/dag"
 	"github.com/buildbarn/bonanza/pkg/storage/object"
@@ -23,30 +25,47 @@ import (
 // directory, which allows symbolic links with targets of shape
 // "../${repo}/${file}" to resolve properly.
 type reposFilePropertiesResolver struct {
-	context                context.Context
-	directoryClusterReader model_parser.ParsedObjectReader[object.LocalReference, model_filesystem.DirectoryCluster]
-	environment            FilePropertiesEnvironment
+	context               context.Context
+	directoryDereferencer dereference.Dereferencer[object.OutgoingReferences, model_core.Message[*model_filesystem_pb.Directory, object.OutgoingReferences]]
+	leavesDereferencer    dereference.Dereferencer[object.OutgoingReferences, model_core.Message[*model_filesystem_pb.Leaves, object.OutgoingReferences]]
+	environment           FilePropertiesEnvironment
 
-	stack          []model_filesystem.DirectoryInfo
-	fileProperties model_core.Message[*model_filesystem_pb.FileProperties, object.OutgoingReferences]
-	gotTerminal    bool
+	currentDirectoryReference model_core.Message[*model_core_pb.Reference, object.OutgoingReferences]
+	stack                     []model_core.Message[*model_filesystem_pb.Directory, object.OutgoingReferences]
+	fileProperties            model_core.Message[*model_filesystem_pb.FileProperties, object.OutgoingReferences]
+	gotTerminal               bool
 }
 
 var _ path.ComponentWalker = (*reposFilePropertiesResolver)(nil)
 
-func (r *reposFilePropertiesResolver) getCurrentDirectory() (*model_filesystem.Directory, error) {
-	directoryInfo := r.stack[len(r.stack)-1]
-	cluster, _, err := r.directoryClusterReader.ReadParsedObject(r.context, directoryInfo.ClusterReference)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read directory cluster: %w", err)
+func (r *reposFilePropertiesResolver) getCurrentLeaves() (model_core.Message[*model_filesystem_pb.Leaves, object.OutgoingReferences], error) {
+	d := r.stack[len(r.stack)-1]
+	switch l := d.Message.Leaves.(type) {
+	case *model_filesystem_pb.Directory_LeavesExternal:
+		return dereference.Dereference(r.context, r.leavesDereferencer, model_core.NewNestedMessage(d, l.LeavesExternal.Reference))
+	case *model_filesystem_pb.Directory_LeavesInline:
+		return model_core.NewNestedMessage(d, l.LeavesInline), nil
+	default:
+		return model_core.Message[*model_filesystem_pb.Leaves, object.OutgoingReferences]{}, errors.New("unknown leaves type")
 	}
-	if directoryInfo.DirectoryIndex >= uint(len(cluster)) {
-		return nil, fmt.Errorf("directory index %d exceeds directory cluster size %d", directoryInfo.DirectoryIndex, len(cluster))
+}
+
+func (r *reposFilePropertiesResolver) dereferenceCurrentDirectory() error {
+	if r.currentDirectoryReference.IsSet() {
+		d, err := dereference.Dereference(r.context, r.directoryDereferencer, r.currentDirectoryReference)
+		if err != nil {
+			return err
+		}
+		r.stack = append(r.stack, d)
+		r.currentDirectoryReference.Clear()
 	}
-	return &cluster[directoryInfo.DirectoryIndex], nil
+	return nil
 }
 
 func (r *reposFilePropertiesResolver) OnDirectory(name path.Component) (path.GotDirectoryOrSymlink, error) {
+	if err := r.dereferenceCurrentDirectory(); err != nil {
+		return nil, err
+	}
 	if len(r.stack) == 0 {
 		// Currently within the root directory. Enter the repo
 		// corresponding to the provided directory name.
@@ -57,39 +76,40 @@ func (r *reposFilePropertiesResolver) OnDirectory(name path.Component) (path.Got
 			return nil, evaluation.ErrMissingDependency
 		}
 
-		directoryInfo, err := model_filesystem.NewDirectoryInfoFromDirectoryReference(
-			model_core.NewNestedMessage(repoValue, repoValue.Message.RootDirectoryReference),
-		)
-		if err != nil {
-			return nil, fmt.Errorf("failed to create directory info for canonical repo %#v: %w", name.String())
-		}
-
-		r.stack = append(r.stack, directoryInfo)
+		r.currentDirectoryReference = model_core.NewNestedMessage(repoValue, repoValue.Message.RootDirectoryReference.GetReference())
 		return path.GotDirectory{
 			Child:        r,
 			IsReversible: true,
 		}, nil
 	}
 
-	d, err := r.getCurrentDirectory()
+	d := r.stack[len(r.stack)-1]
+	n := name.String()
+	directories := d.Message.Directories
+	if i, ok := sort.Find(
+		len(directories),
+		func(i int) int { return strings.Compare(n, directories[i].Name) },
+	); ok {
+		switch contents := directories[i].Contents.(type) {
+		case *model_filesystem_pb.DirectoryNode_ContentsExternal:
+			r.currentDirectoryReference = model_core.NewNestedMessage(d, contents.ContentsExternal.Reference)
+		case *model_filesystem_pb.DirectoryNode_ContentsInline:
+			r.stack = append(r.stack, model_core.NewNestedMessage(d, contents.ContentsInline))
+		default:
+			return nil, errors.New("unknown directory contents type")
+		}
+		return path.GotDirectory{
+			Child:        r,
+			IsReversible: true,
+		}, nil
+	}
+
+	leaves, err := r.getCurrentLeaves()
 	if err != nil {
 		return nil, err
 	}
 
-	n := name.String()
-	directories := d.Directories
-	if i, ok := sort.Find(
-		len(directories),
-		func(i int) int { return strings.Compare(n, directories[i].Name.String()) },
-	); ok {
-		r.stack = append(r.stack, directories[i].Info)
-		return path.GotDirectory{
-			Child:        r,
-			IsReversible: true,
-		}, nil
-	}
-
-	files := d.Leaves.Message.Files
+	files := leaves.Message.Files
 	if _, ok := sort.Find(
 		len(files),
 		func(i int) int { return strings.Compare(n, files[i].Name) },
@@ -97,7 +117,7 @@ func (r *reposFilePropertiesResolver) OnDirectory(name path.Component) (path.Got
 		return nil, errors.New("path resolves to a regular file, while a directory was expected")
 	}
 
-	symlinks := d.Leaves.Message.Symlinks
+	symlinks := leaves.Message.Symlinks
 	if i, ok := sort.Find(
 		len(symlinks),
 		func(i int) int { return strings.Compare(n, symlinks[i].Name) },
@@ -112,25 +132,29 @@ func (r *reposFilePropertiesResolver) OnDirectory(name path.Component) (path.Got
 }
 
 func (r *reposFilePropertiesResolver) OnTerminal(name path.Component) (*path.GotSymlink, error) {
+	if err := r.dereferenceCurrentDirectory(); err != nil {
+		return nil, err
+	}
 	if len(r.stack) == 0 {
 		return path.OnTerminalViaOnDirectory(r, name)
 	}
 
-	d, err := r.getCurrentDirectory()
-	if err != nil {
-		return nil, err
-	}
-
+	d := r.stack[len(r.stack)-1]
 	n := name.String()
-	directories := d.Directories
+	directories := d.Message.Directories
 	if _, ok := sort.Find(
 		len(directories),
-		func(i int) int { return strings.Compare(n, directories[i].Name.String()) },
+		func(i int) int { return strings.Compare(n, directories[i].Name) },
 	); ok {
 		return nil, errors.New("path resolves to a directory, while a file was expected")
 	}
 
-	files := d.Leaves.Message.Files
+	leaves, err := r.getCurrentLeaves()
+	if err != nil {
+		return nil, err
+	}
+
+	files := leaves.Message.Files
 	if i, ok := sort.Find(
 		len(files),
 		func(i int) int { return strings.Compare(n, files[i].Name) },
@@ -139,12 +163,12 @@ func (r *reposFilePropertiesResolver) OnTerminal(name path.Component) (*path.Got
 		if properties == nil {
 			return nil, errors.New("path resolves to file that does not have any properties")
 		}
-		r.fileProperties = model_core.NewNestedMessage(d.Leaves, properties)
+		r.fileProperties = model_core.NewNestedMessage(leaves, properties)
 		r.gotTerminal = true
 		return nil, nil
 	}
 
-	symlinks := d.Leaves.Message.Symlinks
+	symlinks := leaves.Message.Symlinks
 	if i, ok := sort.Find(
 		len(symlinks),
 		func(i int) int { return strings.Compare(n, symlinks[i].Name) },
@@ -160,10 +184,13 @@ func (r *reposFilePropertiesResolver) OnTerminal(name path.Component) (*path.Got
 }
 
 func (r *reposFilePropertiesResolver) OnUp() (path.ComponentWalker, error) {
-	if len(r.stack) == 0 {
+	if r.currentDirectoryReference.IsSet() {
+		r.currentDirectoryReference.Clear()
+	} else if len(r.stack) == 0 {
 		return nil, errors.New("path escapes repositories directory")
+	} else {
+		r.stack = r.stack[:len(r.stack)-1]
 	}
-	r.stack = r.stack[:len(r.stack)-1]
 	return r, nil
 }
 
@@ -182,15 +209,18 @@ func (c *baseComputer) ComputeFilePropertiesValue(ctx context.Context, key *mode
 
 	resolver := reposFilePropertiesResolver{
 		context: ctx,
-		directoryClusterReader: model_parser.NewStorageBackedParsedObjectReader(
-			c.objectDownloader,
-			directoryAccessParameters.GetEncoder(),
-			model_filesystem.NewDirectoryClusterObjectParser[object.LocalReference](
-				model_parser.NewStorageBackedParsedObjectReader(
-					c.objectDownloader,
-					directoryAccessParameters.GetEncoder(),
-					model_parser.NewMessageObjectParser[object.LocalReference, model_filesystem_pb.Leaves](),
-				),
+		directoryDereferencer: dereference.NewReadingDereferencer(
+			model_parser.NewStorageBackedParsedObjectReader(
+				c.objectDownloader,
+				directoryAccessParameters.GetEncoder(),
+				model_parser.NewMessageObjectParser[object.LocalReference, model_filesystem_pb.Directory](),
+			),
+		),
+		leavesDereferencer: dereference.NewReadingDereferencer(
+			model_parser.NewStorageBackedParsedObjectReader(
+				c.objectDownloader,
+				directoryAccessParameters.GetEncoder(),
+				model_parser.NewMessageObjectParser[object.LocalReference, model_filesystem_pb.Leaves](),
 			),
 		),
 		environment: e,
