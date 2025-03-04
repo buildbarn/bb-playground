@@ -12,7 +12,6 @@ import (
 	"github.com/buildbarn/bonanza/pkg/label"
 	model_core "github.com/buildbarn/bonanza/pkg/model/core"
 	"github.com/buildbarn/bonanza/pkg/model/core/dereference"
-	model_parser "github.com/buildbarn/bonanza/pkg/model/parser"
 	model_analysis_pb "github.com/buildbarn/bonanza/pkg/proto/model/analysis"
 	model_filesystem_pb "github.com/buildbarn/bonanza/pkg/proto/model/filesystem"
 	"github.com/buildbarn/bonanza/pkg/storage/dag"
@@ -25,23 +24,18 @@ func (c *baseComputer) ComputePackagesAtAndBelowValue(ctx context.Context, key *
 		return PatchedPackagesAtAndBelowValue{}, errors.New("invalid base package")
 	}
 
-	directoryCreationParameters, gotDirectoryCreationParameters := e.GetDirectoryCreationParametersObjectValue(&model_analysis_pb.DirectoryCreationParametersObject_Key{})
+	directoryDereferencers, gotDirectoryDereferencers := e.GetDirectoryDereferencersValue(
+		&model_analysis_pb.DirectoryDereferencers_Key{},
+	)
 	repoValue := e.GetRepoValue(&model_analysis_pb.Repo_Key{
 		CanonicalRepo: basePackage.GetCanonicalRepo().String(),
 	})
-	if !gotDirectoryCreationParameters || !repoValue.IsSet() {
+	if !gotDirectoryDereferencers || !repoValue.IsSet() {
 		return PatchedPackagesAtAndBelowValue{}, evaluation.ErrMissingDependency
 	}
 
 	// Obtain the root directory of the repo.
-	directoryDereferencer := dereference.NewReadingDereferencer(
-		model_parser.NewStorageBackedParsedObjectReader(
-			c.objectDownloader,
-			directoryCreationParameters.GetEncoder(),
-			model_parser.NewMessageObjectParser[object.LocalReference, model_filesystem_pb.Directory](),
-		),
-	)
-	baseDirectory, err := dereference.Dereference(ctx, directoryDereferencer, model_core.NewNestedMessage(repoValue, repoValue.Message.RootDirectoryReference.GetReference()))
+	baseDirectory, err := dereference.Dereference(ctx, directoryDereferencers.Directory, model_core.NewNestedMessage(repoValue, repoValue.Message.RootDirectoryReference.GetReference()))
 	if err != nil {
 		return PatchedPackagesAtAndBelowValue{}, err
 	}
@@ -62,7 +56,7 @@ func (c *baseComputer) ComputePackagesAtAndBelowValue(ctx context.Context, key *
 		}
 		switch contents := directories[directoryIndex].Contents.(type) {
 		case *model_filesystem_pb.DirectoryNode_ContentsExternal:
-			baseDirectory, err = dereference.Dereference(ctx, directoryDereferencer, model_core.NewNestedMessage(baseDirectory, contents.ContentsExternal.Reference))
+			baseDirectory, err = dereference.Dereference(ctx, directoryDereferencers.Directory, model_core.NewNestedMessage(baseDirectory, contents.ContentsExternal.Reference))
 			if err != nil {
 				return PatchedPackagesAtAndBelowValue{}, err
 			}
@@ -76,14 +70,8 @@ func (c *baseComputer) ComputePackagesAtAndBelowValue(ctx context.Context, key *
 	// Find packages at and below the base package.
 	checker := packageExistenceChecker{
 		context:               ctx,
-		directoryDereferencer: directoryDereferencer,
-		leavesDereferencer: dereference.NewReadingDereferencer(
-			model_parser.NewStorageBackedParsedObjectReader(
-				c.objectDownloader,
-				directoryCreationParameters.GetEncoder(),
-				model_parser.NewMessageObjectParser[object.LocalReference, model_filesystem_pb.Leaves](),
-			),
-		),
+		directoryDereferencer: directoryDereferencers.Directory,
+		leavesDereferencer:    directoryDereferencers.Leaves,
 	}
 	packageAtBasePackage, err := checker.directoryIsPackage(baseDirectory)
 	if err != nil {

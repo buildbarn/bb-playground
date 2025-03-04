@@ -15,8 +15,6 @@ import (
 	"github.com/buildbarn/bonanza/pkg/model/core/btree"
 	"github.com/buildbarn/bonanza/pkg/model/core/dereference"
 	model_encoding "github.com/buildbarn/bonanza/pkg/model/encoding"
-	model_filesystem "github.com/buildbarn/bonanza/pkg/model/filesystem"
-	model_parser "github.com/buildbarn/bonanza/pkg/model/parser"
 	model_analysis_pb "github.com/buildbarn/bonanza/pkg/proto/model/analysis"
 	model_command_pb "github.com/buildbarn/bonanza/pkg/proto/model/command"
 	remoteexecution_pb "github.com/buildbarn/bonanza/pkg/proto/remoteexecution"
@@ -143,7 +141,7 @@ func (c *baseComputer) convertDictToEnvironmentVariableList(environment map[stri
 	return environmentVariablesBuilder.FinalizeList()
 }
 
-func (c *baseComputer) getOutputsFromActionResult(ctx context.Context, actionResult model_core.Message[*model_analysis_pb.ActionResult_Value, object.OutgoingReferences], directoryAccessParameters *model_filesystem.DirectoryAccessParameters) (model_core.Message[*model_command_pb.Outputs, object.OutgoingReferences], error) {
+func (c *baseComputer) getOutputsFromActionResult(ctx context.Context, actionResult model_core.Message[*model_analysis_pb.ActionResult_Value, object.OutgoingReferences], directoryDereferencers *DirectoryDereferencers) (model_core.Message[*model_command_pb.Outputs, object.OutgoingReferences], error) {
 	if actionResult.Message.OutputsReference == nil {
 		// Action did not yield any outputs. Return an empty
 		// outputs message, so any code that attempts to access
@@ -151,12 +149,5 @@ func (c *baseComputer) getOutputsFromActionResult(ctx context.Context, actionRes
 		return model_core.NewMessage(&model_command_pb.Outputs{}, object.OutgoingReferences(object.OutgoingReferencesList{})), nil
 	}
 
-	outputsDereferencer := dereference.NewReadingDereferencer(
-		model_parser.NewStorageBackedParsedObjectReader(
-			c.objectDownloader,
-			directoryAccessParameters.GetEncoder(),
-			model_parser.NewMessageObjectParser[object.LocalReference, model_command_pb.Outputs](),
-		),
-	)
-	return dereference.Dereference(ctx, outputsDereferencer, model_core.NewNestedMessage(actionResult, actionResult.Message.OutputsReference))
+	return dereference.Dereference(ctx, directoryDereferencers.CommandOutputs, model_core.NewNestedMessage(actionResult, actionResult.Message.OutputsReference))
 }

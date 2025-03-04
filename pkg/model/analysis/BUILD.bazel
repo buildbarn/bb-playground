@@ -21,6 +21,7 @@ go_library(
         "computer.go",
         "configured_target.go",
         "directory_creation_parameters.go",
+        "directory_dereferencers.go",
         "file_access_parameters.go",
         "file_creation_parameters.go",
         "file_properties_value.go",

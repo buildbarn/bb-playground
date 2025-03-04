@@ -11,8 +11,6 @@ import (
 	"github.com/buildbarn/bonanza/pkg/evaluation"
 	model_core "github.com/buildbarn/bonanza/pkg/model/core"
 	"github.com/buildbarn/bonanza/pkg/model/core/dereference"
-	model_filesystem "github.com/buildbarn/bonanza/pkg/model/filesystem"
-	model_parser "github.com/buildbarn/bonanza/pkg/model/parser"
 	model_analysis_pb "github.com/buildbarn/bonanza/pkg/proto/model/analysis"
 	model_core_pb "github.com/buildbarn/bonanza/pkg/proto/model/core"
 	model_filesystem_pb "github.com/buildbarn/bonanza/pkg/proto/model/filesystem"
@@ -195,35 +193,16 @@ func (r *reposFilePropertiesResolver) OnUp() (path.ComponentWalker, error) {
 }
 
 func (c *baseComputer) ComputeFilePropertiesValue(ctx context.Context, key *model_analysis_pb.FileProperties_Key, e FilePropertiesEnvironment) (PatchedFilePropertiesValue, error) {
-	directoryAccessParametersValue := e.GetDirectoryAccessParametersValue(&model_analysis_pb.DirectoryAccessParameters_Key{})
-	if !directoryAccessParametersValue.IsSet() {
+	directoryDereferencers, gotDirectoryDereferencers := e.GetDirectoryDereferencersValue(&model_analysis_pb.DirectoryDereferencers_Key{})
+	if !gotDirectoryDereferencers {
 		return PatchedFilePropertiesValue{}, evaluation.ErrMissingDependency
-	}
-	directoryAccessParameters, err := model_filesystem.NewDirectoryAccessParametersFromProto(
-		directoryAccessParametersValue.Message.DirectoryAccessParameters,
-		c.buildSpecificationReference.GetReferenceFormat(),
-	)
-	if err != nil {
-		return PatchedFilePropertiesValue{}, fmt.Errorf("invalid directory access parameters: %w", err)
 	}
 
 	resolver := reposFilePropertiesResolver{
-		context: ctx,
-		directoryDereferencer: dereference.NewReadingDereferencer(
-			model_parser.NewStorageBackedParsedObjectReader(
-				c.objectDownloader,
-				directoryAccessParameters.GetEncoder(),
-				model_parser.NewMessageObjectParser[object.LocalReference, model_filesystem_pb.Directory](),
-			),
-		),
-		leavesDereferencer: dereference.NewReadingDereferencer(
-			model_parser.NewStorageBackedParsedObjectReader(
-				c.objectDownloader,
-				directoryAccessParameters.GetEncoder(),
-				model_parser.NewMessageObjectParser[object.LocalReference, model_filesystem_pb.Leaves](),
-			),
-		),
-		environment: e,
+		context:               ctx,
+		directoryDereferencer: directoryDereferencers.Directory,
+		leavesDereferencer:    directoryDereferencers.Leaves,
+		environment:           e,
 	}
 
 	canonicalRepo, ok := path.NewComponent(key.CanonicalRepo)

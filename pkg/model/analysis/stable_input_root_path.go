@@ -22,10 +22,17 @@ func (c *baseComputer) ComputeStableInputRootPathValue(ctx context.Context, key 
 	commandEncoder, gotCommandEncoder := e.GetCommandEncoderObjectValue(&model_analysis_pb.CommandEncoderObject_Key{})
 	directoryCreationParameters, gotDirectoryCreationParameters := e.GetDirectoryCreationParametersObjectValue(&model_analysis_pb.DirectoryCreationParametersObject_Key{})
 	directoryCreationParametersValue := e.GetDirectoryCreationParametersValue(&model_analysis_pb.DirectoryCreationParameters_Key{})
+	directoryDereferencers, gotDirectoryDereferencers := e.GetDirectoryDereferencersValue(&model_analysis_pb.DirectoryDereferencers_Key{})
 	fileCreationParametersValue := e.GetFileCreationParametersValue(&model_analysis_pb.FileCreationParameters_Key{})
 	fileReader, gotFileReader := e.GetFileReaderValue(&model_analysis_pb.FileReader_Key{})
 	repoPlatform := e.GetRegisteredRepoPlatformValue(&model_analysis_pb.RegisteredRepoPlatform_Key{})
-	if !gotCommandEncoder || !gotDirectoryCreationParameters || !directoryCreationParametersValue.IsSet() || !fileCreationParametersValue.IsSet() || !gotFileReader || !repoPlatform.IsSet() {
+	if !gotCommandEncoder ||
+		!gotDirectoryCreationParameters ||
+		!directoryCreationParametersValue.IsSet() ||
+		!gotDirectoryDereferencers ||
+		!fileCreationParametersValue.IsSet() ||
+		!gotFileReader ||
+		!repoPlatform.IsSet() {
 		return PatchedStableInputRootPathValue{}, evaluation.ErrMissingDependency
 	}
 
@@ -103,7 +110,7 @@ func (c *baseComputer) ComputeStableInputRootPathValue(ctx context.Context, key 
 
 	// Capture the standard output of "pwd" and trim the trailing
 	// newline character that it adds.
-	outputs, err := c.getOutputsFromActionResult(ctx, actionResult, directoryCreationParameters.DirectoryAccessParameters)
+	outputs, err := c.getOutputsFromActionResult(ctx, actionResult, directoryDereferencers)
 	if err != nil {
 		return PatchedStableInputRootPathValue{}, fmt.Errorf("failed to obtain outputs from action result: %w", err)
 	}

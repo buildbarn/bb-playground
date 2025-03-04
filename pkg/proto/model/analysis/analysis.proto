@@ -260,6 +260,10 @@ message DirectoryCreationParametersObject {
   message Key {}
 }
 
+message DirectoryDereferencers {
+  message Key {}
+}
+
 message FileAccessParameters {
   message Key {}
 
