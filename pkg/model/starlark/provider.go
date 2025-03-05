@@ -9,6 +9,7 @@ import (
 	pg_label "github.com/buildbarn/bonanza/pkg/label"
 	model_core "github.com/buildbarn/bonanza/pkg/model/core"
 	model_starlark_pb "github.com/buildbarn/bonanza/pkg/proto/model/starlark"
+	"github.com/buildbarn/bonanza/pkg/storage/object"
 
 	"go.starlark.net/starlark"
 )
@@ -131,7 +132,7 @@ func (p *Provider) CallInternal(thread *starlark.Thread, args starlark.Tuple, kw
 		}
 	}
 
-	return NewStructFromDict(p.ProviderInstanceProperties, fields), nil
+	return NewStructFromDict[object.LocalReference](p.ProviderInstanceProperties, fields), nil
 }
 
 func (p *Provider) EncodeValue(path map[starlark.Value]struct{}, currentIdentifier *pg_label.CanonicalStarlarkIdentifier, options *ValueEncodingOptions) (model_core.PatchedMessage[*model_starlark_pb.Value, model_core.CreatedObjectTree], bool, error) {

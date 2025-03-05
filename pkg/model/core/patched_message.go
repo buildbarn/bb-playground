@@ -28,15 +28,14 @@ func NewPatchedMessage[TMessage any, TMetadata ReferenceMetadata](
 
 func NewPatchedMessageFromExisting[
 	TMessage any,
-	TOutgoingReferences object.OutgoingReferences[TReference],
 	TMetadata ReferenceMetadata,
 	TMessagePtr interface {
 		*TMessage
 		proto.Message
 	},
-	TReference AddableReference,
+	TReference object.BasicReference,
 ](
-	existing Message[TMessagePtr, TOutgoingReferences],
+	existing Message[TMessagePtr, TReference],
 	createMetadata ReferenceMetadataCreator[TMetadata],
 ) PatchedMessage[TMessagePtr, TMetadata] {
 	patcher := NewReferenceMessagePatcher[TMetadata]()
@@ -85,9 +84,9 @@ func (m *PatchedMessage[T, TMetadata]) Discard() {
 }
 
 // SortAndSetReferences assigns indices to outgoing references
-func (m PatchedMessage[T, TMetadata]) SortAndSetReferences() (Message[T, object.OutgoingReferences[object.LocalReference]], []TMetadata) {
+func (m PatchedMessage[T, TMetadata]) SortAndSetReferences() (Message[T, object.LocalReference], []TMetadata) {
 	references, metadata := m.Patcher.SortAndSetReferences()
-	return Message[T, object.OutgoingReferences[object.LocalReference]]{
+	return Message[T, object.LocalReference]{
 		Message:            m.Message,
 		OutgoingReferences: references,
 	}, metadata

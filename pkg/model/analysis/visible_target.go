@@ -15,14 +15,13 @@ import (
 	model_core_pb "github.com/buildbarn/bonanza/pkg/proto/model/core"
 	model_starlark_pb "github.com/buildbarn/bonanza/pkg/proto/model/starlark"
 	"github.com/buildbarn/bonanza/pkg/storage/dag"
-	"github.com/buildbarn/bonanza/pkg/storage/object"
 )
 
-type getValueFromSelectGroupEnvironment interface {
-	GetSelectValue(*model_analysis_pb.Select_Key) model_core.Message[*model_analysis_pb.Select_Value, object.OutgoingReferences[object.LocalReference]]
+type getValueFromSelectGroupEnvironment[TReference any] interface {
+	GetSelectValue(*model_analysis_pb.Select_Key) model_core.Message[*model_analysis_pb.Select_Value, TReference]
 }
 
-func getValueFromSelectGroup(e getValueFromSelectGroupEnvironment, selectGroup *model_starlark_pb.Select_Group, permitNoMatch bool) (*model_starlark_pb.Value, error) {
+func getValueFromSelectGroup[TReference any](e getValueFromSelectGroupEnvironment[TReference], selectGroup *model_starlark_pb.Select_Group, permitNoMatch bool) (*model_starlark_pb.Value, error) {
 	if len(selectGroup.Conditions) > 0 {
 		conditionIdentifiers := make([]string, 0, len(selectGroup.Conditions))
 		for _, condition := range selectGroup.Conditions {
@@ -57,7 +56,7 @@ func getValueFromSelectGroup(e getValueFromSelectGroupEnvironment, selectGroup *
 	}
 }
 
-func checkVisibility(fromPackage label.CanonicalPackage, toLabel label.CanonicalLabel, toLabelVisibility model_core.Message[*model_starlark_pb.PackageGroup, object.OutgoingReferences[object.LocalReference]]) error {
+func checkVisibility[TReference any](fromPackage label.CanonicalPackage, toLabel label.CanonicalLabel, toLabelVisibility model_core.Message[*model_starlark_pb.PackageGroup, TReference]) error {
 	// Always permit access from within the same package.
 	if fromPackage == toLabel.GetCanonicalPackage() {
 		return nil
@@ -69,7 +68,7 @@ func checkVisibility(fromPackage label.CanonicalPackage, toLabel label.Canonical
 	for {
 		// Determine whether there are any overrides present at
 		// this level in the tree.
-		var overrides model_core.Message[*model_starlark_pb.PackageGroup_Subpackages_Overrides, object.OutgoingReferences[object.LocalReference]]
+		var overrides model_core.Message[*model_starlark_pb.PackageGroup_Subpackages_Overrides, TReference]
 		switch o := subpackages.Message.GetOverrides().(type) {
 		case *model_starlark_pb.PackageGroup_Subpackages_OverridesInline:
 			overrides = model_core.NewNestedMessage(subpackages, o.OverridesInline)
@@ -124,7 +123,7 @@ func checkVisibility(fromPackage label.CanonicalPackage, toLabel label.Canonical
 	}
 }
 
-func checkRuleTargetVisibility(fromPackage label.CanonicalPackage, ruleTargetLabel label.CanonicalLabel, ruleTarget model_core.Message[*model_starlark_pb.RuleTarget, object.OutgoingReferences[object.LocalReference]]) error {
+func checkRuleTargetVisibility[TReference any](fromPackage label.CanonicalPackage, ruleTargetLabel label.CanonicalLabel, ruleTarget model_core.Message[*model_starlark_pb.RuleTarget, TReference]) error {
 	inheritableAttrs := ruleTarget.Message.InheritableAttrs
 	if inheritableAttrs == nil {
 		return fmt.Errorf("rule target %#v has no inheritable attrs", ruleTargetLabel)
@@ -136,7 +135,7 @@ func checkRuleTargetVisibility(fromPackage label.CanonicalPackage, ruleTargetLab
 	)
 }
 
-func (c *baseComputer) ComputeVisibleTargetValue(ctx context.Context, key model_core.Message[*model_analysis_pb.VisibleTarget_Key, object.OutgoingReferences[object.LocalReference]], e VisibleTargetEnvironment) (PatchedVisibleTargetValue, error) {
+func (c *baseComputer[TReference]) ComputeVisibleTargetValue(ctx context.Context, key model_core.Message[*model_analysis_pb.VisibleTarget_Key, TReference], e VisibleTargetEnvironment[TReference]) (PatchedVisibleTargetValue, error) {
 	fromPackage, err := label.NewCanonicalPackage(key.Message.FromPackage)
 	if err != nil {
 		return PatchedVisibleTargetValue{}, fmt.Errorf("invalid from package: %w", err)

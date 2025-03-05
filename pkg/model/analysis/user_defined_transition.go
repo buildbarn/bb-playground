@@ -20,7 +20,6 @@ import (
 	model_starlark_pb "github.com/buildbarn/bonanza/pkg/proto/model/starlark"
 	"github.com/buildbarn/bonanza/pkg/starlark/unpack"
 	"github.com/buildbarn/bonanza/pkg/storage/dag"
-	"github.com/buildbarn/bonanza/pkg/storage/object"
 
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/emptypb"
@@ -30,17 +29,17 @@ import (
 
 var commandLineOptionRepoRootPackage = label.MustNewCanonicalPackage("@@bazel_tools+")
 
-type expectedTransitionOutput struct {
+type expectedTransitionOutput[TReference any] struct {
 	label         string
 	key           string
 	canonicalizer unpack.Canonicalizer
-	defaultValue  model_core.Message[*model_starlark_pb.Value, object.OutgoingReferences[object.LocalReference]]
+	defaultValue  model_core.Message[*model_starlark_pb.Value, TReference]
 }
 
-func (c *baseComputer) applyTransition(
+func (c *baseComputer[TReference]) applyTransition(
 	ctx context.Context,
-	configuration model_core.Message[*model_analysis_pb.Configuration, object.OutgoingReferences[object.LocalReference]],
-	expectedOutputs []expectedTransitionOutput,
+	configuration model_core.Message[*model_analysis_pb.Configuration, TReference],
+	expectedOutputs []expectedTransitionOutput[TReference],
 	thread *starlark.Thread,
 	outputs map[string]starlark.Value,
 	valueEncodingOptions *model_starlark.ValueEncodingOptions,
@@ -54,7 +53,7 @@ func (c *baseComputer) applyTransition(
 		ctx,
 		c.configurationBuildSettingOverrideReader,
 		model_core.NewNestedMessage(configuration, configuration.Message.BuildSettingOverrides),
-		func(override model_core.Message[*model_analysis_pb.Configuration_BuildSettingOverride, object.OutgoingReferences[object.LocalReference]]) (*model_core_pb.Reference, error) {
+		func(override model_core.Message[*model_analysis_pb.Configuration_BuildSettingOverride, TReference]) (*model_core_pb.Reference, error) {
 			if level, ok := override.Message.Level.(*model_analysis_pb.Configuration_BuildSettingOverride_Parent_); ok {
 				return level.Parent.Reference, nil
 			}
@@ -202,7 +201,7 @@ func (c *baseComputer) applyTransition(
 	), nil
 }
 
-func (c *baseComputer) ComputeUserDefinedTransitionValue(ctx context.Context, key model_core.Message[*model_analysis_pb.UserDefinedTransition_Key, object.OutgoingReferences[object.LocalReference]], e UserDefinedTransitionEnvironment) (PatchedUserDefinedTransitionValue, error) {
+func (c *baseComputer[TReference]) ComputeUserDefinedTransitionValue(ctx context.Context, key model_core.Message[*model_analysis_pb.UserDefinedTransition_Key, TReference], e UserDefinedTransitionEnvironment[TReference]) (PatchedUserDefinedTransitionValue, error) {
 	transitionIdentifier, err := label.NewCanonicalStarlarkIdentifier(key.Message.TransitionIdentifier)
 	if err != nil {
 		return PatchedUserDefinedTransitionValue{}, fmt.Errorf("invalid transition identifier: %w", key.Message.TransitionIdentifier)
@@ -362,7 +361,7 @@ func (c *baseComputer) ComputeUserDefinedTransitionValue(ctx context.Context, ke
 	inputs.Freeze()
 
 	// Preprocess the outputs that we expect to see.
-	expectedOutputs := make([]expectedTransitionOutput, 0, len(transitionDefinition.Message.Outputs))
+	expectedOutputs := make([]expectedTransitionOutput[TReference], 0, len(transitionDefinition.Message.Outputs))
 	expectedOutputLabels := make(map[string]string, len(transitionDefinition.Message.Outputs))
 	for _, output := range transitionDefinition.Message.Outputs {
 		// Resolve the actual build setting target corresponding
@@ -409,18 +408,17 @@ func (c *baseComputer) ComputeUserDefinedTransitionValue(ctx context.Context, ke
 			continue
 		}
 		var canonicalizer unpack.Canonicalizer
-		var defaultValue model_core.Message[*model_starlark_pb.Value, object.OutgoingReferences[object.LocalReference]]
+		var defaultValue model_core.Message[*model_starlark_pb.Value, TReference]
 		switch targetKind := targetValue.Message.Definition.GetKind().(type) {
 		case *model_starlark_pb.Target_Definition_LabelSetting:
 			// Build setting is a label_setting() or label_flag().
 			canonicalizer = model_starlark.NewLabelOrStringUnpackerInto(transitionPackage)
-			defaultValue = model_core.NewMessage(
+			defaultValue = model_core.NewSimpleMessage[TReference](
 				&model_starlark_pb.Value{
 					Kind: &model_starlark_pb.Value_Label{
 						Label: targetKind.LabelSetting.BuildSettingDefault,
 					},
 				},
-				object.OutgoingReferences[object.LocalReference](object.OutgoingReferencesList{}),
 			)
 		case *model_starlark_pb.Target_Definition_RuleTarget:
 			// Build setting is written in Starlark.
@@ -450,12 +448,7 @@ func (c *baseComputer) ComputeUserDefinedTransitionValue(ctx context.Context, ke
 				return PatchedUserDefinedTransitionValue{}, fmt.Errorf("failed to decode build setting type for rule %#v used by build setting %#v: %w", targetKind.RuleTarget.RuleIdentifier, visibleBuildSettingLabel, err)
 			}
 			canonicalizer = buildSettingType.GetCanonicalizer()
-			defaultValue, _ = model_core.NewPatchedMessageFromExisting(
-				model_core.NewNestedMessage(targetValue, targetKind.RuleTarget.BuildSettingDefault),
-				func(index int) dag.ObjectContentsWalker {
-					return dag.ExistingObjectContentsWalker
-				},
-			).SortAndSetReferences()
+			defaultValue = model_core.NewNestedMessage(targetValue, targetKind.RuleTarget.BuildSettingDefault)
 		default:
 			return PatchedUserDefinedTransitionValue{}, fmt.Errorf("target %#v is not a label setting or rule target", visibleBuildSettingLabel)
 		}
@@ -464,14 +457,14 @@ func (c *baseComputer) ComputeUserDefinedTransitionValue(ctx context.Context, ke
 			return PatchedUserDefinedTransitionValue{}, fmt.Errorf("outputs %#v and %#v both refer to build setting %#v", existing, output, visibleBuildSettingLabel)
 		}
 		expectedOutputLabels[visibleBuildSettingLabel] = output
-		expectedOutputs = append(expectedOutputs, expectedTransitionOutput{
+		expectedOutputs = append(expectedOutputs, expectedTransitionOutput[TReference]{
 			label:         visibleBuildSettingLabel,
 			key:           output,
 			canonicalizer: canonicalizer,
 			defaultValue:  defaultValue,
 		})
 	}
-	slices.SortFunc(expectedOutputs, func(a, b expectedTransitionOutput) int {
+	slices.SortFunc(expectedOutputs, func(a, b expectedTransitionOutput[TReference]) int {
 		return strings.Compare(a.label, b.label)
 	})
 

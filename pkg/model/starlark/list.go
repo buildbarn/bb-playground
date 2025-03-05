@@ -23,40 +23,41 @@ import (
 //
 // Note that this function does not perform deduplication of leaf
 // elements. Only parents are deduplicated.
-func AllListLeafElementsSkippingDuplicateParents[TOutgoingReferences object.OutgoingReferences[object.LocalReference]](
+func AllListLeafElementsSkippingDuplicateParents[TReference object.BasicReference](
 	ctx context.Context,
-	reader model_parser.ParsedObjectReader[object.LocalReference, model_core.Message[[]*model_starlark_pb.List_Element, TOutgoingReferences]],
-	rootList model_core.Message[[]*model_starlark_pb.List_Element, TOutgoingReferences],
+	reader model_parser.ParsedObjectReader[TReference, model_core.Message[[]*model_starlark_pb.List_Element, TReference]],
+	rootList model_core.Message[[]*model_starlark_pb.List_Element, TReference],
 	listsSeen map[object.LocalReference]struct{},
 	errOut *error,
-) iter.Seq[model_core.Message[*model_starlark_pb.Value, TOutgoingReferences]] {
+) iter.Seq[model_core.Message[*model_starlark_pb.Value, TReference]] {
 	allLeaves := btree.AllLeaves(
 		ctx,
 		reader,
 		rootList,
-		func(element model_core.Message[*model_starlark_pb.List_Element, TOutgoingReferences]) (*model_core_pb.Reference, error) {
+		func(element model_core.Message[*model_starlark_pb.List_Element, TReference]) (*model_core_pb.Reference, error) {
 			if level, ok := element.Message.Level.(*model_starlark_pb.List_Element_Parent_); ok {
 				listReferenceMessage := level.Parent.Reference
 				listReference, err := model_core.FlattenReference(model_core.NewNestedMessage(element, level.Parent.Reference))
 				if err != nil {
 					return nil, err
 				}
-				if _, ok := listsSeen[listReference]; ok {
+				localReference := listReference.GetLocalReference()
+				if _, ok := listsSeen[localReference]; ok {
 					// Parent was already seen before.
 					// Skip it.
 					return nil, nil
 				}
 
 				// Parent was not seen before. Enter it.
-				listsSeen[listReference] = struct{}{}
+				listsSeen[localReference] = struct{}{}
 				return listReferenceMessage, nil
 			}
 			return nil, nil
 		},
 		errOut,
 	)
-	return func(yield func(model_core.Message[*model_starlark_pb.Value, TOutgoingReferences]) bool) {
-		allLeaves(func(entry model_core.Message[*model_starlark_pb.List_Element, TOutgoingReferences]) bool {
+	return func(yield func(model_core.Message[*model_starlark_pb.Value, TReference]) bool) {
+		allLeaves(func(entry model_core.Message[*model_starlark_pb.List_Element, TReference]) bool {
 			switch level := entry.Message.Level.(type) {
 			case *model_starlark_pb.List_Element_Leaf:
 				return yield(model_core.NewNestedMessage(entry, level.Leaf))

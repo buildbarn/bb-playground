@@ -1,9 +1,8 @@
 package filesystem
 
 import (
-	"context"
-
 	"github.com/buildbarn/bb-storage/pkg/util"
+	model_core "github.com/buildbarn/bonanza/pkg/model/core"
 	"github.com/buildbarn/bonanza/pkg/model/encoding"
 	model_parser "github.com/buildbarn/bonanza/pkg/model/parser"
 	model_filesystem_pb "github.com/buildbarn/bonanza/pkg/proto/model/filesystem"
@@ -53,12 +52,10 @@ func NewFileAccessParametersFromProto(m *model_filesystem_pb.FileAccessParameter
 // TODO: Maybe we should simply throw out this method? It doesn't
 // provide a lot of value.
 func (p *FileAccessParameters) DecodeFileContentsList(contents *object.Contents) ([]*model_filesystem_pb.FileContents, error) {
-	decodedData, err := p.fileContentsListEncoder.DecodeBinary(contents.GetPayload())
-	if err != nil {
-		return nil, err
-	}
-	fileContentsList, _, err := model_parser.NewMessageListObjectParser[object.LocalReference, model_filesystem_pb.FileContents]().
-		ParseObject(context.Background(), contents.GetReference(), contents, decodedData)
+	fileContentsList, _, err := model_parser.NewChainedObjectParser(
+		model_parser.NewEncodedObjectParser[object.LocalReference](p.fileContentsListEncoder),
+		model_parser.NewMessageListObjectParser[object.LocalReference, model_filesystem_pb.FileContents](),
+	).ParseObject(model_core.NewMessage(contents.GetPayload(), object.OutgoingReferences[object.LocalReference](contents)))
 	if err != nil {
 		return nil, err
 	}

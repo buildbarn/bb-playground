@@ -45,7 +45,7 @@ gomock(
     name = "mocks_evaluation",
     out = "mocks_evaluation_test.go",
     interfaces = [
-        "Computer",
+        "ComputerForTesting",
         "ValueChildrenStorer",
     ],
     library = "//pkg/evaluation",

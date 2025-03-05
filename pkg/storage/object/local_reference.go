@@ -44,6 +44,8 @@ type LocalReference struct {
 	rawReference [referenceSizeBytes]byte
 }
 
+var _ BasicReference = LocalReference{}
+
 func MustNewSHA256V1LocalReference(hash string, sizeBytes uint32, height uint8, degree uint16, maximumTotalParentsSizeBytes uint64) LocalReference {
 	var rawReference [40]byte
 	if n, err := hex.Decode(rawReference[:], []byte(hash)); err != nil {

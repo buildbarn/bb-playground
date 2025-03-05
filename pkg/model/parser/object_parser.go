@@ -1,11 +1,9 @@
 package parser
 
 import (
-	"context"
-
-	"github.com/buildbarn/bonanza/pkg/storage/object"
+	model_core "github.com/buildbarn/bonanza/pkg/model/core"
 )
 
 type ObjectParser[TReference, TParsedObject any] interface {
-	ParseObject(ctx context.Context, reference TReference, outgoingReferences object.OutgoingReferences[TReference], data []byte) (TParsedObject, int, error)
+	ParseObject(in model_core.Message[[]byte, TReference]) (TParsedObject, int, error)
 }

@@ -25,31 +25,34 @@ func NewResolvableHandleAllocatingFileFactory(base FileFactory, handleAllocation
 }
 
 func (ff *resolvableHandleAllocatingFileFactory) resolveHandle(r io.ByteReader) (virtual.DirectoryChild, virtual.Status) {
-	referenceFormatValue, err := varint.ReadForward[object_pb.ReferenceFormat_Value](r)
-	if err != nil {
-		return virtual.DirectoryChild{}, virtual.StatusErrBadHandle
-	}
-	referenceFormat, err := object.NewReferenceFormat(referenceFormatValue)
-	if err != nil {
-		return virtual.DirectoryChild{}, virtual.StatusErrBadHandle
-	}
-	referenceSizeBytes := referenceFormat.GetReferenceSizeBytes()
-	rawReference := make([]byte, 0, referenceSizeBytes)
-	for i := 0; i < referenceSizeBytes; i++ {
-		b, err := r.ReadByte()
-		if err != nil {
-			return virtual.DirectoryChild{}, virtual.StatusErrBadHandle
-		}
-		rawReference = append(rawReference, b)
-	}
-	reference, err := referenceFormat.NewLocalReference(rawReference)
+	endBytes, err := varint.ReadForward[uint64](r)
 	if err != nil {
 		return virtual.DirectoryChild{}, virtual.StatusErrBadHandle
 	}
 
-	endBytes, err := varint.ReadForward[uint64](r)
-	if err != nil {
-		return virtual.DirectoryChild{}, virtual.StatusErrBadHandle
+	var reference object.LocalReference
+	if endBytes > 0 {
+		referenceFormatValue, err := varint.ReadForward[object_pb.ReferenceFormat_Value](r)
+		if err != nil {
+			return virtual.DirectoryChild{}, virtual.StatusErrBadHandle
+		}
+		referenceFormat, err := object.NewReferenceFormat(referenceFormatValue)
+		if err != nil {
+			return virtual.DirectoryChild{}, virtual.StatusErrBadHandle
+		}
+		referenceSizeBytes := referenceFormat.GetReferenceSizeBytes()
+		rawReference := make([]byte, 0, referenceSizeBytes)
+		for i := 0; i < referenceSizeBytes; i++ {
+			b, err := r.ReadByte()
+			if err != nil {
+				return virtual.DirectoryChild{}, virtual.StatusErrBadHandle
+			}
+			rawReference = append(rawReference, b)
+		}
+		reference, err = referenceFormat.NewLocalReference(rawReference)
+		if err != nil {
+			return virtual.DirectoryChild{}, virtual.StatusErrBadHandle
+		}
 	}
 
 	b, err := r.ReadByte()
@@ -70,9 +73,11 @@ func (ff *resolvableHandleAllocatingFileFactory) resolveHandle(r io.ByteReader) 
 }
 
 func computeFileID(fileContents model_filesystem.FileContentsEntry[object.LocalReference], isExecutable bool) io.WriterTo {
-	handle := varint.AppendForward(nil, fileContents.Reference.GetReferenceFormat().ToProto())
-	handle = append(handle, fileContents.Reference.GetRawReference()...)
-	handle = varint.AppendForward(handle, fileContents.EndBytes)
+	handle := varint.AppendForward(nil, fileContents.EndBytes)
+	if fileContents.EndBytes > 0 {
+		handle = varint.AppendForward(handle, fileContents.Reference.GetReferenceFormat().ToProto())
+		handle = append(handle, fileContents.Reference.GetRawReference()...)
+	}
 	if isExecutable {
 		handle = append(handle, 0x01)
 	} else {

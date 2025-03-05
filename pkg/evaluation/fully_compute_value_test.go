@@ -25,9 +25,9 @@ func TestFullyComputeValue(t *testing.T) {
 		// implementation of Computer that attempts to compute
 		// the Fibonacci sequence recursively. Due to
 		// memoization, this should run in polynomial time.
-		computer := NewMockComputer(ctrl)
+		computer := NewMockComputerForTesting(ctrl)
 		computer.EXPECT().ComputeMessageValue(gomock.Any(), gomock.Any(), gomock.Any()).
-			DoAndReturn(func(ctx context.Context, key model_core.Message[proto.Message, object.OutgoingReferences[object.LocalReference]], e evaluation.Environment) (model_core.PatchedMessage[proto.Message, dag.ObjectContentsWalker], error) {
+			DoAndReturn(func(ctx context.Context, key model_core.Message[proto.Message, object.LocalReference], e evaluation.Environment[object.LocalReference]) (model_core.PatchedMessage[proto.Message, dag.ObjectContentsWalker], error) {
 				// Base case: fib(0) and fib(1).
 				k := key.Message.(*wrapperspb.UInt32Value)
 				if k.Value <= 1 {
@@ -60,11 +60,10 @@ func TestFullyComputeValue(t *testing.T) {
 		m, err := evaluation.FullyComputeValue(
 			ctx,
 			computer,
-			model_core.NewMessage[proto.Message, object.OutgoingReferences[object.LocalReference]](
+			model_core.NewSimpleMessage[object.LocalReference, proto.Message](
 				&wrapperspb.UInt32Value{
 					Value: 93,
 				},
-				object.OutgoingReferencesList{},
 			),
 			valueChildrenStorer.Call,
 		)

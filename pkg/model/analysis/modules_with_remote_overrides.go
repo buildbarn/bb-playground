@@ -19,9 +19,10 @@ import (
 	model_analysis_pb "github.com/buildbarn/bonanza/pkg/proto/model/analysis"
 	model_starlark_pb "github.com/buildbarn/bonanza/pkg/proto/model/starlark"
 	pg_starlark "github.com/buildbarn/bonanza/pkg/starlark"
+	"github.com/buildbarn/bonanza/pkg/storage/object"
 )
 
-func (c *baseComputer) ComputeModulesWithRemoteOverridesValue(ctx context.Context, key *model_analysis_pb.ModulesWithRemoteOverrides_Key, e ModulesWithRemoteOverridesEnvironment) (PatchedModulesWithRemoteOverridesValue, error) {
+func (c *baseComputer[TReference]) ComputeModulesWithRemoteOverridesValue(ctx context.Context, key *model_analysis_pb.ModulesWithRemoteOverrides_Key, e ModulesWithRemoteOverridesEnvironment[TReference]) (PatchedModulesWithRemoteOverridesValue, error) {
 	rootModuleValue := e.GetRootModuleValue(&model_analysis_pb.RootModule_Key{})
 	if !rootModuleValue.IsSet() {
 		return PatchedModulesWithRemoteOverridesValue{}, evaluation.ErrMissingDependency
@@ -149,7 +150,7 @@ func (h *overrideExtractingModuleDotBazelHandler) RepositoryRuleOverride(moduleN
 	for key, value := range attrs {
 		attrsMap[key] = value
 	}
-	fields, _, err := model_starlark.NewStructFromDict(nil, attrsMap).
+	fields, _, err := model_starlark.NewStructFromDict[object.LocalReference](nil, attrsMap).
 		EncodeStructFields(map[starlark.Value]struct{}{}, h.valueEncodingOptions)
 	if err != nil {
 		return err

@@ -83,11 +83,7 @@ func (p *ReferenceMessagePatcher[TMetadata]) addReferenceMessage(message *core.R
 	}
 }
 
-type AddableReference interface {
-	GetLocalReference() object.LocalReference
-}
-
-type referenceMessageAdder[TMetadata ReferenceMetadata, TReference AddableReference] struct {
+type referenceMessageAdder[TMetadata ReferenceMetadata, TReference object.BasicReference] struct {
 	patcher            *ReferenceMessagePatcher[TMetadata]
 	outgoingReferences object.OutgoingReferences[TReference]
 	createMetadata     ReferenceMetadataCreator[TMetadata]
@@ -180,7 +176,7 @@ func (p *ReferenceMessagePatcher[TMetadata]) GetReferencesSizeBytes() int {
 // object.NewContents() to construct an actual object for storage. In
 // addition to that, a list of user provided metadata is returned that
 // sorted along the same order.
-func (p *ReferenceMessagePatcher[TMetadata]) SortAndSetReferences() (object.OutgoingReferencesList, []TMetadata) {
+func (p *ReferenceMessagePatcher[TMetadata]) SortAndSetReferences() (object.OutgoingReferencesList[object.LocalReference], []TMetadata) {
 	// Created a sorted list of outgoing references.
 	sortedReferences := referencesList{
 		Slice: make(ds.Slice[object.LocalReference], 0, len(p.messagesByReference)),
@@ -201,7 +197,7 @@ func (p *ReferenceMessagePatcher[TMetadata]) SortAndSetReferences() (object.Outg
 		}
 		sortedMetadata = append(sortedMetadata, referenceMessages.metadata)
 	}
-	return object.OutgoingReferencesList(sortedReferences.Slice), sortedMetadata
+	return object.OutgoingReferencesList[object.LocalReference](sortedReferences.Slice), sortedMetadata
 }
 
 type referencesList struct {

@@ -10,7 +10,7 @@ import (
 	"github.com/buildbarn/bonanza/pkg/storage/dag"
 )
 
-func (c *baseComputer) ComputeDirectoryCreationParametersValue(ctx context.Context, key *model_analysis_pb.DirectoryCreationParameters_Key, e DirectoryCreationParametersEnvironment) (PatchedDirectoryCreationParametersValue, error) {
+func (c *baseComputer[TReference]) ComputeDirectoryCreationParametersValue(ctx context.Context, key *model_analysis_pb.DirectoryCreationParameters_Key, e DirectoryCreationParametersEnvironment[TReference]) (PatchedDirectoryCreationParametersValue, error) {
 	buildSpecification := e.GetBuildSpecificationValue(&model_analysis_pb.BuildSpecification_Key{})
 	if !buildSpecification.IsSet() {
 		return PatchedDirectoryCreationParametersValue{}, evaluation.ErrMissingDependency
@@ -20,7 +20,7 @@ func (c *baseComputer) ComputeDirectoryCreationParametersValue(ctx context.Conte
 	}), nil
 }
 
-func (c *baseComputer) ComputeDirectoryCreationParametersObjectValue(ctx context.Context, key *model_analysis_pb.DirectoryCreationParametersObject_Key, e DirectoryCreationParametersObjectEnvironment) (*model_filesystem.DirectoryCreationParameters, error) {
+func (c *baseComputer[TReference]) ComputeDirectoryCreationParametersObjectValue(ctx context.Context, key *model_analysis_pb.DirectoryCreationParametersObject_Key, e DirectoryCreationParametersObjectEnvironment[TReference]) (*model_filesystem.DirectoryCreationParameters, error) {
 	directoryCreationParameters := e.GetDirectoryCreationParametersValue(&model_analysis_pb.DirectoryCreationParameters_Key{})
 	if !directoryCreationParameters.IsSet() {
 		return nil, evaluation.ErrMissingDependency

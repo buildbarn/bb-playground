@@ -96,32 +96,6 @@ func (ReferenceFormat) NewLocalReference(rawReference []byte) (r LocalReference,
 	return
 }
 
-// GetBogusReference returns a reference that is valid according to all
-// of the range restrictions of the reference format, but for which it's
-// impossible to ever construct valid object contents.
-//
-// This function can be used to simulate the creation of messages,
-// without actually computing their contents and references.
-func (ReferenceFormat) GetBogusReference() LocalReference {
-	return LocalReference{
-		rawReference: [...]byte{
-			// SHA-256 hash.
-			0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-			0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-			0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-			0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-			// Size in bytes.
-			0x01, 0x00, 0x00,
-			// Height.
-			0x00,
-			// Degree.
-			0x00, 0x00,
-			// Maximum parents total size in bytes.
-			0x00, 0x00,
-		},
-	}
-}
-
 func (ReferenceFormat) GetMaximumObjectSizeBytes() int {
 	return maximumObjectSizeBytes
 }

@@ -15,7 +15,6 @@ import (
 	model_starlark "github.com/buildbarn/bonanza/pkg/model/starlark"
 	model_analysis_pb "github.com/buildbarn/bonanza/pkg/proto/model/analysis"
 	model_starlark_pb "github.com/buildbarn/bonanza/pkg/proto/model/starlark"
-	"github.com/buildbarn/bonanza/pkg/storage/object"
 
 	"go.starlark.net/starlark"
 	"go.starlark.net/syntax"
@@ -26,7 +25,7 @@ var buildDotBazelTargetNames = []label.TargetName{
 	label.MustNewTargetName("BUILD"),
 }
 
-func (c *baseComputer) ComputePackageValue(ctx context.Context, key *model_analysis_pb.Package_Key, e PackageEnvironment) (PatchedPackageValue, error) {
+func (c *baseComputer[TReference]) ComputePackageValue(ctx context.Context, key *model_analysis_pb.Package_Key, e PackageEnvironment[TReference]) (PatchedPackageValue, error) {
 	canonicalPackage, err := label.NewCanonicalPackage(key.Label)
 	if err != nil {
 		return PatchedPackageValue{}, fmt.Errorf("invalid package label: %w", err)
@@ -65,7 +64,6 @@ func (c *baseComputer) ComputePackageValue(ctx context.Context, key *model_analy
 		buildFileLabel := canonicalPackage.AppendTargetName(buildFileName)
 		buildFileContentsEntry, err := model_filesystem.NewFileContentsEntryFromProto(
 			model_core.NewNestedMessage(buildFileProperties, buildFileProperties.Message.Exists.Contents),
-			c.getReferenceFormat(),
 		)
 		if err != nil {
 			return PatchedPackageValue{}, fmt.Errorf("invalid contents for file %#v: %w", buildFileLabel.String(), err)
@@ -103,14 +101,14 @@ func (c *baseComputer) ComputePackageValue(ctx context.Context, key *model_analy
 		targetRegistrar := model_starlark.NewTargetRegistrar(c.getInlinedTreeOptions(), repoDefaultAttrs)
 		thread.SetLocal(model_starlark.TargetRegistrarKey, targetRegistrar)
 
-		thread.SetLocal(model_starlark.GlobalResolverKey, func(identifier label.CanonicalStarlarkIdentifier) (model_core.Message[*model_starlark_pb.Value, object.OutgoingReferences[object.LocalReference]], error) {
+		thread.SetLocal(model_starlark.GlobalResolverKey, func(identifier label.CanonicalStarlarkIdentifier) (model_core.Message[*model_starlark_pb.Value, TReference], error) {
 			canonicalLabel := identifier.GetCanonicalLabel()
 			compiledBzlFile := e.GetCompiledBzlFileValue(&model_analysis_pb.CompiledBzlFile_Key{
 				Label:               canonicalLabel.String(),
 				BuiltinsModuleNames: trimBuiltinModuleNames(builtinsModuleNames, canonicalLabel.GetCanonicalRepo().GetModuleInstance().GetModule()),
 			})
 			if !compiledBzlFile.IsSet() {
-				return model_core.Message[*model_starlark_pb.Value, object.OutgoingReferences[object.LocalReference]]{}, evaluation.ErrMissingDependency
+				return model_core.Message[*model_starlark_pb.Value, TReference]{}, evaluation.ErrMissingDependency
 			}
 			return model_starlark.GetStructFieldValue(
 				ctx,

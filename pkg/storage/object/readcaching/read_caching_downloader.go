@@ -11,7 +11,8 @@ import (
 )
 
 type ReadCachingReference[T any] interface {
-	GetLocalReference() object.LocalReference
+	object.BasicReference
+
 	Flatten() T
 }
 

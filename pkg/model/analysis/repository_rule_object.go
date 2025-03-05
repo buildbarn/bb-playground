@@ -12,7 +12,6 @@ import (
 	model_starlark "github.com/buildbarn/bonanza/pkg/model/starlark"
 	model_analysis_pb "github.com/buildbarn/bonanza/pkg/proto/model/analysis"
 	model_starlark_pb "github.com/buildbarn/bonanza/pkg/proto/model/starlark"
-	"github.com/buildbarn/bonanza/pkg/storage/object"
 
 	"go.starlark.net/starlark"
 )
@@ -22,7 +21,7 @@ type RepositoryRule struct {
 	Attrs          AttrsDict
 }
 
-func (c *baseComputer) ComputeRepositoryRuleObjectValue(ctx context.Context, key *model_analysis_pb.RepositoryRuleObject_Key, e RepositoryRuleObjectEnvironment) (*RepositoryRule, error) {
+func (c *baseComputer[TReference]) ComputeRepositoryRuleObjectValue(ctx context.Context, key *model_analysis_pb.RepositoryRuleObject_Key, e RepositoryRuleObjectEnvironment[TReference]) (*RepositoryRule, error) {
 	repositoryRuleValue := e.GetCompiledBzlFileGlobalValue(&model_analysis_pb.CompiledBzlFileGlobal_Key{
 		Identifier: key.Identifier,
 	})
@@ -69,7 +68,7 @@ type AttrsDict struct {
 	Private starlark.StringDict
 }
 
-func (c *baseComputer) decodeAttrsDict(ctx context.Context, encodedAttrs model_core.Message[[]*model_starlark_pb.NamedAttr, object.OutgoingReferences[object.LocalReference]], labelCreator func(label.ResolvedLabel) (starlark.Value, error)) (AttrsDict, error) {
+func (c *baseComputer[TReference]) decodeAttrsDict(ctx context.Context, encodedAttrs model_core.Message[[]*model_starlark_pb.NamedAttr, TReference], labelCreator func(label.ResolvedLabel) (starlark.Value, error)) (AttrsDict, error) {
 	attrsDict := AttrsDict{
 		Private: starlark.StringDict{},
 	}

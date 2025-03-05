@@ -12,6 +12,7 @@ import (
 	model_core "github.com/buildbarn/bonanza/pkg/model/core"
 	model_starlark_pb "github.com/buildbarn/bonanza/pkg/proto/model/starlark"
 	"github.com/buildbarn/bonanza/pkg/starlark/unpack"
+	"github.com/buildbarn/bonanza/pkg/storage/object"
 
 	"go.starlark.net/lib/json"
 	"go.starlark.net/starlark"
@@ -170,7 +171,7 @@ var BuildFileBuiltins = starlark.StringDict{
 	"package": starlark.NewBuiltin(
 		"package",
 		func(thread *starlark.Thread, b *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
-			targetRegistrar := thread.Local(TargetRegistrarKey).(*TargetRegistrar)
+			targetRegistrar := thread.Local(TargetRegistrarKey).(*TargetRegistrar[object.LocalReference])
 			if targetRegistrar.setDefaultInheritableAttrs {
 				return nil, fmt.Errorf("%s: function can only be invoked once", b.Name())
 			}
@@ -207,7 +208,7 @@ var BuildFileBuiltins = starlark.StringDict{
 }
 
 func labelSetting(thread *starlark.Thread, b *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple, flag bool) (starlark.Value, error) {
-	targetRegistrar := thread.Local(TargetRegistrarKey).(*TargetRegistrar)
+	targetRegistrar := thread.Local(TargetRegistrarKey).(*TargetRegistrar[object.LocalReference])
 	if targetRegistrar == nil {
 		return nil, errors.New("targets cannot be registered from within this context")
 	}
@@ -314,7 +315,7 @@ func init() {
 				return NewAspect(nil, &model_starlark_pb.Aspect_Definition{}), nil
 			},
 		),
-		"attr": NewStructFromDict(nil, map[string]any{
+		"attr": NewStructFromDict[object.LocalReference](nil, map[string]any{
 			"bool": starlark.NewBuiltin(
 				"attr.bool",
 				func(thread *starlark.Thread, b *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
@@ -728,7 +729,7 @@ func init() {
 				},
 			),
 		}),
-		"config": NewStructFromDict(nil, map[string]any{
+		"config": NewStructFromDict[object.LocalReference](nil, map[string]any{
 			"bool": starlark.NewBuiltin(
 				"config.bool",
 				func(thread *starlark.Thread, b *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
@@ -844,7 +845,7 @@ func init() {
 				},
 			),
 		}),
-		"config_common": NewStructFromDict(nil, map[string]any{
+		"config_common": NewStructFromDict[object.LocalReference](nil, map[string]any{
 			"toolchain_type": starlark.NewBuiltin(
 				"config_common.toolchain_type",
 				func(thread *starlark.Thread, b *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
@@ -959,14 +960,15 @@ func init() {
 				}
 				var direct []starlark.Value
 				order := "default"
-				var transitive []*Depset
+				// TODO: This should use TReference!
+				var transitive []*Depset[object.LocalReference]
 				if err := starlark.UnpackArgs(
 					b.Name(), args, kwargs,
 					// Positional arguments.
 					"direct?", unpack.Bind(thread, &direct, unpack.List(unpack.Any)),
 					// Keyword arguments.
 					"order?", unpack.Bind(thread, &order, unpack.String),
-					"transitive?", unpack.Bind(thread, &transitive, unpack.List(unpack.Type[*Depset]("depset"))),
+					"transitive?", unpack.Bind(thread, &transitive, unpack.List(unpack.Type[*Depset[object.LocalReference]]("depset"))),
 				); err != nil {
 					return nil, err
 				}
@@ -1004,7 +1006,7 @@ func init() {
 				return NewExecGroup(execCompatibleWith, toolchains), nil
 			},
 		),
-		"json": NewStructFromDict(nil, stringDictToStructFields(json.Module.Members)),
+		"json": NewStructFromDict[object.LocalReference](nil, stringDictToStructFields(json.Module.Members)),
 		"module_extension": starlark.NewBuiltin(
 			"module_extension",
 			func(thread *starlark.Thread, b *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
@@ -1033,11 +1035,11 @@ func init() {
 				return NewModuleExtension(NewStarlarkModuleExtensionDefinition(implementation, tagClasses)), nil
 			},
 		),
-		"native": NewStructFromDict(nil, map[string]any{
+		"native": NewStructFromDict[object.LocalReference](nil, map[string]any{
 			"alias": starlark.NewBuiltin(
 				"native.alias",
 				func(thread *starlark.Thread, b *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
-					targetRegistrar := thread.Local(TargetRegistrarKey).(*TargetRegistrar)
+					targetRegistrar := thread.Local(TargetRegistrarKey).(*TargetRegistrar[object.LocalReference])
 					if targetRegistrar == nil {
 						return nil, errors.New("targets cannot be registered from within this context")
 					}
@@ -1140,7 +1142,7 @@ func init() {
 			"exports_files": starlark.NewBuiltin(
 				"native.exports_files",
 				func(thread *starlark.Thread, b *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
-					targetRegistrar := thread.Local(TargetRegistrarKey).(*TargetRegistrar)
+					targetRegistrar := thread.Local(TargetRegistrarKey).(*TargetRegistrar[object.LocalReference])
 					if targetRegistrar == nil {
 						return nil, errors.New("targets cannot be registered from within this context")
 					}
@@ -1241,7 +1243,7 @@ func init() {
 			"package_group": starlark.NewBuiltin(
 				"native.package_group",
 				func(thread *starlark.Thread, b *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
-					targetRegistrar := thread.Local(TargetRegistrarKey).(*TargetRegistrar)
+					targetRegistrar := thread.Local(TargetRegistrarKey).(*TargetRegistrar[object.LocalReference])
 					if targetRegistrar == nil {
 						return nil, errors.New("targets cannot be registered from within this context")
 					}
@@ -1464,7 +1466,7 @@ func init() {
 					attrs[name] = NewAttr(NewOutputAttrType(template), starlark.String(template))
 				}
 
-				return NewRule(nil, NewStarlarkRuleDefinition(
+				return NewRule[object.LocalReference](nil, NewStarlarkRuleDefinition(
 					attrs,
 					buildSetting,
 					cfg,
@@ -1487,7 +1489,7 @@ func init() {
 				for _, kwarg := range kwargs {
 					entries[string(kwarg[0].(starlark.String))] = kwarg[1]
 				}
-				return NewStructFromDict(nil, entries), nil
+				return NewStructFromDict[object.LocalReference](nil, entries), nil
 			},
 		),
 		"subrule": starlark.NewBuiltin(

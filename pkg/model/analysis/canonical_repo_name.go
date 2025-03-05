@@ -13,7 +13,7 @@ import (
 	"github.com/buildbarn/bonanza/pkg/storage/dag"
 )
 
-func (c *baseComputer) ComputeCanonicalRepoNameValue(ctx context.Context, key *model_analysis_pb.CanonicalRepoName_Key, e CanonicalRepoNameEnvironment) (PatchedCanonicalRepoNameValue, error) {
+func (c *baseComputer[TReference]) ComputeCanonicalRepoNameValue(ctx context.Context, key *model_analysis_pb.CanonicalRepoName_Key, e CanonicalRepoNameEnvironment[TReference]) (PatchedCanonicalRepoNameValue, error) {
 	fromCanonicalRepo, err := label.NewCanonicalRepo(key.FromCanonicalRepo)
 	if err != nil {
 		return PatchedCanonicalRepoNameValue{}, fmt.Errorf("invalid canonical repo: %w", err)

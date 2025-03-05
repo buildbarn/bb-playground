@@ -16,7 +16,6 @@ import (
 	model_filesystem_pb "github.com/buildbarn/bonanza/pkg/proto/model/filesystem"
 	pg_starlark "github.com/buildbarn/bonanza/pkg/starlark"
 	"github.com/buildbarn/bonanza/pkg/storage/dag"
-	"github.com/buildbarn/bonanza/pkg/storage/object"
 
 	"go.starlark.net/starlark"
 )
@@ -134,7 +133,7 @@ func getModuleDotBazelURL(registryURL string, module label.Module, moduleVersion
 	return url.JoinPath(registryURL, "modules", module.String(), moduleVersion.String(), moduleDotBazelFilename)
 }
 
-func (c *baseComputer) ComputeModuleRoughBuildListValue(ctx context.Context, key *model_analysis_pb.ModuleRoughBuildList_Key, e ModuleRoughBuildListEnvironment) (PatchedModuleRoughBuildListValue, error) {
+func (c *baseComputer[TReference]) ComputeModuleRoughBuildListValue(ctx context.Context, key *model_analysis_pb.ModuleRoughBuildList_Key, e ModuleRoughBuildListEnvironment[TReference]) (PatchedModuleRoughBuildListValue, error) {
 	rootModuleValue := e.GetRootModuleValue(&model_analysis_pb.RootModule_Key{})
 	modulesWithOverridesValue := e.GetModulesWithOverridesValue(&model_analysis_pb.ModulesWithOverrides_Key{})
 	registryURLsValue := e.GetModuleRegistryUrlsValue(&model_analysis_pb.ModuleRegistryUrls_Key{})
@@ -172,7 +171,7 @@ ProcessModule:
 	for len(modulesToCheck) > 0 {
 		module := modulesToCheck[0]
 		modulesToCheck = modulesToCheck[1:]
-		var moduleFileContents model_core.Message[*model_filesystem_pb.FileContents, object.OutgoingReferences[object.LocalReference]]
+		var moduleFileContents model_core.Message[*model_filesystem_pb.FileContents, TReference]
 		var buildListEntry *model_analysis_pb.BuildListModule
 		if versions, ok := modulesWithOverrides[module.name]; ok {
 			// An override for the module exists. This means
@@ -226,7 +225,6 @@ ProcessModule:
 		// calls to bazel_dep().
 		moduleFileContentsEntry, err := model_filesystem.NewFileContentsEntryFromProto(
 			moduleFileContents,
-			c.getReferenceFormat(),
 		)
 		if err != nil {
 			return PatchedModuleRoughBuildListValue{}, fmt.Errorf("invalid file contents: %w", err)

@@ -6,7 +6,7 @@ import (
 	"github.com/buildbarn/bonanza/pkg/storage/object"
 )
 
-type namespaceRemovingUploader[TReference NamespaceRemovingReference, TLease any] struct {
+type namespaceRemovingUploader[TReference object.BasicReference, TLease any] struct {
 	base object.Uploader[object.LocalReference, TLease]
 }
 
@@ -14,7 +14,7 @@ type namespaceRemovingUploader[TReference NamespaceRemovingReference, TLease any
 // converts references provided to UploadObject() to LocalReferences.
 // This is useful if the storage backend is oblivious of namespaces
 // (e.g., local disk based storage).
-func NewNamespaceRemovingUploader[TReference NamespaceRemovingReference, TLease any](base object.Uploader[object.LocalReference, TLease]) object.Uploader[TReference, TLease] {
+func NewNamespaceRemovingUploader[TReference object.BasicReference, TLease any](base object.Uploader[object.LocalReference, TLease]) object.Uploader[TReference, TLease] {
 	return &namespaceRemovingUploader[TReference, TLease]{
 		base: base,
 	}

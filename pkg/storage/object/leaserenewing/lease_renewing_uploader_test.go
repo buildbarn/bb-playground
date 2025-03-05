@@ -158,7 +158,7 @@ func TestLeaseRenewingUploader(t *testing.T) {
 			// make the root object complete again.
 			contents := object.MustNewContents(
 				object_pb.ReferenceFormat_SHA256_V1,
-				object.OutgoingReferencesList{
+				object.OutgoingReferencesList[object.LocalReference]{
 					object.MustNewSHA256V1LocalReference("348a1c1a72e1a3dece7fabff7ac7c78faa06c8994b1573c929fad20da209890d", 95938, 13, 1, 958050),
 					object.MustNewSHA256V1LocalReference("4179d172c91a7487c2260c88b28b9892fc1305a904bac4e27af3b43464a08812", 774, 8, 2, 69493),
 					object.MustNewSHA256V1LocalReference("48b0846063ab6897a9cd156f11c7de1c07dabfeb02e0b60f1dca1f40e6d3ca2a", 5784, 10, 10, 85439),
@@ -261,7 +261,7 @@ func TestLeaseRenewingUploader(t *testing.T) {
 		t.Run("FinalUploadObjectFailure", func(t *testing.T) {
 			contents := object.MustNewContents(
 				object_pb.ReferenceFormat_SHA256_V1,
-				object.OutgoingReferencesList{
+				object.OutgoingReferencesList[object.LocalReference]{
 					object.MustNewSHA256V1LocalReference("7ce38508b7b64576dc1719bed9cd450e5f521cf16913ba5ef57c353bc115d946", 59495, 13, 1, 305968),
 				},
 				[]byte("Hello"),

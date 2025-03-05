@@ -7,6 +7,7 @@ import "pkg/proto/configuration/filesystem/filesystem.proto";
 import "pkg/proto/configuration/filesystem/virtual/virtual.proto";
 import "pkg/proto/configuration/global/global.proto";
 import "pkg/proto/configuration/grpc/grpc.proto";
+import "pkg/proto/configuration/model/parser/parser.proto";
 
 option go_package = "github.com/buildbarn/bonanza/pkg/proto/configuration/bonanza_worker";
 
@@ -27,6 +28,10 @@ message ApplicationConfiguration {
   // stored. Not all configurations of the worker require this to be set.
   // When left unset, any attempt to allocate temporary files will fail.
   buildbarn.configuration.filesystem.FilePoolConfiguration file_pool = 5;
+
+  // Cache that resides in memory of objects read from storage that have
+  // been decoded and parsed.
+  bonanza.configuration.model.parser.ParsedObjectPool parsed_object_pool = 6;
 }
 
 message BuildDirectoryConfiguration {

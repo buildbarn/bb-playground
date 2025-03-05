@@ -11,6 +11,7 @@ go_library(
         "//pkg/model/analysis",
         "//pkg/model/core",
         "//pkg/model/encoding",
+        "//pkg/model/parser",
         "//pkg/proto/configuration/bonanza_builder",
         "//pkg/proto/model/analysis",
         "//pkg/proto/model/build",

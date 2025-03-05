@@ -6,6 +6,7 @@ import "pkg/proto/configuration/filesystem/filesystem.proto";
 import "pkg/proto/configuration/global/global.proto";
 import "pkg/proto/configuration/grpc/grpc.proto";
 import "pkg/proto/configuration/http/http.proto";
+import "pkg/proto/configuration/model/parser/parser.proto";
 
 option go_package = "github.com/buildbarn/bonanza/pkg/proto/configuration/bonanza_builder";
 
@@ -65,4 +66,8 @@ message ApplicationConfiguration {
   // Fields that need to be attached to the ID of the worker, as
   // announced to the scheduler.
   map<string, string> worker_id = 13;
+
+  // Cache that resides in memory of objects read from storage that have
+  // been decoded and parsed.
+  bonanza.configuration.model.parser.ParsedObjectPool parsed_object_pool = 14;
 }

@@ -77,7 +77,7 @@ func TestCreateFileMerkleTree(t *testing.T) {
 			},
 			TotalSizeBytes: 5,
 		}, rootFileContents.Message)
-		require.Equal(t, object.OutgoingReferencesList{
+		require.Equal(t, object.OutgoingReferencesList[object.LocalReference]{
 			object.MustNewSHA256V1LocalReference("185f8db32271fe25f561a6fc938b2e264306ec304eda518007d1764826381969", 5, 0, 0, 0),
 		}, references)
 		require.Equal(t, []model_core.ReferenceMetadata{metadata1}, metadata)
@@ -105,7 +105,7 @@ func TestCreateFileMerkleTree(t *testing.T) {
 			},
 			TotalSizeBytes: 1 << 30,
 		}, rootFileContents.Message)
-		require.Equal(t, object.OutgoingReferencesList{
+		require.Equal(t, object.OutgoingReferencesList[object.LocalReference]{
 			object.MustNewSHA256V1LocalReference("55147d913a3232c6bff657d445446977a4bfaf02795e08f44b35baa8babf0083", 1643, 2, 31, 15288),
 		}, references)
 	})

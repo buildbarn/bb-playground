@@ -1,27 +1,21 @@
 package parser
 
 import (
-	"context"
-
-	"github.com/buildbarn/bonanza/pkg/storage/object"
+	model_core "github.com/buildbarn/bonanza/pkg/model/core"
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
 
-type RawObjectParserReference interface {
-	GetSizeBytes() int
-}
+type rawObjectParser[TReference any] struct{}
 
-type rawObjectParser[TReference RawObjectParserReference] struct{}
-
-func NewRawObjectParser[TReference RawObjectParserReference]() ObjectParser[TReference, []byte] {
+func NewRawObjectParser[TReference any]() ObjectParser[TReference, []byte] {
 	return &rawObjectParser[TReference]{}
 }
 
-func (p *rawObjectParser[TReference]) ParseObject(ctx context.Context, reference TReference, outgoingReferences object.OutgoingReferences[TReference], data []byte) ([]byte, int, error) {
-	if degree := outgoingReferences.GetDegree(); degree > 0 {
+func (p *rawObjectParser[TReference]) ParseObject(in model_core.Message[[]byte, TReference]) ([]byte, int, error) {
+	if degree := in.OutgoingReferences.GetDegree(); degree > 0 {
 		return nil, 0, status.Errorf(codes.InvalidArgument, "Object has a degree of %d, while zero was expected", degree)
 	}
-	return data, reference.GetSizeBytes(), nil
+	return in.Message, len(in.Message), nil
 }

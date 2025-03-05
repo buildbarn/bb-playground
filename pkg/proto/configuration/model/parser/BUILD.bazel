@@ -1,0 +1,25 @@
+load("@rules_go//go:def.bzl", "go_library")
+load("@rules_go//proto:def.bzl", "go_proto_library")
+load("@rules_proto//proto:defs.bzl", "proto_library")
+
+proto_library(
+    name = "bonanza_configuration_model_parser_proto",
+    srcs = ["parser.proto"],
+    visibility = ["//visibility:public"],
+    deps = ["@com_github_buildbarn_bb_storage//pkg/proto/configuration/eviction:eviction_proto"],
+)
+
+go_proto_library(
+    name = "bonanza_configuration_model_parser_go_proto",
+    importpath = "github.com/buildbarn/bonanza/pkg/proto/configuration/model/parser",
+    proto = ":bonanza_configuration_model_parser_proto",
+    visibility = ["//visibility:public"],
+    deps = ["@com_github_buildbarn_bb_storage//pkg/proto/configuration/eviction"],
+)
+
+go_library(
+    name = "parser",
+    embed = [":bonanza_configuration_model_parser_go_proto"],
+    importpath = "github.com/buildbarn/bonanza/pkg/proto/configuration/model/parser",
+    visibility = ["//visibility:public"],
+)

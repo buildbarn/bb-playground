@@ -107,34 +107,25 @@ type sourceJSON struct {
 	URL         string                 `json:"url"`
 }
 
-type changeTrackingDirectory struct {
+type changeTrackingDirectory[TReference object.BasicReference] struct {
 	// If set, the directory has not been accessed, and its contents
 	// are still identical to the original version. If not set, the
 	// directory has been accessed and potentially modified,
 	// requiring it to be recomputed and uploaded once again.
-	currentReference model_core.Message[*model_filesystem_pb.DirectoryReference, object.OutgoingReferences[object.LocalReference]]
+	currentReference model_core.Message[*model_filesystem_pb.DirectoryReference, TReference]
 
-	directories map[path.Component]*changeTrackingDirectory
-	files       map[path.Component]*changeTrackingFile
+	directories map[path.Component]*changeTrackingDirectory[TReference]
+	files       map[path.Component]*changeTrackingFile[TReference]
 	symlinks    map[path.Component]string
 }
 
-func (d *changeTrackingDirectory) setContents(contents model_core.Message[*model_filesystem_pb.Directory, object.OutgoingReferences[object.LocalReference]], options *changeTrackingDirectoryLoadOptions) error {
-	var leaves model_core.Message[*model_filesystem_pb.Leaves, object.OutgoingReferences[object.LocalReference]]
-	switch leavesType := contents.Message.Leaves.(type) {
-	case *model_filesystem_pb.Directory_LeavesExternal:
-		var err error
-		leaves, err = model_parser.Dereference(options.context, options.leavesReader, model_core.NewNestedMessage(contents, leavesType.LeavesExternal.Reference))
-		if err != nil {
-			return err
-		}
-	case *model_filesystem_pb.Directory_LeavesInline:
-		leaves = model_core.NewNestedMessage(contents, leavesType.LeavesInline)
-	default:
-		return errors.New("unknown leaves contents type")
+func (d *changeTrackingDirectory[TReference]) setContents(contents model_core.Message[*model_filesystem_pb.Directory, TReference], options *changeTrackingDirectoryLoadOptions[TReference]) error {
+	leaves, err := model_filesystem.DirectoryGetLeaves(options.context, options.leavesReader, contents)
+	if err != nil {
+		return err
 	}
 
-	d.files = make(map[path.Component]*changeTrackingFile, len(leaves.Message.Files))
+	d.files = make(map[path.Component]*changeTrackingFile[TReference], len(leaves.Message.Files))
 	for _, file := range leaves.Message.Files {
 		name, ok := path.NewComponent(file.Name)
 		if !ok {
@@ -144,9 +135,9 @@ func (d *changeTrackingDirectory) setContents(contents model_core.Message[*model
 		if properties == nil {
 			return fmt.Errorf("file %#v has no properties", file.Name)
 		}
-		d.files[name] = &changeTrackingFile{
+		d.files[name] = &changeTrackingFile[TReference]{
 			isExecutable: properties.IsExecutable,
-			contents: unmodifiedFileContents{
+			contents: unmodifiedFileContents[TReference]{
 				contents: model_core.NewNestedMessage(leaves, properties.Contents),
 			},
 		}
@@ -160,7 +151,7 @@ func (d *changeTrackingDirectory) setContents(contents model_core.Message[*model
 		d.symlinks[name] = symlink.Target
 	}
 
-	d.directories = make(map[path.Component]*changeTrackingDirectory, len(contents.Message.Directories))
+	d.directories = make(map[path.Component]*changeTrackingDirectory[TReference], len(contents.Message.Directories))
 	for _, directory := range contents.Message.Directories {
 		name, ok := path.NewComponent(directory.Name)
 		if !ok {
@@ -168,11 +159,11 @@ func (d *changeTrackingDirectory) setContents(contents model_core.Message[*model
 		}
 		switch childContents := directory.Contents.(type) {
 		case *model_filesystem_pb.DirectoryNode_ContentsExternal:
-			d.directories[name] = &changeTrackingDirectory{
+			d.directories[name] = &changeTrackingDirectory[TReference]{
 				currentReference: model_core.NewNestedMessage(contents, childContents.ContentsExternal),
 			}
 		case *model_filesystem_pb.DirectoryNode_ContentsInline:
-			dChild := &changeTrackingDirectory{}
+			dChild := &changeTrackingDirectory[TReference]{}
 			if err := dChild.setContents(
 				model_core.NewNestedMessage(contents, childContents.ContentsInline),
 				options,
@@ -187,7 +178,7 @@ func (d *changeTrackingDirectory) setContents(contents model_core.Message[*model
 	return nil
 }
 
-func (d *changeTrackingDirectory) getOrCreateDirectory(name path.Component) (*changeTrackingDirectory, error) {
+func (d *changeTrackingDirectory[TReference]) getOrCreateDirectory(name path.Component) (*changeTrackingDirectory[TReference], error) {
 	dChild, ok := d.directories[name]
 	if !ok {
 		if _, ok := d.files[name]; ok {
@@ -197,21 +188,21 @@ func (d *changeTrackingDirectory) getOrCreateDirectory(name path.Component) (*ch
 			return nil, errors.New("a symbolic link with this name already exists")
 		}
 		if d.directories == nil {
-			d.directories = map[path.Component]*changeTrackingDirectory{}
+			d.directories = map[path.Component]*changeTrackingDirectory[TReference]{}
 		}
-		dChild = &changeTrackingDirectory{}
+		dChild = &changeTrackingDirectory[TReference]{}
 		d.directories[name] = dChild
 	}
 	return dChild, nil
 }
 
-func (d *changeTrackingDirectory) setFile(loadOptions *changeTrackingDirectoryLoadOptions, name path.Component, f *changeTrackingFile) error {
+func (d *changeTrackingDirectory[TReference]) setFile(loadOptions *changeTrackingDirectoryLoadOptions[TReference], name path.Component, f *changeTrackingFile[TReference]) error {
 	if err := d.maybeLoadContents(loadOptions); err != nil {
 		return err
 	}
 
 	if d.files == nil {
-		d.files = map[path.Component]*changeTrackingFile{}
+		d.files = map[path.Component]*changeTrackingFile[TReference]{}
 	}
 	d.files[name] = f
 	delete(d.directories, name)
@@ -220,13 +211,13 @@ func (d *changeTrackingDirectory) setFile(loadOptions *changeTrackingDirectoryLo
 	return nil
 }
 
-type changeTrackingDirectoryLoadOptions struct {
+type changeTrackingDirectoryLoadOptions[TReference any] struct {
 	context         context.Context
-	directoryReader model_parser.ParsedObjectReader[object.LocalReference, model_core.Message[*model_filesystem_pb.Directory, object.OutgoingReferences[object.LocalReference]]]
-	leavesReader    model_parser.ParsedObjectReader[object.LocalReference, model_core.Message[*model_filesystem_pb.Leaves, object.OutgoingReferences[object.LocalReference]]]
+	directoryReader model_parser.ParsedObjectReader[TReference, model_core.Message[*model_filesystem_pb.Directory, TReference]]
+	leavesReader    model_parser.ParsedObjectReader[TReference, model_core.Message[*model_filesystem_pb.Leaves, TReference]]
 }
 
-func (d *changeTrackingDirectory) maybeLoadContents(options *changeTrackingDirectoryLoadOptions) error {
+func (d *changeTrackingDirectory[TReference]) maybeLoadContents(options *changeTrackingDirectoryLoadOptions[TReference]) error {
 	if reference := d.currentReference; reference.IsSet() {
 		// Directory has not been accessed before. Load it from
 		// storage and ingest its contents.
@@ -242,21 +233,21 @@ func (d *changeTrackingDirectory) maybeLoadContents(options *changeTrackingDirec
 	return nil
 }
 
-type changeTrackingFile struct {
+type changeTrackingFile[TReference object.BasicReference] struct {
 	isExecutable bool
-	contents     changeTrackingFileContents
+	contents     changeTrackingFileContents[TReference]
 }
 
-type changeTrackingFileContents interface {
-	createFileMerkleTree(ctx context.Context, options *capturableChangeTrackingDirectoryOptions) (model_core.PatchedMessage[*model_filesystem_pb.FileContents, model_core.FileBackedObjectLocation], error)
-	openRead(ctx context.Context, referenceFormat object.ReferenceFormat, fileReader *model_filesystem.FileReader[object.LocalReference], patchedFiles io.ReaderAt) (io.Reader, error)
+type changeTrackingFileContents[TReference object.BasicReference] interface {
+	createFileMerkleTree(ctx context.Context, options *capturableChangeTrackingDirectoryOptions[TReference]) (model_core.PatchedMessage[*model_filesystem_pb.FileContents, model_core.FileBackedObjectLocation], error)
+	openRead(ctx context.Context, fileReader *model_filesystem.FileReader[TReference], patchedFiles io.ReaderAt) (io.Reader, error)
 }
 
-type unmodifiedFileContents struct {
-	contents model_core.Message[*model_filesystem_pb.FileContents, object.OutgoingReferences[object.LocalReference]]
+type unmodifiedFileContents[TReference object.BasicReference] struct {
+	contents model_core.Message[*model_filesystem_pb.FileContents, TReference]
 }
 
-func (fc unmodifiedFileContents) createFileMerkleTree(ctx context.Context, options *capturableChangeTrackingDirectoryOptions) (model_core.PatchedMessage[*model_filesystem_pb.FileContents, model_core.FileBackedObjectLocation], error) {
+func (fc unmodifiedFileContents[TReference]) createFileMerkleTree(ctx context.Context, options *capturableChangeTrackingDirectoryOptions[TReference]) (model_core.PatchedMessage[*model_filesystem_pb.FileContents, model_core.FileBackedObjectLocation], error) {
 	return model_core.NewPatchedMessageFromExisting(
 		fc.contents,
 		func(index int) model_core.FileBackedObjectLocation {
@@ -265,20 +256,20 @@ func (fc unmodifiedFileContents) createFileMerkleTree(ctx context.Context, optio
 	), nil
 }
 
-func (fc unmodifiedFileContents) openRead(ctx context.Context, referenceFormat object.ReferenceFormat, fileReader *model_filesystem.FileReader[object.LocalReference], patchedFiles io.ReaderAt) (io.Reader, error) {
-	entry, err := model_filesystem.NewFileContentsEntryFromProto(fc.contents, referenceFormat)
+func (fc unmodifiedFileContents[TReference]) openRead(ctx context.Context, fileReader *model_filesystem.FileReader[TReference], patchedFiles io.ReaderAt) (io.Reader, error) {
+	entry, err := model_filesystem.NewFileContentsEntryFromProto(fc.contents)
 	if err != nil {
 		return nil, err
 	}
 	return fileReader.FileOpenRead(ctx, entry, 0), nil
 }
 
-type patchedFileContents struct {
+type patchedFileContents[TReference object.BasicReference] struct {
 	offsetBytes int64
 	sizeBytes   int64
 }
 
-func (fc patchedFileContents) createFileMerkleTree(ctx context.Context, options *capturableChangeTrackingDirectoryOptions) (model_core.PatchedMessage[*model_filesystem_pb.FileContents, model_core.FileBackedObjectLocation], error) {
+func (fc patchedFileContents[TReference]) createFileMerkleTree(ctx context.Context, options *capturableChangeTrackingDirectoryOptions[TReference]) (model_core.PatchedMessage[*model_filesystem_pb.FileContents, model_core.FileBackedObjectLocation], error) {
 	return model_filesystem.CreateFileMerkleTree(
 		ctx,
 		options.fileCreationParameters,
@@ -287,16 +278,16 @@ func (fc patchedFileContents) createFileMerkleTree(ctx context.Context, options 
 	)
 }
 
-func (fc patchedFileContents) openRead(ctx context.Context, referenceFormat object.ReferenceFormat, fileReader *model_filesystem.FileReader[object.LocalReference], patchedFiles io.ReaderAt) (io.Reader, error) {
+func (fc patchedFileContents[TReference]) openRead(ctx context.Context, fileReader *model_filesystem.FileReader[TReference], patchedFiles io.ReaderAt) (io.Reader, error) {
 	return io.NewSectionReader(patchedFiles, fc.offsetBytes, fc.sizeBytes), nil
 }
 
-type changeTrackingDirectoryResolver struct {
-	loadOptions      *changeTrackingDirectoryLoadOptions
-	currentDirectory *changeTrackingDirectory
+type changeTrackingDirectoryResolver[TReference object.BasicReference] struct {
+	loadOptions      *changeTrackingDirectoryLoadOptions[TReference]
+	currentDirectory *changeTrackingDirectory[TReference]
 }
 
-func (r *changeTrackingDirectoryResolver) OnDirectory(name path.Component) (path.GotDirectoryOrSymlink, error) {
+func (r *changeTrackingDirectoryResolver[TReference]) OnDirectory(name path.Component) (path.GotDirectoryOrSymlink, error) {
 	d := r.currentDirectory
 	if err := d.maybeLoadContents(r.loadOptions); err != nil {
 		return nil, err
@@ -313,32 +304,32 @@ func (r *changeTrackingDirectoryResolver) OnDirectory(name path.Component) (path
 	return nil, fmt.Errorf("directory %#v does not exist", name.String())
 }
 
-func (r *changeTrackingDirectoryResolver) OnTerminal(name path.Component) (*path.GotSymlink, error) {
+func (r *changeTrackingDirectoryResolver[TReference]) OnTerminal(name path.Component) (*path.GotSymlink, error) {
 	return path.OnTerminalViaOnDirectory(r, name)
 }
 
-func (r *changeTrackingDirectoryResolver) OnUp() (path.ComponentWalker, error) {
+func (r *changeTrackingDirectoryResolver[TReference]) OnUp() (path.ComponentWalker, error) {
 	return nil, errors.New("path cannot go up")
 }
 
-type capturableChangeTrackingDirectoryOptions struct {
+type capturableChangeTrackingDirectoryOptions[TReference any] struct {
 	context                context.Context
-	directoryReader        model_parser.ParsedObjectReader[object.LocalReference, model_core.Message[*model_filesystem_pb.Directory, object.OutgoingReferences[object.LocalReference]]]
+	directoryReader        model_parser.ParsedObjectReader[TReference, model_core.Message[*model_filesystem_pb.Directory, TReference]]
 	fileCreationParameters *model_filesystem.FileCreationParameters
 	fileMerkleTreeCapturer model_filesystem.FileMerkleTreeCapturer[model_core.FileBackedObjectLocation]
 	patchedFiles           io.ReaderAt
 }
 
-type capturableChangeTrackingDirectory struct {
-	options   *capturableChangeTrackingDirectoryOptions
-	directory *changeTrackingDirectory
+type capturableChangeTrackingDirectory[TReference object.BasicReference] struct {
+	options   *capturableChangeTrackingDirectoryOptions[TReference]
+	directory *changeTrackingDirectory[TReference]
 }
 
-func (cd *capturableChangeTrackingDirectory) Close() error {
+func (cd *capturableChangeTrackingDirectory[TReference]) Close() error {
 	return nil
 }
 
-func (cd *capturableChangeTrackingDirectory) EnterCapturableDirectory(name path.Component) (*model_filesystem.CreatedDirectory[model_core.FileBackedObjectLocation], model_filesystem.CapturableDirectory[model_core.FileBackedObjectLocation, model_core.FileBackedObjectLocation], error) {
+func (cd *capturableChangeTrackingDirectory[TReference]) EnterCapturableDirectory(name path.Component) (*model_filesystem.CreatedDirectory[model_core.FileBackedObjectLocation], model_filesystem.CapturableDirectory[model_core.FileBackedObjectLocation, model_core.FileBackedObjectLocation], error) {
 	dChild, ok := cd.directory.directories[name]
 	if !ok {
 		panic("attempted to enter non-existent directory")
@@ -364,25 +355,25 @@ func (cd *capturableChangeTrackingDirectory) EnterCapturableDirectory(name path.
 
 	// Directory contains one or more changes. Recurse into it.
 	return nil,
-		&capturableChangeTrackingDirectory{
+		&capturableChangeTrackingDirectory[TReference]{
 			options:   cd.options,
 			directory: dChild,
 		},
 		nil
 }
 
-func (cd *capturableChangeTrackingDirectory) OpenForFileMerkleTreeCreation(name path.Component) (model_filesystem.CapturableFile[model_core.FileBackedObjectLocation], error) {
+func (cd *capturableChangeTrackingDirectory[TReference]) OpenForFileMerkleTreeCreation(name path.Component) (model_filesystem.CapturableFile[model_core.FileBackedObjectLocation], error) {
 	file, ok := cd.directory.files[name]
 	if !ok {
 		panic("attempted to enter non-existent file")
 	}
-	return &capturableChangeTrackingFile{
+	return &capturableChangeTrackingFile[TReference]{
 		options:  cd.options,
 		contents: file.contents,
 	}, nil
 }
 
-func (cd *capturableChangeTrackingDirectory) ReadDir() ([]filesystem.FileInfo, error) {
+func (cd *capturableChangeTrackingDirectory[TReference]) ReadDir() ([]filesystem.FileInfo, error) {
 	d := cd.directory
 	infos := make(filesystem.FileInfoList, 0, len(d.directories)+len(d.files)+len(d.symlinks))
 	for name := range d.directories {
@@ -398,7 +389,7 @@ func (cd *capturableChangeTrackingDirectory) ReadDir() ([]filesystem.FileInfo, e
 	return infos, nil
 }
 
-func (cd *capturableChangeTrackingDirectory) Readlink(name path.Component) (path.Parser, error) {
+func (cd *capturableChangeTrackingDirectory[TReference]) Readlink(name path.Component) (path.Parser, error) {
 	target, ok := cd.directory.symlinks[name]
 	if !ok {
 		panic("attempted to read non-existent symbolic link")
@@ -406,16 +397,16 @@ func (cd *capturableChangeTrackingDirectory) Readlink(name path.Component) (path
 	return path.UNIXFormat.NewParser(target), nil
 }
 
-type capturableChangeTrackingFile struct {
-	options  *capturableChangeTrackingDirectoryOptions
-	contents changeTrackingFileContents
+type capturableChangeTrackingFile[TReference object.BasicReference] struct {
+	options  *capturableChangeTrackingDirectoryOptions[TReference]
+	contents changeTrackingFileContents[TReference]
 }
 
-func (cf *capturableChangeTrackingFile) CreateFileMerkleTree(ctx context.Context) (model_core.PatchedMessage[*model_filesystem_pb.FileContents, model_core.FileBackedObjectLocation], error) {
+func (cf *capturableChangeTrackingFile[TReference]) CreateFileMerkleTree(ctx context.Context) (model_core.PatchedMessage[*model_filesystem_pb.FileContents, model_core.FileBackedObjectLocation], error) {
 	return cf.contents.createFileMerkleTree(ctx, cf.options)
 }
 
-func (cf *capturableChangeTrackingFile) Discard() {}
+func (cf *capturableChangeTrackingFile[TReference]) Discard() {}
 
 type strippingComponentWalker struct {
 	remainder            path.ComponentWalker
@@ -454,32 +445,32 @@ func (cw strippingComponentWalker) OnUp() (path.ComponentWalker, error) {
 	return cw.stripComponent(), nil
 }
 
-type changeTrackingDirectoryExistingFileResolver struct {
+type changeTrackingDirectoryExistingFileResolver[TReference object.BasicReference] struct {
 	path.TerminalNameTrackingComponentWalker
 
-	loadOptions *changeTrackingDirectoryLoadOptions
-	stack       util.NonEmptyStack[*changeTrackingDirectory]
+	loadOptions *changeTrackingDirectoryLoadOptions[TReference]
+	stack       util.NonEmptyStack[*changeTrackingDirectory[TReference]]
 	gotScope    bool
 }
 
-func (r *changeTrackingDirectoryExistingFileResolver) OnAbsolute() (path.ComponentWalker, error) {
+func (r *changeTrackingDirectoryExistingFileResolver[TReference]) OnAbsolute() (path.ComponentWalker, error) {
 	r.stack.PopAll()
 	r.gotScope = true
 	return r, nil
 }
 
-func (r *changeTrackingDirectoryExistingFileResolver) OnRelative() (path.ComponentWalker, error) {
+func (r *changeTrackingDirectoryExistingFileResolver[TReference]) OnRelative() (path.ComponentWalker, error) {
 	r.gotScope = true
 	return r, nil
 }
 
-func (r *changeTrackingDirectoryExistingFileResolver) OnDriveLetter(driveLetter rune) (path.ComponentWalker, error) {
+func (r *changeTrackingDirectoryExistingFileResolver[TReference]) OnDriveLetter(driveLetter rune) (path.ComponentWalker, error) {
 	return nil, errors.New("drive letters are not supported")
 }
 
 var errDirectoryDoesNotExist = errors.New("directory does not exist")
 
-func (r *changeTrackingDirectoryExistingFileResolver) OnDirectory(name path.Component) (path.GotDirectoryOrSymlink, error) {
+func (r *changeTrackingDirectoryExistingFileResolver[TReference]) OnDirectory(name path.Component) (path.GotDirectoryOrSymlink, error) {
 	d := r.stack.Peek()
 	if err := d.maybeLoadContents(r.loadOptions); err != nil {
 		return nil, err
@@ -494,14 +485,14 @@ func (r *changeTrackingDirectoryExistingFileResolver) OnDirectory(name path.Comp
 	return nil, errDirectoryDoesNotExist
 }
 
-func (r *changeTrackingDirectoryExistingFileResolver) OnUp() (path.ComponentWalker, error) {
+func (r *changeTrackingDirectoryExistingFileResolver[TReference]) OnUp() (path.ComponentWalker, error) {
 	if _, ok := r.stack.PopSingle(); !ok {
 		return nil, errors.New("path resolves to a location above the root directory")
 	}
 	return r, nil
 }
 
-func (r *changeTrackingDirectoryExistingFileResolver) getFile() (*changeTrackingFile, error) {
+func (r *changeTrackingDirectoryExistingFileResolver[TReference]) getFile() (*changeTrackingFile[TReference], error) {
 	if r.TerminalName == nil {
 		return nil, errors.New("path does not resolve to a file")
 	}
@@ -515,25 +506,25 @@ func (r *changeTrackingDirectoryExistingFileResolver) getFile() (*changeTracking
 	return nil, errors.New("file does not exist")
 }
 
-type changeTrackingDirectoryNewDirectoryResolver struct {
-	loadOptions *changeTrackingDirectoryLoadOptions
-	stack       util.NonEmptyStack[*changeTrackingDirectory]
+type changeTrackingDirectoryNewDirectoryResolver[TReference object.BasicReference] struct {
+	loadOptions *changeTrackingDirectoryLoadOptions[TReference]
+	stack       util.NonEmptyStack[*changeTrackingDirectory[TReference]]
 }
 
-func (r *changeTrackingDirectoryNewDirectoryResolver) OnAbsolute() (path.ComponentWalker, error) {
+func (r *changeTrackingDirectoryNewDirectoryResolver[TReference]) OnAbsolute() (path.ComponentWalker, error) {
 	r.stack.PopAll()
 	return r, nil
 }
 
-func (r *changeTrackingDirectoryNewDirectoryResolver) OnRelative() (path.ComponentWalker, error) {
+func (r *changeTrackingDirectoryNewDirectoryResolver[TReference]) OnRelative() (path.ComponentWalker, error) {
 	return r, nil
 }
 
-func (r *changeTrackingDirectoryNewDirectoryResolver) OnDriveLetter(driveLetter rune) (path.ComponentWalker, error) {
+func (r *changeTrackingDirectoryNewDirectoryResolver[TReference]) OnDriveLetter(driveLetter rune) (path.ComponentWalker, error) {
 	return nil, errors.New("drive letters are not supported")
 }
 
-func (r *changeTrackingDirectoryNewDirectoryResolver) OnDirectory(name path.Component) (path.GotDirectoryOrSymlink, error) {
+func (r *changeTrackingDirectoryNewDirectoryResolver[TReference]) OnDirectory(name path.Component) (path.GotDirectoryOrSymlink, error) {
 	d := r.stack.Peek()
 	if err := d.maybeLoadContents(r.loadOptions); err != nil {
 		return nil, err
@@ -551,38 +542,38 @@ func (r *changeTrackingDirectoryNewDirectoryResolver) OnDirectory(name path.Comp
 	}, nil
 }
 
-func (r *changeTrackingDirectoryNewDirectoryResolver) OnTerminal(name path.Component) (*path.GotSymlink, error) {
+func (r *changeTrackingDirectoryNewDirectoryResolver[TReference]) OnTerminal(name path.Component) (*path.GotSymlink, error) {
 	return path.OnTerminalViaOnDirectory(r, name)
 }
 
-func (r *changeTrackingDirectoryNewDirectoryResolver) OnUp() (path.ComponentWalker, error) {
+func (r *changeTrackingDirectoryNewDirectoryResolver[TReference]) OnUp() (path.ComponentWalker, error) {
 	if _, ok := r.stack.PopSingle(); !ok {
 		return nil, errors.New("path resolves to a location above the root directory")
 	}
 	return r, nil
 }
 
-type changeTrackingDirectoryNewFileResolver struct {
+type changeTrackingDirectoryNewFileResolver[TReference object.BasicReference] struct {
 	path.TerminalNameTrackingComponentWalker
 
-	loadOptions *changeTrackingDirectoryLoadOptions
-	stack       util.NonEmptyStack[*changeTrackingDirectory]
+	loadOptions *changeTrackingDirectoryLoadOptions[TReference]
+	stack       util.NonEmptyStack[*changeTrackingDirectory[TReference]]
 }
 
-func (r *changeTrackingDirectoryNewFileResolver) OnAbsolute() (path.ComponentWalker, error) {
+func (r *changeTrackingDirectoryNewFileResolver[TReference]) OnAbsolute() (path.ComponentWalker, error) {
 	r.stack.PopAll()
 	return r, nil
 }
 
-func (r *changeTrackingDirectoryNewFileResolver) OnRelative() (path.ComponentWalker, error) {
+func (r *changeTrackingDirectoryNewFileResolver[TReference]) OnRelative() (path.ComponentWalker, error) {
 	return r, nil
 }
 
-func (r *changeTrackingDirectoryNewFileResolver) OnDriveLetter(driveLetter rune) (path.ComponentWalker, error) {
+func (r *changeTrackingDirectoryNewFileResolver[TReference]) OnDriveLetter(driveLetter rune) (path.ComponentWalker, error) {
 	return nil, errors.New("drive letters are not supported")
 }
 
-func (r *changeTrackingDirectoryNewFileResolver) OnDirectory(name path.Component) (path.GotDirectoryOrSymlink, error) {
+func (r *changeTrackingDirectoryNewFileResolver[TReference]) OnDirectory(name path.Component) (path.GotDirectoryOrSymlink, error) {
 	d := r.stack.Peek()
 	if err := d.maybeLoadContents(r.loadOptions); err != nil {
 		return nil, err
@@ -600,7 +591,7 @@ func (r *changeTrackingDirectoryNewFileResolver) OnDirectory(name path.Component
 	}, nil
 }
 
-func (r *changeTrackingDirectoryNewFileResolver) OnUp() (path.ComponentWalker, error) {
+func (r *changeTrackingDirectoryNewFileResolver[TReference]) OnUp() (path.ComponentWalker, error) {
 	if _, ok := r.stack.PopSingle(); !ok {
 		return nil, errors.New("path resolves to a location above the root directory")
 	}
@@ -620,10 +611,10 @@ func inferArchiveFormatFromURL(url string) (model_analysis_pb.HttpArchiveContent
 	return 0, false
 }
 
-func (c *baseComputer) fetchModuleFromRegistry(
+func (c *baseComputer[TReference]) fetchModuleFromRegistry(
 	ctx context.Context,
 	module *model_analysis_pb.BuildListModule,
-	e RepoEnvironment,
+	e RepoEnvironment[TReference],
 	singleVersionOverridePatchLabels []string,
 	singleVersionOverridePatchCommands []string,
 	singleVersionOverridePatchStrip int,
@@ -653,7 +644,6 @@ func (c *baseComputer) fetchModuleFromRegistry(
 	}
 	sourceJSONContentsEntry, err := model_filesystem.NewFileContentsEntryFromProto(
 		model_core.NewNestedMessage(sourceJSONContentsValue, sourceJSONContentsValue.Message.Exists.Contents),
-		c.getReferenceFormat(),
 	)
 	if err != nil {
 		return PatchedRepoValue{}, fmt.Errorf("invalid file contents: %w", err)
@@ -687,7 +677,7 @@ func (c *baseComputer) fetchModuleFromRegistry(
 	}
 
 	// Process patches stored in source.json.
-	patchesToApply := make([]patchToApply, 0, len(sourceJSON.Patches)+len(singleVersionOverridePatchLabels))
+	patchesToApply := make([]patchToApply[TReference], 0, len(sourceJSON.Patches)+len(singleVersionOverridePatchLabels))
 	for _, patchEntry := range sourceJSON.Patches {
 		patchURL, err := url.JoinPath(
 			module.RegistryUrl,
@@ -714,13 +704,12 @@ func (c *baseComputer) fetchModuleFromRegistry(
 
 		patchContentsEntry, err := model_filesystem.NewFileContentsEntryFromProto(
 			model_core.NewNestedMessage(patchContentsValue, patchContentsValue.Message.Exists.Contents),
-			c.getReferenceFormat(),
 		)
 		if err != nil {
 			return PatchedRepoValue{}, fmt.Errorf("invalid file contents for patch %#v: %s", patchEntry.key, err)
 		}
 
-		patchesToApply = append(patchesToApply, patchToApply{
+		patchesToApply = append(patchesToApply, patchToApply[TReference]{
 			filename:          patchEntry.key,
 			strip:             sourceJSON.PatchStrip,
 			fileContentsEntry: patchContentsEntry,
@@ -748,13 +737,12 @@ func (c *baseComputer) fetchModuleFromRegistry(
 
 		patchContentsEntry, err := model_filesystem.NewFileContentsEntryFromProto(
 			model_core.NewNestedMessage(patchPropertiesValue, patchPropertiesValue.Message.Exists.Contents),
-			c.getReferenceFormat(),
 		)
 		if err != nil {
 			return PatchedRepoValue{}, fmt.Errorf("invalid file contents for patch %#v: %s", patchLabelStr, err)
 		}
 
-		patchesToApply = append(patchesToApply, patchToApply{
+		patchesToApply = append(patchesToApply, patchToApply[TReference]{
 			filename:          patchLabelStr,
 			strip:             singleVersionOverridePatchStrip,
 			fileContentsEntry: patchContentsEntry,
@@ -773,33 +761,31 @@ func (c *baseComputer) fetchModuleFromRegistry(
 	return c.applyPatches(
 		ctx,
 		e,
-		archiveContentsValue.Message.Exists,
-		archiveContentsValue.OutgoingReferences,
+		model_core.NewNestedMessage(archiveContentsValue, archiveContentsValue.Message.Exists),
 		sourceJSON.StripPrefix,
 		patchesToApply,
 	)
 }
 
-type patchToApply struct {
+type patchToApply[TReference any] struct {
 	filename          string
 	strip             int
-	fileContentsEntry model_filesystem.FileContentsEntry[object.LocalReference]
+	fileContentsEntry model_filesystem.FileContentsEntry[TReference]
 }
 
-type applyPatchesEnvironment interface {
+type applyPatchesEnvironment[TReference object.BasicReference] interface {
 	GetDirectoryCreationParametersObjectValue(key *model_analysis_pb.DirectoryCreationParametersObject_Key) (*model_filesystem.DirectoryCreationParameters, bool)
-	GetDirectoryReadersValue(key *model_analysis_pb.DirectoryReaders_Key) (*DirectoryReaders, bool)
+	GetDirectoryReadersValue(key *model_analysis_pb.DirectoryReaders_Key) (*DirectoryReaders[TReference], bool)
 	GetFileCreationParametersObjectValue(key *model_analysis_pb.FileCreationParametersObject_Key) (*model_filesystem.FileCreationParameters, bool)
-	GetFileReaderValue(key *model_analysis_pb.FileReader_Key) (*model_filesystem.FileReader[object.LocalReference], bool)
+	GetFileReaderValue(key *model_analysis_pb.FileReader_Key) (*model_filesystem.FileReader[TReference], bool)
 }
 
-func (c *baseComputer) applyPatches(
+func (c *baseComputer[TReference]) applyPatches(
 	ctx context.Context,
-	e applyPatchesEnvironment,
-	rootRef *model_filesystem_pb.DirectoryReference,
-	rootOutgoingRefs object.OutgoingReferences[object.LocalReference],
+	e applyPatchesEnvironment[TReference],
+	rootRef model_core.Message[*model_filesystem_pb.DirectoryReference, TReference],
 	stripPrefix string,
-	patches []patchToApply,
+	patches []patchToApply[TReference],
 ) (PatchedRepoValue, error) {
 	fileReader, gotFileReader := e.GetFileReaderValue(&model_analysis_pb.FileReader_Key{})
 	directoryCreationParameters, gotDirectoryCreationParameters := e.GetDirectoryCreationParametersObjectValue(&model_analysis_pb.DirectoryCreationParametersObject_Key{})
@@ -809,20 +795,17 @@ func (c *baseComputer) applyPatches(
 		return PatchedRepoValue{}, evaluation.ErrMissingDependency
 	}
 
-	rootDirectory := &changeTrackingDirectory{
-		currentReference: model_core.Message[*model_filesystem_pb.DirectoryReference, object.OutgoingReferences[object.LocalReference]]{
-			Message:            rootRef,
-			OutgoingReferences: rootOutgoingRefs,
-		},
+	rootDirectory := &changeTrackingDirectory[TReference]{
+		currentReference: rootRef,
 	}
 
 	// Strip the provided directory prefix.
-	loadOptions := &changeTrackingDirectoryLoadOptions{
+	loadOptions := &changeTrackingDirectoryLoadOptions[TReference]{
 		context:         ctx,
 		directoryReader: directoryReaders.Directory,
 		leavesReader:    directoryReaders.Leaves,
 	}
-	rootDirectoryResolver := changeTrackingDirectoryResolver{
+	rootDirectoryResolver := changeTrackingDirectoryResolver[TReference]{
 		loadOptions:      loadOptions,
 		currentDirectory: rootDirectory,
 	}
@@ -869,18 +852,16 @@ func (c *baseComputer) applyPatches(
 	)
 }
 
-func (c *baseComputer) applyPatch(
+func (c *baseComputer[TReference]) applyPatch(
 	ctx context.Context,
-	rootDirectory *changeTrackingDirectory,
-	loadOptions *changeTrackingDirectoryLoadOptions,
+	rootDirectory *changeTrackingDirectory[TReference],
+	loadOptions *changeTrackingDirectoryLoadOptions[TReference],
 	patchStrip int,
-	fileReader *model_filesystem.FileReader[object.LocalReference],
+	fileReader *model_filesystem.FileReader[TReference],
 	openFile func() (io.Reader, error),
 	patchedFiles filesystem.FileReader,
 	patchedFilesWriter *model_filesystem.SectionWriter,
 ) error {
-	referenceFormat := c.getReferenceFormat()
-
 	patchedFile, err := openFile()
 	if err != nil {
 		return fmt.Errorf("open patched file contents: %s", err)
@@ -892,10 +873,10 @@ func (c *baseComputer) applyPatch(
 	}
 
 	for _, file := range files {
-		var fileContents changeTrackingFileContents
+		var fileContents changeTrackingFileContents[TReference]
 		isExecutable := false
 		if !file.IsNew {
-			r := &changeTrackingDirectoryExistingFileResolver{
+			r := &changeTrackingDirectoryExistingFileResolver[TReference]{
 				loadOptions: loadOptions,
 				stack:       util.NewNonEmptyStack(rootDirectory),
 			}
@@ -921,7 +902,7 @@ func (c *baseComputer) applyPatch(
 		if fileContents == nil {
 			srcScan = bytes.NewBuffer(nil)
 		} else {
-			srcScan, err = fileContents.openRead(ctx, referenceFormat, fileReader, patchedFiles)
+			srcScan, err = fileContents.openRead(ctx, fileReader, patchedFiles)
 			if err != nil {
 				return fmt.Errorf("failed to open file %#v: %s", file.OldName, err)
 			}
@@ -935,7 +916,7 @@ func (c *baseComputer) applyPatch(
 		if fileContents == nil {
 			srcReplace = bytes.NewBuffer(nil)
 		} else {
-			srcReplace, err = fileContents.openRead(ctx, referenceFormat, fileReader, patchedFiles)
+			srcReplace, err = fileContents.openRead(ctx, fileReader, patchedFiles)
 			if err != nil {
 				return fmt.Errorf("failed to open file %#v: %w", file.OldName, err)
 			}
@@ -946,7 +927,7 @@ func (c *baseComputer) applyPatch(
 			return fmt.Errorf("failed to replace text fragments to %#v: %w", file.OldName, err)
 		}
 
-		r := &changeTrackingDirectoryNewFileResolver{
+		r := &changeTrackingDirectoryNewFileResolver[TReference]{
 			loadOptions: loadOptions,
 			stack:       util.NewNonEmptyStack(rootDirectory),
 		}
@@ -968,9 +949,9 @@ func (c *baseComputer) applyPatch(
 		if err := r.stack.Peek().setFile(
 			loadOptions,
 			*r.TerminalName,
-			&changeTrackingFile{
+			&changeTrackingFile[TReference]{
 				isExecutable: isExecutable,
-				contents: patchedFileContents{
+				contents: patchedFileContents[TReference]{
 					offsetBytes: patchedFileOffsetBytes,
 					sizeBytes:   patchedFilesWriter.GetOffsetBytes() - patchedFileOffsetBytes,
 				},
@@ -989,7 +970,7 @@ func newRepositoryOS(thread *starlark.Thread, repoPlatform *model_analysis_pb.Re
 	for _, entry := range repoPlatform.RepositoryOsEnviron {
 		environ.SetKey(thread, starlark.String(entry.Name), starlark.String(entry.Value))
 	}
-	s := model_starlark.NewStructFromDict(nil, map[string]any{
+	s := model_starlark.NewStructFromDict[object.LocalReference](nil, map[string]any{
 		"arch":    starlark.String(repoPlatform.RepositoryOsArch),
 		"environ": environ,
 		"name":    starlark.String(repoPlatform.RepositoryOsName),
@@ -998,65 +979,65 @@ func newRepositoryOS(thread *starlark.Thread, repoPlatform *model_analysis_pb.Re
 	return s
 }
 
-type moduleOrRepositoryContextEnvironment interface {
-	GetActionResultValue(model_core.PatchedMessage[*model_analysis_pb.ActionResult_Key, dag.ObjectContentsWalker]) model_core.Message[*model_analysis_pb.ActionResult_Value, object.OutgoingReferences[object.LocalReference]]
+type moduleOrRepositoryContextEnvironment[TReference object.BasicReference] interface {
+	GetActionResultValue(model_core.PatchedMessage[*model_analysis_pb.ActionResult_Key, dag.ObjectContentsWalker]) model_core.Message[*model_analysis_pb.ActionResult_Value, TReference]
 	GetCommandEncoderObjectValue(*model_analysis_pb.CommandEncoderObject_Key) (model_encoding.BinaryEncoder, bool)
 	GetDirectoryCreationParametersObjectValue(*model_analysis_pb.DirectoryCreationParametersObject_Key) (*model_filesystem.DirectoryCreationParameters, bool)
-	GetDirectoryCreationParametersValue(*model_analysis_pb.DirectoryCreationParameters_Key) model_core.Message[*model_analysis_pb.DirectoryCreationParameters_Value, object.OutgoingReferences[object.LocalReference]]
-	GetDirectoryReadersValue(key *model_analysis_pb.DirectoryReaders_Key) (*DirectoryReaders, bool)
+	GetDirectoryCreationParametersValue(*model_analysis_pb.DirectoryCreationParameters_Key) model_core.Message[*model_analysis_pb.DirectoryCreationParameters_Value, TReference]
+	GetDirectoryReadersValue(key *model_analysis_pb.DirectoryReaders_Key) (*DirectoryReaders[TReference], bool)
 	GetFileCreationParametersObjectValue(*model_analysis_pb.FileCreationParametersObject_Key) (*model_filesystem.FileCreationParameters, bool)
-	GetFileCreationParametersValue(*model_analysis_pb.FileCreationParameters_Key) model_core.Message[*model_analysis_pb.FileCreationParameters_Value, object.OutgoingReferences[object.LocalReference]]
-	GetFileReaderValue(*model_analysis_pb.FileReader_Key) (*model_filesystem.FileReader[object.LocalReference], bool)
-	GetHttpArchiveContentsValue(*model_analysis_pb.HttpArchiveContents_Key) model_core.Message[*model_analysis_pb.HttpArchiveContents_Value, object.OutgoingReferences[object.LocalReference]]
-	GetHttpFileContentsValue(*model_analysis_pb.HttpFileContents_Key) model_core.Message[*model_analysis_pb.HttpFileContents_Value, object.OutgoingReferences[object.LocalReference]]
-	GetRegisteredRepoPlatformValue(*model_analysis_pb.RegisteredRepoPlatform_Key) model_core.Message[*model_analysis_pb.RegisteredRepoPlatform_Value, object.OutgoingReferences[object.LocalReference]]
-	GetRepoValue(*model_analysis_pb.Repo_Key) model_core.Message[*model_analysis_pb.Repo_Value, object.OutgoingReferences[object.LocalReference]]
-	GetRootModuleValue(*model_analysis_pb.RootModule_Key) model_core.Message[*model_analysis_pb.RootModule_Value, object.OutgoingReferences[object.LocalReference]]
+	GetFileCreationParametersValue(*model_analysis_pb.FileCreationParameters_Key) model_core.Message[*model_analysis_pb.FileCreationParameters_Value, TReference]
+	GetFileReaderValue(*model_analysis_pb.FileReader_Key) (*model_filesystem.FileReader[TReference], bool)
+	GetHttpArchiveContentsValue(*model_analysis_pb.HttpArchiveContents_Key) model_core.Message[*model_analysis_pb.HttpArchiveContents_Value, TReference]
+	GetHttpFileContentsValue(*model_analysis_pb.HttpFileContents_Key) model_core.Message[*model_analysis_pb.HttpFileContents_Value, TReference]
+	GetRegisteredRepoPlatformValue(*model_analysis_pb.RegisteredRepoPlatform_Key) model_core.Message[*model_analysis_pb.RegisteredRepoPlatform_Value, TReference]
+	GetRepoValue(*model_analysis_pb.Repo_Key) model_core.Message[*model_analysis_pb.Repo_Value, TReference]
+	GetRootModuleValue(*model_analysis_pb.RootModule_Key) model_core.Message[*model_analysis_pb.RootModule_Value, TReference]
 	GetStableInputRootPathObjectValue(*model_analysis_pb.StableInputRootPathObject_Key) (*model_starlark.BarePath, bool)
 }
 
-type moduleOrRepositoryContext struct {
-	computer               *baseComputer
+type moduleOrRepositoryContext[TReference object.BasicReference] struct {
+	computer               *baseComputer[TReference]
 	context                context.Context
-	environment            moduleOrRepositoryContextEnvironment
+	environment            moduleOrRepositoryContextEnvironment[TReference]
 	subdirectoryComponents []path.Component
 
 	commandEncoder                     model_encoding.BinaryEncoder
 	defaultWorkingDirectoryPath        *model_starlark.BarePath
 	directoryCreationParameters        *model_filesystem.DirectoryCreationParameters
 	directoryCreationParametersMessage *model_filesystem_pb.DirectoryCreationParameters
-	directoryReaders                   *DirectoryReaders
-	directoryLoadOptions               *changeTrackingDirectoryLoadOptions
+	directoryReaders                   *DirectoryReaders[TReference]
+	directoryLoadOptions               *changeTrackingDirectoryLoadOptions[TReference]
 	fileCreationParameters             *model_filesystem.FileCreationParameters
 	fileCreationParametersMessage      *model_filesystem_pb.FileCreationParameters
-	fileReader                         *model_filesystem.FileReader[object.LocalReference]
+	fileReader                         *model_filesystem.FileReader[TReference]
 	pathUnpackerInto                   unpack.UnpackerInto[*model_starlark.BarePath]
-	repoPlatform                       model_core.Message[*model_analysis_pb.RegisteredRepoPlatform_Value, object.OutgoingReferences[object.LocalReference]]
+	repoPlatform                       model_core.Message[*model_analysis_pb.RegisteredRepoPlatform_Value, TReference]
 	virtualRootScopeWalkerFactory      *path.VirtualRootScopeWalkerFactory
 
-	inputRootDirectory *changeTrackingDirectory
+	inputRootDirectory *changeTrackingDirectory[TReference]
 	patchedFiles       filesystem.FileReader
 	patchedFilesWriter *model_filesystem.SectionWriter
 }
 
-func (c *baseComputer) newModuleOrRepositoryContext(ctx context.Context, e moduleOrRepositoryContextEnvironment, subdirectoryComponents []path.Component) (*moduleOrRepositoryContext, error) {
-	return &moduleOrRepositoryContext{
+func (c *baseComputer[TReference]) newModuleOrRepositoryContext(ctx context.Context, e moduleOrRepositoryContextEnvironment[TReference], subdirectoryComponents []path.Component) (*moduleOrRepositoryContext[TReference], error) {
+	return &moduleOrRepositoryContext[TReference]{
 		computer:               c,
 		context:                ctx,
 		environment:            e,
 		subdirectoryComponents: subdirectoryComponents,
 
-		inputRootDirectory: &changeTrackingDirectory{},
+		inputRootDirectory: &changeTrackingDirectory[TReference]{},
 	}, nil
 }
 
-func (mrc *moduleOrRepositoryContext) release() {
+func (mrc *moduleOrRepositoryContext[TReference]) release() {
 	if mrc.patchedFiles != nil {
 		mrc.patchedFiles.Close()
 	}
 }
 
-func (mrc *moduleOrRepositoryContext) resolveRepoDirectory() (*changeTrackingDirectory, error) {
+func (mrc *moduleOrRepositoryContext[TReference]) resolveRepoDirectory() (*changeTrackingDirectory[TReference], error) {
 	repoDirectory := mrc.inputRootDirectory
 	for _, component := range mrc.subdirectoryComponents {
 		childDirectory, ok := repoDirectory.directories[component]
@@ -1068,7 +1049,7 @@ func (mrc *moduleOrRepositoryContext) resolveRepoDirectory() (*changeTrackingDir
 	return repoDirectory, nil
 }
 
-func (mrc *moduleOrRepositoryContext) maybeGetCommandEncoder() {
+func (mrc *moduleOrRepositoryContext[TReference]) maybeGetCommandEncoder() {
 	if mrc.commandEncoder == nil {
 		if v, ok := mrc.environment.GetCommandEncoderObjectValue(&model_analysis_pb.CommandEncoderObject_Key{}); ok {
 			mrc.commandEncoder = v
@@ -1076,7 +1057,7 @@ func (mrc *moduleOrRepositoryContext) maybeGetCommandEncoder() {
 	}
 }
 
-func (mrc *moduleOrRepositoryContext) maybeGetDirectoryCreationParameters() {
+func (mrc *moduleOrRepositoryContext[TReference]) maybeGetDirectoryCreationParameters() {
 	mrc.maybeGetDirectoryReaders()
 	if mrc.directoryCreationParameters == nil {
 		if v, ok := mrc.environment.GetDirectoryCreationParametersObjectValue(&model_analysis_pb.DirectoryCreationParametersObject_Key{}); ok {
@@ -1085,7 +1066,7 @@ func (mrc *moduleOrRepositoryContext) maybeGetDirectoryCreationParameters() {
 	}
 }
 
-func (mrc *moduleOrRepositoryContext) maybeGetDirectoryCreationParametersMessage() {
+func (mrc *moduleOrRepositoryContext[TReference]) maybeGetDirectoryCreationParametersMessage() {
 	if mrc.directoryCreationParametersMessage == nil {
 		if v := mrc.environment.GetDirectoryCreationParametersValue(&model_analysis_pb.DirectoryCreationParameters_Key{}); v.IsSet() {
 			mrc.directoryCreationParametersMessage = v.Message.DirectoryCreationParameters
@@ -1093,11 +1074,11 @@ func (mrc *moduleOrRepositoryContext) maybeGetDirectoryCreationParametersMessage
 	}
 }
 
-func (mrc *moduleOrRepositoryContext) maybeGetDirectoryReaders() {
+func (mrc *moduleOrRepositoryContext[TReference]) maybeGetDirectoryReaders() {
 	if mrc.directoryReaders == nil {
 		if v, ok := mrc.environment.GetDirectoryReadersValue(&model_analysis_pb.DirectoryReaders_Key{}); ok {
 			mrc.directoryReaders = v
-			mrc.directoryLoadOptions = &changeTrackingDirectoryLoadOptions{
+			mrc.directoryLoadOptions = &changeTrackingDirectoryLoadOptions[TReference]{
 				context:         mrc.context,
 				directoryReader: v.Directory,
 				leavesReader:    v.Leaves,
@@ -1106,7 +1087,7 @@ func (mrc *moduleOrRepositoryContext) maybeGetDirectoryReaders() {
 	}
 }
 
-func (mrc *moduleOrRepositoryContext) maybeGetFileCreationParameters() {
+func (mrc *moduleOrRepositoryContext[TReference]) maybeGetFileCreationParameters() {
 	if mrc.fileCreationParameters == nil {
 		if v, ok := mrc.environment.GetFileCreationParametersObjectValue(&model_analysis_pb.FileCreationParametersObject_Key{}); ok {
 			mrc.fileCreationParameters = v
@@ -1114,7 +1095,7 @@ func (mrc *moduleOrRepositoryContext) maybeGetFileCreationParameters() {
 	}
 }
 
-func (mrc *moduleOrRepositoryContext) maybeGetFileCreationParametersMessage() {
+func (mrc *moduleOrRepositoryContext[TReference]) maybeGetFileCreationParametersMessage() {
 	if mrc.fileCreationParametersMessage == nil {
 		if v := mrc.environment.GetFileCreationParametersValue(&model_analysis_pb.FileCreationParameters_Key{}); v.IsSet() {
 			mrc.fileCreationParametersMessage = v.Message.FileCreationParameters
@@ -1122,7 +1103,7 @@ func (mrc *moduleOrRepositoryContext) maybeGetFileCreationParametersMessage() {
 	}
 }
 
-func (mrc *moduleOrRepositoryContext) maybeGetFileReader() {
+func (mrc *moduleOrRepositoryContext[TReference]) maybeGetFileReader() {
 	if mrc.fileReader == nil {
 		if v, ok := mrc.environment.GetFileReaderValue(&model_analysis_pb.FileReader_Key{}); ok {
 			mrc.fileReader = v
@@ -1130,7 +1111,7 @@ func (mrc *moduleOrRepositoryContext) maybeGetFileReader() {
 	}
 }
 
-func (mrc *moduleOrRepositoryContext) maybeInitializePatchedFiles() error {
+func (mrc *moduleOrRepositoryContext[TReference]) maybeInitializePatchedFiles() error {
 	if mrc.patchedFiles == nil {
 		patchedFiles, err := mrc.computer.filePool.NewFile()
 		if err != nil {
@@ -1142,13 +1123,13 @@ func (mrc *moduleOrRepositoryContext) maybeInitializePatchedFiles() error {
 	return nil
 }
 
-func (mrc *moduleOrRepositoryContext) maybeGetRepoPlatform() {
+func (mrc *moduleOrRepositoryContext[TReference]) maybeGetRepoPlatform() {
 	if !mrc.repoPlatform.IsSet() {
 		mrc.repoPlatform = mrc.environment.GetRegisteredRepoPlatformValue(&model_analysis_pb.RegisteredRepoPlatform_Key{})
 	}
 }
 
-func (mrc *moduleOrRepositoryContext) maybeGetStableInputRootPath() error {
+func (mrc *moduleOrRepositoryContext[TReference]) maybeGetStableInputRootPath() error {
 	if mrc.virtualRootScopeWalkerFactory == nil {
 		stableInputRootPath, ok := mrc.environment.GetStableInputRootPathObjectValue(&model_analysis_pb.StableInputRootPathObject_Key{})
 		if !ok {
@@ -1167,7 +1148,7 @@ func (mrc *moduleOrRepositoryContext) maybeGetStableInputRootPath() error {
 
 		mrc.defaultWorkingDirectoryPath = defaultWorkingDirectoryPath
 		externalPath := stableInputRootPath.Append(externalDirectoryName)
-		mrc.pathUnpackerInto = &externalRepoAddingPathUnpackerInto{
+		mrc.pathUnpackerInto = &externalRepoAddingPathUnpackerInto[TReference]{
 			context: mrc,
 			base: model_starlark.NewPathOrLabelOrStringUnpackerInto(
 				func(canonicalRepo label.CanonicalRepo) (*model_starlark.BarePath, error) {
@@ -1183,7 +1164,7 @@ func (mrc *moduleOrRepositoryContext) maybeGetStableInputRootPath() error {
 	return nil
 }
 
-func (mrc *moduleOrRepositoryContext) doDownload(thread *starlark.Thread, b *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
+func (mrc *moduleOrRepositoryContext[TReference]) doDownload(thread *starlark.Thread, b *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
 	mrc.maybeGetDirectoryReaders()
 	if err := mrc.maybeGetStableInputRootPath(); err != nil {
 		return nil, err
@@ -1248,13 +1229,13 @@ func (mrc *moduleOrRepositoryContext) doDownload(thread *starlark.Thread, b *sta
 	if fileContentsValue.Message.Exists == nil {
 		// File does not exist, or allow_fail was set and an
 		// error occurred.
-		return model_starlark.NewStructFromDict(nil, map[string]any{
+		return model_starlark.NewStructFromDict[TReference](nil, map[string]any{
 			"success": starlark.Bool(false),
 		}), nil
 	}
 
 	// Insert the downloaded file into the file system.
-	r := &changeTrackingDirectoryNewFileResolver{
+	r := &changeTrackingDirectoryNewFileResolver[TReference]{
 		loadOptions: mrc.directoryLoadOptions,
 		stack:       util.NewNonEmptyStack(mrc.inputRootDirectory),
 	}
@@ -1268,9 +1249,9 @@ func (mrc *moduleOrRepositoryContext) doDownload(thread *starlark.Thread, b *sta
 	if err := r.stack.Peek().setFile(
 		mrc.directoryLoadOptions,
 		*r.TerminalName,
-		&changeTrackingFile{
+		&changeTrackingFile[TReference]{
 			isExecutable: executable,
-			contents: unmodifiedFileContents{
+			contents: unmodifiedFileContents[TReference]{
 				contents: model_core.NewNestedMessage(fileContentsValue, fileContentsValue.Message.Exists.Contents),
 			},
 		},
@@ -1278,13 +1259,13 @@ func (mrc *moduleOrRepositoryContext) doDownload(thread *starlark.Thread, b *sta
 		return nil, err
 	}
 
-	return model_starlark.NewStructFromDict(nil, map[string]any{
+	return model_starlark.NewStructFromDict[TReference](nil, map[string]any{
 		"success": starlark.Bool(true),
 		// TODO: Add "sha256" and "integrity" fields.
 	}), nil
 }
 
-func (mrc *moduleOrRepositoryContext) doDownloadAndExtract(thread *starlark.Thread, b *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
+func (mrc *moduleOrRepositoryContext[TReference]) doDownloadAndExtract(thread *starlark.Thread, b *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
 	mrc.maybeGetDirectoryReaders()
 	if err := mrc.maybeGetStableInputRootPath(); err != nil {
 		return nil, err
@@ -1362,16 +1343,16 @@ func (mrc *moduleOrRepositoryContext) doDownloadAndExtract(thread *starlark.Thre
 	if archiveContentsValue.Message.Exists == nil {
 		// File does not exist, or allow_fail was set and an
 		// error occurred.
-		return model_starlark.NewStructFromDict(nil, map[string]any{
+		return model_starlark.NewStructFromDict[TReference](nil, map[string]any{
 			"success": starlark.Bool(false),
 		}), nil
 	}
 
 	// Determine which directory to place inside the file system.
-	archiveRootDirectory := changeTrackingDirectory{
+	archiveRootDirectory := changeTrackingDirectory[TReference]{
 		currentReference: model_core.NewNestedMessage(archiveContentsValue, archiveContentsValue.Message.Exists),
 	}
-	rootDirectoryResolver := changeTrackingDirectoryResolver{
+	rootDirectoryResolver := changeTrackingDirectoryResolver[TReference]{
 		loadOptions:      mrc.directoryLoadOptions,
 		currentDirectory: &archiveRootDirectory,
 	}
@@ -1380,7 +1361,7 @@ func (mrc *moduleOrRepositoryContext) doDownloadAndExtract(thread *starlark.Thre
 	}
 
 	// Insert the directory into the file system.
-	r := &changeTrackingDirectoryNewDirectoryResolver{
+	r := &changeTrackingDirectoryNewDirectoryResolver[TReference]{
 		loadOptions: mrc.directoryLoadOptions,
 		stack:       util.NewNonEmptyStack(mrc.inputRootDirectory),
 	}
@@ -1390,13 +1371,13 @@ func (mrc *moduleOrRepositoryContext) doDownloadAndExtract(thread *starlark.Thre
 
 	*r.stack.Peek() = *rootDirectoryResolver.currentDirectory
 
-	return model_starlark.NewStructFromDict(nil, map[string]any{
+	return model_starlark.NewStructFromDict[TReference](nil, map[string]any{
 		"success": starlark.Bool(true),
 		// TODO: Add "sha256" and "integrity" fields.
 	}), nil
 }
 
-func (mrc *moduleOrRepositoryContext) doExecute(thread *starlark.Thread, b *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
+func (mrc *moduleOrRepositoryContext[TReference]) doExecute(thread *starlark.Thread, b *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
 	mrc.maybeGetCommandEncoder()
 	mrc.maybeGetDirectoryCreationParameters()
 	mrc.maybeGetDirectoryCreationParametersMessage()
@@ -1509,7 +1490,7 @@ func (mrc *moduleOrRepositoryContext) doExecute(thread *starlark.Thread, b *star
 	if err := path.Resolve(
 		workingDirectory,
 		mrc.virtualRootScopeWalkerFactory.New(
-			&changeTrackingDirectoryNewDirectoryResolver{
+			&changeTrackingDirectoryNewDirectoryResolver[TReference]{
 				loadOptions: mrc.directoryLoadOptions,
 				stack:       util.NewNonEmptyStack(mrc.inputRootDirectory),
 			},
@@ -1593,7 +1574,6 @@ func (mrc *moduleOrRepositoryContext) doExecute(thread *starlark.Thread, b *star
 
 	stdoutEntry, err := model_filesystem.NewFileContentsEntryFromProto(
 		model_core.NewNestedMessage(outputs, outputs.Message.Stdout),
-		referenceFormat,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("invalid standard output entry: %w", err)
@@ -1605,7 +1585,6 @@ func (mrc *moduleOrRepositoryContext) doExecute(thread *starlark.Thread, b *star
 
 	stderrEntry, err := model_filesystem.NewFileContentsEntryFromProto(
 		model_core.NewNestedMessage(outputs, outputs.Message.Stderr),
-		referenceFormat,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("invalid standard error entry: %w", err)
@@ -1618,7 +1597,7 @@ func (mrc *moduleOrRepositoryContext) doExecute(thread *starlark.Thread, b *star
 	// The command may have mutated the repo's contents. Extract the
 	// repo directory contents from the results and copy it into the
 	// input root.
-	var outputRootDirectory changeTrackingDirectory
+	var outputRootDirectory changeTrackingDirectory[TReference]
 	if err := outputRootDirectory.setContents(
 		model_core.NewNestedMessage(outputs, outputs.Message.OutputRoot),
 		mrc.directoryLoadOptions,
@@ -1646,18 +1625,18 @@ func (mrc *moduleOrRepositoryContext) doExecute(thread *starlark.Thread, b *star
 	}
 	*inputRepoDirectory = *outputRepoDirectory
 
-	return model_starlark.NewStructFromDict(nil, map[string]any{
+	return model_starlark.NewStructFromDict[TReference](nil, map[string]any{
 		"return_code": starlark.MakeInt64(actionResult.Message.ExitCode),
 		"stderr":      starlark.String(stderr),
 		"stdout":      starlark.String(stdout),
 	}), nil
 }
 
-func (moduleOrRepositoryContext) doExtract(thread *starlark.Thread, b *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
+func (moduleOrRepositoryContext[TReference]) doExtract(thread *starlark.Thread, b *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
 	return nil, errors.New("TODO: Implement!")
 }
 
-func (mrc *moduleOrRepositoryContext) doFile(thread *starlark.Thread, b *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
+func (mrc *moduleOrRepositoryContext[TReference]) doFile(thread *starlark.Thread, b *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
 	mrc.maybeGetDirectoryReaders()
 	stableInputRootPathError := mrc.maybeGetStableInputRootPath()
 	if mrc.directoryLoadOptions == nil {
@@ -1681,7 +1660,7 @@ func (mrc *moduleOrRepositoryContext) doFile(thread *starlark.Thread, b *starlar
 		return nil, err
 	}
 
-	r := &changeTrackingDirectoryNewFileResolver{
+	r := &changeTrackingDirectoryNewFileResolver[TReference]{
 		loadOptions: mrc.directoryLoadOptions,
 		stack:       util.NewNonEmptyStack(mrc.inputRootDirectory),
 	}
@@ -1706,9 +1685,9 @@ func (mrc *moduleOrRepositoryContext) doFile(thread *starlark.Thread, b *starlar
 	if err := r.stack.Peek().setFile(
 		mrc.directoryLoadOptions,
 		*r.TerminalName,
-		&changeTrackingFile{
+		&changeTrackingFile[TReference]{
 			isExecutable: executable,
-			contents: patchedFileContents{
+			contents: patchedFileContents[TReference]{
 				offsetBytes: patchedFileOffsetBytes,
 				sizeBytes:   mrc.patchedFilesWriter.GetOffsetBytes() - patchedFileOffsetBytes,
 			},
@@ -1720,7 +1699,7 @@ func (mrc *moduleOrRepositoryContext) doFile(thread *starlark.Thread, b *starlar
 	return starlark.None, nil
 }
 
-func (moduleOrRepositoryContext) doGetenv(thread *starlark.Thread, b *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
+func (moduleOrRepositoryContext[TReference]) doGetenv(thread *starlark.Thread, b *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
 	var name string
 	var defaultValue *string
 	if err := starlark.UnpackArgs(
@@ -1738,7 +1717,7 @@ func (moduleOrRepositoryContext) doGetenv(thread *starlark.Thread, b *starlark.B
 	return starlark.String(*defaultValue), nil
 }
 
-func (mrc *moduleOrRepositoryContext) doPath(thread *starlark.Thread, b *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
+func (mrc *moduleOrRepositoryContext[TReference]) doPath(thread *starlark.Thread, b *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
 	if err := mrc.maybeGetStableInputRootPath(); err != nil {
 		return nil, err
 	}
@@ -1753,7 +1732,7 @@ func (mrc *moduleOrRepositoryContext) doPath(thread *starlark.Thread, b *starlar
 	return model_starlark.NewPath(filePath, mrc), nil
 }
 
-func (mrc *moduleOrRepositoryContext) doRead(thread *starlark.Thread, b *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
+func (mrc *moduleOrRepositoryContext[TReference]) doRead(thread *starlark.Thread, b *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
 	mrc.maybeGetDirectoryReaders()
 	mrc.maybeGetFileReader()
 	if err := mrc.maybeGetStableInputRootPath(); err != nil {
@@ -1776,7 +1755,7 @@ func (mrc *moduleOrRepositoryContext) doRead(thread *starlark.Thread, b *starlar
 		return nil, err
 	}
 
-	r := &changeTrackingDirectoryExistingFileResolver{
+	r := &changeTrackingDirectoryExistingFileResolver[TReference]{
 		loadOptions: mrc.directoryLoadOptions,
 		stack:       util.NewNonEmptyStack(mrc.inputRootDirectory),
 	}
@@ -1792,7 +1771,7 @@ func (mrc *moduleOrRepositoryContext) doRead(thread *starlark.Thread, b *starlar
 			return nil, fmt.Errorf("cannot get file %#v: %w", filePath.GetUNIXString(), err)
 		}
 
-		f, err := patchedFile.contents.openRead(mrc.context, mrc.computer.getReferenceFormat(), mrc.fileReader, mrc.patchedFiles)
+		f, err := patchedFile.contents.openRead(mrc.context, mrc.fileReader, mrc.patchedFiles)
 		if err != nil {
 			return nil, fmt.Errorf("failed to open file %#v: %w", filePath.GetUNIXString(), err)
 		}
@@ -1901,7 +1880,6 @@ func (mrc *moduleOrRepositoryContext) doRead(thread *starlark.Thread, b *starlar
 
 	stdoutEntry, err := model_filesystem.NewFileContentsEntryFromProto(
 		model_core.NewNestedMessage(outputs, outputs.Message.Stdout),
-		referenceFormat,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("invalid standard output entry: %w", err)
@@ -1913,7 +1891,7 @@ func (mrc *moduleOrRepositoryContext) doRead(thread *starlark.Thread, b *starlar
 	return starlark.String(string(stdout)), nil
 }
 
-func (moduleOrRepositoryContext) doReportProgress(thread *starlark.Thread, b *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
+func (moduleOrRepositoryContext[TReference]) doReportProgress(thread *starlark.Thread, b *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
 	var status string
 	if err := starlark.UnpackArgs(
 		b.Name(), args, kwargs,
@@ -1924,7 +1902,7 @@ func (moduleOrRepositoryContext) doReportProgress(thread *starlark.Thread, b *st
 	return starlark.None, nil
 }
 
-func (mrc *moduleOrRepositoryContext) doWatch(thread *starlark.Thread, b *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
+func (mrc *moduleOrRepositoryContext[TReference]) doWatch(thread *starlark.Thread, b *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
 	if err := mrc.maybeGetStableInputRootPath(); err != nil {
 		return nil, err
 	}
@@ -1939,7 +1917,7 @@ func (mrc *moduleOrRepositoryContext) doWatch(thread *starlark.Thread, b *starla
 	return starlark.None, nil
 }
 
-func (mrc *moduleOrRepositoryContext) doWhich(thread *starlark.Thread, b *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
+func (mrc *moduleOrRepositoryContext[TReference]) doWhich(thread *starlark.Thread, b *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
 	mrc.maybeGetCommandEncoder()
 	mrc.maybeGetDirectoryCreationParameters()
 	mrc.maybeGetDirectoryCreationParametersMessage()
@@ -2055,7 +2033,6 @@ func (mrc *moduleOrRepositoryContext) doWhich(thread *starlark.Thread, b *starla
 
 		stdoutEntry, err := model_filesystem.NewFileContentsEntryFromProto(
 			model_core.NewNestedMessage(outputs, outputs.Message.Stdout),
-			referenceFormat,
 		)
 		if err != nil {
 			return nil, fmt.Errorf("invalid standard output entry: %w", err)
@@ -2082,7 +2059,7 @@ func (mrc *moduleOrRepositoryContext) doWhich(thread *starlark.Thread, b *starla
 	}
 }
 
-func (mrc *moduleOrRepositoryContext) Exists(p *model_starlark.BarePath) (bool, error) {
+func (mrc *moduleOrRepositoryContext[TReference]) Exists(p *model_starlark.BarePath) (bool, error) {
 	mrc.maybeGetDirectoryReaders()
 	if err := mrc.maybeGetStableInputRootPath(); err != nil {
 		return false, err
@@ -2091,7 +2068,7 @@ func (mrc *moduleOrRepositoryContext) Exists(p *model_starlark.BarePath) (bool, 
 		return false, evaluation.ErrMissingDependency
 	}
 
-	r := &changeTrackingDirectoryExistingFileResolver{
+	r := &changeTrackingDirectoryExistingFileResolver[TReference]{
 		loadOptions: mrc.directoryLoadOptions,
 		stack:       util.NewNonEmptyStack(mrc.inputRootDirectory),
 	}
@@ -2210,15 +2187,15 @@ func (mrc *moduleOrRepositoryContext) Exists(p *model_starlark.BarePath) (bool, 
 	return actionResult.Message.ExitCode == 0, nil
 }
 
-func (moduleOrRepositoryContext) IsDir(*model_starlark.BarePath) (bool, error) {
+func (moduleOrRepositoryContext[TReference]) IsDir(*model_starlark.BarePath) (bool, error) {
 	return false, errors.New("TODO: Implement path.is_dir()!")
 }
 
-func (moduleOrRepositoryContext) Readdir(*model_starlark.BarePath) ([]path.Component, error) {
+func (moduleOrRepositoryContext[TReference]) Readdir(*model_starlark.BarePath) ([]path.Component, error) {
 	return nil, errors.New("TODO: Implement path.readdir()!")
 }
 
-func (moduleOrRepositoryContext) Realpath(*model_starlark.BarePath) (*model_starlark.BarePath, error) {
+func (moduleOrRepositoryContext[TReference]) Realpath(*model_starlark.BarePath) (*model_starlark.BarePath, error) {
 	return nil, errors.New("TODO: Implement path.realpath()!")
 }
 
@@ -2227,13 +2204,13 @@ func (moduleOrRepositoryContext) Realpath(*model_starlark.BarePath) (*model_star
 // refer to ones belonging to external repositories. If they do, it
 // ensures that the repo belonging to that path is added to the input
 // root.
-type externalRepoAddingPathUnpackerInto struct {
-	context      *moduleOrRepositoryContext
+type externalRepoAddingPathUnpackerInto[TReference object.BasicReference] struct {
+	context      *moduleOrRepositoryContext[TReference]
 	base         unpack.UnpackerInto[*model_starlark.BarePath]
 	externalPath *model_starlark.BarePath
 }
 
-func (ui *externalRepoAddingPathUnpackerInto) maybeAddExternalRepo(bp *model_starlark.BarePath) error {
+func (ui *externalRepoAddingPathUnpackerInto[TReference]) maybeAddExternalRepo(bp *model_starlark.BarePath) error {
 	mrc := ui.context
 	if components := bp.GetRelativeTo(ui.externalPath); len(components) >= 1 {
 		repoName := components[0]
@@ -2273,14 +2250,14 @@ func (ui *externalRepoAddingPathUnpackerInto) maybeAddExternalRepo(bp *model_sta
 	return nil
 }
 
-func (ui *externalRepoAddingPathUnpackerInto) UnpackInto(thread *starlark.Thread, v starlark.Value, dst **model_starlark.BarePath) error {
+func (ui *externalRepoAddingPathUnpackerInto[TReference]) UnpackInto(thread *starlark.Thread, v starlark.Value, dst **model_starlark.BarePath) error {
 	if err := ui.base.UnpackInto(thread, v, dst); err != nil {
 		return err
 	}
 	return ui.maybeAddExternalRepo(*dst)
 }
 
-func (ui *externalRepoAddingPathUnpackerInto) Canonicalize(thread *starlark.Thread, v starlark.Value) (starlark.Value, error) {
+func (ui *externalRepoAddingPathUnpackerInto[TReference]) Canonicalize(thread *starlark.Thread, v starlark.Value) (starlark.Value, error) {
 	var bp *model_starlark.BarePath
 	if err := ui.UnpackInto(thread, v, &bp); err != nil {
 		return nil, err
@@ -2291,7 +2268,7 @@ func (ui *externalRepoAddingPathUnpackerInto) Canonicalize(thread *starlark.Thre
 	return starlark.String(bp.GetUNIXString()), nil
 }
 
-func (ui *externalRepoAddingPathUnpackerInto) GetConcatenationOperator() syntax.Token {
+func (ui *externalRepoAddingPathUnpackerInto[TReference]) GetConcatenationOperator() syntax.Token {
 	return ui.base.GetConcatenationOperator()
 }
 
@@ -2304,7 +2281,7 @@ func (ui *externalRepoAddingPathUnpackerInto) GetConcatenationOperator() syntax.
 // function can expand symbolic links without depending on the stable
 // input root path, or files stored on the host file system of the repo
 // platform workers.
-func (mrc *moduleOrRepositoryContext) relativizeSymlinks(maximumEscapementLevels uint32) error {
+func (mrc *moduleOrRepositoryContext[TReference]) relativizeSymlinks(maximumEscapementLevels uint32) error {
 	mrc.maybeGetDirectoryCreationParameters()
 	if err := mrc.maybeGetStableInputRootPath(); err != nil {
 		return err
@@ -2327,31 +2304,31 @@ func (mrc *moduleOrRepositoryContext) relativizeSymlinks(maximumEscapementLevels
 	return mrc.relativizeSymlinksRecursively(dStack, dPath, maximumEscapementLevels)
 }
 
-type changeTrackingDirectoryNormalizingPathResolver struct {
-	loadOptions *changeTrackingDirectoryLoadOptions
+type changeTrackingDirectoryNormalizingPathResolver[TReference object.BasicReference] struct {
+	loadOptions *changeTrackingDirectoryLoadOptions[TReference]
 
 	gotScope    bool
-	directories util.NonEmptyStack[*changeTrackingDirectory]
+	directories util.NonEmptyStack[*changeTrackingDirectory[TReference]]
 	components  []path.Component
 }
 
-func (r *changeTrackingDirectoryNormalizingPathResolver) OnAbsolute() (path.ComponentWalker, error) {
+func (r *changeTrackingDirectoryNormalizingPathResolver[TReference]) OnAbsolute() (path.ComponentWalker, error) {
 	r.gotScope = true
 	r.directories.PopAll()
 	r.components = r.components[:0]
 	return r, nil
 }
 
-func (r *changeTrackingDirectoryNormalizingPathResolver) OnRelative() (path.ComponentWalker, error) {
+func (r *changeTrackingDirectoryNormalizingPathResolver[TReference]) OnRelative() (path.ComponentWalker, error) {
 	r.gotScope = true
 	return r, nil
 }
 
-func (r *changeTrackingDirectoryNormalizingPathResolver) OnDriveLetter(driveLetter rune) (path.ComponentWalker, error) {
+func (r *changeTrackingDirectoryNormalizingPathResolver[TReference]) OnDriveLetter(driveLetter rune) (path.ComponentWalker, error) {
 	return nil, errors.New("drive letters are not supported")
 }
 
-func (r *changeTrackingDirectoryNormalizingPathResolver) OnDirectory(name path.Component) (path.GotDirectoryOrSymlink, error) {
+func (r *changeTrackingDirectoryNormalizingPathResolver[TReference]) OnDirectory(name path.Component) (path.GotDirectoryOrSymlink, error) {
 	d := r.directories.Peek()
 	if err := d.maybeLoadContents(r.loadOptions); err != nil {
 		return nil, err
@@ -2369,7 +2346,7 @@ func (r *changeTrackingDirectoryNormalizingPathResolver) OnDirectory(name path.C
 	return nil, fmt.Errorf("directory %#v does not exist", name.String())
 }
 
-func (r *changeTrackingDirectoryNormalizingPathResolver) OnTerminal(name path.Component) (*path.GotSymlink, error) {
+func (r *changeTrackingDirectoryNormalizingPathResolver[TReference]) OnTerminal(name path.Component) (*path.GotSymlink, error) {
 	d := r.directories.Peek()
 	if err := d.maybeLoadContents(r.loadOptions); err != nil {
 		return nil, err
@@ -2378,7 +2355,7 @@ func (r *changeTrackingDirectoryNormalizingPathResolver) OnTerminal(name path.Co
 	return nil, nil
 }
 
-func (r *changeTrackingDirectoryNormalizingPathResolver) OnUp() (path.ComponentWalker, error) {
+func (r *changeTrackingDirectoryNormalizingPathResolver[TReference]) OnUp() (path.ComponentWalker, error) {
 	if _, ok := r.directories.PopSingle(); !ok {
 		r.components = r.components[:len(r.components)-1]
 		return nil, errors.New("path resolves to a location above the root directory")
@@ -2386,7 +2363,7 @@ func (r *changeTrackingDirectoryNormalizingPathResolver) OnUp() (path.ComponentW
 	return r, nil
 }
 
-func (mrc *moduleOrRepositoryContext) relativizeSymlinksRecursively(dStack util.NonEmptyStack[*changeTrackingDirectory], dPath *path.Trace, maximumEscapementLevels uint32) error {
+func (mrc *moduleOrRepositoryContext[TReference]) relativizeSymlinksRecursively(dStack util.NonEmptyStack[*changeTrackingDirectory[TReference]], dPath *path.Trace, maximumEscapementLevels uint32) error {
 	d := dStack.Peek()
 	if d.currentReference.IsSet() {
 		currentMaximumEscapementLevels := d.currentReference.Message.MaximumSymlinkEscapementLevels
@@ -2413,7 +2390,7 @@ func (mrc *moduleOrRepositoryContext) relativizeSymlinksRecursively(dStack util.
 			// Target of this symlink is absolute or has too
 			// many ".." components. We need to rewrite it
 			// or replace it by its target.
-			r := changeTrackingDirectoryNormalizingPathResolver{
+			r := changeTrackingDirectoryNormalizingPathResolver[TReference]{
 				loadOptions: mrc.directoryLoadOptions,
 				directories: dStack.Copy(),
 				components:  append([]path.Component(nil), dPath.ToList()...),
@@ -2464,7 +2441,7 @@ func (mrc *moduleOrRepositoryContext) relativizeSymlinksRecursively(dStack util.
 	return nil
 }
 
-func (c *baseComputer) fetchModuleExtensionRepo(ctx context.Context, canonicalRepo label.CanonicalRepo, apparentRepo label.ApparentRepo, e RepoEnvironment) (PatchedRepoValue, error) {
+func (c *baseComputer[TReference]) fetchModuleExtensionRepo(ctx context.Context, canonicalRepo label.CanonicalRepo, apparentRepo label.ApparentRepo, e RepoEnvironment[TReference]) (PatchedRepoValue, error) {
 	// Obtain the definition of the declared repo.
 	repoValue := e.GetModuleExtensionRepoValue(&model_analysis_pb.ModuleExtensionRepo_Key{
 		CanonicalRepo: canonicalRepo.String(),
@@ -2485,7 +2462,7 @@ func (c *baseComputer) fetchModuleExtensionRepo(ctx context.Context, canonicalRe
 	)
 }
 
-func (c *baseComputer) fetchRepo(ctx context.Context, canonicalRepo label.CanonicalRepo, apparentRepo label.ApparentRepo, repo model_core.Message[*model_starlark_pb.Repo_Definition, object.OutgoingReferences[object.LocalReference]], e RepoEnvironment) (PatchedRepoValue, error) {
+func (c *baseComputer[TReference]) fetchRepo(ctx context.Context, canonicalRepo label.CanonicalRepo, apparentRepo label.ApparentRepo, repo model_core.Message[*model_starlark_pb.Repo_Definition, TReference], e RepoEnvironment[TReference]) (PatchedRepoValue, error) {
 	// Obtain the definition of the repository rule used by the repo.
 	rootModuleValue := e.GetRootModuleValue(&model_analysis_pb.RootModule_Key{})
 	allBuiltinsModulesNames := e.GetBuiltinsModuleNamesValue(&model_analysis_pb.BuiltinsModuleNames_Key{})
@@ -2572,7 +2549,7 @@ func (c *baseComputer) fetchRepo(ctx context.Context, canonicalRepo label.Canoni
 	repositoryContext.maybeGetDirectoryReaders()
 	repositoryContext.maybeGetFileCreationParameters()
 
-	repositoryCtx := model_starlark.NewStructFromDict(nil, map[string]any{
+	repositoryCtx := model_starlark.NewStructFromDict[object.LocalReference](nil, map[string]any{
 		// Fields shared with module_ctx.
 		"download":             starlark.NewBuiltin("repository_ctx.download", repositoryContext.doDownload),
 		"download_and_extract": starlark.NewBuiltin("repository_ctx.download_and_extract", repositoryContext.doDownloadAndExtract),
@@ -2588,7 +2565,7 @@ func (c *baseComputer) fetchRepo(ctx context.Context, canonicalRepo label.Canoni
 		"which":                starlark.NewBuiltin("repository_ctx.which", repositoryContext.doWhich),
 
 		// Fields specific to repository_ctx.
-		"attr": model_starlark.NewStructFromDict(nil, attrs),
+		"attr": model_starlark.NewStructFromDict[object.LocalReference](nil, attrs),
 		"delete": starlark.NewBuiltin(
 			"repository_ctx.delete",
 			func(thread *starlark.Thread, b *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
@@ -2608,7 +2585,7 @@ func (c *baseComputer) fetchRepo(ctx context.Context, canonicalRepo label.Canoni
 					return nil, err
 				}
 
-				r := &changeTrackingDirectoryExistingFileResolver{
+				r := &changeTrackingDirectoryExistingFileResolver[TReference]{
 					loadOptions: repositoryContext.directoryLoadOptions,
 					stack:       util.NewNonEmptyStack(repositoryContext.inputRootDirectory),
 				}
@@ -2670,7 +2647,7 @@ func (c *baseComputer) fetchRepo(ctx context.Context, canonicalRepo label.Canoni
 				}
 
 				// Resolve patch file from the stable root directory.
-				r := &changeTrackingDirectoryExistingFileResolver{
+				r := &changeTrackingDirectoryExistingFileResolver[TReference]{
 					loadOptions: repositoryContext.directoryLoadOptions,
 					stack:       util.NewNonEmptyStack(repositoryContext.inputRootDirectory),
 				}
@@ -2699,7 +2676,7 @@ func (c *baseComputer) fetchRepo(ctx context.Context, canonicalRepo label.Canoni
 					strip,
 					repositoryContext.fileReader,
 					func() (io.Reader, error) {
-						return trackedPatchFile.contents.openRead(repositoryContext.context, repositoryContext.computer.getReferenceFormat(), repositoryContext.fileReader, repositoryContext.patchedFiles)
+						return trackedPatchFile.contents.openRead(repositoryContext.context, repositoryContext.fileReader, repositoryContext.patchedFiles)
 					},
 					repositoryContext.patchedFiles,
 					repositoryContext.patchedFilesWriter,
@@ -2733,7 +2710,7 @@ func (c *baseComputer) fetchRepo(ctx context.Context, canonicalRepo label.Canoni
 
 				// Resolve path at which symlink needs
 				// to be created.
-				r := &changeTrackingDirectoryNewFileResolver{
+				r := &changeTrackingDirectoryNewFileResolver[TReference]{
 					loadOptions: repositoryContext.directoryLoadOptions,
 					stack:       util.NewNonEmptyStack(repositoryContext.inputRootDirectory),
 				}
@@ -2802,7 +2779,7 @@ func (c *baseComputer) fetchRepo(ctx context.Context, canonicalRepo label.Canoni
 				}
 
 				// Load the template file.
-				templateFileResolver := &changeTrackingDirectoryExistingFileResolver{
+				templateFileResolver := &changeTrackingDirectoryExistingFileResolver[TReference]{
 					loadOptions: repositoryContext.directoryLoadOptions,
 					stack:       util.NewNonEmptyStack(repositoryContext.inputRootDirectory),
 				}
@@ -2815,7 +2792,6 @@ func (c *baseComputer) fetchRepo(ctx context.Context, canonicalRepo label.Canoni
 				}
 				templateFile, err := f.contents.openRead(
 					repositoryContext.context,
-					c.getReferenceFormat(),
 					repositoryContext.fileReader,
 					repositoryContext.patchedFiles,
 				)
@@ -2823,7 +2799,7 @@ func (c *baseComputer) fetchRepo(ctx context.Context, canonicalRepo label.Canoni
 					return nil, fmt.Errorf("failed to open template %#v: %w", templatePath.GetUNIXString(), err)
 				}
 
-				outputFileResolver := &changeTrackingDirectoryNewFileResolver{
+				outputFileResolver := &changeTrackingDirectoryNewFileResolver[TReference]{
 					loadOptions: repositoryContext.directoryLoadOptions,
 					stack:       util.NewNonEmptyStack(repositoryContext.inputRootDirectory),
 				}
@@ -2847,9 +2823,9 @@ func (c *baseComputer) fetchRepo(ctx context.Context, canonicalRepo label.Canoni
 				if err := outputFileResolver.stack.Peek().setFile(
 					repositoryContext.directoryLoadOptions,
 					*outputFileResolver.TerminalName,
-					&changeTrackingFile{
+					&changeTrackingFile[TReference]{
 						isExecutable: executable,
-						contents: patchedFileContents{
+						contents: patchedFileContents[TReference]{
 							offsetBytes: patchedFileOffsetBytes,
 							sizeBytes:   repositoryContext.patchedFilesWriter.GetOffsetBytes() - patchedFileOffsetBytes,
 						},
@@ -2903,7 +2879,7 @@ func (c *baseComputer) fetchRepo(ctx context.Context, canonicalRepo label.Canoni
 	)
 }
 
-func (c *baseComputer) createMerkleTreeFromChangeTrackingDirectory(ctx context.Context, rootDirectory *changeTrackingDirectory, directoryCreationParameters *model_filesystem.DirectoryCreationParameters, directoryReaders *DirectoryReaders, fileCreationParameters *model_filesystem.FileCreationParameters, patchedFiles io.ReaderAt) (model_core.PatchedMessage[*model_filesystem_pb.DirectoryReference, dag.ObjectContentsWalker], error) {
+func (c *baseComputer[TReference]) createMerkleTreeFromChangeTrackingDirectory(ctx context.Context, rootDirectory *changeTrackingDirectory[TReference], directoryCreationParameters *model_filesystem.DirectoryCreationParameters, directoryReaders *DirectoryReaders[TReference], fileCreationParameters *model_filesystem.FileCreationParameters, patchedFiles io.ReaderAt) (model_core.PatchedMessage[*model_filesystem_pb.DirectoryReference, dag.ObjectContentsWalker], error) {
 	if r := rootDirectory.currentReference; r.IsSet() {
 		// Directory remained completely unmodified. Simply
 		// return the original directory.
@@ -2936,8 +2912,8 @@ func (c *baseComputer) createMerkleTreeFromChangeTrackingDirectory(ctx context.C
 			semaphore.NewWeighted(1),
 			group,
 			directoryCreationParameters,
-			&capturableChangeTrackingDirectory{
-				options: &capturableChangeTrackingDirectoryOptions{
+			&capturableChangeTrackingDirectory[TReference]{
+				options: &capturableChangeTrackingDirectoryOptions[TReference]{
 					context:                groupCtx,
 					directoryReader:        directoryReaders.Directory,
 					fileCreationParameters: fileCreationParameters,
@@ -2988,7 +2964,7 @@ func (c *baseComputer) createMerkleTreeFromChangeTrackingDirectory(ctx context.C
 	), nil
 }
 
-func (c *baseComputer) returnRepoMerkleTree(ctx context.Context, rootDirectory *changeTrackingDirectory, directoryCreationParameters *model_filesystem.DirectoryCreationParameters, directoryReaders *DirectoryReaders, fileCreationParameters *model_filesystem.FileCreationParameters, patchedFiles io.ReaderAt) (PatchedRepoValue, error) {
+func (c *baseComputer[TReference]) returnRepoMerkleTree(ctx context.Context, rootDirectory *changeTrackingDirectory[TReference], directoryCreationParameters *model_filesystem.DirectoryCreationParameters, directoryReaders *DirectoryReaders[TReference], fileCreationParameters *model_filesystem.FileCreationParameters, patchedFiles io.ReaderAt) (PatchedRepoValue, error) {
 	rootDirectoryReference, err := c.createMerkleTreeFromChangeTrackingDirectory(ctx, rootDirectory, directoryCreationParameters, directoryReaders, fileCreationParameters, patchedFiles)
 	if err != nil {
 		return PatchedRepoValue{}, err
@@ -3001,7 +2977,7 @@ func (c *baseComputer) returnRepoMerkleTree(ctx context.Context, rootDirectory *
 	}, nil
 }
 
-func (c *baseComputer) ComputeRepoValue(ctx context.Context, key *model_analysis_pb.Repo_Key, e RepoEnvironment) (PatchedRepoValue, error) {
+func (c *baseComputer[TReference]) ComputeRepoValue(ctx context.Context, key *model_analysis_pb.Repo_Key, e RepoEnvironment[TReference]) (PatchedRepoValue, error) {
 	canonicalRepo, err := label.NewCanonicalRepo(key.CanonicalRepo)
 	if err != nil {
 		return PatchedRepoValue{}, fmt.Errorf("invalid canonical repo: %w", err)

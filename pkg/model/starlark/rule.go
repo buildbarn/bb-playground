@@ -18,19 +18,19 @@ import (
 	"go.starlark.net/starlark"
 )
 
-type rule struct {
+type rule[TReference object.BasicReference] struct {
 	LateNamedValue
 	definition RuleDefinition
 }
 
 var (
-	_ starlark.Callable = &rule{}
-	_ EncodableValue    = &rule{}
-	_ NamedGlobal       = &rule{}
+	_ starlark.Callable = (*rule[object.LocalReference])(nil)
+	_ EncodableValue    = (*rule[object.LocalReference])(nil)
+	_ NamedGlobal       = (*rule[object.LocalReference])(nil)
 )
 
-func NewRule(identifier *pg_label.CanonicalStarlarkIdentifier, definition RuleDefinition) starlark.Value {
-	return &rule{
+func NewRule[TReference object.BasicReference](identifier *pg_label.CanonicalStarlarkIdentifier, definition RuleDefinition) starlark.Value {
+	return &rule[TReference]{
 		LateNamedValue: LateNamedValue{
 			Identifier: identifier,
 		},
@@ -38,25 +38,25 @@ func NewRule(identifier *pg_label.CanonicalStarlarkIdentifier, definition RuleDe
 	}
 }
 
-func (r *rule) String() string {
+func (r *rule[TReference]) String() string {
 	return "<rule>"
 }
 
-func (r *rule) Type() string {
+func (r *rule[TReference]) Type() string {
 	return "rule"
 }
 
-func (r *rule) Freeze() {}
+func (r *rule[TReference]) Freeze() {}
 
-func (r *rule) Truth() starlark.Bool {
+func (r *rule[TReference]) Truth() starlark.Bool {
 	return starlark.True
 }
 
-func (r *rule) Hash(thread *starlark.Thread) (uint32, error) {
+func (r *rule[TReference]) Hash(thread *starlark.Thread) (uint32, error) {
 	return 0, errors.New("rule cannot be hashed")
 }
 
-func (r *rule) Name() string {
+func (r *rule[TReference]) Name() string {
 	if r.Identifier == nil {
 		return "rule"
 	}
@@ -72,7 +72,7 @@ var emptyTargetCompatibleWith = NewSelect(
 	/* concatenationOperator = */ 0,
 )
 
-func (r *rule) CallInternal(thread *starlark.Thread, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
+func (r *rule[TReference]) CallInternal(thread *starlark.Thread, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
 	if len(args) != 0 {
 		return nil, fmt.Errorf("got %d positional arguments, want 1", len(args))
 	}
@@ -84,7 +84,7 @@ func (r *rule) CallInternal(thread *starlark.Thread, args starlark.Tuple, kwargs
 	if targetRegistrarValue == nil {
 		return nil, fmt.Errorf("rule cannot be invoked from within this context")
 	}
-	targetRegistrar := targetRegistrarValue.(*TargetRegistrar)
+	targetRegistrar := targetRegistrarValue.(*TargetRegistrar[TReference])
 
 	attrs, err := r.definition.GetAttrsCheap(thread)
 	if err != nil {
@@ -422,7 +422,7 @@ func (r *rule) CallInternal(thread *starlark.Thread, args starlark.Tuple, kwargs
 	)
 }
 
-func (r *rule) EncodeValue(path map[starlark.Value]struct{}, currentIdentifier *pg_label.CanonicalStarlarkIdentifier, options *ValueEncodingOptions) (model_core.PatchedMessage[*model_starlark_pb.Value, model_core.CreatedObjectTree], bool, error) {
+func (r *rule[TReference]) EncodeValue(path map[starlark.Value]struct{}, currentIdentifier *pg_label.CanonicalStarlarkIdentifier, options *ValueEncodingOptions) (model_core.PatchedMessage[*model_starlark_pb.Value, model_core.CreatedObjectTree], bool, error) {
 	if r.Identifier == nil {
 		return model_core.PatchedMessage[*model_starlark_pb.Value, model_core.CreatedObjectTree]{}, false, errors.New("rule does not have a name")
 	}
@@ -590,26 +590,26 @@ func (rd *starlarkRuleDefinition) GetTest(thread *starlark.Thread) (bool, error)
 	return rd.test, nil
 }
 
-type protoRuleDefinition struct {
-	message         model_core.Message[*model_starlark_pb.Rule_Definition, object.OutgoingReferences[object.LocalReference]]
+type protoRuleDefinition[TReference object.BasicReference] struct {
+	message         model_core.Message[*model_starlark_pb.Rule_Definition, TReference]
 	protoAttrsCache protoAttrsCache
 }
 
-func NewProtoRuleDefinition(message model_core.Message[*model_starlark_pb.Rule_Definition, object.OutgoingReferences[object.LocalReference]]) RuleDefinition {
-	return &protoRuleDefinition{
+func NewProtoRuleDefinition[TReference object.BasicReference](message model_core.Message[*model_starlark_pb.Rule_Definition, TReference]) RuleDefinition {
+	return &protoRuleDefinition[TReference]{
 		message: message,
 	}
 }
 
-func (rd *protoRuleDefinition) Encode(path map[starlark.Value]struct{}, options *ValueEncodingOptions) (model_core.PatchedMessage[*model_starlark_pb.Rule_Definition, model_core.CreatedObjectTree], bool, error) {
+func (rd *protoRuleDefinition[TReference]) Encode(path map[starlark.Value]struct{}, options *ValueEncodingOptions) (model_core.PatchedMessage[*model_starlark_pb.Rule_Definition, model_core.CreatedObjectTree], bool, error) {
 	panic("rule definition was already encoded previously")
 }
 
-func (rd *protoRuleDefinition) GetAttrsCheap(thread *starlark.Thread) (map[pg_label.StarlarkIdentifier]*Attr, error) {
+func (rd *protoRuleDefinition[TReference]) GetAttrsCheap(thread *starlark.Thread) (map[pg_label.StarlarkIdentifier]*Attr, error) {
 	return rd.protoAttrsCache.getAttrsCheap(thread, rd.message.Message.Attrs)
 }
 
-func (rd *protoRuleDefinition) GetBuildSetting(thread *starlark.Thread) (*BuildSetting, error) {
+func (rd *protoRuleDefinition[TReference]) GetBuildSetting(thread *starlark.Thread) (*BuildSetting, error) {
 	buildSettingMessage := rd.message.Message.BuildSetting
 	if buildSettingMessage == nil {
 		return nil, nil
@@ -617,7 +617,7 @@ func (rd *protoRuleDefinition) GetBuildSetting(thread *starlark.Thread) (*BuildS
 	return decodeBuildSetting(buildSettingMessage)
 }
 
-func (rd *protoRuleDefinition) GetInitializer(thread *starlark.Thread) (*NamedFunction, error) {
+func (rd *protoRuleDefinition[TReference]) GetInitializer(thread *starlark.Thread) (*NamedFunction, error) {
 	if rd.message.Message.Initializer == nil {
 		return nil, nil
 	}
@@ -629,7 +629,7 @@ func (rd *protoRuleDefinition) GetInitializer(thread *starlark.Thread) (*NamedFu
 	return &f, nil
 }
 
-func (rd *protoRuleDefinition) GetTest(thread *starlark.Thread) (bool, error) {
+func (rd *protoRuleDefinition[TReference]) GetTest(thread *starlark.Thread) (bool, error) {
 	return rd.message.Message.Test, nil
 }
 
@@ -638,7 +638,7 @@ type reloadingRuleDefinition struct {
 	base       atomic.Pointer[RuleDefinition]
 }
 
-type GlobalResolver = func(identifier pg_label.CanonicalStarlarkIdentifier) (model_core.Message[*model_starlark_pb.Value, object.OutgoingReferences[object.LocalReference]], error)
+type GlobalResolver = func(identifier pg_label.CanonicalStarlarkIdentifier) (model_core.Message[*model_starlark_pb.Value, object.LocalReference], error)
 
 const GlobalResolverKey = "global_resolver"
 

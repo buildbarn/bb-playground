@@ -14,10 +14,9 @@ import (
 	model_core_pb "github.com/buildbarn/bonanza/pkg/proto/model/core"
 	model_starlark_pb "github.com/buildbarn/bonanza/pkg/proto/model/starlark"
 	"github.com/buildbarn/bonanza/pkg/storage/dag"
-	"github.com/buildbarn/bonanza/pkg/storage/object"
 )
 
-func (c *baseComputer) lookupTargetDefinitionInTargetList(ctx context.Context, targetList model_core.Message[[]*model_analysis_pb.Package_Value_Target, object.OutgoingReferences[object.LocalReference]], targetName label.TargetName) (model_core.Message[*model_starlark_pb.Target_Definition, object.OutgoingReferences[object.LocalReference]], error) {
+func (c *baseComputer[TReference]) lookupTargetDefinitionInTargetList(ctx context.Context, targetList model_core.Message[[]*model_analysis_pb.Package_Value_Target, TReference], targetName label.TargetName) (model_core.Message[*model_starlark_pb.Target_Definition, TReference], error) {
 	targetNameStr := targetName.String()
 	target, err := btree.Find(
 		ctx,
@@ -35,24 +34,24 @@ func (c *baseComputer) lookupTargetDefinitionInTargetList(ctx context.Context, t
 		},
 	)
 	if err != nil {
-		return model_core.Message[*model_starlark_pb.Target_Definition, object.OutgoingReferences[object.LocalReference]]{}, err
+		return model_core.Message[*model_starlark_pb.Target_Definition, TReference]{}, err
 	}
 	if !target.IsSet() {
-		return model_core.Message[*model_starlark_pb.Target_Definition, object.OutgoingReferences[object.LocalReference]]{}, nil
+		return model_core.Message[*model_starlark_pb.Target_Definition, TReference]{}, nil
 	}
 
 	level, ok := target.Message.Level.(*model_analysis_pb.Package_Value_Target_Leaf)
 	if !ok {
-		return model_core.Message[*model_starlark_pb.Target_Definition, object.OutgoingReferences[object.LocalReference]]{}, errors.New("target list has an unknown level type")
+		return model_core.Message[*model_starlark_pb.Target_Definition, TReference]{}, errors.New("target list has an unknown level type")
 	}
 	definition := level.Leaf.Definition
 	if definition == nil {
-		return model_core.Message[*model_starlark_pb.Target_Definition, object.OutgoingReferences[object.LocalReference]]{}, errors.New("target does not have a definition")
+		return model_core.Message[*model_starlark_pb.Target_Definition, TReference]{}, errors.New("target does not have a definition")
 	}
 	return model_core.NewNestedMessage(targetList, definition), nil
 }
 
-func (c *baseComputer) ComputeTargetValue(ctx context.Context, key *model_analysis_pb.Target_Key, e TargetEnvironment) (PatchedTargetValue, error) {
+func (c *baseComputer[TReference]) ComputeTargetValue(ctx context.Context, key *model_analysis_pb.Target_Key, e TargetEnvironment[TReference]) (PatchedTargetValue, error) {
 	targetLabel, err := label.NewCanonicalLabel(key.Label)
 	if err != nil {
 		return PatchedTargetValue{}, fmt.Errorf("invalid target label: %w", err)

@@ -9,7 +9,6 @@ import (
 	pg_label "github.com/buildbarn/bonanza/pkg/label"
 	model_core "github.com/buildbarn/bonanza/pkg/model/core"
 	model_starlark_pb "github.com/buildbarn/bonanza/pkg/proto/model/starlark"
-	"github.com/buildbarn/bonanza/pkg/storage/object"
 
 	"go.starlark.net/starlark"
 )
@@ -169,16 +168,16 @@ func (sd *starlarkSubruleDefinition) Encode(path map[starlark.Value]struct{}, op
 	), needsCode, nil
 }
 
-type protoSubruleDefinition struct {
-	message model_core.Message[*model_starlark_pb.Subrule_Definition, object.OutgoingReferences[object.LocalReference]]
+type protoSubruleDefinition[TReference any] struct {
+	message model_core.Message[*model_starlark_pb.Subrule_Definition, TReference]
 }
 
-func NewProtoSubruleDefinition(message model_core.Message[*model_starlark_pb.Subrule_Definition, object.OutgoingReferences[object.LocalReference]]) SubruleDefinition {
-	return &protoSubruleDefinition{
+func NewProtoSubruleDefinition[TReference any](message model_core.Message[*model_starlark_pb.Subrule_Definition, TReference]) SubruleDefinition {
+	return &protoSubruleDefinition[TReference]{
 		message: message,
 	}
 }
 
-func (sd *protoSubruleDefinition) Encode(path map[starlark.Value]struct{}, options *ValueEncodingOptions) (model_core.PatchedMessage[*model_starlark_pb.Subrule_Definition, model_core.CreatedObjectTree], bool, error) {
+func (sd *protoSubruleDefinition[TReference]) Encode(path map[starlark.Value]struct{}, options *ValueEncodingOptions) (model_core.PatchedMessage[*model_starlark_pb.Subrule_Definition, model_core.CreatedObjectTree], bool, error) {
 	panic("rule definition was already encoded previously")
 }

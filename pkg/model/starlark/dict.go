@@ -10,20 +10,19 @@ import (
 	model_parser "github.com/buildbarn/bonanza/pkg/model/parser"
 	model_core_pb "github.com/buildbarn/bonanza/pkg/proto/model/core"
 	model_starlark_pb "github.com/buildbarn/bonanza/pkg/proto/model/starlark"
-	"github.com/buildbarn/bonanza/pkg/storage/object"
 )
 
-func AllDictLeafEntries[TOutgoingReferences object.OutgoingReferences[object.LocalReference]](
+func AllDictLeafEntries[TReference any](
 	ctx context.Context,
-	reader model_parser.ParsedObjectReader[object.LocalReference, model_core.Message[[]*model_starlark_pb.Dict_Entry, TOutgoingReferences]],
-	rootDict model_core.Message[*model_starlark_pb.Dict, TOutgoingReferences],
+	reader model_parser.ParsedObjectReader[TReference, model_core.Message[[]*model_starlark_pb.Dict_Entry, TReference]],
+	rootDict model_core.Message[*model_starlark_pb.Dict, TReference],
 	errOut *error,
-) iter.Seq[model_core.Message[*model_starlark_pb.Dict_Entry_Leaf, TOutgoingReferences]] {
+) iter.Seq[model_core.Message[*model_starlark_pb.Dict_Entry_Leaf, TReference]] {
 	allLeaves := btree.AllLeaves(
 		ctx,
 		reader,
 		model_core.NewNestedMessage(rootDict, rootDict.Message.Entries),
-		func(entry model_core.Message[*model_starlark_pb.Dict_Entry, TOutgoingReferences]) (*model_core_pb.Reference, error) {
+		func(entry model_core.Message[*model_starlark_pb.Dict_Entry, TReference]) (*model_core_pb.Reference, error) {
 			if parent, ok := entry.Message.Level.(*model_starlark_pb.Dict_Entry_Parent_); ok {
 				return parent.Parent.Reference, nil
 			}
@@ -31,8 +30,8 @@ func AllDictLeafEntries[TOutgoingReferences object.OutgoingReferences[object.Loc
 		},
 		errOut,
 	)
-	return func(yield func(model_core.Message[*model_starlark_pb.Dict_Entry_Leaf, TOutgoingReferences]) bool) {
-		allLeaves(func(entry model_core.Message[*model_starlark_pb.Dict_Entry, TOutgoingReferences]) bool {
+	return func(yield func(model_core.Message[*model_starlark_pb.Dict_Entry_Leaf, TReference]) bool) {
+		allLeaves(func(entry model_core.Message[*model_starlark_pb.Dict_Entry, TReference]) bool {
 			leafEntry, ok := entry.Message.Level.(*model_starlark_pb.Dict_Entry_Leaf_)
 			if !ok {
 				*errOut = errors.New("not a valid leaf entry")

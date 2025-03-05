@@ -16,19 +16,19 @@ type OutgoingReferences[TReference any] interface {
 
 // OutgoingReferencesList is a list of outgoing references of an object
 // that is backed by a simple slice.
-type OutgoingReferencesList []LocalReference
+type OutgoingReferencesList[T any] []T
 
-var _ OutgoingReferences[LocalReference] = OutgoingReferencesList{}
+var _ OutgoingReferences[LocalReference] = OutgoingReferencesList[LocalReference]{}
 
-func (l OutgoingReferencesList) GetDegree() int {
+func (l OutgoingReferencesList[T]) GetDegree() int {
 	return len(l)
 }
 
-func (l OutgoingReferencesList) GetOutgoingReference(index int) LocalReference {
+func (l OutgoingReferencesList[T]) GetOutgoingReference(index int) T {
 	return l[index]
 }
 
-func (l OutgoingReferencesList) DetachOutgoingReferences() OutgoingReferences[LocalReference] {
+func (l OutgoingReferencesList[T]) DetachOutgoingReferences() OutgoingReferences[T] {
 	// Underlying slice is already detached.
 	return l
 }

@@ -11,14 +11,14 @@ import (
 	"github.com/buildbarn/bonanza/pkg/evaluation"
 	"github.com/buildbarn/bonanza/pkg/label"
 	model_core "github.com/buildbarn/bonanza/pkg/model/core"
+	model_filesystem "github.com/buildbarn/bonanza/pkg/model/filesystem"
 	model_parser "github.com/buildbarn/bonanza/pkg/model/parser"
 	model_analysis_pb "github.com/buildbarn/bonanza/pkg/proto/model/analysis"
 	model_filesystem_pb "github.com/buildbarn/bonanza/pkg/proto/model/filesystem"
 	"github.com/buildbarn/bonanza/pkg/storage/dag"
-	"github.com/buildbarn/bonanza/pkg/storage/object"
 )
 
-func (c *baseComputer) ComputePackagesAtAndBelowValue(ctx context.Context, key *model_analysis_pb.PackagesAtAndBelow_Key, e PackagesAtAndBelowEnvironment) (PatchedPackagesAtAndBelowValue, error) {
+func (c *baseComputer[TReference]) ComputePackagesAtAndBelowValue(ctx context.Context, key *model_analysis_pb.PackagesAtAndBelow_Key, e PackagesAtAndBelowEnvironment[TReference]) (PatchedPackagesAtAndBelowValue, error) {
 	basePackage, err := label.NewCanonicalPackage(key.BasePackage)
 	if err != nil {
 		return PatchedPackagesAtAndBelowValue{}, errors.New("invalid base package")
@@ -68,7 +68,7 @@ func (c *baseComputer) ComputePackagesAtAndBelowValue(ctx context.Context, key *
 	}
 
 	// Find packages at and below the base package.
-	checker := packageExistenceChecker{
+	checker := packageExistenceChecker[TReference]{
 		context:         ctx,
 		directoryReader: directoryReaders.Directory,
 		leavesReader:    directoryReaders.Leaves,
@@ -87,30 +87,21 @@ func (c *baseComputer) ComputePackagesAtAndBelowValue(ctx context.Context, key *
 	}), nil
 }
 
-type packageExistenceChecker struct {
+type packageExistenceChecker[TReference any] struct {
 	context                  context.Context
-	directoryReader          model_parser.ParsedObjectReader[object.LocalReference, model_core.Message[*model_filesystem_pb.Directory, object.OutgoingReferences[object.LocalReference]]]
-	leavesReader             model_parser.ParsedObjectReader[object.LocalReference, model_core.Message[*model_filesystem_pb.Leaves, object.OutgoingReferences[object.LocalReference]]]
+	directoryReader          model_parser.ParsedObjectReader[TReference, model_core.Message[*model_filesystem_pb.Directory, TReference]]
+	leavesReader             model_parser.ParsedObjectReader[TReference, model_core.Message[*model_filesystem_pb.Leaves, TReference]]
 	packagesBelowBasePackage []string
 }
 
-func (pec *packageExistenceChecker) directoryIsPackage(d model_core.Message[*model_filesystem_pb.Directory, object.OutgoingReferences[object.LocalReference]]) (bool, error) {
-	var leaves *model_filesystem_pb.Leaves
-	switch l := d.Message.Leaves.(type) {
-	case *model_filesystem_pb.Directory_LeavesExternal:
-		externalLeaves, err := model_parser.Dereference(pec.context, pec.leavesReader, model_core.NewNestedMessage(d, l.LeavesExternal.Reference))
-		if err != nil {
-			return false, err
-		}
-		leaves = externalLeaves.Message
-	case *model_filesystem_pb.Directory_LeavesInline:
-		leaves = l.LeavesInline
-	default:
-		return false, errors.New("invalid leaves type")
+func (pec *packageExistenceChecker[TReference]) directoryIsPackage(d model_core.Message[*model_filesystem_pb.Directory, TReference]) (bool, error) {
+	leaves, err := model_filesystem.DirectoryGetLeaves(pec.context, pec.leavesReader, d)
+	if err != nil {
+		return false, err
 	}
 
 	// TODO: Should we also consider symlinks having such names?
-	files := leaves.Files
+	files := leaves.Message.Files
 	for _, filename := range buildDotBazelTargetNames {
 		filenameStr := filename.String()
 		if _, ok := sort.Find(
@@ -124,7 +115,7 @@ func (pec *packageExistenceChecker) directoryIsPackage(d model_core.Message[*mod
 	return false, nil
 }
 
-func (pec *packageExistenceChecker) findPackagesBelow(d model_core.Message[*model_filesystem_pb.Directory, object.OutgoingReferences[object.LocalReference]], dTrace *path.Trace) error {
+func (pec *packageExistenceChecker[TReference]) findPackagesBelow(d model_core.Message[*model_filesystem_pb.Directory, TReference], dTrace *path.Trace) error {
 	for _, entry := range d.Message.Directories {
 		name, ok := path.NewComponent(entry.Name)
 		if !ok {
@@ -132,7 +123,7 @@ func (pec *packageExistenceChecker) findPackagesBelow(d model_core.Message[*mode
 		}
 		childTrace := dTrace.Append(name)
 
-		var childDirectory model_core.Message[*model_filesystem_pb.Directory, object.OutgoingReferences[object.LocalReference]]
+		var childDirectory model_core.Message[*model_filesystem_pb.Directory, TReference]
 		switch contents := entry.Contents.(type) {
 		case *model_filesystem_pb.DirectoryNode_ContentsExternal:
 			var err error

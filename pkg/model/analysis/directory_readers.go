@@ -10,19 +10,18 @@ import (
 	model_analysis_pb "github.com/buildbarn/bonanza/pkg/proto/model/analysis"
 	model_command_pb "github.com/buildbarn/bonanza/pkg/proto/model/command"
 	model_filesystem_pb "github.com/buildbarn/bonanza/pkg/proto/model/filesystem"
-	"github.com/buildbarn/bonanza/pkg/storage/object"
 )
 
 // DirectoryReaders contains ParsedObjectReaders that can be used to
 // follow references to objects that are encoded using the directory
 // access parameters that are part of the BuildSpecification.
-type DirectoryReaders struct {
-	Directory      model_parser.ParsedObjectReader[object.LocalReference, model_core.Message[*model_filesystem_pb.Directory, object.OutgoingReferences[object.LocalReference]]]
-	Leaves         model_parser.ParsedObjectReader[object.LocalReference, model_core.Message[*model_filesystem_pb.Leaves, object.OutgoingReferences[object.LocalReference]]]
-	CommandOutputs model_parser.ParsedObjectReader[object.LocalReference, model_core.Message[*model_command_pb.Outputs, object.OutgoingReferences[object.LocalReference]]]
+type DirectoryReaders[TReference any] struct {
+	Directory      model_parser.ParsedObjectReader[TReference, model_core.Message[*model_filesystem_pb.Directory, TReference]]
+	Leaves         model_parser.ParsedObjectReader[TReference, model_core.Message[*model_filesystem_pb.Leaves, TReference]]
+	CommandOutputs model_parser.ParsedObjectReader[TReference, model_core.Message[*model_command_pb.Outputs, TReference]]
 }
 
-func (c *baseComputer) ComputeDirectoryReadersValue(ctx context.Context, key *model_analysis_pb.DirectoryReaders_Key, e DirectoryReadersEnvironment) (*DirectoryReaders, error) {
+func (c *baseComputer[TReference]) ComputeDirectoryReadersValue(ctx context.Context, key *model_analysis_pb.DirectoryReaders_Key, e DirectoryReadersEnvironment[TReference]) (*DirectoryReaders[TReference], error) {
 	directoryAccessParametersValue := e.GetDirectoryAccessParametersValue(&model_analysis_pb.DirectoryAccessParameters_Key{})
 	if !directoryAccessParametersValue.IsSet() {
 		return nil, evaluation.ErrMissingDependency
@@ -35,21 +34,28 @@ func (c *baseComputer) ComputeDirectoryReadersValue(ctx context.Context, key *mo
 		return nil, err
 	}
 
-	return &DirectoryReaders{
-		Directory: model_parser.NewStorageBackedParsedObjectReader(
-			c.objectDownloader,
-			directoryAccessParameters.GetEncoder(),
-			model_parser.NewMessageObjectParser[object.LocalReference, model_filesystem_pb.Directory](),
+	encoderObjectParser := model_parser.NewEncodedObjectParser[TReference](directoryAccessParameters.GetEncoder())
+	return &DirectoryReaders[TReference]{
+		Directory: model_parser.LookupParsedObjectReader(
+			c.parsedObjectFetcher,
+			model_parser.NewChainedObjectParser(
+				encoderObjectParser,
+				model_parser.NewMessageObjectParser[TReference, model_filesystem_pb.Directory](),
+			),
 		),
-		Leaves: model_parser.NewStorageBackedParsedObjectReader(
-			c.objectDownloader,
-			directoryAccessParameters.GetEncoder(),
-			model_parser.NewMessageObjectParser[object.LocalReference, model_filesystem_pb.Leaves](),
+		Leaves: model_parser.LookupParsedObjectReader(
+			c.parsedObjectFetcher,
+			model_parser.NewChainedObjectParser(
+				encoderObjectParser,
+				model_parser.NewMessageObjectParser[TReference, model_filesystem_pb.Leaves](),
+			),
 		),
-		CommandOutputs: model_parser.NewStorageBackedParsedObjectReader(
-			c.objectDownloader,
-			directoryAccessParameters.GetEncoder(),
-			model_parser.NewMessageObjectParser[object.LocalReference, model_command_pb.Outputs](),
+		CommandOutputs: model_parser.LookupParsedObjectReader(
+			c.parsedObjectFetcher,
+			model_parser.NewChainedObjectParser(
+				encoderObjectParser,
+				model_parser.NewMessageObjectParser[TReference, model_command_pb.Outputs](),
+			),
 		),
 	}, nil
 }

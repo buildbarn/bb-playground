@@ -1,52 +1,55 @@
 package core
 
 import (
-	"reflect"
-
 	model_core_pb "github.com/buildbarn/bonanza/pkg/proto/model/core"
 	"github.com/buildbarn/bonanza/pkg/storage/object"
 
 	"google.golang.org/protobuf/proto"
 )
 
-type Message[TMessage any, TOutgoingReferences any] struct {
+type Message[TMessage any, TReference any] struct {
 	Message            TMessage
-	OutgoingReferences TOutgoingReferences
+	OutgoingReferences object.OutgoingReferences[TReference]
 }
 
 // NewMessage is a helper function for creating instances of Message.
-func NewMessage[TMessage, TOutgoingReferences any](
+func NewMessage[TMessage, TReference any](
 	m TMessage,
-	outgoingReferences TOutgoingReferences,
-) Message[TMessage, TOutgoingReferences] {
-	return Message[TMessage, TOutgoingReferences]{
+	outgoingReferences object.OutgoingReferences[TReference],
+) Message[TMessage, TReference] {
+	return Message[TMessage, TReference]{
 		Message:            m,
 		OutgoingReferences: outgoingReferences,
 	}
 }
 
+// NewSimpleMessage is a helper function for creating instances of
+// Message for messages that don't contain any references.
+func NewSimpleMessage[TReference, TMessage any](m TMessage) Message[TMessage, TReference] {
+	return Message[TMessage, TReference]{
+		Message:            m,
+		OutgoingReferences: object.OutgoingReferences[TReference](object.OutgoingReferencesList[TReference]{}),
+	}
+}
+
 // NewNestedMessage is a helper function for creating instances of
 // Message that refer to a message that was mebedded into another one.
-func NewNestedMessage[TMessage1, TMessage2, TOutgoingReferences any](parent Message[TMessage1, TOutgoingReferences], child TMessage2) Message[TMessage2, TOutgoingReferences] {
-	return Message[TMessage2, TOutgoingReferences]{
+func NewNestedMessage[TMessage1, TMessage2, TReference any](parent Message[TMessage1, TReference], child TMessage2) Message[TMessage2, TReference] {
+	return Message[TMessage2, TReference]{
 		Message:            child,
 		OutgoingReferences: parent.OutgoingReferences,
 	}
 }
 
-func (m Message[TMessage, TOutgoingReferences]) IsSet() bool {
-	// TODO: Is there a way we can implement this without
-	// reflection? If not, should we remove this method and make
-	// callers check the fields themselves?
-	v := reflect.ValueOf(m.OutgoingReferences)
-	return v.IsValid() && !v.IsNil()
+func (m Message[TMessage, TReference]) IsSet() bool {
+	return m.OutgoingReferences != nil
 }
 
-func (m *Message[TMessage, TOutgoingReferences]) Clear() {
-	*m = Message[TMessage, TOutgoingReferences]{}
+func (m *Message[TMessage, TReference]) Clear() {
+	*m = Message[TMessage, TReference]{}
 }
 
-func FlattenReference[TOutgoingReferences object.OutgoingReferences[TReference], TReference any](m Message[*model_core_pb.Reference, TOutgoingReferences]) (TReference, error) {
+func FlattenReference[TReference any](m Message[*model_core_pb.Reference, TReference]) (TReference, error) {
 	index, err := GetIndexFromReferenceMessage(m.Message, m.OutgoingReferences.GetDegree())
 	if err != nil {
 		var badReference TReference
@@ -55,13 +58,16 @@ func FlattenReference[TOutgoingReferences object.OutgoingReferences[TReference],
 	return m.OutgoingReferences.GetOutgoingReference(index), nil
 }
 
-func MessagesEqual[TMessage proto.Message, TOutgoingReferences object.OutgoingReferences[object.LocalReference]](m1, m2 Message[TMessage, TOutgoingReferences]) bool {
+func MessagesEqual[
+	TMessage proto.Message,
+	TReference1, TReference2 object.BasicReference,
+](m1 Message[TMessage, TReference1], m2 Message[TMessage, TReference2]) bool {
 	degree1, degree2 := m1.OutgoingReferences.GetDegree(), m2.OutgoingReferences.GetDegree()
 	if degree1 != degree2 {
 		return false
 	}
 	for i := 0; i < degree1; i++ {
-		if m1.OutgoingReferences.GetOutgoingReference(i) != m2.OutgoingReferences.GetOutgoingReference(i) {
+		if m1.OutgoingReferences.GetOutgoingReference(i).GetLocalReference() != m2.OutgoingReferences.GetOutgoingReference(i).GetLocalReference() {
 			return false
 		}
 	}

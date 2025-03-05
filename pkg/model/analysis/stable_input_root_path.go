@@ -18,7 +18,7 @@ import (
 	"google.golang.org/protobuf/types/known/durationpb"
 )
 
-func (c *baseComputer) ComputeStableInputRootPathValue(ctx context.Context, key *model_analysis_pb.StableInputRootPath_Key, e StableInputRootPathEnvironment) (PatchedStableInputRootPathValue, error) {
+func (c *baseComputer[TReference]) ComputeStableInputRootPathValue(ctx context.Context, key *model_analysis_pb.StableInputRootPath_Key, e StableInputRootPathEnvironment[TReference]) (PatchedStableInputRootPathValue, error) {
 	commandEncoder, gotCommandEncoder := e.GetCommandEncoderObjectValue(&model_analysis_pb.CommandEncoderObject_Key{})
 	directoryCreationParameters, gotDirectoryCreationParameters := e.GetDirectoryCreationParametersObjectValue(&model_analysis_pb.DirectoryCreationParametersObject_Key{})
 	directoryCreationParametersValue := e.GetDirectoryCreationParametersValue(&model_analysis_pb.DirectoryCreationParameters_Key{})
@@ -117,7 +117,6 @@ func (c *baseComputer) ComputeStableInputRootPathValue(ctx context.Context, key 
 
 	stdoutEntry, err := model_filesystem.NewFileContentsEntryFromProto(
 		model_core.NewNestedMessage(outputs, outputs.Message.Stdout),
-		referenceFormat,
 	)
 	if err != nil {
 		return PatchedStableInputRootPathValue{}, fmt.Errorf("invalid standard output entry: %w", err)
@@ -134,7 +133,7 @@ func (c *baseComputer) ComputeStableInputRootPathValue(ctx context.Context, key 
 	), nil
 }
 
-func (c *baseComputer) ComputeStableInputRootPathObjectValue(ctx context.Context, key *model_analysis_pb.StableInputRootPathObject_Key, e StableInputRootPathObjectEnvironment) (*model_starlark.BarePath, error) {
+func (c *baseComputer[TReference]) ComputeStableInputRootPathObjectValue(ctx context.Context, key *model_analysis_pb.StableInputRootPathObject_Key, e StableInputRootPathObjectEnvironment[TReference]) (*model_starlark.BarePath, error) {
 	stableInputRootPath := e.GetStableInputRootPathValue(&model_analysis_pb.StableInputRootPath_Key{})
 	if !stableInputRootPath.IsSet() {
 		return nil, evaluation.ErrMissingDependency

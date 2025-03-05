@@ -6,11 +6,7 @@ import (
 	"github.com/buildbarn/bonanza/pkg/storage/object"
 )
 
-type NamespaceRemovingReference interface {
-	GetLocalReference() object.LocalReference
-}
-
-type namespaceRemovingDownloader[TReference NamespaceRemovingReference] struct {
+type namespaceRemovingDownloader[TReference object.BasicReference] struct {
 	base object.Downloader[object.LocalReference]
 }
 
@@ -18,7 +14,7 @@ type namespaceRemovingDownloader[TReference NamespaceRemovingReference] struct {
 // that converts references provided to DownloadObject() to
 // LocalReferences. This is useful if the storage backend is oblivious
 // of namespaces (e.g., local disk based storage).
-func NewNamespaceRemovingDownloader[TReference NamespaceRemovingReference](base object.Downloader[object.LocalReference]) object.Downloader[TReference] {
+func NewNamespaceRemovingDownloader[TReference object.BasicReference](base object.Downloader[object.LocalReference]) object.Downloader[TReference] {
 	return &namespaceRemovingDownloader[TReference]{
 		base: base,
 	}

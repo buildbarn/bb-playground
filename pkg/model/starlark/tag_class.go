@@ -17,7 +17,7 @@ type TagClass struct {
 
 var (
 	_ starlark.Value = &TagClass{}
-	_ EncodableValue = &rule{}
+	_ EncodableValue = &TagClass{}
 )
 
 func NewTagClass(definition TagClassDefinition) starlark.Value {
@@ -86,17 +86,17 @@ func (tcd *starlarkTagClassDefinition) Encode(path map[starlark.Value]struct{}, 
 	), needsCode, nil
 }
 
-type protoTagClassDefinition struct {
-	message model_core.Message[*model_starlark_pb.TagClass, object.OutgoingReferences[object.LocalReference]]
+type protoTagClassDefinition[TReference object.BasicReference] struct {
+	message model_core.Message[*model_starlark_pb.TagClass, TReference]
 }
 
-func NewProtoTagClassDefinition(message model_core.Message[*model_starlark_pb.TagClass, object.OutgoingReferences[object.LocalReference]]) TagClassDefinition {
-	return &protoTagClassDefinition{
+func NewProtoTagClassDefinition[TReference object.BasicReference](message model_core.Message[*model_starlark_pb.TagClass, TReference]) TagClassDefinition {
+	return &protoTagClassDefinition[TReference]{
 		message: message,
 	}
 }
 
-func (tcd *protoTagClassDefinition) Encode(path map[starlark.Value]struct{}, options *ValueEncodingOptions) (model_core.PatchedMessage[*model_starlark_pb.TagClass, model_core.CreatedObjectTree], bool, error) {
+func (tcd *protoTagClassDefinition[TReference]) Encode(path map[starlark.Value]struct{}, options *ValueEncodingOptions) (model_core.PatchedMessage[*model_starlark_pb.TagClass, model_core.CreatedObjectTree], bool, error) {
 	return model_core.NewPatchedMessageFromExisting(
 		tcd.message,
 		func(index int) model_core.CreatedObjectTree {

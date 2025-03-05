@@ -5,7 +5,6 @@ import (
 	"os"
 
 	virtual_configuration "github.com/buildbarn/bb-remote-execution/pkg/filesystem/virtual/configuration"
-	"github.com/buildbarn/bb-storage/pkg/eviction"
 	"github.com/buildbarn/bb-storage/pkg/global"
 	"github.com/buildbarn/bb-storage/pkg/program"
 	"github.com/buildbarn/bb-storage/pkg/util"
@@ -58,10 +57,6 @@ func main() {
 		if err != nil {
 			return util.StatusWrap(err, "Failed to create gRPC client")
 		}
-		downloader := object_namespacemapping.NewNamespaceAddingDownloader(
-			object_grpc.NewGRPCDownloader(object_pb.NewDownloaderClient(grpcClient)),
-			namespace,
-		)
 
 		maximumObjectSizeBytes := uint32(namespace.GetMaximumObjectSizeBytes())
 		directoryEncoder, err := encoding.NewBinaryEncoderFromProto(configuration.DirectoryEncoders, maximumObjectSizeBytes)
@@ -77,44 +72,44 @@ func main() {
 			return util.StatusWrap(err, "Failed to create concatenated file encoder")
 		}
 
-		parsedObjectEvictionSet, err := eviction.NewSetFromConfiguration[model_parser.CachedParsedObjectEvictionKey[object.LocalReference]](configuration.ParsedObjectCacheReplacementPolicy)
+		parsedObjectPool, err := model_parser.NewParsedObjectPoolFromConfiguration(configuration.ParsedObjectPool)
 		if err != nil {
-			return util.StatusWrap(err, "Failed to create eviction set for directories")
+			return util.StatusWrap(err, "Failed to create parsed object pool")
 		}
-		cachedParsedObjectPool := model_parser.NewCachedParsedObjectPool(
-			parsedObjectEvictionSet,
-			int(configuration.ParsedObjectCacheCount),
-			int(configuration.ParsedObjectCacheTotalSizeBytes),
-		)
-
-		leavesReader := model_parser.NewStorageBackedParsedObjectReader(
-			downloader,
-			directoryEncoder,
-			model_parser.NewMessageObjectParser[object.LocalReference, model_filesystem_pb.Leaves](),
-		)
-		directoryClusterReader := model_parser.NewCachingParsedObjectReader(
-			model_parser.NewStorageBackedParsedObjectReader(
-				downloader,
-				directoryEncoder,
-				model_filesystem.NewDirectoryClusterObjectParser(leavesReader),
+		parsedObjectFetcher := model_parser.NewParsedObjectFetcher(
+			parsedObjectPool,
+			object_namespacemapping.NewNamespaceAddingDownloader(
+				object_grpc.NewGRPCDownloader(object_pb.NewDownloaderClient(grpcClient)),
+				namespace,
 			),
-			cachedParsedObjectPool,
 		)
-		fileContentsListReader := model_parser.NewCachingParsedObjectReader(
-			model_parser.NewStorageBackedParsedObjectReader(
-				downloader,
-				concatenatedFileEncoder,
+		leavesReader := model_parser.LookupParsedObjectReader(
+			parsedObjectFetcher,
+			model_parser.NewChainedObjectParser(
+				model_parser.NewEncodedObjectParser[object.LocalReference](directoryEncoder),
+				model_parser.NewMessageObjectParser[object.LocalReference, model_filesystem_pb.Leaves](),
+			),
+		)
+		directoryClusterReader := model_parser.LookupParsedObjectReader(
+			parsedObjectFetcher,
+			model_parser.NewChainedObjectParser(
+				model_parser.NewEncodedObjectParser[object.LocalReference](directoryEncoder),
+				model_filesystem.NewDirectoryClusterObjectParser[object.LocalReference](),
+			),
+		)
+		fileContentsListReader := model_parser.LookupParsedObjectReader(
+			parsedObjectFetcher,
+			model_parser.NewChainedObjectParser(
+				model_parser.NewEncodedObjectParser[object.LocalReference](concatenatedFileEncoder),
 				model_filesystem.NewFileContentsListObjectParser[object.LocalReference](),
 			),
-			cachedParsedObjectPool,
 		)
-		fileChunkReader := model_parser.NewCachingParsedObjectReader(
-			model_parser.NewStorageBackedParsedObjectReader(
-				downloader,
-				smallFileEncoder,
+		fileChunkReader := model_parser.LookupParsedObjectReader(
+			parsedObjectFetcher,
+			model_parser.NewChainedObjectParser(
+				model_parser.NewEncodedObjectParser[object.LocalReference](smallFileEncoder),
 				model_parser.NewRawObjectParser[object.LocalReference](),
 			),
-			cachedParsedObjectPool,
 		)
 
 		rootDirectoryReference, err := namespace.NewGlobalReference(configuration.RootDirectoryReference)
@@ -124,7 +119,7 @@ func main() {
 		rootDirectoryLocalReference := rootDirectoryReference.GetLocalReference()
 
 		rootDirectoryIndex := uint(0)
-		rootDirectoryCluster, _, err := directoryClusterReader.ReadParsedObject(ctx, rootDirectoryLocalReference)
+		rootDirectoryCluster, err := directoryClusterReader.ReadParsedObject(ctx, rootDirectoryLocalReference)
 		if err != nil {
 			return util.StatusWrap(err, "Failed to fetch contents of root directory")
 		}
@@ -143,14 +138,15 @@ func main() {
 		directoryFactory := model_filesystem_virtual.NewObjectBackedDirectoryFactory(
 			rootHandleAllocator.New(),
 			directoryClusterReader,
+			leavesReader,
 			fileFactory,
 			util.DefaultErrorLogger,
 		)
-		rootDirectory := directoryFactory.LookupDirectory(model_filesystem.DirectoryInfo[object.LocalReference]{
-			ClusterReference: rootDirectoryLocalReference,
-			DirectoryIndex:   rootDirectoryIndex,
-			DirectoriesCount: uint32(len(rootDirectoryCluster[0].Directories)),
-		})
+		rootDirectory := directoryFactory.LookupDirectory(
+			rootDirectoryLocalReference,
+			rootDirectoryIndex,
+			uint32(len(rootDirectoryCluster.Message[0].Directory.Directories)),
+		)
 
 		if err := mount.Expose(siblingsGroup, rootDirectory); err != nil {
 			return util.StatusWrap(err, "Failed to expose virtual file system mount")

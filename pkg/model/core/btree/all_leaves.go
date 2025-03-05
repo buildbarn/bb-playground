@@ -7,7 +7,6 @@ import (
 	model_core "github.com/buildbarn/bonanza/pkg/model/core"
 	model_parser "github.com/buildbarn/bonanza/pkg/model/parser"
 	model_core_pb "github.com/buildbarn/bonanza/pkg/proto/model/core"
-	"github.com/buildbarn/bonanza/pkg/storage/object"
 
 	"google.golang.org/protobuf/proto"
 )
@@ -19,17 +18,16 @@ func AllLeaves[
 		*TMessage
 		proto.Message
 	},
-	TOutgoingReferences object.OutgoingReferences[TReference],
 	TReference any,
 ](
 	ctx context.Context,
-	reader model_parser.ParsedObjectReader[TReference, model_core.Message[[]TMessagePtr, TOutgoingReferences]],
-	root model_core.Message[[]TMessagePtr, TOutgoingReferences],
-	traverser func(model_core.Message[TMessagePtr, TOutgoingReferences]) (*model_core_pb.Reference, error),
+	reader model_parser.ParsedObjectReader[TReference, model_core.Message[[]TMessagePtr, TReference]],
+	root model_core.Message[[]TMessagePtr, TReference],
+	traverser func(model_core.Message[TMessagePtr, TReference]) (*model_core_pb.Reference, error),
 	errOut *error,
-) iter.Seq[model_core.Message[TMessagePtr, TOutgoingReferences]] {
-	lists := []model_core.Message[[]TMessagePtr, TOutgoingReferences]{root}
-	return func(yield func(model_core.Message[TMessagePtr, TOutgoingReferences]) bool) {
+) iter.Seq[model_core.Message[TMessagePtr, TReference]] {
+	lists := []model_core.Message[[]TMessagePtr, TReference]{root}
+	return func(yield func(model_core.Message[TMessagePtr, TReference]) bool) {
 		for len(lists) > 0 {
 			lastList := &lists[len(lists)-1]
 			if len(lastList.Message) == 0 {
@@ -48,7 +46,7 @@ func AllLeaves[
 					}
 				} else {
 					// Traverser wants us to enter a child.
-					child, err := model_parser.Dereference[model_core.Message[[]TMessagePtr, TOutgoingReferences]](
+					child, err := model_parser.Dereference[model_core.Message[[]TMessagePtr, TReference]](
 						ctx,
 						reader,
 						model_core.NewNestedMessage(*lastList, childReference),

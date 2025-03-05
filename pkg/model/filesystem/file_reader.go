@@ -6,23 +6,18 @@ import (
 
 	"github.com/buildbarn/bb-storage/pkg/util"
 	model_parser "github.com/buildbarn/bonanza/pkg/model/parser"
+	"github.com/buildbarn/bonanza/pkg/storage/object"
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
 
-type FileReaderReference interface {
-	FileContentsIteratorReference
-
-	GetDegree() int
-}
-
-type FileReader[TReference FileReaderReference] struct {
+type FileReader[TReference object.BasicReference] struct {
 	fileContentsListReader model_parser.ParsedObjectReader[TReference, FileContentsList[TReference]]
 	fileChunkReader        model_parser.ParsedObjectReader[TReference, []byte]
 }
 
-func NewFileReader[TReference FileReaderReference](
+func NewFileReader[TReference object.BasicReference](
 	fileContentsListReader model_parser.ParsedObjectReader[TReference, FileContentsList[TReference]],
 	fileChunkReader model_parser.ParsedObjectReader[TReference, []byte],
 ) *FileReader[TReference] {
@@ -48,7 +43,7 @@ func (fr *FileReader[TReference]) readNextChunk(ctx context.Context, fileContent
 		partReference, partOffsetBytes, partSizeBytes := fileContentsIterator.GetCurrentPart()
 		if partReference.GetDegree() == 0 {
 			// Reached a chunk.
-			chunk, _, err := fr.fileChunkReader.ReadParsedObject(ctx, partReference)
+			chunk, err := fr.fileChunkReader.ReadParsedObject(ctx, partReference)
 			if err != nil {
 				return nil, util.StatusWrapf(err, "Failed to read chunk with reference %s", partReference)
 			}
@@ -61,7 +56,7 @@ func (fr *FileReader[TReference]) readNextChunk(ctx context.Context, fileContent
 
 		// We need to push one or more file contents lists onto
 		// the stack to reach a chunk.
-		fileContentsList, _, err := fr.fileContentsListReader.ReadParsedObject(ctx, partReference)
+		fileContentsList, err := fr.fileContentsListReader.ReadParsedObject(ctx, partReference)
 		if err != nil {
 			return nil, util.StatusWrapf(err, "Failed to read file contents list with reference %s", partReference)
 		}
@@ -105,7 +100,7 @@ func (fr *FileReader[TReference]) FileOpenReadAt(ctx context.Context, fileConten
 	}
 }
 
-type SequentialFileReader[TReference FileReaderReference] struct {
+type SequentialFileReader[TReference object.BasicReference] struct {
 	context              context.Context
 	fileReader           *FileReader[TReference]
 	fileContentsIterator FileContentsIterator[TReference]
@@ -147,7 +142,7 @@ func (r *SequentialFileReader[TReference]) ReadByte() (byte, error) {
 	return b[0], nil
 }
 
-type randomAccessFileReader[TReference FileReaderReference] struct {
+type randomAccessFileReader[TReference object.BasicReference] struct {
 	context      context.Context
 	fileReader   *FileReader[TReference]
 	fileContents FileContentsEntry[TReference]

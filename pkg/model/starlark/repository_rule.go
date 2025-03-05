@@ -11,7 +11,6 @@ import (
 	model_core "github.com/buildbarn/bonanza/pkg/model/core"
 	model_starlark_pb "github.com/buildbarn/bonanza/pkg/proto/model/starlark"
 	"github.com/buildbarn/bonanza/pkg/starlark/unpack"
-	"github.com/buildbarn/bonanza/pkg/storage/object"
 
 	"go.starlark.net/starlark"
 )
@@ -22,7 +21,7 @@ type repositoryRule struct {
 }
 
 var (
-	_ starlark.Callable = &rule{}
+	_ starlark.Callable = &repositoryRule{}
 	_ EncodableValue    = &repositoryRule{}
 	_ NamedGlobal       = &repositoryRule{}
 )
@@ -254,21 +253,21 @@ func (rrd *starlarkRepositoryRuleDefinition) GetAttrsCheap(thread *starlark.Thre
 	return rrd.attrs, nil
 }
 
-type protoRepositoryRuleDefinition struct {
-	message         model_core.Message[*model_starlark_pb.RepositoryRule_Definition, object.OutgoingReferences[object.LocalReference]]
+type protoRepositoryRuleDefinition[TReference any] struct {
+	message         model_core.Message[*model_starlark_pb.RepositoryRule_Definition, TReference]
 	protoAttrsCache protoAttrsCache
 }
 
-func NewProtoRepositoryRuleDefinition(message model_core.Message[*model_starlark_pb.RepositoryRule_Definition, object.OutgoingReferences[object.LocalReference]]) RepositoryRuleDefinition {
-	return &protoRepositoryRuleDefinition{
+func NewProtoRepositoryRuleDefinition[TReference any](message model_core.Message[*model_starlark_pb.RepositoryRule_Definition, TReference]) RepositoryRuleDefinition {
+	return &protoRepositoryRuleDefinition[TReference]{
 		message: message,
 	}
 }
 
-func (rrd *protoRepositoryRuleDefinition) Encode(path map[starlark.Value]struct{}, options *ValueEncodingOptions) (model_core.PatchedMessage[*model_starlark_pb.RepositoryRule_Definition, model_core.CreatedObjectTree], bool, error) {
+func (rrd *protoRepositoryRuleDefinition[TReference]) Encode(path map[starlark.Value]struct{}, options *ValueEncodingOptions) (model_core.PatchedMessage[*model_starlark_pb.RepositoryRule_Definition, model_core.CreatedObjectTree], bool, error) {
 	panic("rule definition was already encoded previously")
 }
 
-func (rrd *protoRepositoryRuleDefinition) GetAttrsCheap(thread *starlark.Thread) (map[pg_label.StarlarkIdentifier]*Attr, error) {
+func (rrd *protoRepositoryRuleDefinition[TReference]) GetAttrsCheap(thread *starlark.Thread) (map[pg_label.StarlarkIdentifier]*Attr, error) {
 	return rrd.protoAttrsCache.getAttrsCheap(thread, rrd.message.Message.Attrs)
 }

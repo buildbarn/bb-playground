@@ -10,10 +10,9 @@ import (
 	model_analysis_pb "github.com/buildbarn/bonanza/pkg/proto/model/analysis"
 	model_core_pb "github.com/buildbarn/bonanza/pkg/proto/model/core"
 	"github.com/buildbarn/bonanza/pkg/storage/dag"
-	"github.com/buildbarn/bonanza/pkg/storage/object"
 )
 
-func (c *baseComputer) ComputeModuleExtensionRepoNamesValue(ctx context.Context, key *model_analysis_pb.ModuleExtensionRepoNames_Key, e ModuleExtensionRepoNamesEnvironment) (PatchedModuleExtensionRepoNamesValue, error) {
+func (c *baseComputer[TReference]) ComputeModuleExtensionRepoNamesValue(ctx context.Context, key *model_analysis_pb.ModuleExtensionRepoNames_Key, e ModuleExtensionRepoNamesEnvironment[TReference]) (PatchedModuleExtensionRepoNamesValue, error) {
 	moduleExtensionReposValue := e.GetModuleExtensionReposValue(&model_analysis_pb.ModuleExtensionRepos_Key{
 		ModuleExtension: key.ModuleExtension,
 	})
@@ -27,7 +26,7 @@ func (c *baseComputer) ComputeModuleExtensionRepoNamesValue(ctx context.Context,
 		ctx,
 		c.moduleExtensionReposValueRepoReader,
 		model_core.NewNestedMessage(moduleExtensionReposValue, moduleExtensionReposValue.Message.Repos),
-		func(entry model_core.Message[*model_analysis_pb.ModuleExtensionRepos_Value_Repo, object.OutgoingReferences[object.LocalReference]]) (*model_core_pb.Reference, error) {
+		func(entry model_core.Message[*model_analysis_pb.ModuleExtensionRepos_Value_Repo, TReference]) (*model_core_pb.Reference, error) {
 			if parent, ok := entry.Message.Level.(*model_analysis_pb.ModuleExtensionRepos_Value_Repo_Parent_); ok {
 				return parent.Parent.Reference, nil
 			}

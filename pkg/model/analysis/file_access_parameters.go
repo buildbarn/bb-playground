@@ -9,7 +9,7 @@ import (
 	"github.com/buildbarn/bonanza/pkg/storage/dag"
 )
 
-func (c *baseComputer) ComputeFileAccessParametersValue(ctx context.Context, key *model_analysis_pb.FileAccessParameters_Key, e FileAccessParametersEnvironment) (PatchedFileAccessParametersValue, error) {
+func (c *baseComputer[TReference]) ComputeFileAccessParametersValue(ctx context.Context, key *model_analysis_pb.FileAccessParameters_Key, e FileAccessParametersEnvironment[TReference]) (PatchedFileAccessParametersValue, error) {
 	fileCreationParameters := e.GetFileCreationParametersValue(&model_analysis_pb.FileCreationParameters_Key{})
 	if !fileCreationParameters.IsSet() {
 		return PatchedFileAccessParametersValue{}, evaluation.ErrMissingDependency

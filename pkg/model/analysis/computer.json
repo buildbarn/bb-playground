@@ -144,7 +144,7 @@
             "DirectoryAccessParameters"
          ],
          "nativeValueType": {
-            "type": "*DirectoryReaders"
+            "type": "*DirectoryReaders[TReference]"
          }
       },
       "FileAccessParameters": {
@@ -183,7 +183,7 @@
             "imports": {
                "model_filesystem": "github.com/buildbarn/bonanza/pkg/model/filesystem"
             },
-            "type": "*model_filesystem.FileReader[object.LocalReference]"
+            "type": "*model_filesystem.FileReader[TReference]"
          }
       },
       "HttpArchiveContents": {

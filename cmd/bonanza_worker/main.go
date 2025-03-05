@@ -23,6 +23,7 @@ import (
 	"github.com/buildbarn/bb-storage/pkg/util"
 	model_command "github.com/buildbarn/bonanza/pkg/model/command"
 	model_filesystem_virtual "github.com/buildbarn/bonanza/pkg/model/filesystem/virtual"
+	model_parser "github.com/buildbarn/bonanza/pkg/model/parser"
 	"github.com/buildbarn/bonanza/pkg/proto/configuration/bonanza_worker"
 	remoteworker_pb "github.com/buildbarn/bonanza/pkg/proto/remoteworker"
 	dag_pb "github.com/buildbarn/bonanza/pkg/proto/storage/dag"
@@ -58,6 +59,10 @@ func main() {
 		objectDownloader := object_grpc.NewGRPCDownloader(
 			object_pb.NewDownloaderClient(storageGRPCClient),
 		)
+		parsedObjectPool, err := model_parser.NewParsedObjectPoolFromConfiguration(configuration.ParsedObjectPool)
+		if err != nil {
+			return util.StatusWrap(err, "Failed to create parsed object pool")
+		}
 
 		// Create connection with scheduler.
 		schedulerConnection, err := grpcClientFactory.NewClientFromConfiguration(configuration.SchedulerGrpcClient)
@@ -169,6 +174,7 @@ func main() {
 
 					executor := model_command.NewLocalExecutor(
 						objectDownloader,
+						parsedObjectPool,
 						dag_pb.NewUploaderClient(storageGRPCClient),
 						semaphore.NewWeighted(int64(runtime.NumCPU())),
 						rootDirectory,

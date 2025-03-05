@@ -1,12 +1,9 @@
 package parser
 
 import (
-	"context"
-
 	"github.com/buildbarn/bb-storage/pkg/util"
 	"github.com/buildbarn/bonanza/pkg/encoding/varint"
 	model_core "github.com/buildbarn/bonanza/pkg/model/core"
-	"github.com/buildbarn/bonanza/pkg/storage/object"
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -14,7 +11,7 @@ import (
 )
 
 type messageListObjectParser[
-	TReference MessageObjectParserReference,
+	TReference any,
 	TMessage any,
 	TMessagePtr interface {
 		*TMessage
@@ -26,17 +23,18 @@ type messageListObjectParser[
 // containing a list of Protobuf messages. Messages are prefixed with
 // their size, encoded as a variable length integer.
 func NewMessageListObjectParser[
-	TReference MessageObjectParserReference,
+	TReference any,
 	TMessage any,
 	TMessagePtr interface {
 		*TMessage
 		proto.Message
 	},
-]() ObjectParser[TReference, model_core.Message[[]TMessagePtr, object.OutgoingReferences[TReference]]] {
+]() ObjectParser[TReference, model_core.Message[[]TMessagePtr, TReference]] {
 	return &messageListObjectParser[TReference, TMessage, TMessagePtr]{}
 }
 
-func (p *messageListObjectParser[TReference, TMessage, TMessagePtr]) ParseObject(ctx context.Context, reference TReference, outgoingReferences object.OutgoingReferences[TReference], data []byte) (model_core.Message[[]TMessagePtr, object.OutgoingReferences[TReference]], int, error) {
+func (p *messageListObjectParser[TReference, TMessage, TMessagePtr]) ParseObject(in model_core.Message[[]byte, TReference]) (model_core.Message[[]TMessagePtr, TReference], int, error) {
+	data := in.Message
 	originalDataLength := len(data)
 	var elements []TMessagePtr
 	for len(data) > 0 {
@@ -44,26 +42,23 @@ func (p *messageListObjectParser[TReference, TMessage, TMessagePtr]) ParseObject
 		offset := originalDataLength - len(data)
 		length, lengthLength := varint.ConsumeForward[uint](data)
 		if lengthLength < 0 {
-			return model_core.Message[[]TMessagePtr, object.OutgoingReferences[TReference]]{}, 0, status.Errorf(codes.InvalidArgument, "Invalid element length at offset %d", offset)
+			return model_core.Message[[]TMessagePtr, TReference]{}, 0, status.Errorf(codes.InvalidArgument, "Invalid element length at offset %d", offset)
 		}
 
 		// Validate the size.
 		data = data[lengthLength:]
 		if length > uint(len(data)) {
-			return model_core.Message[[]TMessagePtr, object.OutgoingReferences[TReference]]{}, 0, status.Errorf(codes.InvalidArgument, "Length of element at offset %d is %d bytes, which exceeds maximum permitted size of %d bytes", offset, length, len(data))
+			return model_core.Message[[]TMessagePtr, TReference]{}, 0, status.Errorf(codes.InvalidArgument, "Length of element at offset %d is %d bytes, which exceeds maximum permitted size of %d bytes", offset, length, len(data))
 		}
 
 		// Unmarshal the element.
 		var element TMessage
 		if err := proto.Unmarshal(data[:length], TMessagePtr(&element)); err != nil {
-			return model_core.Message[[]TMessagePtr, object.OutgoingReferences[TReference]]{}, 0, util.StatusWrapfWithCode(err, codes.InvalidArgument, "Failed to unmarshal element at offset %d", offset)
+			return model_core.Message[[]TMessagePtr, TReference]{}, 0, util.StatusWrapfWithCode(err, codes.InvalidArgument, "Failed to unmarshal element at offset %d", offset)
 		}
 		elements = append(elements, &element)
 		data = data[length:]
 	}
 
-	return model_core.Message[[]TMessagePtr, object.OutgoingReferences[TReference]]{
-		Message:            elements,
-		OutgoingReferences: outgoingReferences.DetachOutgoingReferences(),
-	}, reference.GetSizeBytes(), nil
+	return model_core.NewMessage(elements, in.OutgoingReferences), len(in.Message), nil
 }

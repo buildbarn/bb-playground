@@ -10,6 +10,7 @@ import (
 	pg_label "github.com/buildbarn/bonanza/pkg/label"
 	model_core "github.com/buildbarn/bonanza/pkg/model/core"
 	model_starlark_pb "github.com/buildbarn/bonanza/pkg/proto/model/starlark"
+	"github.com/buildbarn/bonanza/pkg/storage/object"
 
 	"google.golang.org/protobuf/proto"
 
@@ -156,7 +157,7 @@ func (f File) Attr(thread *starlark.Thread, name string) (starlark.Value, error)
 		}
 		parts := f.appendOwner(make([]string, 0, 6))
 		// TODO: Should we have a dedicated root type?
-		return newStructFromLists(
+		return newStructFromLists[object.LocalReference](
 			nil,
 			[]string{"path"},
 			[]any{

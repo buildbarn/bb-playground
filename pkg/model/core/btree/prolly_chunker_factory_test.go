@@ -64,7 +64,7 @@ func TestProllyChunkerFactory(t *testing.T) {
 		require.True(t, nodes.IsSet())
 
 		references, metadata := nodes.Patcher.SortAndSetReferences()
-		require.Equal(t, object.OutgoingReferencesList{
+		require.Equal(t, object.OutgoingReferencesList[object.LocalReference]{
 			object.MustNewSHA256V1LocalReference("5b2484693d5051be0fae63f4f862ce606cdc30ffbcd8a8a44b5b1b226b459262", uint32(1000), 0, 0, 0),
 			object.MustNewSHA256V1LocalReference("5b2484693d5051be0fae63f4f862ce606cdc30ffbcd8a8a44b5b1b226b459262", uint32(1001), 0, 0, 0),
 			object.MustNewSHA256V1LocalReference("5b2484693d5051be0fae63f4f862ce606cdc30ffbcd8a8a44b5b1b226b459262", uint32(1002), 0, 0, 0),
@@ -81,7 +81,7 @@ func TestProllyChunkerFactory(t *testing.T) {
 		require.True(t, nodes.IsSet())
 
 		references, metadata = nodes.Patcher.SortAndSetReferences()
-		require.Equal(t, object.OutgoingReferencesList{
+		require.Equal(t, object.OutgoingReferencesList[object.LocalReference]{
 			object.MustNewSHA256V1LocalReference("5b2484693d5051be0fae63f4f862ce606cdc30ffbcd8a8a44b5b1b226b459262", uint32(1003), 0, 0, 0),
 			object.MustNewSHA256V1LocalReference("5b2484693d5051be0fae63f4f862ce606cdc30ffbcd8a8a44b5b1b226b459262", uint32(1004), 0, 0, 0),
 			object.MustNewSHA256V1LocalReference("5b2484693d5051be0fae63f4f862ce606cdc30ffbcd8a8a44b5b1b226b459262", uint32(1005), 0, 0, 0),
@@ -105,7 +105,7 @@ func TestProllyChunkerFactory(t *testing.T) {
 		require.True(t, nodes.IsSet())
 
 		references, metadata = nodes.Patcher.SortAndSetReferences()
-		require.Equal(t, object.OutgoingReferencesList{
+		require.Equal(t, object.OutgoingReferencesList[object.LocalReference]{
 			object.MustNewSHA256V1LocalReference("5b2484693d5051be0fae63f4f862ce606cdc30ffbcd8a8a44b5b1b226b459262", uint32(1006), 0, 0, 0),
 			object.MustNewSHA256V1LocalReference("5b2484693d5051be0fae63f4f862ce606cdc30ffbcd8a8a44b5b1b226b459262", uint32(1007), 0, 0, 0),
 			object.MustNewSHA256V1LocalReference("5b2484693d5051be0fae63f4f862ce606cdc30ffbcd8a8a44b5b1b226b459262", uint32(1008), 0, 0, 0),

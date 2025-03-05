@@ -27,7 +27,7 @@ func (fd functionDefinition) getKeyType(functionName string, isPatched bool) str
 	} else if isPatched {
 		return fmt.Sprintf("model_core.PatchedMessage[*pb.%s_Key, dag.ObjectContentsWalker]", functionName)
 	} else {
-		return fmt.Sprintf("model_core.Message[*pb.%s_Key, object.OutgoingReferences[object.LocalReference]]", functionName)
+		return fmt.Sprintf("model_core.Message[*pb.%s_Key, TReference]", functionName)
 	}
 }
 
@@ -41,7 +41,7 @@ func (fd functionDefinition) keyToPatchedMessage() string {
 
 func (fd functionDefinition) typedKeyToArgument(functionName string) string {
 	if fd.KeyContainsReferences {
-		return fmt.Sprintf("model_core.Message[*pb.%s_Key, object.OutgoingReferences[object.LocalReference]]{Message: typedKey, OutgoingReferences: key.OutgoingReferences}", functionName)
+		return fmt.Sprintf("model_core.Message[*pb.%s_Key, TReference]{Message: typedKey, OutgoingReferences: key.OutgoingReferences}", functionName)
 	} else {
 		return "typedKey"
 	}
@@ -103,13 +103,13 @@ func main() {
 		}
 	}
 
-	fmt.Printf("type Computer interface {\n")
+	fmt.Printf("type Computer[TReference object.BasicReference] interface {\n")
 	for _, functionName := range slices.Sorted(maps.Keys(computerDefinition.Functions)) {
 		// TODO: This should return a patched message? What about capturing/metadata?
 		functionDefinition := computerDefinition.Functions[functionName]
 		if nativeValueType := functionDefinition.NativeValueType; nativeValueType == nil {
 			fmt.Printf(
-				"\tCompute%sValue(context.Context, %s, %sEnvironment) (Patched%sValue, error)\n",
+				"\tCompute%sValue(context.Context, %s, %sEnvironment[TReference]) (Patched%sValue, error)\n",
 				functionName,
 				functionDefinition.getKeyType(functionName, false),
 				functionName,
@@ -117,7 +117,7 @@ func main() {
 			)
 		} else {
 			fmt.Printf(
-				"\tCompute%sValue(context.Context, %s, %sEnvironment) (%s, error)\n",
+				"\tCompute%sValue(context.Context, %s, %sEnvironment[TReference]) (%s, error)\n",
 				functionName,
 				functionDefinition.getKeyType(functionName, false),
 				functionName,
@@ -128,13 +128,13 @@ func main() {
 	fmt.Printf("}\n")
 
 	for _, functionName := range slices.Sorted(maps.Keys(computerDefinition.Functions)) {
-		fmt.Printf("type %sEnvironment interface{\n", functionName)
+		fmt.Printf("type %sEnvironment[TReference object.BasicReference] interface{\n", functionName)
 		functionDefinition := computerDefinition.Functions[functionName]
 		for _, dependencyName := range slices.Sorted(slices.Values(functionDefinition.DependsOn)) {
 			dependencyDefinition := computerDefinition.Functions[dependencyName]
 			if nativeValueType := dependencyDefinition.NativeValueType; nativeValueType == nil {
 				fmt.Printf(
-					"\tGet%sValue(key %s) model_core.Message[*pb.%s_Value, object.OutgoingReferences[object.LocalReference]]\n",
+					"\tGet%sValue(key %s) model_core.Message[*pb.%s_Value, TReference]\n",
 					dependencyName,
 					dependencyDefinition.getKeyType(dependencyName, true),
 					dependencyName,
@@ -151,30 +151,30 @@ func main() {
 		fmt.Printf("}\n")
 	}
 
-	fmt.Printf("type typedEnvironment struct{\n")
-	fmt.Printf("\tbase evaluation.Environment\n")
+	fmt.Printf("type typedEnvironment[TReference object.BasicReference] struct{\n")
+	fmt.Printf("\tbase evaluation.Environment[TReference]\n")
 	fmt.Printf("}\n")
 	for _, functionName := range slices.Sorted(maps.Keys(computerDefinition.Functions)) {
 		functionDefinition := computerDefinition.Functions[functionName]
 		if nativeValueType := functionDefinition.NativeValueType; nativeValueType == nil {
 			fmt.Printf(
-				"func (e *typedEnvironment) Get%sValue(key %s) model_core.Message[*pb.%s_Value, object.OutgoingReferences[object.LocalReference]] {\n",
+				"func (e *typedEnvironment[TReference]) Get%sValue(key %s) model_core.Message[*pb.%s_Value, TReference] {\n",
 				functionName,
 				functionDefinition.getKeyType(functionName, true),
 				functionName,
 			)
 			fmt.Printf("\tm := e.base.GetMessageValue(%s)\n", functionDefinition.keyToPatchedMessage())
 			fmt.Printf("\tif !m.IsSet() {\n")
-			fmt.Printf("\t\treturn model_core.Message[*pb.%s_Value, object.OutgoingReferences[object.LocalReference]]{}\n", functionName)
+			fmt.Printf("\t\treturn model_core.Message[*pb.%s_Value, TReference]{}\n", functionName)
 			fmt.Printf("\t}\n")
-			fmt.Printf("\treturn model_core.Message[*pb.%s_Value, object.OutgoingReferences[object.LocalReference]]{\n", functionName)
+			fmt.Printf("\treturn model_core.Message[*pb.%s_Value, TReference]{\n", functionName)
 			fmt.Printf("\t\tMessage: m.Message.(*pb.%s_Value),\n", functionName)
 			fmt.Printf("\t\tOutgoingReferences: m.OutgoingReferences,\n")
 			fmt.Printf("\t}\n")
 			fmt.Printf("}\n")
 		} else {
 			fmt.Printf(
-				"func (e *typedEnvironment) Get%sValue(key %s) (%s, bool) {\n",
+				"func (e *typedEnvironment[TReference]) Get%sValue(key %s) (%s, bool) {\n",
 				functionName,
 				functionDefinition.getKeyType(functionName, true),
 				nativeValueType.Type,
@@ -188,15 +188,15 @@ func main() {
 		}
 	}
 
-	fmt.Printf("type typedComputer struct{\n")
-	fmt.Printf("\tbase Computer\n")
+	fmt.Printf("type typedComputer[TReference object.BasicReference] struct{\n")
+	fmt.Printf("\tbase Computer[TReference]\n")
 	fmt.Printf("}\n")
-	fmt.Printf("func NewTypedComputer(base Computer) evaluation.Computer {\n")
-	fmt.Printf("\treturn &typedComputer{base: base}\n")
+	fmt.Printf("func NewTypedComputer[TReference object.BasicReference](base Computer[TReference]) evaluation.Computer[TReference] {\n")
+	fmt.Printf("\treturn &typedComputer[TReference]{base: base}\n")
 	fmt.Printf("}\n")
 
-	fmt.Printf("func (c *typedComputer) ComputeMessageValue(ctx context.Context, key model_core.Message[proto.Message, object.OutgoingReferences[object.LocalReference]], e evaluation.Environment) (model_core.PatchedMessage[proto.Message, dag.ObjectContentsWalker], error) {\n")
-	fmt.Printf("\ttypedE := typedEnvironment{base: e}\n")
+	fmt.Printf("func (c *typedComputer[TReference]) ComputeMessageValue(ctx context.Context, key model_core.Message[proto.Message, TReference], e evaluation.Environment[TReference]) (model_core.PatchedMessage[proto.Message, dag.ObjectContentsWalker], error) {\n")
+	fmt.Printf("\ttypedE := typedEnvironment[TReference]{base: e}\n")
 	fmt.Printf("\tswitch typedKey := key.Message.(type) {\n")
 	for _, functionName := range slices.Sorted(maps.Keys(computerDefinition.Functions)) {
 		functionDefinition := computerDefinition.Functions[functionName]
@@ -214,8 +214,8 @@ func main() {
 	fmt.Printf("\t}\n")
 	fmt.Printf("}\n")
 
-	fmt.Printf("func (c *typedComputer) ComputeNativeValue(ctx context.Context, key model_core.Message[proto.Message, object.OutgoingReferences[object.LocalReference]], e evaluation.Environment) (any, error) {\n")
-	fmt.Printf("\ttypedE := typedEnvironment{base: e}\n")
+	fmt.Printf("func (c *typedComputer[TReference]) ComputeNativeValue(ctx context.Context, key model_core.Message[proto.Message, TReference], e evaluation.Environment[TReference]) (any, error) {\n")
+	fmt.Printf("\ttypedE := typedEnvironment[TReference]{base: e}\n")
 	fmt.Printf("\tswitch typedKey := key.Message.(type) {\n")
 	for _, functionName := range slices.Sorted(maps.Keys(computerDefinition.Functions)) {
 		functionDefinition := computerDefinition.Functions[functionName]

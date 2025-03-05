@@ -14,18 +14,17 @@ import (
 	model_core_pb "github.com/buildbarn/bonanza/pkg/proto/model/core"
 	model_starlark_pb "github.com/buildbarn/bonanza/pkg/proto/model/starlark"
 	"github.com/buildbarn/bonanza/pkg/storage/dag"
-	"github.com/buildbarn/bonanza/pkg/storage/object"
 )
 
-type expandCanonicalTargetPatternEnvironment interface {
-	GetTargetPatternExpansionValue(*model_analysis_pb.TargetPatternExpansion_Key) model_core.Message[*model_analysis_pb.TargetPatternExpansion_Value, object.OutgoingReferences[object.LocalReference]]
+type expandCanonicalTargetPatternEnvironment[TReference any] interface {
+	GetTargetPatternExpansionValue(*model_analysis_pb.TargetPatternExpansion_Key) model_core.Message[*model_analysis_pb.TargetPatternExpansion_Value, TReference]
 }
 
 // expandCanonicalTargetPattern returns canonical labels for each target
 // matched by a canonical target pattern.
-func (c *baseComputer) expandCanonicalTargetPattern(
+func (c *baseComputer[TReference]) expandCanonicalTargetPattern(
 	ctx context.Context,
-	e expandCanonicalTargetPatternEnvironment,
+	e expandCanonicalTargetPatternEnvironment[TReference],
 	targetPattern label.CanonicalTargetPattern,
 	errOut *error,
 ) iter.Seq[label.CanonicalLabel] {
@@ -50,7 +49,7 @@ func (c *baseComputer) expandCanonicalTargetPattern(
 			ctx,
 			c.targetPatternExpansionValueTargetLabelReader,
 			model_core.NewNestedMessage(targetPatternExpansion, targetPatternExpansion.Message.TargetLabels),
-			func(entry model_core.Message[*model_analysis_pb.TargetPatternExpansion_Value_TargetLabel, object.OutgoingReferences[object.LocalReference]]) (*model_core_pb.Reference, error) {
+			func(entry model_core.Message[*model_analysis_pb.TargetPatternExpansion_Value_TargetLabel, TReference]) (*model_core_pb.Reference, error) {
 				if level, ok := entry.Message.Level.(*model_analysis_pb.TargetPatternExpansion_Value_TargetLabel_Parent_); ok {
 					return level.Parent.Reference, nil
 				}
@@ -76,7 +75,7 @@ func (c *baseComputer) expandCanonicalTargetPattern(
 	}
 }
 
-func (c *baseComputer) ComputeTargetPatternExpansionValue(ctx context.Context, key *model_analysis_pb.TargetPatternExpansion_Key, e TargetPatternExpansionEnvironment) (PatchedTargetPatternExpansionValue, error) {
+func (c *baseComputer[TReference]) ComputeTargetPatternExpansionValue(ctx context.Context, key *model_analysis_pb.TargetPatternExpansion_Key, e TargetPatternExpansionEnvironment[TReference]) (PatchedTargetPatternExpansionValue, error) {
 	treeBuilder := btree.NewSplitProllyBuilder(
 		/* minimumSizeBytes = */ 32*1024,
 		/* maximumSizeBytes = */ 128*1024,
@@ -215,10 +214,10 @@ func (c *baseComputer) ComputeTargetPatternExpansionValue(ctx context.Context, k
 	}, nil
 }
 
-func (c *baseComputer) addPackageToTargetPatternExpansion(
+func (c *baseComputer[TReference]) addPackageToTargetPatternExpansion(
 	ctx context.Context,
 	canonicalPackage label.CanonicalPackage,
-	packageValue model_core.Message[*model_analysis_pb.Package_Value, object.OutgoingReferences[object.LocalReference]],
+	packageValue model_core.Message[*model_analysis_pb.Package_Value, TReference],
 	includeFileTargets bool,
 	treeBuilder btree.Builder[*model_analysis_pb.TargetPatternExpansion_Value_TargetLabel, dag.ObjectContentsWalker],
 ) error {
@@ -227,7 +226,7 @@ func (c *baseComputer) addPackageToTargetPatternExpansion(
 		ctx,
 		c.packageValueTargetReader,
 		model_core.NewNestedMessage(packageValue, packageValue.Message.Targets),
-		func(entry model_core.Message[*model_analysis_pb.Package_Value_Target, object.OutgoingReferences[object.LocalReference]]) (*model_core_pb.Reference, error) {
+		func(entry model_core.Message[*model_analysis_pb.Package_Value_Target, TReference]) (*model_core_pb.Reference, error) {
 			if level, ok := entry.Message.Level.(*model_analysis_pb.Package_Value_Target_Parent_); ok {
 				return level.Parent.Reference, nil
 			}

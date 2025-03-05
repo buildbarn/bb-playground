@@ -9,7 +9,6 @@ import (
 	model_core "github.com/buildbarn/bonanza/pkg/model/core"
 	model_analysis_pb "github.com/buildbarn/bonanza/pkg/proto/model/analysis"
 	"github.com/buildbarn/bonanza/pkg/storage/dag"
-	"github.com/buildbarn/bonanza/pkg/storage/object"
 )
 
 func constraintsAreCompatible(actual, expected []*model_analysis_pb.Constraint) bool {
@@ -48,7 +47,7 @@ func constraintsAreCompatible(actual, expected []*model_analysis_pb.Constraint) 
 	return true
 }
 
-func (c *baseComputer) ComputeResolvedToolchainsValue(ctx context.Context, key model_core.Message[*model_analysis_pb.ResolvedToolchains_Key, object.OutgoingReferences[object.LocalReference]], e ResolvedToolchainsEnvironment) (PatchedResolvedToolchainsValue, error) {
+func (c *baseComputer[TReference]) ComputeResolvedToolchainsValue(ctx context.Context, key model_core.Message[*model_analysis_pb.ResolvedToolchains_Key, TReference], e ResolvedToolchainsEnvironment[TReference]) (PatchedResolvedToolchainsValue, error) {
 	// Obtain all compatible execution platforms and toolchains.
 	missingDependencies := false
 	compatibleExecutionPlatforms := e.GetCompatibleExecutionPlatformsValue(&model_analysis_pb.CompatibleExecutionPlatforms_Key{

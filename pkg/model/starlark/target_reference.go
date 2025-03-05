@@ -16,50 +16,50 @@ import (
 	"go.starlark.net/syntax"
 )
 
-type TargetReference struct {
+type TargetReference[TReference object.BasicReference] struct {
 	label            pg_label.ResolvedLabel
-	encodedProviders model_core.Message[[]*model_starlark_pb.Struct, object.OutgoingReferences[object.LocalReference]]
+	encodedProviders model_core.Message[[]*model_starlark_pb.Struct, TReference]
 
-	decodedProviders []atomic.Pointer[Struct]
+	decodedProviders []atomic.Pointer[Struct[TReference]]
 }
 
-func NewTargetReference(label pg_label.ResolvedLabel, providers model_core.Message[[]*model_starlark_pb.Struct, object.OutgoingReferences[object.LocalReference]]) starlark.Value {
-	return &TargetReference{
+func NewTargetReference[TReference object.BasicReference](label pg_label.ResolvedLabel, providers model_core.Message[[]*model_starlark_pb.Struct, TReference]) starlark.Value {
+	return &TargetReference[TReference]{
 		label:            label,
 		encodedProviders: providers,
-		decodedProviders: make([]atomic.Pointer[Struct], len(providers.Message)),
+		decodedProviders: make([]atomic.Pointer[Struct[TReference]], len(providers.Message)),
 	}
 }
 
 var (
-	_ EncodableValue      = (*TargetReference)(nil)
-	_ starlark.Comparable = (*TargetReference)(nil)
-	_ starlark.HasAttrs   = (*TargetReference)(nil)
-	_ starlark.Mapping    = (*TargetReference)(nil)
+	_ EncodableValue      = (*TargetReference[object.LocalReference])(nil)
+	_ starlark.Comparable = (*TargetReference[object.LocalReference])(nil)
+	_ starlark.HasAttrs   = (*TargetReference[object.LocalReference])(nil)
+	_ starlark.Mapping    = (*TargetReference[object.LocalReference])(nil)
 )
 
-func (tr *TargetReference) String() string {
+func (tr *TargetReference[TReference]) String() string {
 	return fmt.Sprintf("<target %s>", tr.label.String())
 }
 
-func (TargetReference) Type() string {
+func (TargetReference[TReference]) Type() string {
 	return "Target"
 }
 
-func (TargetReference) Freeze() {
+func (TargetReference[TReference]) Freeze() {
 }
 
-func (TargetReference) Truth() starlark.Bool {
+func (TargetReference[TReference]) Truth() starlark.Bool {
 	return starlark.True
 }
 
-func (tr *TargetReference) Hash(thread *starlark.Thread) (uint32, error) {
+func (tr *TargetReference[TReference]) Hash(thread *starlark.Thread) (uint32, error) {
 	// Assume that the number of target references with the same
 	// label, but a different configuration are fairly low.
 	return starlark.String(tr.label.String()).Hash(thread)
 }
 
-func (tr *TargetReference) equal(thread *starlark.Thread, other *TargetReference) (bool, error) {
+func (tr *TargetReference[TReference]) equal(thread *starlark.Thread, other *TargetReference[TReference]) (bool, error) {
 	if tr != other {
 		if tr.label != other.label {
 			return false, nil
@@ -72,12 +72,12 @@ func (tr *TargetReference) equal(thread *starlark.Thread, other *TargetReference
 	return true, nil
 }
 
-func (tr *TargetReference) CompareSameType(thread *starlark.Thread, op syntax.Token, other starlark.Value, depth int) (bool, error) {
+func (tr *TargetReference[TReference]) CompareSameType(thread *starlark.Thread, op syntax.Token, other starlark.Value, depth int) (bool, error) {
 	switch op {
 	case syntax.EQL:
-		return tr.equal(thread, other.(*TargetReference))
+		return tr.equal(thread, other.(*TargetReference[TReference]))
 	case syntax.NEQ:
-		equals, err := tr.equal(thread, other.(*TargetReference))
+		equals, err := tr.equal(thread, other.(*TargetReference[TReference]))
 		return !equals, err
 	default:
 		return false, errors.New("target references cannot be compared for inequality")
@@ -86,7 +86,7 @@ func (tr *TargetReference) CompareSameType(thread *starlark.Thread, op syntax.To
 
 var defaultInfoProviderIdentifier = pg_label.MustNewCanonicalStarlarkIdentifier("@@builtins_core+//:exports.bzl%DefaultInfo")
 
-func (tr *TargetReference) Attr(thread *starlark.Thread, name string) (starlark.Value, error) {
+func (tr *TargetReference[TReference]) Attr(thread *starlark.Thread, name string) (starlark.Value, error) {
 	switch name {
 	case "label":
 		return NewLabel(tr.label), nil
@@ -110,11 +110,11 @@ var targetReferenceAttrNames = []string{
 	"label",
 }
 
-func (tr *TargetReference) AttrNames() []string {
+func (tr *TargetReference[TReference]) AttrNames() []string {
 	return targetReferenceAttrNames
 }
 
-func (tr *TargetReference) getProviderValue(thread *starlark.Thread, providerIdentifier pg_label.CanonicalStarlarkIdentifier) (*Struct, error) {
+func (tr *TargetReference[TReference]) getProviderValue(thread *starlark.Thread, providerIdentifier pg_label.CanonicalStarlarkIdentifier) (*Struct[TReference], error) {
 	valueDecodingOptions := thread.Local(ValueDecodingOptionsKey)
 	if valueDecodingOptions == nil {
 		return nil, errors.New("providers cannot be decoded from within this context")
@@ -136,7 +136,7 @@ func (tr *TargetReference) getProviderValue(thread *starlark.Thread, providerIde
 		var err error
 		strukt, err = DecodeStruct(
 			model_core.NewNestedMessage(tr.encodedProviders, tr.encodedProviders.Message[index]),
-			valueDecodingOptions.(*ValueDecodingOptions),
+			valueDecodingOptions.(*ValueDecodingOptions[TReference]),
 		)
 		if err != nil {
 			return nil, err
@@ -146,7 +146,7 @@ func (tr *TargetReference) getProviderValue(thread *starlark.Thread, providerIde
 	return strukt, nil
 }
 
-func (tr *TargetReference) Get(thread *starlark.Thread, v starlark.Value) (starlark.Value, bool, error) {
+func (tr *TargetReference[TReference]) Get(thread *starlark.Thread, v starlark.Value) (starlark.Value, bool, error) {
 	provider, ok := v.(*Provider)
 	if !ok {
 		return nil, false, errors.New("keys have to be of type provider")
@@ -162,7 +162,7 @@ func (tr *TargetReference) Get(thread *starlark.Thread, v starlark.Value) (starl
 	return providerValue, true, nil
 }
 
-func (tr *TargetReference) EncodeValue(path map[starlark.Value]struct{}, currentIdentifier *pg_label.CanonicalStarlarkIdentifier, options *ValueEncodingOptions) (model_core.PatchedMessage[*model_starlark_pb.Value, model_core.CreatedObjectTree], bool, error) {
+func (tr *TargetReference[TReference]) EncodeValue(path map[starlark.Value]struct{}, currentIdentifier *pg_label.CanonicalStarlarkIdentifier, options *ValueEncodingOptions) (model_core.PatchedMessage[*model_starlark_pb.Value, model_core.CreatedObjectTree], bool, error) {
 	return model_core.NewPatchedMessageFromExisting(
 		model_core.NewNestedMessage(tr.encodedProviders, &model_starlark_pb.Value{
 			Kind: &model_starlark_pb.Value_TargetReference{

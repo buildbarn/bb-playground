@@ -241,7 +241,7 @@ func (af *capturableArchiveFile[TFile]) CreateFileMerkleTree(ctx context.Context
 
 func (af *capturableArchiveFile[TFile]) Discard() {}
 
-func (c *baseComputer) ComputeHttpArchiveContentsValue(ctx context.Context, key *model_analysis_pb.HttpArchiveContents_Key, e HttpArchiveContentsEnvironment) (PatchedHttpArchiveContentsValue, error) {
+func (c *baseComputer[TReference]) ComputeHttpArchiveContentsValue(ctx context.Context, key *model_analysis_pb.HttpArchiveContents_Key, e HttpArchiveContentsEnvironment[TReference]) (PatchedHttpArchiveContentsValue, error) {
 	fileReader, gotFileReader := e.GetFileReaderValue(&model_analysis_pb.FileReader_Key{})
 	directoryCreationParameters, gotDirectoryCreationParameters := e.GetDirectoryCreationParametersObjectValue(&model_analysis_pb.DirectoryCreationParametersObject_Key{})
 	fileCreationParameters, gotFileCreationParameters := e.GetFileCreationParametersObjectValue(&model_analysis_pb.FileCreationParametersObject_Key{})
@@ -257,10 +257,8 @@ func (c *baseComputer) ComputeHttpArchiveContentsValue(ctx context.Context, key 
 		return PatchedHttpArchiveContentsValue{}, fmt.Errorf("file at URLs %#v does not exist", key.Urls)
 	}
 
-	referenceFormat := c.getReferenceFormat()
 	httpFileContentsEntry, err := model_filesystem.NewFileContentsEntryFromProto(
 		model_core.NewNestedMessage(httpFileContentsValue, httpFileContentsValue.Message.Exists.Contents),
-		referenceFormat,
 	)
 	if err != nil {
 		return PatchedHttpArchiveContentsValue{}, fmt.Errorf("invalid file contents: %w", err)
@@ -408,7 +406,7 @@ func (c *baseComputer) ComputeHttpArchiveContentsValue(ctx context.Context, key 
 	}
 	createdRootDirectoryObject, err := model_core.MarshalAndEncodePatchedMessage(
 		createdRootDirectory.Message,
-		referenceFormat,
+		c.getReferenceFormat(),
 		directoryCreationParameters.GetEncoder(),
 	)
 	if err != nil {

@@ -153,7 +153,7 @@ func TestBuild(t *testing.T) {
 				},
 			},
 		}, output.Message)
-		require.Equal(t, object.OutgoingReferencesList{
+		require.Equal(t, object.OutgoingReferencesList[object.LocalReference]{
 			object.MustNewSHA256V1LocalReference("013ab9b8d7bfdce48a964249f169d6b99bb58ec55b11a7df0f7305ae8a5577df", 84, 0, 0, 0),
 		}, references)
 		require.Equal(t, []model_core.ReferenceMetadata{

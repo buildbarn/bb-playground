@@ -16,23 +16,19 @@ import (
 	model_core_pb "github.com/buildbarn/bonanza/pkg/proto/model/core"
 	model_starlark_pb "github.com/buildbarn/bonanza/pkg/proto/model/starlark"
 	"github.com/buildbarn/bonanza/pkg/storage/dag"
-	"github.com/buildbarn/bonanza/pkg/storage/object"
 )
 
-func (c *baseComputer) getConfigurationByReference(ctx context.Context, configurationReference model_core.Message[*model_core_pb.Reference, object.OutgoingReferences[object.LocalReference]]) (model_core.Message[*model_analysis_pb.Configuration, object.OutgoingReferences[object.LocalReference]], error) {
+func (c *baseComputer[TReference]) getConfigurationByReference(ctx context.Context, configurationReference model_core.Message[*model_core_pb.Reference, TReference]) (model_core.Message[*model_analysis_pb.Configuration, TReference], error) {
 	if configurationReference.Message == nil {
 		// Empty configuration.
-		return model_core.Message[*model_analysis_pb.Configuration, object.OutgoingReferences[object.LocalReference]]{
-			Message:            &model_analysis_pb.Configuration{},
-			OutgoingReferences: object.OutgoingReferencesList{},
-		}, nil
+		return model_core.NewSimpleMessage[TReference](&model_analysis_pb.Configuration{}), nil
 	}
 	return model_parser.Dereference(ctx, c.configurationReader, configurationReference)
 }
 
 var commandLineOptionPlatformsLabel = label.MustNewCanonicalLabel("@@bazel_tools+//command_line_option:platforms")
 
-func (c *baseComputer) ComputeCompatibleToolchainsForTypeValue(ctx context.Context, key model_core.Message[*model_analysis_pb.CompatibleToolchainsForType_Key, object.OutgoingReferences[object.LocalReference]], e CompatibleToolchainsForTypeEnvironment) (PatchedCompatibleToolchainsForTypeValue, error) {
+func (c *baseComputer[TReference]) ComputeCompatibleToolchainsForTypeValue(ctx context.Context, key model_core.Message[*model_analysis_pb.CompatibleToolchainsForType_Key, TReference], e CompatibleToolchainsForTypeEnvironment[TReference]) (PatchedCompatibleToolchainsForTypeValue, error) {
 	registeredToolchains := e.GetRegisteredToolchainsForTypeValue(&model_analysis_pb.RegisteredToolchainsForType_Key{
 		ToolchainType: key.Message.ToolchainType,
 	})

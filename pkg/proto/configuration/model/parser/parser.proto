@@ -1,0 +1,18 @@
+syntax = "proto3";
+
+package bonanza.configuration.model.parser;
+
+import "pkg/proto/configuration/eviction/eviction.proto";
+
+message ParsedObjectPool {
+  // The cache replacement for evicting parsed objects from the pool.
+  buildbarn.configuration.eviction.CacheReplacementPolicy
+      cache_replacement_policy = 1;
+
+  // The maximum number of parsed objects to store in the pool.
+  int64 count = 2;
+
+  // The approximate maximum total size of all parsed objects to store
+  // in the pool.
+  int64 size_bytes = 3;
+}

@@ -1,7 +1,6 @@
 package filesystem
 
 import (
-	"context"
 	"math"
 
 	"github.com/buildbarn/bb-storage/pkg/util"
@@ -15,7 +14,9 @@ import (
 	"google.golang.org/grpc/status"
 )
 
-// FileContentsEntry contains the properties of a part of a concatenated file.
+// FileContentsEntry contains the properties of a part of a concatenated
+// file. Note that the Reference field is only set when EndBytes is
+// non-zero.
 type FileContentsEntry[TReference any] struct {
 	EndBytes  uint64
 	Reference TReference
@@ -24,22 +25,11 @@ type FileContentsEntry[TReference any] struct {
 // NewFileContentsEntryFromProto constructs a FileContentsListEntry
 // based on the contents of a single FileContents Protobuf message,
 // refering to the file as a whole.
-func NewFileContentsEntryFromProto[
-	TReference any,
-	TReferenceFormat interface {
-		GetBogusReference() TReference
-	},
-](fileContents model_core.Message[*model_filesystem_pb.FileContents, object.OutgoingReferences[TReference]], referenceFormat TReferenceFormat) (FileContentsEntry[TReference], error) {
+func NewFileContentsEntryFromProto[TReference any](fileContents model_core.Message[*model_filesystem_pb.FileContents, TReference]) (FileContentsEntry[TReference], error) {
 	if fileContents.Message == nil {
 		// File is empty, meaning that it is not backed by any
-		// object. Map all of such files to the bogus reference.
-		// We assume that specifying a size of zero is enough to
-		// prevent the underlying file implementation from
-		// loading any objects from storage.
-		return FileContentsEntry[TReference]{
-			EndBytes:  0,
-			Reference: referenceFormat.GetBogusReference(),
-		}, nil
+		// object. Leave the reference unset.
+		return FileContentsEntry[TReference]{EndBytes: 0}, nil
 	}
 
 	reference, err := model_core.FlattenReference(model_core.NewNestedMessage(fileContents, fileContents.Message.Reference))
@@ -57,25 +47,17 @@ func NewFileContentsEntryFromProto[
 // concatenated, with EndBytes increasing.
 type FileContentsList[TReference any] []FileContentsEntry[TReference]
 
-// FileContentsListObjectParserReference is a constraint on the
-// reference types accepted by the ObjectParser returned by
-// NewFileContentsListObjectParser.
-type FileContentsListObjectParserReference[T any] interface {
-	GetSizeBytes() int
-}
-
-type fileContentsListObjectParser[TReference FileContentsListObjectParserReference[TReference]] struct{}
+type fileContentsListObjectParser[TReference object.BasicReference] struct{}
 
 // NewFileContentsListObjectParser creates an ObjectParser that is
 // capable of parsing FileContentsList messages, turning them into a
 // list of entries that can be processed by FileContentsIterator.
-func NewFileContentsListObjectParser[TReference FileContentsListObjectParserReference[TReference]]() parser.ObjectParser[TReference, FileContentsList[TReference]] {
+func NewFileContentsListObjectParser[TReference object.BasicReference]() parser.ObjectParser[TReference, FileContentsList[TReference]] {
 	return &fileContentsListObjectParser[TReference]{}
 }
 
-func (p *fileContentsListObjectParser[TReference]) ParseObject(ctx context.Context, reference TReference, outgoingReferences object.OutgoingReferences[TReference], data []byte) (FileContentsList[TReference], int, error) {
-	l, sizeBytes, err := model_parser.NewMessageListObjectParser[TReference, model_filesystem_pb.FileContents]().
-		ParseObject(ctx, reference, outgoingReferences, data)
+func (p *fileContentsListObjectParser[TReference]) ParseObject(in model_core.Message[[]byte, TReference]) (FileContentsList[TReference], int, error) {
+	l, sizeBytes, err := model_parser.NewMessageListObjectParser[TReference, model_filesystem_pb.FileContents]().ParseObject(in)
 	if err != nil {
 		return nil, 0, err
 	}

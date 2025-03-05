@@ -6,7 +6,6 @@ import (
 	model_core "github.com/buildbarn/bonanza/pkg/model/core"
 	model_parser "github.com/buildbarn/bonanza/pkg/model/parser"
 	model_core_pb "github.com/buildbarn/bonanza/pkg/proto/model/core"
-	"github.com/buildbarn/bonanza/pkg/storage/object"
 
 	"google.golang.org/protobuf/proto"
 )
@@ -18,14 +17,13 @@ func Find[
 		*TMessage
 		proto.Message
 	},
-	TOutgoingReferences object.OutgoingReferences[TReference],
 	TReference any,
 ](
 	ctx context.Context,
-	reader model_parser.ParsedObjectReader[TReference, model_core.Message[[]TMessagePtr, TOutgoingReferences]],
-	list model_core.Message[[]TMessagePtr, TOutgoingReferences],
+	reader model_parser.ParsedObjectReader[TReference, model_core.Message[[]TMessagePtr, TReference]],
+	list model_core.Message[[]TMessagePtr, TReference],
 	cmp func(TMessagePtr) (int, *model_core_pb.Reference),
-) (model_core.Message[TMessagePtr, TOutgoingReferences], error) {
+) (model_core.Message[TMessagePtr, TReference], error) {
 	for {
 		low, high := 0, len(list.Message)
 		var childReference *model_core_pb.Reference
@@ -55,14 +53,14 @@ func Find[
 		if childReference == nil {
 			// Found no exact match, and also did not find a
 			// child that may include a matching entry.
-			return model_core.Message[TMessagePtr, TOutgoingReferences]{}, nil
+			return model_core.Message[TMessagePtr, TReference]{}, nil
 		}
 
 		// Load the child from storage and continue searching.
 		var err error
 		list, err = model_parser.Dereference(ctx, reader, model_core.NewNestedMessage(list, childReference))
 		if err != nil {
-			return model_core.Message[TMessagePtr, TOutgoingReferences]{}, err
+			return model_core.Message[TMessagePtr, TReference]{}, err
 		}
 	}
 }

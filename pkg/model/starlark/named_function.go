@@ -146,18 +146,18 @@ type FunctionFactoryResolver = func(filename pg_label.CanonicalLabel) (*starlark
 
 const FunctionFactoryResolverKey = "function_factory_resolver"
 
-type protoNamedFunctionDefinition struct {
-	message  model_core.Message[*model_starlark_pb.Function, object.OutgoingReferences[object.LocalReference]]
+type protoNamedFunctionDefinition[TReference object.BasicReference] struct {
+	message  model_core.Message[*model_starlark_pb.Function, TReference]
 	function atomic.Pointer[starlark.Function]
 }
 
-func NewProtoNamedFunctionDefinition(message model_core.Message[*model_starlark_pb.Function, object.OutgoingReferences[object.LocalReference]]) NamedFunctionDefinition {
-	return &protoNamedFunctionDefinition{
+func NewProtoNamedFunctionDefinition[TReference object.BasicReference](message model_core.Message[*model_starlark_pb.Function, TReference]) NamedFunctionDefinition {
+	return &protoNamedFunctionDefinition[TReference]{
 		message: message,
 	}
 }
 
-func (d *protoNamedFunctionDefinition) CallInternal(thread *starlark.Thread, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
+func (d *protoNamedFunctionDefinition[TReference]) CallInternal(thread *starlark.Thread, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
 	function := d.function.Load()
 	if function == nil {
 		functionFactoryResolver := thread.Local(FunctionFactoryResolverKey)
@@ -183,7 +183,7 @@ func (d *protoNamedFunctionDefinition) CallInternal(thread *starlark.Thread, arg
 				return nil, err
 			}
 		} else {
-			options := thread.Local(ValueDecodingOptionsKey).(*ValueDecodingOptions)
+			options := thread.Local(ValueDecodingOptionsKey).(*ValueDecodingOptions[TReference])
 			freeVariables := make(starlark.Tuple, 0, len(closure.FreeVariables))
 			for index, freeVariable := range closure.FreeVariables {
 				value, err := DecodeValue(model_core.NewNestedMessage(d.message, freeVariable), nil, options)
@@ -215,7 +215,7 @@ func (d *protoNamedFunctionDefinition) CallInternal(thread *starlark.Thread, arg
 	return function.CallInternal(thread, args, kwargs)
 }
 
-func (d *protoNamedFunctionDefinition) Encode(path map[starlark.Value]struct{}, options *ValueEncodingOptions) (model_core.PatchedMessage[*model_starlark_pb.Function, model_core.CreatedObjectTree], bool, error) {
+func (d *protoNamedFunctionDefinition[TReference]) Encode(path map[starlark.Value]struct{}, options *ValueEncodingOptions) (model_core.PatchedMessage[*model_starlark_pb.Function, model_core.CreatedObjectTree], bool, error) {
 	return model_core.NewPatchedMessageFromExisting(
 		d.message,
 		func(index int) model_core.CreatedObjectTree {
@@ -224,14 +224,14 @@ func (d *protoNamedFunctionDefinition) Encode(path map[starlark.Value]struct{}, 
 	), false, nil
 }
 
-func (d *protoNamedFunctionDefinition) Name() string {
+func (d *protoNamedFunctionDefinition[TReference]) Name() string {
 	if m := d.message.Message; m != nil {
 		return m.Name
 	}
 	return "unknown"
 }
 
-func (d *protoNamedFunctionDefinition) Position() syntax.Position {
+func (d *protoNamedFunctionDefinition[TReference]) Position() syntax.Position {
 	if m := d.message.Message; m != nil {
 		return syntax.MakePosition(&m.Filename, m.Line, m.Column)
 	}

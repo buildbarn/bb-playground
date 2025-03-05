@@ -19,12 +19,11 @@ import (
 	model_command_pb "github.com/buildbarn/bonanza/pkg/proto/model/command"
 	remoteexecution_pb "github.com/buildbarn/bonanza/pkg/proto/remoteexecution"
 	"github.com/buildbarn/bonanza/pkg/storage/dag"
-	"github.com/buildbarn/bonanza/pkg/storage/object"
 
 	"google.golang.org/grpc/status"
 )
 
-func (c *baseComputer) ComputeActionResultValue(ctx context.Context, key model_core.Message[*model_analysis_pb.ActionResult_Key, object.OutgoingReferences[object.LocalReference]], e ActionResultEnvironment) (PatchedActionResultValue, error) {
+func (c *baseComputer[TReference]) ComputeActionResultValue(ctx context.Context, key model_core.Message[*model_analysis_pb.ActionResult_Key, TReference], e ActionResultEnvironment[TReference]) (PatchedActionResultValue, error) {
 	commandEncodersValue := e.GetCommandEncodersValue(&model_analysis_pb.CommandEncoders_Key{})
 	if !commandEncodersValue.IsSet() {
 		return PatchedActionResultValue{}, evaluation.ErrMissingDependency
@@ -55,14 +54,13 @@ func (c *baseComputer) ComputeActionResultValue(ctx context.Context, key model_c
 		return PatchedActionResultValue{}, fmt.Errorf("invalid input root reference: %w", err)
 	}
 
-	namespace := c.buildSpecificationReference.GetNamespace()
 	var completionEvent model_command_pb.Result
 	var errExecution error
 	for range c.executionClient.RunAction(
 		ctx,
 		platformECDHPublicKey,
 		&model_command_pb.Action{
-			Namespace:          namespace.ToProto(),
+			Namespace:          c.executionNamespace,
 			CommandEncoders:    commandEncodersValue.Message.CommandEncoders,
 			CommandReference:   commandReference.GetRawReference(),
 			InputRootReference: inputRootReference.GetRawReference(),
@@ -92,7 +90,7 @@ func (c *baseComputer) ComputeActionResultValue(ctx context.Context, key model_c
 	}
 	patcher := model_core.NewReferenceMessagePatcher[dag.ObjectContentsWalker]()
 	if len(completionEvent.OutputsReference) > 0 {
-		outputsReference, err := namespace.NewLocalReference(completionEvent.OutputsReference)
+		outputsReference, err := c.getReferenceFormat().NewLocalReference(completionEvent.OutputsReference)
 		if err != nil {
 			return PatchedActionResultValue{}, fmt.Errorf("invalid outputs reference: %w", err)
 		}
@@ -101,7 +99,7 @@ func (c *baseComputer) ComputeActionResultValue(ctx context.Context, key model_c
 	return model_core.NewPatchedMessage(result, patcher), nil
 }
 
-func (c *baseComputer) convertDictToEnvironmentVariableList(environment map[string]string, commandEncoder model_encoding.BinaryEncoder) (model_core.PatchedMessage[[]*model_command_pb.EnvironmentVariableList_Element, dag.ObjectContentsWalker], error) {
+func (c *baseComputer[TReference]) convertDictToEnvironmentVariableList(environment map[string]string, commandEncoder model_encoding.BinaryEncoder) (model_core.PatchedMessage[[]*model_command_pb.EnvironmentVariableList_Element, dag.ObjectContentsWalker], error) {
 	environmentVariablesBuilder := btree.NewSplitProllyBuilder(
 		1<<16,
 		1<<18,
@@ -141,12 +139,12 @@ func (c *baseComputer) convertDictToEnvironmentVariableList(environment map[stri
 	return environmentVariablesBuilder.FinalizeList()
 }
 
-func (c *baseComputer) getOutputsFromActionResult(ctx context.Context, actionResult model_core.Message[*model_analysis_pb.ActionResult_Value, object.OutgoingReferences[object.LocalReference]], directoryReaders *DirectoryReaders) (model_core.Message[*model_command_pb.Outputs, object.OutgoingReferences[object.LocalReference]], error) {
+func (c *baseComputer[TReference]) getOutputsFromActionResult(ctx context.Context, actionResult model_core.Message[*model_analysis_pb.ActionResult_Value, TReference], directoryReaders *DirectoryReaders[TReference]) (model_core.Message[*model_command_pb.Outputs, TReference], error) {
 	if actionResult.Message.OutputsReference == nil {
 		// Action did not yield any outputs. Return an empty
 		// outputs message, so any code that attempts to access
 		// individual outputs behaves well.
-		return model_core.NewMessage(&model_command_pb.Outputs{}, object.OutgoingReferences[object.LocalReference](object.OutgoingReferencesList{})), nil
+		return model_core.NewSimpleMessage[TReference](&model_command_pb.Outputs{}), nil
 	}
 
 	return model_parser.Dereference(ctx, directoryReaders.CommandOutputs, model_core.NewNestedMessage(actionResult, actionResult.Message.OutputsReference))

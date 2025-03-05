@@ -90,6 +90,7 @@ type TopLevelDirectory interface {
 
 type localExecutor struct {
 	objectDownloader               object.Downloader[object.GlobalReference]
+	parsedObjectPool               *model_parser.ParsedObjectPool
 	dagUploaderClient              dag_pb.UploaderClient
 	objectContentsWalkerSemaphore  *semaphore.Weighted
 	topLevelDirectory              TopLevelDirectory
@@ -108,6 +109,7 @@ type localExecutor struct {
 
 func NewLocalExecutor(
 	objectDownloader object.Downloader[object.GlobalReference],
+	parsedObjectPool *model_parser.ParsedObjectPool,
 	dagUploaderClient dag_pb.UploaderClient,
 	objectContentsWalkerSemaphore *semaphore.Weighted,
 	topLevelDirectory TopLevelDirectory,
@@ -124,6 +126,7 @@ func NewLocalExecutor(
 ) remoteworker.Executor[*model_command_pb.Action] {
 	return &localExecutor{
 		objectDownloader:               objectDownloader,
+		parsedObjectPool:               parsedObjectPool,
 		dagUploaderClient:              dagUploaderClient,
 		objectContentsWalkerSemaphore:  objectContentsWalkerSemaphore,
 		topLevelDirectory:              topLevelDirectory,
@@ -193,7 +196,10 @@ func (e *localExecutor) Execute(ctx context.Context, action *model_command_pb.Ac
 			Status: status.Convert(util.StatusWrap(err, "Invalid namespace")).Proto(),
 		}, 0, remoteworker_pb.CurrentState_Completed_FAILED
 	}
-	objectDownloader := object_namespacemapping.NewNamespaceAddingDownloader(e.objectDownloader, namespace)
+	parsedObjectFetcher := model_parser.NewParsedObjectFetcher(
+		e.parsedObjectPool,
+		object_namespacemapping.NewNamespaceAddingDownloader(e.objectDownloader, namespace),
+	)
 
 	// Fetch the Command message, so that we know the arguments and
 	// environment variables of the process to spawn.
@@ -206,10 +212,12 @@ func (e *localExecutor) Execute(ctx context.Context, action *model_command_pb.Ac
 			Status: status.Convert(util.StatusWrap(err, "Invalid command encoders")).Proto(),
 		}, 0, remoteworker_pb.CurrentState_Completed_FAILED
 	}
-	commandReader := model_parser.NewStorageBackedParsedObjectReader(
-		objectDownloader,
-		commandEncoder,
-		model_parser.NewMessageObjectParser[object.LocalReference, model_command_pb.Command](),
+	commandReader := model_parser.LookupParsedObjectReader[object.LocalReference](
+		parsedObjectFetcher,
+		model_parser.NewChainedObjectParser(
+			model_parser.NewEncodedObjectParser[object.LocalReference](commandEncoder),
+			model_parser.NewMessageObjectParser[object.LocalReference, model_command_pb.Command](),
+		),
 	)
 
 	commandReference, err := namespace.NewLocalReference(action.CommandReference)
@@ -218,7 +226,7 @@ func (e *localExecutor) Execute(ctx context.Context, action *model_command_pb.Ac
 			Status: status.Convert(util.StatusWrap(err, "Invalid command reference")).Proto(),
 		}, 0, remoteworker_pb.CurrentState_Completed_FAILED
 	}
-	command, _, err := commandReader.ReadParsedObject(ctx, commandReference)
+	command, err := commandReader.ReadParsedObject(ctx, commandReference)
 	if err != nil {
 		return &model_command_pb.Result{
 			Status: status.Convert(util.StatusWrap(err, "Failed to read command")).Proto(),
@@ -232,13 +240,15 @@ func (e *localExecutor) Execute(ctx context.Context, action *model_command_pb.Ac
 	var errIter error
 	for element := range btree.AllLeaves(
 		ctx,
-		model_parser.NewStorageBackedParsedObjectReader(
-			objectDownloader,
-			commandEncoder,
-			model_parser.NewMessageListObjectParser[object.LocalReference, model_command_pb.ArgumentList_Element](),
+		model_parser.LookupParsedObjectReader(
+			parsedObjectFetcher,
+			model_parser.NewChainedObjectParser(
+				model_parser.NewEncodedObjectParser[object.LocalReference](commandEncoder),
+				model_parser.NewMessageListObjectParser[object.LocalReference, model_command_pb.ArgumentList_Element](),
+			),
 		),
 		model_core.NewNestedMessage(command, command.Message.Arguments),
-		func(element model_core.Message[*model_command_pb.ArgumentList_Element, object.OutgoingReferences[object.LocalReference]]) (*model_core_pb.Reference, error) {
+		func(element model_core.Message[*model_command_pb.ArgumentList_Element, object.LocalReference]) (*model_core_pb.Reference, error) {
 			if level, ok := element.Message.Level.(*model_command_pb.ArgumentList_Element_Parent); ok {
 				return level.Parent, nil
 			}
@@ -263,13 +273,15 @@ func (e *localExecutor) Execute(ctx context.Context, action *model_command_pb.Ac
 	environmentVariables := map[string]string{}
 	for entry := range btree.AllLeaves(
 		ctx,
-		model_parser.NewStorageBackedParsedObjectReader(
-			objectDownloader,
-			commandEncoder,
-			model_parser.NewMessageListObjectParser[object.LocalReference, model_command_pb.EnvironmentVariableList_Element](),
+		model_parser.LookupParsedObjectReader(
+			parsedObjectFetcher,
+			model_parser.NewChainedObjectParser(
+				model_parser.NewEncodedObjectParser[object.LocalReference](commandEncoder),
+				model_parser.NewMessageListObjectParser[object.LocalReference, model_command_pb.EnvironmentVariableList_Element](),
+			),
 		),
 		model_core.NewNestedMessage(command, command.Message.EnvironmentVariables),
-		func(entry model_core.Message[*model_command_pb.EnvironmentVariableList_Element, object.OutgoingReferences[object.LocalReference]]) (*model_core_pb.Reference, error) {
+		func(entry model_core.Message[*model_command_pb.EnvironmentVariableList_Element, object.LocalReference]) (*model_core_pb.Reference, error) {
 			if level, ok := entry.Message.Level.(*model_command_pb.EnvironmentVariableList_Element_Parent); ok {
 				return level.Parent, nil
 			}
@@ -345,30 +357,37 @@ func (e *localExecutor) Execute(ctx context.Context, action *model_command_pb.Ac
 		inputRootDirectoryComponent: virtual.InitialChild{}.FromDirectory(
 			pg_vfs.NewObjectBackedInitialContentsFetcher(
 				ctxWithIOError,
-				model_parser.NewStorageBackedParsedObjectReader(
-					objectDownloader,
-					directoryEncoder,
-					model_filesystem.NewDirectoryClusterObjectParser[object.LocalReference](
-						model_parser.NewStorageBackedParsedObjectReader(
-							objectDownloader,
-							directoryEncoder,
-							model_parser.NewMessageObjectParser[object.LocalReference, model_filesystem_pb.Leaves](),
-						),
+				model_parser.LookupParsedObjectReader(
+					parsedObjectFetcher,
+					model_parser.NewChainedObjectParser(
+						model_parser.NewEncodedObjectParser[object.LocalReference](directoryEncoder),
+						model_filesystem.NewDirectoryClusterObjectParser[object.LocalReference](),
+					),
+				),
+				model_parser.LookupParsedObjectReader(
+					parsedObjectFetcher,
+					model_parser.NewChainedObjectParser(
+						model_parser.NewEncodedObjectParser[object.LocalReference](directoryEncoder),
+						model_parser.NewMessageObjectParser[object.LocalReference, model_filesystem_pb.Leaves](),
 					),
 				),
 				pg_vfs.NewStatelessHandleAllocatingFileFactory(
 					pg_vfs.NewObjectBackedFileFactory(
 						ctxWithIOError,
 						model_filesystem.NewFileReader(
-							model_parser.NewStorageBackedParsedObjectReader(
-								objectDownloader,
-								fileCreationParameters.GetFileContentsListEncoder(),
-								model_filesystem.NewFileContentsListObjectParser[object.LocalReference](),
+							model_parser.LookupParsedObjectReader(
+								parsedObjectFetcher,
+								model_parser.NewChainedObjectParser(
+									model_parser.NewEncodedObjectParser[object.LocalReference](fileCreationParameters.GetFileContentsListEncoder()),
+									model_filesystem.NewFileContentsListObjectParser[object.LocalReference](),
+								),
 							),
-							model_parser.NewStorageBackedParsedObjectReader(
-								objectDownloader,
-								fileCreationParameters.GetChunkEncoder(),
-								model_parser.NewRawObjectParser[object.LocalReference](),
+							model_parser.LookupParsedObjectReader(
+								parsedObjectFetcher,
+								model_parser.NewChainedObjectParser(
+									model_parser.NewEncodedObjectParser[object.LocalReference](fileCreationParameters.GetChunkEncoder()),
+									model_parser.NewRawObjectParser[object.LocalReference](),
+								),
 							),
 						),
 						ioErrorCapturer,
@@ -569,25 +588,25 @@ type prepopulatedCapturableDirectoryOptions struct {
 type prepopulatedCapturableDirectory struct {
 	options         *prepopulatedCapturableDirectoryOptions
 	directory       virtual.PrepopulatedDirectory
-	pattern         model_core.Message[*model_command_pb.PathPattern, object.OutgoingReferences[object.LocalReference]]
-	patternChildren atomic.Pointer[model_core.Message[*model_command_pb.PathPattern_Children, object.OutgoingReferences[object.LocalReference]]]
+	pattern         model_core.Message[*model_command_pb.PathPattern, object.LocalReference]
+	patternChildren atomic.Pointer[model_core.Message[*model_command_pb.PathPattern_Children, object.LocalReference]]
 }
 
-func (d *prepopulatedCapturableDirectory) getPatternChildren() (model_core.Message[*model_command_pb.PathPattern_Children, object.OutgoingReferences[object.LocalReference]], error) {
+func (d *prepopulatedCapturableDirectory) getPatternChildren() (model_core.Message[*model_command_pb.PathPattern_Children, object.LocalReference], error) {
 	if patternChildren := d.patternChildren.Load(); patternChildren != nil {
 		return *patternChildren, nil
 	}
 
-	var patternChildren model_core.Message[*model_command_pb.PathPattern_Children, object.OutgoingReferences[object.LocalReference]]
+	var patternChildren model_core.Message[*model_command_pb.PathPattern_Children, object.LocalReference]
 	switch childrenType := d.pattern.Message.Children.(type) {
 	case *model_command_pb.PathPattern_ChildrenExternal:
-		return model_core.Message[*model_command_pb.PathPattern_Children, object.OutgoingReferences[object.LocalReference]]{}, status.Error(codes.Unimplemented, "TODO: Fetch path pattern from storage")
+		return model_core.Message[*model_command_pb.PathPattern_Children, object.LocalReference]{}, status.Error(codes.Unimplemented, "TODO: Fetch path pattern from storage")
 	case *model_command_pb.PathPattern_ChildrenInline:
 		patternChildren = model_core.NewNestedMessage(d.pattern, childrenType.ChildrenInline)
 	case nil:
 		// Capture all children.
 	default:
-		return model_core.Message[*model_command_pb.PathPattern_Children, object.OutgoingReferences[object.LocalReference]]{}, status.Error(codes.InvalidArgument, "Unknown children type in path pattern")
+		return model_core.Message[*model_command_pb.PathPattern_Children, object.LocalReference]{}, status.Error(codes.InvalidArgument, "Unknown children type in path pattern")
 	}
 
 	d.patternChildren.Store(&patternChildren)
@@ -652,7 +671,7 @@ func (d *prepopulatedCapturableDirectory) EnterCapturableDirectory(name path.Com
 		return nil, nil, err
 	}
 
-	var childPattern model_core.Message[*model_command_pb.PathPattern, object.OutgoingReferences[object.LocalReference]]
+	var childPattern model_core.Message[*model_command_pb.PathPattern, object.LocalReference]
 	if patternChildren.IsSet() {
 		// Determine if the requested directory is part of the
 		// path pattern. If not, hide it.
@@ -676,7 +695,7 @@ func (d *prepopulatedCapturableDirectory) EnterCapturableDirectory(name path.Com
 		// The current directory should be captured without any
 		// filtering. Also don't apply any filtering in the
 		// child directory.
-		childPattern = model_core.NewMessage(&model_command_pb.PathPattern{}, object.OutgoingReferences[object.LocalReference](object.OutgoingReferencesList{}))
+		childPattern = model_core.NewSimpleMessage[object.LocalReference](&model_command_pb.PathPattern{})
 	}
 
 	child, err := d.directory.LookupChild(name)

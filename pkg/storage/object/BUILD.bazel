@@ -4,6 +4,7 @@ load("@rules_go//go:def.bzl", "go_library", "go_test")
 go_library(
     name = "object",
     srcs = [
+        "basic_reference.go",
         "contents.go",
         "downloader.go",
         "downloader_server.go",
@@ -35,7 +36,6 @@ go_test(
         "downloader_server_test.go",
         "local_reference_test.go",
         "mocks_object_test.go",
-        "reference_format_test.go",
         "uploader_server_test.go",
     ],
     embed = [":object"],

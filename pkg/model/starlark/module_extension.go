@@ -100,17 +100,17 @@ func (med *starlarkModuleExtensionDefinition) EncodeValue(path map[starlark.Valu
 	), needsCode, nil
 }
 
-type protoModuleExtensionDefinition struct {
-	message model_core.Message[*model_starlark_pb.ModuleExtension, object.OutgoingReferences[object.LocalReference]]
+type protoModuleExtensionDefinition[TReference object.BasicReference] struct {
+	message model_core.Message[*model_starlark_pb.ModuleExtension, TReference]
 }
 
-func NewProtoModuleExtensionDefinition(message model_core.Message[*model_starlark_pb.ModuleExtension, object.OutgoingReferences[object.LocalReference]]) ModuleExtensionDefinition {
-	return &protoModuleExtensionDefinition{
+func NewProtoModuleExtensionDefinition[TReference object.BasicReference](message model_core.Message[*model_starlark_pb.ModuleExtension, TReference]) ModuleExtensionDefinition {
+	return &protoModuleExtensionDefinition[TReference]{
 		message: message,
 	}
 }
 
-func (med *protoModuleExtensionDefinition) EncodeValue(path map[starlark.Value]struct{}, currentIdentifier *pg_label.CanonicalStarlarkIdentifier, options *ValueEncodingOptions) (model_core.PatchedMessage[*model_starlark_pb.Value, model_core.CreatedObjectTree], bool, error) {
+func (med *protoModuleExtensionDefinition[TReference]) EncodeValue(path map[starlark.Value]struct{}, currentIdentifier *pg_label.CanonicalStarlarkIdentifier, options *ValueEncodingOptions) (model_core.PatchedMessage[*model_starlark_pb.Value, model_core.CreatedObjectTree], bool, error) {
 	patchedMessage := model_core.NewPatchedMessageFromExisting(
 		med.message,
 		func(index int) model_core.CreatedObjectTree {

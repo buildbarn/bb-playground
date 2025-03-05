@@ -20,6 +20,7 @@ import (
 	model_build_pb "github.com/buildbarn/bonanza/pkg/proto/model/build"
 	model_command_pb "github.com/buildbarn/bonanza/pkg/proto/model/command"
 	model_starlark_pb "github.com/buildbarn/bonanza/pkg/proto/model/starlark"
+	object_pb "github.com/buildbarn/bonanza/pkg/proto/storage/object"
 	remoteexecution "github.com/buildbarn/bonanza/pkg/remoteexecution"
 	"github.com/buildbarn/bonanza/pkg/storage/dag"
 	"github.com/buildbarn/bonanza/pkg/storage/object"
@@ -29,100 +30,105 @@ import (
 	"go.starlark.net/starlark"
 )
 
-type baseComputer struct {
-	objectDownloader            object.Downloader[object.LocalReference]
-	buildSpecificationReference object.GlobalReference
-	buildSpecificationEncoder   model_encoding.BinaryEncoder
+type baseComputer[TReference object.BasicReference] struct {
+	parsedObjectFetcher         *model_parser.ParsedObjectFetcher[TReference]
+	buildSpecificationReference TReference
 	httpClient                  *http.Client
 	filePool                    re_filesystem.FilePool
 	cacheDirectory              filesystem.Directory
 	executionClient             *remoteexecution.Client[*model_command_pb.Action, emptypb.Empty, *emptypb.Empty, *model_command_pb.Result]
+	executionNamespace          *object_pb.Namespace
 
 	// Readers for various message types.
 	// TODO: These should likely be removed and instantiated later
 	// on, so that we can encrypt all data in storage.
-	valueReaders                                 model_starlark.ValueReaders
-	commandOutputsReader                         model_parser.ParsedObjectReader[object.LocalReference, model_core.Message[*model_command_pb.Outputs, object.OutgoingReferences[object.LocalReference]]]
-	configurationBuildSettingOverrideReader      model_parser.ParsedObjectReader[object.LocalReference, model_core.Message[[]*model_analysis_pb.Configuration_BuildSettingOverride, object.OutgoingReferences[object.LocalReference]]]
-	configurationReader                          model_parser.ParsedObjectReader[object.LocalReference, model_core.Message[*model_analysis_pb.Configuration, object.OutgoingReferences[object.LocalReference]]]
-	moduleExtensionReposValueRepoReader          model_parser.ParsedObjectReader[object.LocalReference, model_core.Message[[]*model_analysis_pb.ModuleExtensionRepos_Value_Repo, object.OutgoingReferences[object.LocalReference]]]
-	packageValueTargetReader                     model_parser.ParsedObjectReader[object.LocalReference, model_core.Message[[]*model_analysis_pb.Package_Value_Target, object.OutgoingReferences[object.LocalReference]]]
-	targetPatternExpansionValueTargetLabelReader model_parser.ParsedObjectReader[object.LocalReference, model_core.Message[[]*model_analysis_pb.TargetPatternExpansion_Value_TargetLabel, object.OutgoingReferences[object.LocalReference]]]
+	valueReaders                                 model_starlark.ValueReaders[TReference]
+	buildSpecificationReader                     model_parser.ParsedObjectReader[TReference, model_core.Message[*model_build_pb.BuildSpecification, TReference]]
+	commandOutputsReader                         model_parser.ParsedObjectReader[TReference, model_core.Message[*model_command_pb.Outputs, TReference]]
+	configurationBuildSettingOverrideReader      model_parser.ParsedObjectReader[TReference, model_core.Message[[]*model_analysis_pb.Configuration_BuildSettingOverride, TReference]]
+	configurationReader                          model_parser.ParsedObjectReader[TReference, model_core.Message[*model_analysis_pb.Configuration, TReference]]
+	moduleExtensionReposValueRepoReader          model_parser.ParsedObjectReader[TReference, model_core.Message[[]*model_analysis_pb.ModuleExtensionRepos_Value_Repo, TReference]]
+	packageValueTargetReader                     model_parser.ParsedObjectReader[TReference, model_core.Message[[]*model_analysis_pb.Package_Value_Target, TReference]]
+	targetPatternExpansionValueTargetLabelReader model_parser.ParsedObjectReader[TReference, model_core.Message[[]*model_analysis_pb.TargetPatternExpansion_Value_TargetLabel, TReference]]
 }
 
-func NewBaseComputer(
-	objectDownloader object.Downloader[object.LocalReference],
-	buildSpecificationReference object.GlobalReference,
+func NewBaseComputer[TReference object.BasicReference](
+	parsedObjectFetcher *model_parser.ParsedObjectFetcher[TReference],
+	buildSpecificationReference TReference,
 	buildSpecificationEncoder model_encoding.BinaryEncoder,
 	httpClient *http.Client,
 	filePool re_filesystem.FilePool,
 	cacheDirectory filesystem.Directory,
 	executionClient *remoteexecution.Client[*model_command_pb.Action, emptypb.Empty, *emptypb.Empty, *model_command_pb.Result],
-) Computer {
-	return &baseComputer{
-		objectDownloader:            objectDownloader,
+	executionInstanceName object.InstanceName,
+) Computer[TReference] {
+	return &baseComputer[TReference]{
+		parsedObjectFetcher:         parsedObjectFetcher,
 		buildSpecificationReference: buildSpecificationReference,
-		buildSpecificationEncoder:   buildSpecificationEncoder,
 		httpClient:                  httpClient,
 		filePool:                    filePool,
 		cacheDirectory:              cacheDirectory,
 		executionClient:             executionClient,
+		executionNamespace: object.Namespace{
+			InstanceName:    executionInstanceName,
+			ReferenceFormat: buildSpecificationReference.GetReferenceFormat(),
+		}.ToProto(),
 
-		valueReaders: model_starlark.ValueReaders{
-			Dict: model_parser.NewStorageBackedParsedObjectReader(
-				objectDownloader,
-				model_encoding.NewChainedBinaryEncoder(nil),
-				model_parser.NewMessageListObjectParser[object.LocalReference, model_starlark_pb.Dict_Entry](),
+		// TODO: Set up encoding!
+		valueReaders: model_starlark.ValueReaders[TReference]{
+			Dict: model_parser.LookupParsedObjectReader(
+				parsedObjectFetcher,
+				model_parser.NewMessageListObjectParser[TReference, model_starlark_pb.Dict_Entry](),
 			),
-			List: model_parser.NewStorageBackedParsedObjectReader(
-				objectDownloader,
-				model_encoding.NewChainedBinaryEncoder(nil),
-				model_parser.NewMessageListObjectParser[object.LocalReference, model_starlark_pb.List_Element](),
+			List: model_parser.LookupParsedObjectReader(
+				parsedObjectFetcher,
+				model_parser.NewMessageListObjectParser[TReference, model_starlark_pb.List_Element](),
 			),
 		},
-		commandOutputsReader: model_parser.NewStorageBackedParsedObjectReader(
-			objectDownloader,
-			model_encoding.NewChainedBinaryEncoder(nil),
-			model_parser.NewMessageObjectParser[object.LocalReference, model_command_pb.Outputs](),
+		buildSpecificationReader: model_parser.LookupParsedObjectReader(
+			parsedObjectFetcher,
+			model_parser.NewChainedObjectParser(
+				model_parser.NewEncodedObjectParser[TReference](buildSpecificationEncoder),
+				model_parser.NewMessageObjectParser[TReference, model_build_pb.BuildSpecification](),
+			),
 		),
-		configurationBuildSettingOverrideReader: model_parser.NewStorageBackedParsedObjectReader(
-			objectDownloader,
-			model_encoding.NewChainedBinaryEncoder(nil),
-			model_parser.NewMessageListObjectParser[object.LocalReference, model_analysis_pb.Configuration_BuildSettingOverride](),
+		commandOutputsReader: model_parser.LookupParsedObjectReader(
+			parsedObjectFetcher,
+			model_parser.NewMessageObjectParser[TReference, model_command_pb.Outputs](),
 		),
-		configurationReader: model_parser.NewStorageBackedParsedObjectReader(
-			objectDownloader,
-			model_encoding.NewChainedBinaryEncoder(nil),
-			model_parser.NewMessageObjectParser[object.LocalReference, model_analysis_pb.Configuration](),
+		configurationBuildSettingOverrideReader: model_parser.LookupParsedObjectReader(
+			parsedObjectFetcher,
+			model_parser.NewMessageListObjectParser[TReference, model_analysis_pb.Configuration_BuildSettingOverride](),
 		),
-		moduleExtensionReposValueRepoReader: model_parser.NewStorageBackedParsedObjectReader(
-			objectDownloader,
-			model_encoding.NewChainedBinaryEncoder(nil),
-			model_parser.NewMessageListObjectParser[object.LocalReference, model_analysis_pb.ModuleExtensionRepos_Value_Repo](),
+		configurationReader: model_parser.LookupParsedObjectReader(
+			parsedObjectFetcher,
+			model_parser.NewMessageObjectParser[TReference, model_analysis_pb.Configuration](),
 		),
-		packageValueTargetReader: model_parser.NewStorageBackedParsedObjectReader(
-			objectDownloader,
-			model_encoding.NewChainedBinaryEncoder(nil),
-			model_parser.NewMessageListObjectParser[object.LocalReference, model_analysis_pb.Package_Value_Target](),
+		moduleExtensionReposValueRepoReader: model_parser.LookupParsedObjectReader(
+			parsedObjectFetcher,
+			model_parser.NewMessageListObjectParser[TReference, model_analysis_pb.ModuleExtensionRepos_Value_Repo](),
 		),
-		targetPatternExpansionValueTargetLabelReader: model_parser.NewStorageBackedParsedObjectReader(
-			objectDownloader,
-			model_encoding.NewChainedBinaryEncoder(nil),
-			model_parser.NewMessageListObjectParser[object.LocalReference, model_analysis_pb.TargetPatternExpansion_Value_TargetLabel](),
+		packageValueTargetReader: model_parser.LookupParsedObjectReader(
+			parsedObjectFetcher,
+			model_parser.NewMessageListObjectParser[TReference, model_analysis_pb.Package_Value_Target](),
+		),
+		targetPatternExpansionValueTargetLabelReader: model_parser.LookupParsedObjectReader(
+			parsedObjectFetcher,
+			model_parser.NewMessageListObjectParser[TReference, model_analysis_pb.TargetPatternExpansion_Value_TargetLabel](),
 		),
 	}
 }
 
-func (c *baseComputer) getReferenceFormat() object.ReferenceFormat {
+func (c *baseComputer[TReference]) getReferenceFormat() object.ReferenceFormat {
 	return c.buildSpecificationReference.GetReferenceFormat()
 }
 
-func (c *baseComputer) getValueObjectEncoder() model_encoding.BinaryEncoder {
+func (c *baseComputer[TReference]) getValueObjectEncoder() model_encoding.BinaryEncoder {
 	// TODO: Use a proper encoder!
 	return model_encoding.NewChainedBinaryEncoder(nil)
 }
 
-func (c *baseComputer) getValueEncodingOptions(currentFilename label.CanonicalLabel) *model_starlark.ValueEncodingOptions {
+func (c *baseComputer[TReference]) getValueEncodingOptions(currentFilename label.CanonicalLabel) *model_starlark.ValueEncodingOptions {
 	return &model_starlark.ValueEncodingOptions{
 		CurrentFilename:        currentFilename,
 		ObjectEncoder:          c.getValueObjectEncoder(),
@@ -132,15 +138,15 @@ func (c *baseComputer) getValueEncodingOptions(currentFilename label.CanonicalLa
 	}
 }
 
-func (c *baseComputer) getValueDecodingOptions(ctx context.Context, labelCreator func(label.ResolvedLabel) (starlark.Value, error)) *model_starlark.ValueDecodingOptions {
-	return &model_starlark.ValueDecodingOptions{
+func (c *baseComputer[TReference]) getValueDecodingOptions(ctx context.Context, labelCreator func(label.ResolvedLabel) (starlark.Value, error)) *model_starlark.ValueDecodingOptions[TReference] {
+	return &model_starlark.ValueDecodingOptions[TReference]{
 		Context:      ctx,
 		Readers:      &c.valueReaders,
 		LabelCreator: labelCreator,
 	}
 }
 
-func (c *baseComputer) getInlinedTreeOptions() *inlinedtree.Options {
+func (c *baseComputer[TReference]) getInlinedTreeOptions() *inlinedtree.Options {
 	return &inlinedtree.Options{
 		ReferenceFormat:  c.getReferenceFormat(),
 		Encoder:          c.getValueObjectEncoder(),
@@ -148,9 +154,9 @@ func (c *baseComputer) getInlinedTreeOptions() *inlinedtree.Options {
 	}
 }
 
-type resolveApparentEnvironment interface {
-	GetCanonicalRepoNameValue(*model_analysis_pb.CanonicalRepoName_Key) model_core.Message[*model_analysis_pb.CanonicalRepoName_Value, object.OutgoingReferences[object.LocalReference]]
-	GetRootModuleValue(*model_analysis_pb.RootModule_Key) model_core.Message[*model_analysis_pb.RootModule_Value, object.OutgoingReferences[object.LocalReference]]
+type resolveApparentEnvironment[TReference any] interface {
+	GetCanonicalRepoNameValue(*model_analysis_pb.CanonicalRepoName_Key) model_core.Message[*model_analysis_pb.CanonicalRepoName_Value, TReference]
+	GetRootModuleValue(*model_analysis_pb.RootModule_Key) model_core.Message[*model_analysis_pb.RootModule_Value, TReference]
 }
 
 type canonicalizable[T any] interface {
@@ -159,7 +165,7 @@ type canonicalizable[T any] interface {
 	WithCanonicalRepo(canonicalRepo label.CanonicalRepo) T
 }
 
-func resolveApparent[TCanonical any, TApparent canonicalizable[TCanonical]](e resolveApparentEnvironment, fromRepo label.CanonicalRepo, toApparent TApparent) (TCanonical, error) {
+func resolveApparent[TCanonical any, TApparent canonicalizable[TCanonical], TReference any](e resolveApparentEnvironment[TReference], fromRepo label.CanonicalRepo, toApparent TApparent) (TCanonical, error) {
 	if toCanonical, ok := toApparent.AsCanonical(); ok {
 		// Label was already canonical. Nothing to do.
 		return toCanonical, nil
@@ -195,13 +201,13 @@ func resolveApparent[TCanonical any, TApparent canonicalizable[TCanonical]](e re
 	return toApparent.WithCanonicalRepo(rootModule.ToModuleInstance(nil).GetBareCanonicalRepo()), nil
 }
 
-type loadBzlGlobalsEnvironment interface {
-	resolveApparentEnvironment
-	GetBuiltinsModuleNamesValue(key *model_analysis_pb.BuiltinsModuleNames_Key) model_core.Message[*model_analysis_pb.BuiltinsModuleNames_Value, object.OutgoingReferences[object.LocalReference]]
+type loadBzlGlobalsEnvironment[TReference any] interface {
+	resolveApparentEnvironment[TReference]
+	GetBuiltinsModuleNamesValue(key *model_analysis_pb.BuiltinsModuleNames_Key) model_core.Message[*model_analysis_pb.BuiltinsModuleNames_Value, TReference]
 	GetCompiledBzlFileDecodedGlobalsValue(key *model_analysis_pb.CompiledBzlFileDecodedGlobals_Key) (starlark.StringDict, bool)
 }
 
-func (c *baseComputer) loadBzlGlobals(e loadBzlGlobalsEnvironment, canonicalPackage label.CanonicalPackage, loadLabelStr string, builtinsModuleNames []string) (starlark.StringDict, error) {
+func (c *baseComputer[TReference]) loadBzlGlobals(e loadBzlGlobalsEnvironment[TReference], canonicalPackage label.CanonicalPackage, loadLabelStr string, builtinsModuleNames []string) (starlark.StringDict, error) {
 	allBuiltinsModulesNames := e.GetBuiltinsModuleNamesValue(&model_analysis_pb.BuiltinsModuleNames_Key{})
 	if !allBuiltinsModulesNames.IsSet() {
 		return nil, evaluation.ErrMissingDependency
@@ -225,11 +231,11 @@ func (c *baseComputer) loadBzlGlobals(e loadBzlGlobalsEnvironment, canonicalPack
 	return decodedGlobals, nil
 }
 
-func (c *baseComputer) loadBzlGlobalsInStarlarkThread(e loadBzlGlobalsEnvironment, thread *starlark.Thread, loadLabelStr string, builtinsModuleNames []string) (starlark.StringDict, error) {
+func (c *baseComputer[TReference]) loadBzlGlobalsInStarlarkThread(e loadBzlGlobalsEnvironment[TReference], thread *starlark.Thread, loadLabelStr string, builtinsModuleNames []string) (starlark.StringDict, error) {
 	return c.loadBzlGlobals(e, label.MustNewCanonicalLabel(thread.CallFrame(0).Pos.Filename()).GetCanonicalPackage(), loadLabelStr, builtinsModuleNames)
 }
 
-func (c *baseComputer) preloadBzlGlobals(e loadBzlGlobalsEnvironment, canonicalPackage label.CanonicalPackage, program *starlark.Program, builtinsModuleNames []string) (aggregateErr error) {
+func (c *baseComputer[TReference]) preloadBzlGlobals(e loadBzlGlobalsEnvironment[TReference], canonicalPackage label.CanonicalPackage, program *starlark.Program, builtinsModuleNames []string) (aggregateErr error) {
 	numLoads := program.NumLoads()
 	for i := 0; i < numLoads; i++ {
 		loadLabelStr, _ := program.Load(i)
@@ -243,8 +249,8 @@ func (c *baseComputer) preloadBzlGlobals(e loadBzlGlobalsEnvironment, canonicalP
 	return
 }
 
-type starlarkThreadEnvironment interface {
-	loadBzlGlobalsEnvironment
+type starlarkThreadEnvironment[TReference any] interface {
+	loadBzlGlobalsEnvironment[TReference]
 	GetCompiledBzlFileFunctionFactoryValue(*model_analysis_pb.CompiledBzlFileFunctionFactory_Key) (*starlark.FunctionFactory, bool)
 }
 
@@ -261,7 +267,7 @@ func trimBuiltinModuleNames(builtinsModuleNames []string, module label.Module) [
 	return builtinsModuleNames[:i]
 }
 
-func (c *baseComputer) newStarlarkThread(ctx context.Context, e starlarkThreadEnvironment, builtinsModuleNames []string) *starlark.Thread {
+func (c *baseComputer[TReference]) newStarlarkThread(ctx context.Context, e starlarkThreadEnvironment[TReference], builtinsModuleNames []string) *starlark.Thread {
 	thread := &starlark.Thread{
 		// TODO: Provide print method.
 		Print: nil,
@@ -318,7 +324,7 @@ func (c *baseComputer) newStarlarkThread(ctx context.Context, e starlarkThreadEn
 	return thread
 }
 
-func (c *baseComputer) ComputeBuildResultValue(ctx context.Context, key *model_analysis_pb.BuildResult_Key, e BuildResultEnvironment) (PatchedBuildResultValue, error) {
+func (c *baseComputer[TReference]) ComputeBuildResultValue(ctx context.Context, key *model_analysis_pb.BuildResult_Key, e BuildResultEnvironment[TReference]) (PatchedBuildResultValue, error) {
 	buildSpecification := e.GetBuildSpecificationValue(&model_analysis_pb.BuildSpecification_Key{})
 	if !buildSpecification.IsSet() {
 		return PatchedBuildResultValue{}, evaluation.ErrMissingDependency
@@ -386,13 +392,8 @@ func (c *baseComputer) ComputeBuildResultValue(ctx context.Context, key *model_a
 	return model_core.NewSimplePatchedMessage[dag.ObjectContentsWalker](&model_analysis_pb.BuildResult_Value{}), nil
 }
 
-func (c *baseComputer) ComputeBuildSpecificationValue(ctx context.Context, key *model_analysis_pb.BuildSpecification_Key, e BuildSpecificationEnvironment) (PatchedBuildSpecificationValue, error) {
-	reader := model_parser.NewStorageBackedParsedObjectReader(
-		c.objectDownloader,
-		c.buildSpecificationEncoder,
-		model_parser.NewMessageObjectParser[object.LocalReference, model_build_pb.BuildSpecification](),
-	)
-	buildSpecification, _, err := reader.ReadParsedObject(ctx, c.buildSpecificationReference.LocalReference)
+func (c *baseComputer[TReference]) ComputeBuildSpecificationValue(ctx context.Context, key *model_analysis_pb.BuildSpecification_Key, e BuildSpecificationEnvironment[TReference]) (PatchedBuildSpecificationValue, error) {
+	buildSpecification, err := c.buildSpecificationReader.ReadParsedObject(ctx, c.buildSpecificationReference)
 	if err != nil {
 		return PatchedBuildSpecificationValue{}, err
 	}
@@ -411,7 +412,7 @@ func (c *baseComputer) ComputeBuildSpecificationValue(ctx context.Context, key *
 	}, nil
 }
 
-func (c *baseComputer) ComputeBuiltinsModuleNamesValue(ctx context.Context, key *model_analysis_pb.BuiltinsModuleNames_Key, e BuiltinsModuleNamesEnvironment) (PatchedBuiltinsModuleNamesValue, error) {
+func (c *baseComputer[TReference]) ComputeBuiltinsModuleNamesValue(ctx context.Context, key *model_analysis_pb.BuiltinsModuleNames_Key, e BuiltinsModuleNamesEnvironment[TReference]) (PatchedBuiltinsModuleNamesValue, error) {
 	buildSpecification := e.GetBuildSpecificationValue(&model_analysis_pb.BuildSpecification_Key{})
 	if !buildSpecification.IsSet() {
 		return PatchedBuiltinsModuleNamesValue{}, evaluation.ErrMissingDependency
@@ -421,7 +422,7 @@ func (c *baseComputer) ComputeBuiltinsModuleNamesValue(ctx context.Context, key 
 	}), nil
 }
 
-func (c *baseComputer) ComputeDirectoryAccessParametersValue(ctx context.Context, key *model_analysis_pb.DirectoryAccessParameters_Key, e DirectoryAccessParametersEnvironment) (PatchedDirectoryAccessParametersValue, error) {
+func (c *baseComputer[TReference]) ComputeDirectoryAccessParametersValue(ctx context.Context, key *model_analysis_pb.DirectoryAccessParameters_Key, e DirectoryAccessParametersEnvironment[TReference]) (PatchedDirectoryAccessParametersValue, error) {
 	buildSpecification := e.GetBuildSpecificationValue(&model_analysis_pb.BuildSpecification_Key{})
 	if !buildSpecification.IsSet() {
 		return PatchedDirectoryAccessParametersValue{}, evaluation.ErrMissingDependency
@@ -431,32 +432,7 @@ func (c *baseComputer) ComputeDirectoryAccessParametersValue(ctx context.Context
 	}), nil
 }
 
-func (c *baseComputer) ComputeFileReaderValue(ctx context.Context, key *model_analysis_pb.FileReader_Key, e FileReaderEnvironment) (*model_filesystem.FileReader[object.LocalReference], error) {
-	fileAccessParametersValue := e.GetFileAccessParametersValue(&model_analysis_pb.FileAccessParameters_Key{})
-	if !fileAccessParametersValue.IsSet() {
-		return nil, evaluation.ErrMissingDependency
-	}
-	fileAccessParameters, err := model_filesystem.NewFileAccessParametersFromProto(
-		fileAccessParametersValue.Message.FileAccessParameters,
-		c.getReferenceFormat(),
-	)
-	if err != nil {
-		return nil, fmt.Errorf("invalid directory access parameters: %w", err)
-	}
-	fileContentsListReader := model_parser.NewStorageBackedParsedObjectReader(
-		c.objectDownloader,
-		fileAccessParameters.GetFileContentsListEncoder(),
-		model_filesystem.NewFileContentsListObjectParser[object.LocalReference](),
-	)
-	fileChunkReader := model_parser.NewStorageBackedParsedObjectReader(
-		c.objectDownloader,
-		fileAccessParameters.GetChunkEncoder(),
-		model_parser.NewRawObjectParser[object.LocalReference](),
-	)
-	return model_filesystem.NewFileReader(fileContentsListReader, fileChunkReader), nil
-}
-
-func (c *baseComputer) ComputeRepoDefaultAttrsValue(ctx context.Context, key *model_analysis_pb.RepoDefaultAttrs_Key, e RepoDefaultAttrsEnvironment) (PatchedRepoDefaultAttrsValue, error) {
+func (c *baseComputer[TReference]) ComputeRepoDefaultAttrsValue(ctx context.Context, key *model_analysis_pb.RepoDefaultAttrs_Key, e RepoDefaultAttrsEnvironment[TReference]) (PatchedRepoDefaultAttrsValue, error) {
 	canonicalRepo, err := label.NewCanonicalRepo(key.CanonicalRepo)
 	if err != nil {
 		return PatchedRepoDefaultAttrsValue{}, fmt.Errorf("invalid canonical repo: %w", err)
@@ -480,10 +456,8 @@ func (c *baseComputer) ComputeRepoDefaultAttrsValue(ctx context.Context, key *mo
 			InheritableAttrs: &model_starlark.DefaultInheritableAttrs,
 		}), nil
 	}
-	referenceFormat := c.getReferenceFormat()
 	repoFileContentsEntry, err := model_filesystem.NewFileContentsEntryFromProto(
 		model_core.NewNestedMessage(repoFileProperties, repoFileProperties.Message.Exists.GetContents()),
-		referenceFormat,
 	)
 	if err != nil {
 		return PatchedRepoDefaultAttrsValue{}, fmt.Errorf("invalid contents for file %#v: %w", repoFileLabel.String(), err)
@@ -511,7 +485,7 @@ func (c *baseComputer) ComputeRepoDefaultAttrsValue(ctx context.Context, key *mo
 	), nil
 }
 
-func (c *baseComputer) ComputeTargetCompletionValue(ctx context.Context, key model_core.Message[*model_analysis_pb.TargetCompletion_Key, object.OutgoingReferences[object.LocalReference]], e TargetCompletionEnvironment) (PatchedTargetCompletionValue, error) {
+func (c *baseComputer[TReference]) ComputeTargetCompletionValue(ctx context.Context, key model_core.Message[*model_analysis_pb.TargetCompletion_Key, TReference], e TargetCompletionEnvironment[TReference]) (PatchedTargetCompletionValue, error) {
 	configurationReference := model_core.NewPatchedMessageFromExisting(
 		model_core.NewNestedMessage(key, key.Message.ConfigurationReference),
 		func(index int) dag.ObjectContentsWalker {

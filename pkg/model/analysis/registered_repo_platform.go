@@ -16,10 +16,9 @@ import (
 	model_core_pb "github.com/buildbarn/bonanza/pkg/proto/model/core"
 	model_starlark_pb "github.com/buildbarn/bonanza/pkg/proto/model/starlark"
 	"github.com/buildbarn/bonanza/pkg/storage/dag"
-	"github.com/buildbarn/bonanza/pkg/storage/object"
 )
 
-func (c *baseComputer) decodeStringDict(ctx context.Context, d model_core.Message[*model_starlark_pb.Value, object.OutgoingReferences[object.LocalReference]]) (map[string]string, error) {
+func (c *baseComputer[TReference]) decodeStringDict(ctx context.Context, d model_core.Message[*model_starlark_pb.Value, TReference]) (map[string]string, error) {
 	dict, ok := d.Message.GetKind().(*model_starlark_pb.Value_Dict)
 	if !ok {
 		return nil, errors.New("not a dict")
@@ -48,7 +47,7 @@ func (c *baseComputer) decodeStringDict(ctx context.Context, d model_core.Messag
 	return o, nil
 }
 
-func (c *baseComputer) ComputeRegisteredRepoPlatformValue(ctx context.Context, key *model_analysis_pb.RegisteredRepoPlatform_Key, e RegisteredRepoPlatformEnvironment) (PatchedRegisteredRepoPlatformValue, error) {
+func (c *baseComputer[TReference]) ComputeRegisteredRepoPlatformValue(ctx context.Context, key *model_analysis_pb.RegisteredRepoPlatform_Key, e RegisteredRepoPlatformEnvironment[TReference]) (PatchedRegisteredRepoPlatformValue, error) {
 	// Obtain the label of the repo platform that was provided by
 	// the client through the --repo_platform command line flag.
 	buildSpecificationValue := e.GetBuildSpecificationValue(&model_analysis_pb.BuildSpecification_Key{})

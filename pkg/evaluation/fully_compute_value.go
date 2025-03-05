@@ -17,7 +17,7 @@ import (
 	"google.golang.org/protobuf/types/known/anypb"
 )
 
-func getKeyString(key model_core.Message[proto.Message, object.OutgoingReferences[object.LocalReference]]) (string, error) {
+func getKeyString(key model_core.Message[proto.Message, object.LocalReference]) (string, error) {
 	// Marshal the outgoing references of the key.
 	degree := key.OutgoingReferences.GetDegree()
 	marshaledKey := varint.AppendForward(nil, degree)
@@ -37,7 +37,7 @@ func getKeyString(key model_core.Message[proto.Message, object.OutgoingReference
 	return string(marshaledKey), nil
 }
 
-func appendFormattedKey(out []byte, key model_core.Message[proto.Message, object.OutgoingReferences[object.LocalReference]]) []byte {
+func appendFormattedKey(out []byte, key model_core.Message[proto.Message, object.LocalReference]) []byte {
 	out, _ = protojson.MarshalOptions{}.MarshalAppend(out, key.Message)
 	if degree := key.OutgoingReferences.GetDegree(); degree > 0 {
 		out = append(out, " ["...)
@@ -54,7 +54,7 @@ func appendFormattedKey(out []byte, key model_core.Message[proto.Message, object
 
 type keyState struct {
 	parent              *keyState
-	key                 model_core.Message[proto.Message, object.OutgoingReferences[object.LocalReference]]
+	key                 model_core.Message[proto.Message, object.LocalReference]
 	next                *keyState
 	value               valueState
 	missingDependencies []*keyState
@@ -84,14 +84,14 @@ func (ks *keyState) getDependencyCycle(cyclePath *[]*keyState, seen map[*keyStat
 }
 
 type valueState interface {
-	compute(ctx context.Context, c Computer, e *fullyComputingEnvironment) error
+	compute(ctx context.Context, c Computer[object.LocalReference], e *fullyComputingEnvironment) error
 }
 
 type messageValueState struct {
-	value model_core.Message[proto.Message, object.OutgoingReferences[object.LocalReference]]
+	value model_core.Message[proto.Message, object.LocalReference]
 }
 
-func (vs *messageValueState) compute(ctx context.Context, c Computer, e *fullyComputingEnvironment) error {
+func (vs *messageValueState) compute(ctx context.Context, c Computer[object.LocalReference], e *fullyComputingEnvironment) error {
 	value, err := c.ComputeMessageValue(ctx, e.keyState.key, e)
 	if err != nil {
 		return err
@@ -107,7 +107,7 @@ func (vs *messageValueState) compute(ctx context.Context, c Computer, e *fullyCo
 		}
 	}
 
-	vs.value = model_core.Message[proto.Message, object.OutgoingReferences[object.LocalReference]]{
+	vs.value = model_core.Message[proto.Message, object.LocalReference]{
 		Message:            value.Message,
 		OutgoingReferences: references,
 	}
@@ -119,7 +119,7 @@ type nativeValueState struct {
 	isSet bool
 }
 
-func (vs *nativeValueState) compute(ctx context.Context, c Computer, e *fullyComputingEnvironment) error {
+func (vs *nativeValueState) compute(ctx context.Context, c Computer[object.LocalReference], e *fullyComputingEnvironment) error {
 	value, err := c.ComputeNativeValue(ctx, e.keyState.key, e)
 	if err != nil {
 		return err
@@ -170,7 +170,7 @@ func (e *fullyComputingEnvironment) getKeyState(patchedKey model_core.PatchedMes
 		}
 	}
 
-	key := model_core.Message[proto.Message, object.OutgoingReferences[object.LocalReference]]{
+	key := model_core.Message[proto.Message, object.LocalReference]{
 		Message:            patchedKey.Message,
 		OutgoingReferences: references,
 	}
@@ -193,10 +193,10 @@ func (e *fullyComputingEnvironment) getKeyState(patchedKey model_core.PatchedMes
 	return ks
 }
 
-func (e *fullyComputingEnvironment) GetMessageValue(patchedKey model_core.PatchedMessage[proto.Message, dag.ObjectContentsWalker]) model_core.Message[proto.Message, object.OutgoingReferences[object.LocalReference]] {
+func (e *fullyComputingEnvironment) GetMessageValue(patchedKey model_core.PatchedMessage[proto.Message, dag.ObjectContentsWalker]) model_core.Message[proto.Message, object.LocalReference] {
 	ks := e.getKeyState(patchedKey, &messageValueState{})
 	if ks == nil {
-		return model_core.Message[proto.Message, object.OutgoingReferences[object.LocalReference]]{}
+		return model_core.Message[proto.Message, object.LocalReference]{}
 	}
 	vs := ks.value.(*messageValueState)
 	if !vs.value.IsSet() {
@@ -220,10 +220,10 @@ func (e *fullyComputingEnvironment) GetNativeValue(patchedKey model_core.Patched
 
 type ValueChildrenStorer func(references []object.LocalReference, objectContentsWalkers []dag.ObjectContentsWalker) error
 
-func FullyComputeValue(ctx context.Context, c Computer, requestedKey model_core.Message[proto.Message, object.OutgoingReferences[object.LocalReference]], storeValueChildren ValueChildrenStorer) (model_core.Message[proto.Message, object.OutgoingReferences[object.LocalReference]], error) {
+func FullyComputeValue(ctx context.Context, c Computer[object.LocalReference], requestedKey model_core.Message[proto.Message, object.LocalReference], storeValueChildren ValueChildrenStorer) (model_core.Message[proto.Message, object.LocalReference], error) {
 	requestedKeyStr, err := getKeyString(requestedKey)
 	if err != nil {
-		return model_core.Message[proto.Message, object.OutgoingReferences[object.LocalReference]]{}, err
+		return model_core.Message[proto.Message, object.LocalReference]{}, err
 	}
 	requestedValueState := &messageValueState{}
 	requestedKeyState := &keyState{
@@ -271,7 +271,7 @@ func FullyComputeValue(ctx context.Context, c Computer, requestedKey model_core.
 				}
 				cycleStr = appendFormattedKey(cycleStr, ksIter.key)
 			}
-			return model_core.Message[proto.Message, object.OutgoingReferences[object.LocalReference]]{}, fmt.Errorf("Traceback (most recent key last):%s\nCyclic evaluation dependency detected", string(cycleStr))
+			return model_core.Message[proto.Message, object.LocalReference]{}, fmt.Errorf("Traceback (most recent key last):%s\nCyclic evaluation dependency detected", string(cycleStr))
 		}
 
 		p.firstPendingKey = ks.next
@@ -316,7 +316,7 @@ func FullyComputeValue(ctx context.Context, c Computer, requestedKey model_core.
 					}
 					stackStr = appendFormattedKey(stackStr, ksIter.key)
 				}
-				return model_core.Message[proto.Message, object.OutgoingReferences[object.LocalReference]]{}, fmt.Errorf("Traceback (most recent key last):%s\n%w", string(stackStr), err)
+				return model_core.Message[proto.Message, object.LocalReference]{}, fmt.Errorf("Traceback (most recent key last):%s\n%w", string(stackStr), err)
 			}
 			// Value could not be computed, because one of
 			// its dependencies hasn't been computed yet.

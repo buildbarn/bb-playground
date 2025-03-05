@@ -9,6 +9,7 @@ go_library(
     deps = [
         "//pkg/model/command",
         "//pkg/model/filesystem/virtual",
+        "//pkg/model/parser",
         "//pkg/proto/configuration/bonanza_worker",
         "//pkg/proto/remoteworker",
         "//pkg/proto/storage/dag",

@@ -161,7 +161,7 @@ func (p repoMappingCapturingModuleExtensionProxy) UseRepo(repos map[label.Appare
 	return nil
 }
 
-func (c *baseComputer) ComputeModuleRepoMappingValue(ctx context.Context, key *model_analysis_pb.ModuleRepoMapping_Key, e ModuleRepoMappingEnvironment) (PatchedModuleRepoMappingValue, error) {
+func (c *baseComputer[TReference]) ComputeModuleRepoMappingValue(ctx context.Context, key *model_analysis_pb.ModuleRepoMapping_Key, e ModuleRepoMappingEnvironment[TReference]) (PatchedModuleRepoMappingValue, error) {
 	moduleInstance, err := label.NewModuleInstance(key.ModuleInstance)
 	if err != nil {
 		return PatchedModuleRepoMappingValue{}, fmt.Errorf("invalid module instance %#v: %w", key.ModuleInstance, err)

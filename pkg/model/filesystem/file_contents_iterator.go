@@ -3,6 +3,8 @@ package filesystem
 import (
 	"sort"
 
+	"github.com/buildbarn/bonanza/pkg/storage/object"
+
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
@@ -19,18 +21,18 @@ type FileContentsIterator[TReference any] struct {
 	initialOffsetBytes uint64
 }
 
-type FileContentsIteratorReference interface {
-	GetHeight() int
-}
-
 // NewFileContentsIterator creates a FileContentsIterator that starts
 // iteration at the provided offset within the file. It is the caller's
 // responsibility to ensure the provided offset is less than the size of
 // the file.
-func NewFileContentsIterator[TReference FileContentsIteratorReference](root FileContentsEntry[TReference], initialOffsetBytes uint64) FileContentsIterator[TReference] {
+func NewFileContentsIterator[TReference object.BasicReference](root FileContentsEntry[TReference], initialOffsetBytes uint64) FileContentsIterator[TReference] {
+	maxHeight := 1
+	if root.EndBytes > 0 {
+		maxHeight += root.Reference.GetHeight()
+	}
 	return FileContentsIterator[TReference]{
 		spans: append(
-			make([]fileContentsSpan[TReference], 0, root.Reference.GetHeight()+1),
+			make([]fileContentsSpan[TReference], 0, maxHeight),
 			fileContentsSpan[TReference]{
 				list: FileContentsList[TReference]{
 					root,

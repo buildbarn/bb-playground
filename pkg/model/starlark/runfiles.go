@@ -8,48 +8,49 @@ import (
 	model_core "github.com/buildbarn/bonanza/pkg/model/core"
 	model_starlark_pb "github.com/buildbarn/bonanza/pkg/proto/model/starlark"
 	"github.com/buildbarn/bonanza/pkg/starlark/unpack"
+	"github.com/buildbarn/bonanza/pkg/storage/object"
 
 	"go.starlark.net/starlark"
 	"go.starlark.net/syntax"
 )
 
-type Runfiles struct {
-	files        *Depset
-	rootSymlinks *Depset
-	symlinks     *Depset
+type Runfiles[TReference object.BasicReference] struct {
+	files        *Depset[TReference]
+	rootSymlinks *Depset[TReference]
+	symlinks     *Depset[TReference]
 	hash         uint32
 }
 
 var (
-	_ EncodableValue      = (*Runfiles)(nil)
-	_ starlark.Comparable = (*Struct)(nil)
-	_ starlark.HasAttrs   = File{}
+	_ EncodableValue      = (*Runfiles[object.LocalReference])(nil)
+	_ starlark.Comparable = (*Runfiles[object.LocalReference])(nil)
+	_ starlark.HasAttrs   = (*Runfiles[object.LocalReference])(nil)
 )
 
-func NewRunfiles(files, rootSymlinks, symlinks *Depset) *Runfiles {
-	return &Runfiles{
+func NewRunfiles[TReference object.BasicReference](files, rootSymlinks, symlinks *Depset[TReference]) *Runfiles[TReference] {
+	return &Runfiles[TReference]{
 		files:        files,
 		rootSymlinks: rootSymlinks,
 		symlinks:     symlinks,
 	}
 }
 
-func (Runfiles) String() string {
+func (Runfiles[TReference]) String() string {
 	return "<runfiles>"
 }
 
-func (Runfiles) Type() string {
+func (Runfiles[TReference]) Type() string {
 	return "runfiles"
 }
 
-func (Runfiles) Freeze() {
+func (Runfiles[TReference]) Freeze() {
 }
 
-func (Runfiles) Truth() starlark.Bool {
+func (Runfiles[TReference]) Truth() starlark.Bool {
 	return starlark.True
 }
 
-func (r *Runfiles) Hash(thread *starlark.Thread) (uint32, error) {
+func (r *Runfiles[TReference]) Hash(thread *starlark.Thread) (uint32, error) {
 	if r.hash == 0 {
 		filesHash, err := r.files.Hash(thread)
 		if err != nil {
@@ -72,7 +73,7 @@ func (r *Runfiles) Hash(thread *starlark.Thread) (uint32, error) {
 	return r.hash, nil
 }
 
-func (r *Runfiles) equals(thread *starlark.Thread, other *Runfiles, depth int) (bool, error) {
+func (r *Runfiles[TReference]) equals(thread *starlark.Thread, other *Runfiles[TReference], depth int) (bool, error) {
 	if r != other {
 		equal, err := starlark.EqualDepth(thread, r.files, other.files, depth-1)
 		if err != nil || !equal {
@@ -90,19 +91,19 @@ func (r *Runfiles) equals(thread *starlark.Thread, other *Runfiles, depth int) (
 	return true, nil
 }
 
-func (r *Runfiles) CompareSameType(thread *starlark.Thread, op syntax.Token, other starlark.Value, depth int) (bool, error) {
+func (r *Runfiles[TReference]) CompareSameType(thread *starlark.Thread, op syntax.Token, other starlark.Value, depth int) (bool, error) {
 	switch op {
 	case syntax.EQL:
-		return r.equals(thread, other.(*Runfiles), depth)
+		return r.equals(thread, other.(*Runfiles[TReference]), depth)
 	case syntax.NEQ:
-		equal, err := r.equals(thread, other.(*Runfiles), depth)
+		equal, err := r.equals(thread, other.(*Runfiles[TReference]), depth)
 		return !equal, err
 	default:
 		return false, errors.New("runfiles cannot be compared for inequality")
 	}
 }
 
-func (r *Runfiles) Attr(thread *starlark.Thread, name string) (starlark.Value, error) {
+func (r *Runfiles[TReference]) Attr(thread *starlark.Thread, name string) (starlark.Value, error) {
 	switch name {
 	case "empty_filenames":
 		return nil, errors.New("TODO: Implement runfiles.empty_filenames")
@@ -130,11 +131,11 @@ var runfilesAttrNames = []string{
 	"symlinks",
 }
 
-func (Runfiles) AttrNames() []string {
+func (Runfiles[TReference]) AttrNames() []string {
 	return runfilesAttrNames
 }
 
-func mergeRunfiles(thread *starlark.Thread, allFiles, allRootSymlinks, allSymlinks []*Depset) (starlark.Value, error) {
+func mergeRunfiles[TReference object.BasicReference](thread *starlark.Thread, allFiles, allRootSymlinks, allSymlinks []*Depset[TReference]) (starlark.Value, error) {
 	files, err := NewDepset(thread, nil, allFiles, model_starlark_pb.Depset_DEFAULT)
 	if err != nil {
 		return nil, fmt.Errorf("failed to merge files: %w", err)
@@ -147,38 +148,38 @@ func mergeRunfiles(thread *starlark.Thread, allFiles, allRootSymlinks, allSymlin
 	if err != nil {
 		return nil, fmt.Errorf("failed to merge symlinks: %w", err)
 	}
-	return NewRunfiles(files, rootSymlinks, symlinks), nil
+	return NewRunfiles[TReference](files, rootSymlinks, symlinks), nil
 }
 
-func (r *Runfiles) doMerge(thread *starlark.Thread, b *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
-	var other *Runfiles
+func (r *Runfiles[TReference]) doMerge(thread *starlark.Thread, b *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
+	var other *Runfiles[TReference]
 	if err := starlark.UnpackArgs(
 		b.Name(), args, kwargs,
-		"other", unpack.Bind(thread, &other, unpack.Type[*Runfiles]("runfiles")),
+		"other", unpack.Bind(thread, &other, unpack.Type[*Runfiles[TReference]]("runfiles")),
 	); err != nil {
 		return nil, err
 	}
 
 	return mergeRunfiles(
 		thread,
-		[]*Depset{r.files, other.files},
-		[]*Depset{r.rootSymlinks, other.rootSymlinks},
-		[]*Depset{r.symlinks, other.symlinks},
+		[]*Depset[TReference]{r.files, other.files},
+		[]*Depset[TReference]{r.rootSymlinks, other.rootSymlinks},
+		[]*Depset[TReference]{r.symlinks, other.symlinks},
 	)
 }
 
-func (r *Runfiles) doMergeAll(thread *starlark.Thread, b *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
-	var other []*Runfiles
+func (r *Runfiles[TReference]) doMergeAll(thread *starlark.Thread, b *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
+	var other []*Runfiles[TReference]
 	if err := starlark.UnpackArgs(
 		b.Name(), args, kwargs,
-		"other", unpack.Bind(thread, &other, unpack.List(unpack.Type[*Runfiles]("runfiles"))),
+		"other", unpack.Bind(thread, &other, unpack.List(unpack.Type[*Runfiles[TReference]]("runfiles"))),
 	); err != nil {
 		return nil, err
 	}
 
-	transitiveFiles := append(make([]*Depset, 0, len(other)+1), r.files)
-	transitiveRootSymlinks := append(make([]*Depset, 0, len(other)+1), r.rootSymlinks)
-	transitiveSymlinks := append(make([]*Depset, 0, len(other)+1), r.symlinks)
+	transitiveFiles := append(make([]*Depset[TReference], 0, len(other)+1), r.files)
+	transitiveRootSymlinks := append(make([]*Depset[TReference], 0, len(other)+1), r.rootSymlinks)
+	transitiveSymlinks := append(make([]*Depset[TReference], 0, len(other)+1), r.symlinks)
 	for _, o := range other {
 		transitiveFiles = append(transitiveFiles, o.files)
 		transitiveRootSymlinks = append(transitiveRootSymlinks, o.rootSymlinks)
@@ -187,7 +188,7 @@ func (r *Runfiles) doMergeAll(thread *starlark.Thread, b *starlark.Builtin, args
 	return mergeRunfiles(thread, transitiveFiles, transitiveRootSymlinks, transitiveSymlinks)
 }
 
-func (r *Runfiles) EncodeValue(path map[starlark.Value]struct{}, currentIdentifier *pg_label.CanonicalStarlarkIdentifier, options *ValueEncodingOptions) (model_core.PatchedMessage[*model_starlark_pb.Value, model_core.CreatedObjectTree], bool, error) {
+func (r *Runfiles[TReference]) EncodeValue(path map[starlark.Value]struct{}, currentIdentifier *pg_label.CanonicalStarlarkIdentifier, options *ValueEncodingOptions) (model_core.PatchedMessage[*model_starlark_pb.Value, model_core.CreatedObjectTree], bool, error) {
 	files, filesNeedsCode, err := r.files.Encode(path, options)
 	if err != nil {
 		return model_core.PatchedMessage[*model_starlark_pb.Value, model_core.CreatedObjectTree]{}, false, fmt.Errorf("files: %w", err)

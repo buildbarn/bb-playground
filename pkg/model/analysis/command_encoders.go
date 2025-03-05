@@ -10,7 +10,7 @@ import (
 	"github.com/buildbarn/bonanza/pkg/storage/dag"
 )
 
-func (c *baseComputer) ComputeCommandEncodersValue(ctx context.Context, key *model_analysis_pb.CommandEncoders_Key, e CommandEncodersEnvironment) (PatchedCommandEncodersValue, error) {
+func (c *baseComputer[TReference]) ComputeCommandEncodersValue(ctx context.Context, key *model_analysis_pb.CommandEncoders_Key, e CommandEncodersEnvironment[TReference]) (PatchedCommandEncodersValue, error) {
 	buildSpecification := e.GetBuildSpecificationValue(&model_analysis_pb.BuildSpecification_Key{})
 	if !buildSpecification.IsSet() {
 		return PatchedCommandEncodersValue{}, evaluation.ErrMissingDependency
@@ -20,7 +20,7 @@ func (c *baseComputer) ComputeCommandEncodersValue(ctx context.Context, key *mod
 	}), nil
 }
 
-func (c *baseComputer) ComputeCommandEncoderObjectValue(ctx context.Context, key *model_analysis_pb.CommandEncoderObject_Key, e CommandEncoderObjectEnvironment) (model_encoding.BinaryEncoder, error) {
+func (c *baseComputer[TReference]) ComputeCommandEncoderObjectValue(ctx context.Context, key *model_analysis_pb.CommandEncoderObject_Key, e CommandEncoderObjectEnvironment[TReference]) (model_encoding.BinaryEncoder, error) {
 	encoders := e.GetCommandEncodersValue(&model_analysis_pb.CommandEncoders_Key{})
 	if !encoders.IsSet() {
 		return nil, evaluation.ErrMissingDependency

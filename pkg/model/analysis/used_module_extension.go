@@ -13,7 +13,7 @@ import (
 	"github.com/buildbarn/bonanza/pkg/storage/dag"
 )
 
-func (c *baseComputer) ComputeUsedModuleExtensionValue(ctx context.Context, key *model_analysis_pb.UsedModuleExtension_Key, e UsedModuleExtensionEnvironment) (PatchedUsedModuleExtensionValue, error) {
+func (c *baseComputer[TReference]) ComputeUsedModuleExtensionValue(ctx context.Context, key *model_analysis_pb.UsedModuleExtension_Key, e UsedModuleExtensionEnvironment[TReference]) (PatchedUsedModuleExtensionValue, error) {
 	usedModuleExtensions := e.GetUsedModuleExtensionsValue(&model_analysis_pb.UsedModuleExtensions_Key{})
 	if !usedModuleExtensions.IsSet() {
 		return PatchedUsedModuleExtensionValue{}, evaluation.ErrMissingDependency

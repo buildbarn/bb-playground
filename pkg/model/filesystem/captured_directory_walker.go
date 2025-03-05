@@ -63,8 +63,8 @@ func (o *capturedDirectoryWalkerOptions) openFile(pathTrace *path.Trace) (filesy
 
 // gatherWalkersForLeaves creates ObjectContentsWalkers for all files
 // contained in the provided Leaves message.
-func (o *capturedDirectoryWalkerOptions) gatherWalkersForLeaves(leaves *model_filesystem_pb.Leaves, outgoingReferences object.OutgoingReferences[object.LocalReference], pathTrace *path.Trace, walkers []dag.ObjectContentsWalker) error {
-	for _, childFile := range leaves.Files {
+func (o *capturedDirectoryWalkerOptions) gatherWalkersForLeaves(leaves model_core.Message[*model_filesystem_pb.Leaves, object.LocalReference], pathTrace *path.Trace, walkers []dag.ObjectContentsWalker) error {
+	for _, childFile := range leaves.Message.Files {
 		childPathTrace := pathTrace.Append(path.MustNewComponent(childFile.Name))
 		properties := childFile.Properties
 		if properties == nil {
@@ -75,7 +75,7 @@ func (o *capturedDirectoryWalkerOptions) gatherWalkersForLeaves(leaves *model_fi
 			if err != nil {
 				return util.StatusWrapf(err, "Invalid reference index for file %#v", childPathTrace.GetUNIXString())
 			}
-			childReference := outgoingReferences.GetOutgoingReference(index)
+			childReference := leaves.OutgoingReferences.GetOutgoingReference(index)
 			if childReference.GetHeight() == 0 {
 				walkers[index] = &smallFileWalker{
 					options:   o,
@@ -152,7 +152,7 @@ func (w *capturedDirectoryWalker) gatherWalkers(directory *model_filesystem_pb.D
 			pathTrace: pathTrace,
 		}
 	case *model_filesystem_pb.Directory_LeavesInline:
-		if err := w.options.gatherWalkersForLeaves(leaves.LeavesInline, w.object.Contents, pathTrace, walkers); err != nil {
+		if err := w.options.gatherWalkersForLeaves(model_core.NewMessage(leaves.LeavesInline, w.object.Contents), pathTrace, walkers); err != nil {
 			return err
 		}
 	default:
@@ -200,7 +200,7 @@ func (w *capturedLeavesWalker) GetContents(ctx context.Context) (*object.Content
 	}
 
 	walkers := make([]dag.ObjectContentsWalker, w.object.Contents.GetDegree())
-	if err := w.options.gatherWalkersForLeaves(leaves, w.object.Contents, w.pathTrace, walkers); err != nil {
+	if err := w.options.gatherWalkersForLeaves(model_core.NewMessage(leaves, w.object.Contents), w.pathTrace, walkers); err != nil {
 		return nil, nil, err
 	}
 	return w.object.Contents, walkers, nil

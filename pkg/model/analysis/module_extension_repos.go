@@ -72,7 +72,7 @@ func (t bazelModuleTag) AttrNames() []string {
 	return attrNames
 }
 
-func (c *baseComputer) ComputeModuleExtensionReposValue(ctx context.Context, key *model_analysis_pb.ModuleExtensionRepos_Key, e ModuleExtensionReposEnvironment) (PatchedModuleExtensionReposValue, error) {
+func (c *baseComputer[TReference]) ComputeModuleExtensionReposValue(ctx context.Context, key *model_analysis_pb.ModuleExtensionRepos_Key, e ModuleExtensionReposEnvironment[TReference]) (PatchedModuleExtensionReposValue, error) {
 	allBuiltinsModulesNames := e.GetBuiltinsModuleNamesValue(&model_analysis_pb.BuiltinsModuleNames_Key{})
 	repoPlatform := e.GetRegisteredRepoPlatformValue(&model_analysis_pb.RegisteredRepoPlatform_Key{})
 	if !allBuiltinsModulesNames.IsSet() || !repoPlatform.IsSet() {
@@ -243,10 +243,10 @@ func (c *baseComputer) ComputeModuleExtensionReposValue(ctx context.Context, key
 			return PatchedModuleExtensionReposValue{}, fmt.Errorf("module instance %#v uses unknown tag class %#v", moduleInstance.String(), usedTagClasses[0].Name)
 		}
 
-		modules = append(modules, model_starlark.NewStructFromDict(nil, map[string]any{
+		modules = append(modules, model_starlark.NewStructFromDict[TReference](nil, map[string]any{
 			"is_root": starlark.Bool(user.IsRoot),
 			"name":    starlark.String(moduleInstance.GetModule().String()),
-			"tags":    model_starlark.NewStructFromDict(nil, tagClasses),
+			"tags":    model_starlark.NewStructFromDict[TReference](nil, tagClasses),
 			"version": starlark.String(versionStr),
 		}))
 	}
@@ -268,7 +268,7 @@ func (c *baseComputer) ComputeModuleExtensionReposValue(ctx context.Context, key
 	}
 	defer moduleContext.release()
 
-	moduleCtx := model_starlark.NewStructFromDict(nil, map[string]any{
+	moduleCtx := model_starlark.NewStructFromDict[TReference](nil, map[string]any{
 		// Fields shared with repository_ctx.
 		"download":             starlark.NewBuiltin("module_ctx.download", moduleContext.doDownload),
 		"download_and_extract": starlark.NewBuiltin("module_ctx.download_and_extract", moduleContext.doDownloadAndExtract),

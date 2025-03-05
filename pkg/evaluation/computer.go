@@ -13,7 +13,9 @@ import (
 
 var ErrMissingDependency = errors.New("missing dependency")
 
-type Computer interface {
-	ComputeMessageValue(ctx context.Context, key model_core.Message[proto.Message, object.OutgoingReferences[object.LocalReference]], e Environment) (model_core.PatchedMessage[proto.Message, dag.ObjectContentsWalker], error)
-	ComputeNativeValue(ctx context.Context, key model_core.Message[proto.Message, object.OutgoingReferences[object.LocalReference]], e Environment) (any, error)
+type Computer[TReference any] interface {
+	ComputeMessageValue(ctx context.Context, key model_core.Message[proto.Message, TReference], e Environment[TReference]) (model_core.PatchedMessage[proto.Message, dag.ObjectContentsWalker], error)
+	ComputeNativeValue(ctx context.Context, key model_core.Message[proto.Message, TReference], e Environment[TReference]) (any, error)
 }
+
+type ComputerForTesting Computer[object.LocalReference]

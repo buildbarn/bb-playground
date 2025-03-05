@@ -6,6 +6,7 @@ import "pkg/proto/configuration/eviction/eviction.proto";
 import "pkg/proto/configuration/filesystem/virtual/virtual.proto";
 import "pkg/proto/configuration/global/global.proto";
 import "pkg/proto/configuration/grpc/grpc.proto";
+import "pkg/proto/configuration/model/parser/parser.proto";
 import "pkg/proto/model/encoding/encoding.proto";
 import "pkg/proto/storage/object/object.proto";
 
@@ -16,22 +17,17 @@ message ApplicationConfiguration {
 
   buildbarn.configuration.filesystem.virtual.MountConfiguration mount = 2;
 
-  buildbarn.configuration.eviction.CacheReplacementPolicy
-      parsed_object_cache_replacement_policy = 3;
+  bonanza.configuration.model.parser.ParsedObjectPool parsed_object_pool = 3;
 
-  int64 parsed_object_cache_count = 4;
+  buildbarn.configuration.grpc.ClientConfiguration grpc_client = 4;
 
-  int64 parsed_object_cache_total_size_bytes = 5;
+  bonanza.storage.object.Namespace namespace = 5;
 
-  buildbarn.configuration.grpc.ClientConfiguration grpc_client = 6;
+  bytes root_directory_reference = 6;
 
-  bonanza.storage.object.Namespace namespace = 7;
+  repeated bonanza.model.encoding.BinaryEncoder directory_encoders = 7;
 
-  bytes root_directory_reference = 8;
+  repeated bonanza.model.encoding.BinaryEncoder small_file_encoders = 8;
 
-  repeated bonanza.model.encoding.BinaryEncoder directory_encoders = 9;
-
-  repeated bonanza.model.encoding.BinaryEncoder small_file_encoders = 10;
-
-  repeated bonanza.model.encoding.BinaryEncoder concatenated_file_encoders = 11;
+  repeated bonanza.model.encoding.BinaryEncoder concatenated_file_encoders = 9;
 }

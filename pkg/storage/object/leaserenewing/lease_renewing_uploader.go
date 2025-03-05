@@ -17,8 +17,8 @@ import (
 
 type LeaseRenewingReference[T any] interface {
 	comparable
+	object.BasicReference
 
-	GetLocalReference() object.LocalReference
 	WithLocalReference(localReference object.LocalReference) T
 }
 

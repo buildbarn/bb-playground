@@ -14,6 +14,12 @@ local statePath = std.extVar('STATE_PATH');
     address: 'unix://%s/bonanza_storage_frontend.sock' % statePath,
   },
   cacheDirectoryPath: statePath + '/bonanza_builder_cache',
+
+  parsedObjectPool: {
+    cacheReplacementPolicy: 'LEAST_RECENTLY_USED',
+    count: 1e6,
+    sizeBytes: 1e9,
+  },
   filePool: { directoryPath: statePath + '/bonanza_builder_filepool' },
 
   // Connection to the scheduler to run actions on workers.

@@ -19,7 +19,7 @@ import (
 	"go.starlark.net/syntax"
 )
 
-func (c *baseComputer) ComputeCompiledBzlFileValue(ctx context.Context, key *model_analysis_pb.CompiledBzlFile_Key, e CompiledBzlFileEnvironment) (PatchedCompiledBzlFileValue, error) {
+func (c *baseComputer[TReference]) ComputeCompiledBzlFileValue(ctx context.Context, key *model_analysis_pb.CompiledBzlFile_Key, e CompiledBzlFileEnvironment[TReference]) (PatchedCompiledBzlFileValue, error) {
 	canonicalLabel, err := label.NewCanonicalLabel(key.Label)
 	if err != nil {
 		return PatchedCompiledBzlFileValue{}, fmt.Errorf("invalid label: %w", err)
@@ -47,7 +47,6 @@ func (c *baseComputer) ComputeCompiledBzlFileValue(ctx context.Context, key *mod
 	}
 	buildFileContentsEntry, err := model_filesystem.NewFileContentsEntryFromProto(
 		model_core.NewNestedMessage(bzlFileProperties, bzlFileProperties.Message.Exists.GetContents()),
-		c.getReferenceFormat(),
 	)
 	if err != nil {
 		return PatchedCompiledBzlFileValue{}, fmt.Errorf("invalid file contents: %w", err)
@@ -98,7 +97,7 @@ func (c *baseComputer) ComputeCompiledBzlFileValue(ctx context.Context, key *mod
 	}, nil
 }
 
-func (c *baseComputer) ComputeCompiledBzlFileDecodedGlobalsValue(ctx context.Context, key *model_analysis_pb.CompiledBzlFileDecodedGlobals_Key, e CompiledBzlFileDecodedGlobalsEnvironment) (starlark.StringDict, error) {
+func (c *baseComputer[TReference]) ComputeCompiledBzlFileDecodedGlobalsValue(ctx context.Context, key *model_analysis_pb.CompiledBzlFileDecodedGlobals_Key, e CompiledBzlFileDecodedGlobalsEnvironment[TReference]) (starlark.StringDict, error) {
 	currentFilename, err := label.NewCanonicalLabel(key.Label)
 	if err != nil {
 		return nil, fmt.Errorf("invalid label: %w", err)
@@ -119,7 +118,7 @@ func (c *baseComputer) ComputeCompiledBzlFileDecodedGlobalsValue(ctx context.Con
 	)
 }
 
-func (c *baseComputer) ComputeCompiledBzlFileFunctionFactoryValue(ctx context.Context, key *model_analysis_pb.CompiledBzlFileFunctionFactory_Key, e CompiledBzlFileFunctionFactoryEnvironment) (*starlark.FunctionFactory, error) {
+func (c *baseComputer[TReference]) ComputeCompiledBzlFileFunctionFactoryValue(ctx context.Context, key *model_analysis_pb.CompiledBzlFileFunctionFactory_Key, e CompiledBzlFileFunctionFactoryEnvironment[TReference]) (*starlark.FunctionFactory, error) {
 	canonicalLabel, err := label.NewCanonicalLabel(key.Label)
 	if err != nil {
 		return nil, err
@@ -155,7 +154,7 @@ func (c *baseComputer) ComputeCompiledBzlFileFunctionFactoryValue(ctx context.Co
 	return functionFactory, nil
 }
 
-func (c *baseComputer) ComputeCompiledBzlFileGlobalValue(ctx context.Context, key *model_analysis_pb.CompiledBzlFileGlobal_Key, e CompiledBzlFileGlobalEnvironment) (PatchedCompiledBzlFileGlobalValue, error) {
+func (c *baseComputer[TReference]) ComputeCompiledBzlFileGlobalValue(ctx context.Context, key *model_analysis_pb.CompiledBzlFileGlobal_Key, e CompiledBzlFileGlobalEnvironment[TReference]) (PatchedCompiledBzlFileGlobalValue, error) {
 	identifier, err := label.NewCanonicalStarlarkIdentifier(key.Identifier)
 	if err != nil {
 		return PatchedCompiledBzlFileGlobalValue{}, fmt.Errorf("invalid identifier: %w", err)
@@ -200,11 +199,11 @@ func (c *baseComputer) ComputeCompiledBzlFileGlobalValue(ctx context.Context, ke
 
 var exportsBzlTargetName = label.MustNewTargetName("exports.bzl")
 
-type getBzlFileBuiltinsEnvironment interface {
+type getBzlFileBuiltinsEnvironment[TReference any] interface {
 	GetCompiledBzlFileDecodedGlobalsValue(key *model_analysis_pb.CompiledBzlFileDecodedGlobals_Key) (starlark.StringDict, bool)
 }
 
-func (c *baseComputer) getBzlFileBuiltins(thread *starlark.Thread, e getBzlFileBuiltinsEnvironment, builtinsModuleNames []string) (starlark.StringDict, error) {
+func (c *baseComputer[TReference]) getBzlFileBuiltins(thread *starlark.Thread, e getBzlFileBuiltinsEnvironment[TReference], builtinsModuleNames []string) (starlark.StringDict, error) {
 	allToplevels := starlark.StringDict{}
 	for name, value := range model_starlark.BzlFileBuiltins {
 		allToplevels[name] = value
@@ -259,7 +258,7 @@ func (c *baseComputer) getBzlFileBuiltins(thread *starlark.Thread, e getBzlFileB
 	}
 
 	// Expose all rules via native.${name}().
-	existingNative, ok := allToplevels["native"].(*model_starlark.Struct)
+	existingNative, ok := allToplevels["native"].(*model_starlark.Struct[TReference])
 	if !ok {
 		return nil, errors.New("exported builtins do not declare \"native\"")
 	}
@@ -268,12 +267,12 @@ func (c *baseComputer) getBzlFileBuiltins(thread *starlark.Thread, e getBzlFileB
 			newNative[name] = value
 		}
 	}
-	allToplevels["native"] = model_starlark.NewStructFromDict(nil, newNative)
+	allToplevels["native"] = model_starlark.NewStructFromDict[TReference](nil, newNative)
 
 	return allToplevels, nil
 }
 
-func (c *baseComputer) getBuildFileBuiltins(thread *starlark.Thread, e getBzlFileBuiltinsEnvironment, builtinsModuleNames []string) (starlark.StringDict, error) {
+func (c *baseComputer[TReference]) getBuildFileBuiltins(thread *starlark.Thread, e getBzlFileBuiltinsEnvironment[TReference], builtinsModuleNames []string) (starlark.StringDict, error) {
 	allRules := starlark.StringDict{}
 	for name, value := range model_starlark.BuildFileBuiltins {
 		allRules[name] = value

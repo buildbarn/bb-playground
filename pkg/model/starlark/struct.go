@@ -22,7 +22,7 @@ import (
 	"go.starlark.net/syntax"
 )
 
-type Struct struct {
+type Struct[TReference object.BasicReference] struct {
 	providerInstanceProperties *ProviderInstanceProperties
 	keys                       []string
 	values                     []any
@@ -31,13 +31,13 @@ type Struct struct {
 }
 
 var (
-	_ EncodableValue      = (*Struct)(nil)
-	_ starlark.Comparable = (*Struct)(nil)
-	_ starlark.HasAttrs   = (*Struct)(nil)
-	_ starlark.Mapping    = (*Struct)(nil)
+	_ EncodableValue      = (*Struct[object.LocalReference])(nil)
+	_ starlark.Comparable = (*Struct[object.LocalReference])(nil)
+	_ starlark.HasAttrs   = (*Struct[object.LocalReference])(nil)
+	_ starlark.Mapping    = (*Struct[object.LocalReference])(nil)
 )
 
-func NewStructFromDict(providerInstanceProperties *ProviderInstanceProperties, entries map[string]any) *Struct {
+func NewStructFromDict[TReference object.BasicReference](providerInstanceProperties *ProviderInstanceProperties, entries map[string]any) *Struct[TReference] {
 	keys := make([]string, 0, len(entries))
 	for k := range entries {
 		keys = append(keys, k)
@@ -48,11 +48,11 @@ func NewStructFromDict(providerInstanceProperties *ProviderInstanceProperties, e
 	for _, k := range keys {
 		values = append(values, entries[k])
 	}
-	return newStructFromLists(providerInstanceProperties, keys, values)
+	return newStructFromLists[TReference](providerInstanceProperties, keys, values)
 }
 
-func newStructFromLists(providerInstanceProperties *ProviderInstanceProperties, keys []string, values []any) *Struct {
-	return &Struct{
+func newStructFromLists[TReference object.BasicReference](providerInstanceProperties *ProviderInstanceProperties, keys []string, values []any) *Struct[TReference] {
+	return &Struct[TReference]{
 		providerInstanceProperties: providerInstanceProperties,
 		keys:                       keys,
 		values:                     values,
@@ -60,7 +60,7 @@ func newStructFromLists(providerInstanceProperties *ProviderInstanceProperties, 
 	}
 }
 
-func (s *Struct) String() string {
+func (s *Struct[TReference]) String() string {
 	var sb strings.Builder
 	sb.WriteString("struct(")
 	for i, key := range s.keys {
@@ -79,17 +79,17 @@ func (s *Struct) String() string {
 	return sb.String()
 }
 
-func (Struct) Type() string {
+func (Struct[TReference]) Type() string {
 	return "struct"
 }
 
-func (Struct) Freeze() {}
+func (Struct[TReference]) Freeze() {}
 
-func (Struct) Truth() starlark.Bool {
+func (Struct[TReference]) Truth() starlark.Bool {
 	return starlark.True
 }
 
-func (s *Struct) Hash(thread *starlark.Thread) (uint32, error) {
+func (s *Struct[TReference]) Hash(thread *starlark.Thread) (uint32, error) {
 	if s.hash == 0 {
 		// The same math as performed by starlarkstruct.
 		var h, m uint32 = 8731, 9839
@@ -120,11 +120,11 @@ func (s *Struct) Hash(thread *starlark.Thread) (uint32, error) {
 	return s.hash, nil
 }
 
-func (s *Struct) fieldAtIndex(thread *starlark.Thread, index int) (starlark.Value, error) {
+func (s *Struct[TReference]) fieldAtIndex(thread *starlark.Thread, index int) (starlark.Value, error) {
 	switch typedValue := s.values[index].(type) {
 	case starlark.Value:
 		return typedValue, nil
-	case model_core.Message[*model_starlark_pb.Value, object.OutgoingReferences[object.LocalReference]]:
+	case model_core.Message[*model_starlark_pb.Value, TReference]:
 		if decodedValue := s.decodedValues[index].Load(); decodedValue != nil {
 			return *decodedValue, nil
 		}
@@ -137,7 +137,7 @@ func (s *Struct) fieldAtIndex(thread *starlark.Thread, index int) (starlark.Valu
 		decodedValue, err := DecodeValue(
 			typedValue,
 			nil,
-			valueDecodingOptions.(*ValueDecodingOptions),
+			valueDecodingOptions.(*ValueDecodingOptions[TReference]),
 		)
 		if err != nil {
 			return nil, err
@@ -149,7 +149,7 @@ func (s *Struct) fieldAtIndex(thread *starlark.Thread, index int) (starlark.Valu
 	}
 }
 
-func (s *Struct) Attr(thread *starlark.Thread, name string) (starlark.Value, error) {
+func (s *Struct[TReference]) Attr(thread *starlark.Thread, name string) (starlark.Value, error) {
 	index, ok := sort.Find(
 		len(s.keys),
 		func(i int) int { return strings.Compare(name, s.keys[i]) },
@@ -160,11 +160,11 @@ func (s *Struct) Attr(thread *starlark.Thread, name string) (starlark.Value, err
 	return s.fieldAtIndex(thread, index)
 }
 
-func (s *Struct) AttrNames() []string {
+func (s *Struct[TReference]) AttrNames() []string {
 	return s.keys
 }
 
-func (s *Struct) Get(thread *starlark.Thread, key starlark.Value) (starlark.Value, bool, error) {
+func (s *Struct[TReference]) Get(thread *starlark.Thread, key starlark.Value) (starlark.Value, bool, error) {
 	if s.providerInstanceProperties == nil || !s.providerInstanceProperties.dictLike {
 		return nil, true, errors.New("only structs that were instantiated through a provider that was declared with dict_like=True may be accessed like a dict")
 	}
@@ -185,7 +185,7 @@ func (s *Struct) Get(thread *starlark.Thread, key starlark.Value) (starlark.Valu
 	return value, true, err
 }
 
-func (s *Struct) equals(thread *starlark.Thread, other *Struct, depth int) (bool, error) {
+func (s *Struct[TReference]) equals(thread *starlark.Thread, other *Struct[TReference], depth int) (bool, error) {
 	if s != other {
 		// Compare providers.
 		if (s.providerInstanceProperties == nil) != (other.providerInstanceProperties == nil) || (s.providerInstanceProperties != nil &&
@@ -222,19 +222,19 @@ func (s *Struct) equals(thread *starlark.Thread, other *Struct, depth int) (bool
 	return true, nil
 }
 
-func (s *Struct) CompareSameType(thread *starlark.Thread, op syntax.Token, other starlark.Value, depth int) (bool, error) {
+func (s *Struct[TReference]) CompareSameType(thread *starlark.Thread, op syntax.Token, other starlark.Value, depth int) (bool, error) {
 	switch op {
 	case syntax.EQL:
-		return s.equals(thread, other.(*Struct), depth)
+		return s.equals(thread, other.(*Struct[TReference]), depth)
 	case syntax.NEQ:
-		equal, err := s.equals(thread, other.(*Struct), depth)
+		equal, err := s.equals(thread, other.(*Struct[TReference]), depth)
 		return !equal, err
 	default:
 		return false, errors.New("structs cannot be compared for inequality")
 	}
 }
 
-func (s *Struct) ToDict() map[string]any {
+func (s *Struct[TReference]) ToDict() map[string]any {
 	dict := make(map[string]any, len(s.keys))
 	for i, k := range s.keys {
 		dict[k] = s.values[i]
@@ -242,7 +242,7 @@ func (s *Struct) ToDict() map[string]any {
 	return dict
 }
 
-func (s *Struct) EncodeStructFields(path map[starlark.Value]struct{}, options *ValueEncodingOptions) (model_core.PatchedMessage[*model_starlark_pb.Struct_Fields, model_core.CreatedObjectTree], bool, error) {
+func (s *Struct[TReference]) EncodeStructFields(path map[starlark.Value]struct{}, options *ValueEncodingOptions) (model_core.PatchedMessage[*model_starlark_pb.Struct_Fields, model_core.CreatedObjectTree], bool, error) {
 	listBuilder := newListBuilder(options)
 	needsCode := false
 	for i, value := range s.values {
@@ -256,7 +256,7 @@ func (s *Struct) EncodeStructFields(path map[starlark.Value]struct{}, options *V
 				return model_core.PatchedMessage[*model_starlark_pb.Struct_Fields, model_core.CreatedObjectTree]{}, false, fmt.Errorf("field %#v: %w", s.keys[i], err)
 			}
 			needsCode = needsCode || fieldNeedsCode
-		case model_core.Message[*model_starlark_pb.Value, object.OutgoingReferences[object.LocalReference]]:
+		case model_core.Message[*model_starlark_pb.Value, TReference]:
 			encodedValue = model_core.NewPatchedMessageFromExisting(
 				typedValue,
 				func(index int) model_core.CreatedObjectTree {
@@ -292,7 +292,7 @@ func (s *Struct) EncodeStructFields(path map[starlark.Value]struct{}, options *V
 	), needsCode, nil
 }
 
-func (s *Struct) Encode(path map[starlark.Value]struct{}, options *ValueEncodingOptions) (model_core.PatchedMessage[*model_starlark_pb.Struct, model_core.CreatedObjectTree], bool, error) {
+func (s *Struct[TReference]) Encode(path map[starlark.Value]struct{}, options *ValueEncodingOptions) (model_core.PatchedMessage[*model_starlark_pb.Struct, model_core.CreatedObjectTree], bool, error) {
 	var providerInstanceProperties *model_starlark_pb.Provider_InstanceProperties
 	if pip := s.providerInstanceProperties; pip != nil {
 		var err error
@@ -316,7 +316,7 @@ func (s *Struct) Encode(path map[starlark.Value]struct{}, options *ValueEncoding
 	), needsCode, nil
 }
 
-func (s *Struct) EncodeValue(path map[starlark.Value]struct{}, currentIdentifier *pg_label.CanonicalStarlarkIdentifier, options *ValueEncodingOptions) (model_core.PatchedMessage[*model_starlark_pb.Value, model_core.CreatedObjectTree], bool, error) {
+func (s *Struct[TReference]) EncodeValue(path map[starlark.Value]struct{}, currentIdentifier *pg_label.CanonicalStarlarkIdentifier, options *ValueEncodingOptions) (model_core.PatchedMessage[*model_starlark_pb.Value, model_core.CreatedObjectTree], bool, error) {
 	encodedStruct, needsCode, err := s.Encode(path, options)
 	if err != nil {
 		return model_core.PatchedMessage[*model_starlark_pb.Value, model_core.CreatedObjectTree]{}, false, err
@@ -331,7 +331,7 @@ func (s *Struct) EncodeValue(path map[starlark.Value]struct{}, currentIdentifier
 	), needsCode, nil
 }
 
-func (s *Struct) GetProviderIdentifier() (pg_label.CanonicalStarlarkIdentifier, error) {
+func (s *Struct[TReference]) GetProviderIdentifier() (pg_label.CanonicalStarlarkIdentifier, error) {
 	var bad pg_label.CanonicalStarlarkIdentifier
 	pip := s.providerInstanceProperties
 	if pip == nil {
@@ -343,15 +343,15 @@ func (s *Struct) GetProviderIdentifier() (pg_label.CanonicalStarlarkIdentifier, 
 	return *pip.Identifier, nil
 }
 
-func AllStructFields(
+func AllStructFields[TReference any](
 	ctx context.Context,
-	reader model_parser.ParsedObjectReader[object.LocalReference, model_core.Message[[]*model_starlark_pb.List_Element, object.OutgoingReferences[object.LocalReference]]],
-	structFields model_core.Message[*model_starlark_pb.Struct_Fields, object.OutgoingReferences[object.LocalReference]],
+	reader model_parser.ParsedObjectReader[TReference, model_core.Message[[]*model_starlark_pb.List_Element, TReference]],
+	structFields model_core.Message[*model_starlark_pb.Struct_Fields, TReference],
 	errOut *error,
-) iter.Seq2[string, model_core.Message[*model_starlark_pb.Value, object.OutgoingReferences[object.LocalReference]]] {
+) iter.Seq2[string, model_core.Message[*model_starlark_pb.Value, TReference]] {
 	if structFields.Message == nil {
 		*errOut = errors.New("no struct fields provided")
-		return func(yield func(string, model_core.Message[*model_starlark_pb.Value, object.OutgoingReferences[object.LocalReference]]) bool) {
+		return func(yield func(string, model_core.Message[*model_starlark_pb.Value, TReference]) bool) {
 		}
 	}
 
@@ -359,7 +359,7 @@ func AllStructFields(
 		ctx,
 		reader,
 		model_core.NewNestedMessage(structFields, structFields.Message.Values),
-		func(element model_core.Message[*model_starlark_pb.List_Element, object.OutgoingReferences[object.LocalReference]]) (*model_core_pb.Reference, error) {
+		func(element model_core.Message[*model_starlark_pb.List_Element, TReference]) (*model_core_pb.Reference, error) {
 			if level, ok := element.Message.Level.(*model_starlark_pb.List_Element_Parent_); ok {
 				return level.Parent.Reference, nil
 			}
@@ -369,8 +369,8 @@ func AllStructFields(
 	)
 
 	keys := structFields.Message.Keys
-	return func(yield func(string, model_core.Message[*model_starlark_pb.Value, object.OutgoingReferences[object.LocalReference]]) bool) {
-		allLeaves(func(entry model_core.Message[*model_starlark_pb.List_Element, object.OutgoingReferences[object.LocalReference]]) bool {
+	return func(yield func(string, model_core.Message[*model_starlark_pb.Value, TReference]) bool) {
+		allLeaves(func(entry model_core.Message[*model_starlark_pb.List_Element, TReference]) bool {
 			leaf, ok := entry.Message.Level.(*model_starlark_pb.List_Element_Leaf)
 			if !ok {
 				*errOut = errors.New("not a valid leaf entry")
@@ -389,14 +389,14 @@ func AllStructFields(
 	}
 }
 
-func GetStructFieldValue(
+func GetStructFieldValue[TReference any](
 	ctx context.Context,
-	reader model_parser.ParsedObjectReader[object.LocalReference, model_core.Message[[]*model_starlark_pb.List_Element, object.OutgoingReferences[object.LocalReference]]],
-	structFields model_core.Message[*model_starlark_pb.Struct_Fields, object.OutgoingReferences[object.LocalReference]],
+	reader model_parser.ParsedObjectReader[TReference, model_core.Message[[]*model_starlark_pb.List_Element, TReference]],
+	structFields model_core.Message[*model_starlark_pb.Struct_Fields, TReference],
 	key string,
-) (model_core.Message[*model_starlark_pb.Value, object.OutgoingReferences[object.LocalReference]], error) {
+) (model_core.Message[*model_starlark_pb.Value, TReference], error) {
 	if structFields.Message == nil {
-		return model_core.Message[*model_starlark_pb.Value, object.OutgoingReferences[object.LocalReference]]{}, errors.New("no struct fields provided")
+		return model_core.Message[*model_starlark_pb.Value, TReference]{}, errors.New("no struct fields provided")
 	}
 
 	keys := structFields.Message.Keys
@@ -405,7 +405,7 @@ func GetStructFieldValue(
 		func(i int) int { return strings.Compare(key, keys[i]) },
 	)
 	if !ok {
-		return model_core.Message[*model_starlark_pb.Value, object.OutgoingReferences[object.LocalReference]]{}, errors.New("struct field not found")
+		return model_core.Message[*model_starlark_pb.Value, TReference]{}, errors.New("struct field not found")
 	}
 
 	contiguousLength := len(keys)
@@ -432,6 +432,6 @@ func GetStructFieldValue(
 				index--
 			}
 		}
-		return model_core.Message[*model_starlark_pb.Value, object.OutgoingReferences[object.LocalReference]]{}, errors.New("number of keys does not match number of values")
+		return model_core.Message[*model_starlark_pb.Value, TReference]{}, errors.New("number of keys does not match number of values")
 	}
 }

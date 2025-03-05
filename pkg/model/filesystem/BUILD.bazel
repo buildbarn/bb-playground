@@ -89,10 +89,7 @@ gomock(
 gomock(
     name = "mocks_filesystem",
     out = "mocks_filesystem_test.go",
-    interfaces = [
-        "FileMerkleTreeCapturerForTesting",
-        "LeavesParsedObjectReaderForTesting",
-    ],
+    interfaces = ["FileMerkleTreeCapturerForTesting"],
     library = "//pkg/model/filesystem",
     mockgen_model_library = "@org_uber_go_mock//mockgen/model",
     mockgen_tool = "@org_uber_go_mock//mockgen",

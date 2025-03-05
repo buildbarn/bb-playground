@@ -7,6 +7,11 @@ local statePath = std.extVar('STATE_PATH');
   schedulerGrpcClient: {
     address: 'unix://%s/bonanza_scheduler_workers.sock' % statePath,
   },
+  parsedObjectPool: {
+    cacheReplacementPolicy: 'LEAST_RECENTLY_USED',
+    count: 1e6,
+    sizeBytes: 1e9,
+  },
   filePool: { blockDevice: { file: {
     path: statePath + '/bonanza_worker_filepool',
     sizeBytes: 1e9,

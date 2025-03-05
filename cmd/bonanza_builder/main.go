@@ -22,6 +22,7 @@ import (
 	model_analysis "github.com/buildbarn/bonanza/pkg/model/analysis"
 	model_core "github.com/buildbarn/bonanza/pkg/model/core"
 	"github.com/buildbarn/bonanza/pkg/model/encoding"
+	model_parser "github.com/buildbarn/bonanza/pkg/model/parser"
 	"github.com/buildbarn/bonanza/pkg/proto/configuration/bonanza_builder"
 	model_analysis_pb "github.com/buildbarn/bonanza/pkg/proto/model/analysis"
 	model_build_pb "github.com/buildbarn/bonanza/pkg/proto/model/build"
@@ -65,6 +66,10 @@ func main() {
 		objectDownloader := object_grpc.NewGRPCDownloader(
 			object_pb.NewDownloaderClient(storageGRPCClient),
 		)
+		parsedObjectPool, err := model_parser.NewParsedObjectPoolFromConfiguration(configuration.ParsedObjectPool)
+		if err != nil {
+			return util.StatusWrap(err, "Failed to create parsed object pool")
+		}
 
 		roundTripper, err := bb_http.NewRoundTripperFromConfiguration(configuration.HttpClient)
 		if err != nil {
@@ -116,6 +121,7 @@ func main() {
 
 		executor := &builderExecutor{
 			objectDownloader:              objectDownloader,
+			parsedObjectPool:              parsedObjectPool,
 			dagUploaderClient:             dag_pb.NewUploaderClient(storageGRPCClient),
 			objectContentsWalkerSemaphore: semaphore.NewWeighted(int64(runtime.NumCPU())),
 			httpClient: &http.Client{
@@ -152,6 +158,7 @@ func main() {
 
 type builderExecutor struct {
 	objectDownloader              object.Downloader[object.GlobalReference]
+	parsedObjectPool              *model_parser.ParsedObjectPool
 	dagUploaderClient             dag_pb.UploaderClient
 	objectContentsWalkerSemaphore *semaphore.Weighted
 	httpClient                    *http.Client
@@ -172,8 +179,7 @@ func (e *builderExecutor) Execute(ctx context.Context, action *model_build_pb.Ac
 		}, 0, remoteworker_pb.CurrentState_Completed_FAILED
 	}
 	instanceName := namespace.InstanceName
-	objectDownloader := object_namespacemapping.NewNamespaceAddingDownloader(e.objectDownloader, namespace)
-	buildSpecificationReference, err := namespace.NewGlobalReference(action.BuildSpecificationReference)
+	buildSpecificationReference, err := namespace.NewLocalReference(action.BuildSpecificationReference)
 	if err != nil {
 		return &model_build_pb.Result{
 			Status: status.Convert(util.StatusWrap(err, "Invalid build specification reference")).Proto(),
@@ -190,16 +196,20 @@ func (e *builderExecutor) Execute(ctx context.Context, action *model_build_pb.Ac
 	}
 	value, err := evaluation.FullyComputeValue(
 		ctx,
-		model_analysis.NewTypedComputer(model_analysis.NewBaseComputer(
-			objectDownloader,
+		model_analysis.NewTypedComputer[object.LocalReference](model_analysis.NewBaseComputer(
+			model_parser.NewParsedObjectFetcher(
+				e.parsedObjectPool,
+				object_namespacemapping.NewNamespaceAddingDownloader(e.objectDownloader, namespace),
+			),
 			buildSpecificationReference,
 			buildSpecificationEncoder,
 			e.httpClient,
 			e.filePool,
 			e.cacheDirectory,
 			e.executionClient,
+			namespace.InstanceName,
 		)),
-		model_core.NewMessage[proto.Message, object.OutgoingReferences[object.LocalReference]](&model_analysis_pb.BuildResult_Key{}, object.OutgoingReferencesList{}),
+		model_core.NewMessage[proto.Message, object.LocalReference](&model_analysis_pb.BuildResult_Key{}, object.OutgoingReferencesList[object.LocalReference]{}),
 		func(references []object.LocalReference, objectContentsWalkers []dag.ObjectContentsWalker) error {
 			for i, reference := range references {
 				if err := dag.UploadDAG(

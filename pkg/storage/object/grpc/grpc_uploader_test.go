@@ -72,7 +72,7 @@ func TestGRPCUploader(t *testing.T) {
 
 		contents := object.MustNewContents(
 			object_pb.ReferenceFormat_SHA256_V1,
-			object.OutgoingReferencesList{
+			object.OutgoingReferencesList[object.LocalReference]{
 				object.MustNewSHA256V1LocalReference("286592c3b9958a494bb292f5d9dc2924671a64ce8f409e414fdd45eea167c98e", 1400, 12, 20, 1059483),
 			},
 			[]byte("Hello"),
