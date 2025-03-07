@@ -2549,7 +2549,7 @@ func (c *baseComputer[TReference]) fetchRepo(ctx context.Context, canonicalRepo 
 	repositoryContext.maybeGetDirectoryReaders()
 	repositoryContext.maybeGetFileCreationParameters()
 
-	repositoryCtx := model_starlark.NewStructFromDict[object.LocalReference](nil, map[string]any{
+	repositoryCtx := model_starlark.NewStructFromDict[TReference](nil, map[string]any{
 		// Fields shared with module_ctx.
 		"download":             starlark.NewBuiltin("repository_ctx.download", repositoryContext.doDownload),
 		"download_and_extract": starlark.NewBuiltin("repository_ctx.download_and_extract", repositoryContext.doDownloadAndExtract),
@@ -2565,7 +2565,7 @@ func (c *baseComputer[TReference]) fetchRepo(ctx context.Context, canonicalRepo 
 		"which":                starlark.NewBuiltin("repository_ctx.which", repositoryContext.doWhich),
 
 		// Fields specific to repository_ctx.
-		"attr": model_starlark.NewStructFromDict[object.LocalReference](nil, attrs),
+		"attr": model_starlark.NewStructFromDict[TReference](nil, attrs),
 		"delete": starlark.NewBuiltin(
 			"repository_ctx.delete",
 			func(thread *starlark.Thread, b *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
