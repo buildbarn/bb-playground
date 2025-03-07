@@ -4,12 +4,14 @@ load("@rules_go//go:def.bzl", "go_library", "go_test")
 go_library(
     name = "core",
     srcs = [
+        "cloneable_reference_metadata.go",
         "created_object.go",
         "file_writing_merkle_tree_capturer.go",
         "get_index_from_reference_message.go",
         "message.go",
         "patched_message.go",
         "reference_message_patcher.go",
+        "walkable_reference_metadata.go",
     ],
     importpath = "github.com/buildbarn/bonanza/pkg/model/core",
     visibility = ["//visibility:public"],

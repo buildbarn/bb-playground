@@ -185,7 +185,7 @@ func (r *reposFilePropertiesResolver[TReference]) OnUp() (path.ComponentWalker, 
 	return r, nil
 }
 
-func (c *baseComputer[TReference]) ComputeFilePropertiesValue(ctx context.Context, key *model_analysis_pb.FileProperties_Key, e FilePropertiesEnvironment[TReference]) (PatchedFilePropertiesValue, error) {
+func (c *baseComputer[TReference, TMetadata]) ComputeFilePropertiesValue(ctx context.Context, key *model_analysis_pb.FileProperties_Key, e FilePropertiesEnvironment[TReference]) (PatchedFilePropertiesValue, error) {
 	directoryReaders, gotDirectoryReaders := e.GetDirectoryReadersValue(&model_analysis_pb.DirectoryReaders_Key{})
 	if !gotDirectoryReaders {
 		return PatchedFilePropertiesValue{}, evaluation.ErrMissingDependency

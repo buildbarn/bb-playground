@@ -23,7 +23,7 @@ type parseLocalModuleDotBazelEnvironment[TReference object.BasicReference] inter
 	GetFilePropertiesValue(key *model_analysis_pb.FileProperties_Key) model_core.Message[*model_analysis_pb.FileProperties_Value, TReference]
 }
 
-func (c *baseComputer[TReference]) parseLocalModuleInstanceModuleDotBazel(ctx context.Context, moduleInstance label.ModuleInstance, e parseLocalModuleDotBazelEnvironment[TReference], handler pg_starlark.RootModuleDotBazelHandler) error {
+func (c *baseComputer[TReference, TMetadata]) parseLocalModuleInstanceModuleDotBazel(ctx context.Context, moduleInstance label.ModuleInstance, e parseLocalModuleDotBazelEnvironment[TReference], handler pg_starlark.RootModuleDotBazelHandler) error {
 	// Load a file that we know exists in storage already.
 	moduleFileProperties := e.GetFilePropertiesValue(&model_analysis_pb.FileProperties_Key{
 		CanonicalRepo: moduleInstance.String(),
@@ -50,7 +50,7 @@ type parseActiveModuleDotBazelEnvironment[TReference object.BasicReference] inte
 	GetModuleDotBazelContentsValue(key *model_analysis_pb.ModuleDotBazelContents_Key) model_core.Message[*model_analysis_pb.ModuleDotBazelContents_Value, TReference]
 }
 
-func (c *baseComputer[TReference]) parseActiveModuleInstanceModuleDotBazel(ctx context.Context, moduleInstance label.ModuleInstance, e parseActiveModuleDotBazelEnvironment[TReference], handler pg_starlark.RootModuleDotBazelHandler) error {
+func (c *baseComputer[TReference, TMetadata]) parseActiveModuleInstanceModuleDotBazel(ctx context.Context, moduleInstance label.ModuleInstance, e parseActiveModuleDotBazelEnvironment[TReference], handler pg_starlark.RootModuleDotBazelHandler) error {
 	// This module file might have to be loaded.
 	moduleFileContentsValue := e.GetModuleDotBazelContentsValue(&model_analysis_pb.ModuleDotBazelContents_Key{
 		ModuleInstance: moduleInstance.String(),
@@ -71,7 +71,7 @@ type parseModuleDotBazelFileEnvironment[TReference object.BasicReference] interf
 	GetFileReaderValue(key *model_analysis_pb.FileReader_Key) (*model_filesystem.FileReader[TReference], bool)
 }
 
-func (c *baseComputer[TReference]) parseModuleDotBazel(ctx context.Context, moduleContentsMsg model_core.Message[*model_filesystem_pb.FileContents, TReference], moduleInstance label.ModuleInstance, e parseModuleDotBazelFileEnvironment[TReference], handler pg_starlark.RootModuleDotBazelHandler) error {
+func (c *baseComputer[TReference, TMetadata]) parseModuleDotBazel(ctx context.Context, moduleContentsMsg model_core.Message[*model_filesystem_pb.FileContents, TReference], moduleInstance label.ModuleInstance, e parseModuleDotBazelFileEnvironment[TReference], handler pg_starlark.RootModuleDotBazelHandler) error {
 	fileReader, gotFileReader := e.GetFileReaderValue(&model_analysis_pb.FileReader_Key{})
 	if !gotFileReader {
 		return evaluation.ErrMissingDependency
@@ -139,7 +139,7 @@ func (h *dependencQueueingModuleDotBazelHandler) BazelDep(name label.Module, ver
 	return h.ChildModuleDotBazelHandler.BazelDep(name, version, maxCompatibilityLevel, repoName, devDependency)
 }
 
-func (c *baseComputer[TReference]) visitModuleDotBazelFilesBreadthFirst(
+func (c *baseComputer[TReference, TMetadata]) visitModuleDotBazelFilesBreadthFirst(
 	ctx context.Context,
 	e visitModuleDotBazelFilesBreadthFirstEnvironment[TReference],
 	createHandler func(moduleInstance label.ModuleInstance, ignoreDevDependencies bool) pg_starlark.ChildModuleDotBazelHandler,
@@ -193,7 +193,7 @@ func (c *baseComputer[TReference]) visitModuleDotBazelFilesBreadthFirst(
 	return finalErr
 }
 
-func (c *baseComputer[TReference]) ComputeModuleDotBazelContentsValue(ctx context.Context, key *model_analysis_pb.ModuleDotBazelContents_Key, e ModuleDotBazelContentsEnvironment[TReference]) (PatchedModuleDotBazelContentsValue, error) {
+func (c *baseComputer[TReference, TMetadata]) ComputeModuleDotBazelContentsValue(ctx context.Context, key *model_analysis_pb.ModuleDotBazelContents_Key, e ModuleDotBazelContentsEnvironment[TReference]) (PatchedModuleDotBazelContentsValue, error) {
 	moduleInstance, err := label.NewModuleInstance(key.ModuleInstance)
 	if err != nil {
 		return PatchedModuleDotBazelContentsValue{}, fmt.Errorf("invalid module instance: %w", err)

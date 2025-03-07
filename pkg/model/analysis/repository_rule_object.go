@@ -21,7 +21,7 @@ type RepositoryRule struct {
 	Attrs          AttrsDict
 }
 
-func (c *baseComputer[TReference]) ComputeRepositoryRuleObjectValue(ctx context.Context, key *model_analysis_pb.RepositoryRuleObject_Key, e RepositoryRuleObjectEnvironment[TReference]) (*RepositoryRule, error) {
+func (c *baseComputer[TReference, TMetadata]) ComputeRepositoryRuleObjectValue(ctx context.Context, key *model_analysis_pb.RepositoryRuleObject_Key, e RepositoryRuleObjectEnvironment[TReference]) (*RepositoryRule, error) {
 	repositoryRuleValue := e.GetCompiledBzlFileGlobalValue(&model_analysis_pb.CompiledBzlFileGlobal_Key{
 		Identifier: key.Identifier,
 	})
@@ -42,7 +42,7 @@ func (c *baseComputer[TReference]) ComputeRepositoryRuleObjectValue(ctx context.
 		ctx,
 		model_core.NewNestedMessage(repositoryRuleValue, d.Definition.Attrs),
 		func(resolvedLabel label.ResolvedLabel) (starlark.Value, error) {
-			return model_starlark.NewLabel(resolvedLabel), nil
+			return model_starlark.NewLabel[TReference, TMetadata](resolvedLabel), nil
 		},
 	)
 	if err != nil {
@@ -50,7 +50,7 @@ func (c *baseComputer[TReference]) ComputeRepositoryRuleObjectValue(ctx context.
 	}
 
 	return &RepositoryRule{
-		Implementation: model_starlark.NewNamedFunction(model_starlark.NewProtoNamedFunctionDefinition(
+		Implementation: model_starlark.NewNamedFunction(model_starlark.NewProtoNamedFunctionDefinition[TReference, TMetadata](
 			model_core.NewNestedMessage(repositoryRuleValue, d.Definition.Implementation),
 		)),
 		Attrs: attrs,
@@ -68,18 +68,18 @@ type AttrsDict struct {
 	Private starlark.StringDict
 }
 
-func (c *baseComputer[TReference]) decodeAttrsDict(ctx context.Context, encodedAttrs model_core.Message[[]*model_starlark_pb.NamedAttr, TReference], labelCreator func(label.ResolvedLabel) (starlark.Value, error)) (AttrsDict, error) {
+func (c *baseComputer[TReference, TMetadata]) decodeAttrsDict(ctx context.Context, encodedAttrs model_core.Message[[]*model_starlark_pb.NamedAttr, TReference], labelCreator func(label.ResolvedLabel) (starlark.Value, error)) (AttrsDict, error) {
 	attrsDict := AttrsDict{
 		Private: starlark.StringDict{},
 	}
 	for _, namedAttr := range encodedAttrs.Message {
-		attrType, err := model_starlark.DecodeAttrType(namedAttr.Attr)
+		attrType, err := model_starlark.DecodeAttrType[TReference, TMetadata](namedAttr.Attr)
 		if err != nil {
 			return AttrsDict{}, fmt.Errorf("invalid type for attribute %#v: %w", namedAttr.Name, err)
 		}
 
 		if strings.HasPrefix(namedAttr.Name, "_") {
-			value, err := model_starlark.DecodeValue(
+			value, err := model_starlark.DecodeValue[TReference, TMetadata](
 				model_core.NewNestedMessage(encodedAttrs, namedAttr.Attr.GetDefault()),
 				/* currentIdentifier = */ nil,
 				c.getValueDecodingOptions(ctx, labelCreator),
@@ -94,7 +94,7 @@ func (c *baseComputer[TReference]) decodeAttrsDict(ctx context.Context, encodedA
 			if d := namedAttr.Attr.GetDefault(); d != nil {
 				// TODO: Call into attr type to validate
 				// the value!
-				defaultAttr, err = model_starlark.DecodeValue(
+				defaultAttr, err = model_starlark.DecodeValue[TReference, TMetadata](
 					model_core.NewNestedMessage(encodedAttrs, d),
 					/* currentIdentifier = */ nil,
 					c.getValueDecodingOptions(ctx, labelCreator),

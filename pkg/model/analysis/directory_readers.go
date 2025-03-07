@@ -21,7 +21,7 @@ type DirectoryReaders[TReference any] struct {
 	CommandOutputs model_parser.ParsedObjectReader[TReference, model_core.Message[*model_command_pb.Outputs, TReference]]
 }
 
-func (c *baseComputer[TReference]) ComputeDirectoryReadersValue(ctx context.Context, key *model_analysis_pb.DirectoryReaders_Key, e DirectoryReadersEnvironment[TReference]) (*DirectoryReaders[TReference], error) {
+func (c *baseComputer[TReference, TMetadata]) ComputeDirectoryReadersValue(ctx context.Context, key *model_analysis_pb.DirectoryReaders_Key, e DirectoryReadersEnvironment[TReference]) (*DirectoryReaders[TReference], error) {
 	directoryAccessParametersValue := e.GetDirectoryAccessParametersValue(&model_analysis_pb.DirectoryAccessParameters_Key{})
 	if !directoryAccessParametersValue.IsSet() {
 		return nil, evaluation.ErrMissingDependency
@@ -37,21 +37,21 @@ func (c *baseComputer[TReference]) ComputeDirectoryReadersValue(ctx context.Cont
 	encoderObjectParser := model_parser.NewEncodedObjectParser[TReference](directoryAccessParameters.GetEncoder())
 	return &DirectoryReaders[TReference]{
 		Directory: model_parser.LookupParsedObjectReader(
-			c.parsedObjectFetcher,
+			c.parsedObjectPoolIngester,
 			model_parser.NewChainedObjectParser(
 				encoderObjectParser,
 				model_parser.NewMessageObjectParser[TReference, model_filesystem_pb.Directory](),
 			),
 		),
 		Leaves: model_parser.LookupParsedObjectReader(
-			c.parsedObjectFetcher,
+			c.parsedObjectPoolIngester,
 			model_parser.NewChainedObjectParser(
 				encoderObjectParser,
 				model_parser.NewMessageObjectParser[TReference, model_filesystem_pb.Leaves](),
 			),
 		),
 		CommandOutputs: model_parser.LookupParsedObjectReader(
-			c.parsedObjectFetcher,
+			c.parsedObjectPoolIngester,
 			model_parser.NewChainedObjectParser(
 				encoderObjectParser,
 				model_parser.NewMessageObjectParser[TReference, model_command_pb.Outputs](),

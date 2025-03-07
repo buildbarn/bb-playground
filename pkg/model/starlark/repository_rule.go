@@ -11,23 +11,24 @@ import (
 	model_core "github.com/buildbarn/bonanza/pkg/model/core"
 	model_starlark_pb "github.com/buildbarn/bonanza/pkg/proto/model/starlark"
 	"github.com/buildbarn/bonanza/pkg/starlark/unpack"
+	"github.com/buildbarn/bonanza/pkg/storage/object"
 
 	"go.starlark.net/starlark"
 )
 
-type repositoryRule struct {
+type repositoryRule[TReference any, TMetadata model_core.CloneableReferenceMetadata] struct {
 	LateNamedValue
-	definition RepositoryRuleDefinition
+	definition RepositoryRuleDefinition[TReference, TMetadata]
 }
 
 var (
-	_ starlark.Callable = &repositoryRule{}
-	_ EncodableValue    = &repositoryRule{}
-	_ NamedGlobal       = &repositoryRule{}
+	_ starlark.Callable                                                            = (*repositoryRule[object.LocalReference, model_core.CloneableReferenceMetadata])(nil)
+	_ EncodableValue[object.LocalReference, model_core.CloneableReferenceMetadata] = (*repositoryRule[object.LocalReference, model_core.CloneableReferenceMetadata])(nil)
+	_ NamedGlobal                                                                  = (*repositoryRule[object.LocalReference, model_core.CloneableReferenceMetadata])(nil)
 )
 
-func NewRepositoryRule(identifier *pg_label.CanonicalStarlarkIdentifier, definition RepositoryRuleDefinition) starlark.Value {
-	return &repositoryRule{
+func NewRepositoryRule[TReference any, TMetadata model_core.CloneableReferenceMetadata](identifier *pg_label.CanonicalStarlarkIdentifier, definition RepositoryRuleDefinition[TReference, TMetadata]) starlark.Value {
+	return &repositoryRule[TReference, TMetadata]{
 		LateNamedValue: LateNamedValue{
 			Identifier: identifier,
 		},
@@ -35,25 +36,25 @@ func NewRepositoryRule(identifier *pg_label.CanonicalStarlarkIdentifier, definit
 	}
 }
 
-func (rr *repositoryRule) String() string {
+func (rr *repositoryRule[TReference, TMetadata]) String() string {
 	return "<repository_rule>"
 }
 
-func (rr *repositoryRule) Type() string {
+func (rr *repositoryRule[TReference, TMetadata]) Type() string {
 	return "repository_rule"
 }
 
-func (rr *repositoryRule) Freeze() {}
+func (rr *repositoryRule[TReference, TMetadata]) Freeze() {}
 
-func (rr *repositoryRule) Truth() starlark.Bool {
+func (rr *repositoryRule[TReference, TMetadata]) Truth() starlark.Bool {
 	return starlark.True
 }
 
-func (rr *repositoryRule) Hash(thread *starlark.Thread) (uint32, error) {
+func (rr *repositoryRule[TReference, TMetadata]) Hash(thread *starlark.Thread) (uint32, error) {
 	return 0, errors.New("repository_rule cannot be hashed")
 }
 
-func (rr *repositoryRule) Name() string {
+func (rr *repositoryRule[TReference, TMetadata]) Name() string {
 	if rr.Identifier == nil {
 		return "repository_rule"
 	}
@@ -62,7 +63,7 @@ func (rr *repositoryRule) Name() string {
 
 const RepoRegistrarKey = "repo_registrar"
 
-func (rr *repositoryRule) CallInternal(thread *starlark.Thread, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
+func (rr *repositoryRule[TReference, TMetadata]) CallInternal(thread *starlark.Thread, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
 	if rr.Identifier == nil {
 		return nil, errors.New("repository rule does not have a name")
 	}
@@ -70,7 +71,7 @@ func (rr *repositoryRule) CallInternal(thread *starlark.Thread, args starlark.Tu
 	if repoRegistrarValue == nil {
 		return nil, fmt.Errorf("repository rule cannot be invoked from within this context")
 	}
-	repoRegistrar := repoRegistrarValue.(*RepoRegistrar)
+	repoRegistrar := repoRegistrarValue.(*RepoRegistrar[TMetadata])
 
 	attrs, err := rr.definition.GetAttrsCheap(thread)
 	if err != nil {
@@ -124,12 +125,12 @@ func (rr *repositoryRule) CallInternal(thread *starlark.Thread, args starlark.Tu
 		return nil, err
 	}
 
-	valueEncodingOptions := thread.Local(ValueEncodingOptionsKey).(*ValueEncodingOptions)
+	valueEncodingOptions := thread.Local(ValueEncodingOptionsKey).(*ValueEncodingOptions[TReference, TMetadata])
 	var attrKeys []string
-	attrValuesBuilder := newListBuilder(valueEncodingOptions)
+	attrValuesBuilder := newListBuilder[TReference, TMetadata](valueEncodingOptions)
 	for i, attrName := range attrNames {
 		if value := values[i]; value != nil {
-			encodedValue, _, err := EncodeValue(
+			encodedValue, _, err := EncodeValue[TReference, TMetadata](
 				value,
 				/* path = */ map[starlark.Value]struct{}{},
 				/* currentIdentifier = */ nil,
@@ -174,14 +175,14 @@ func (rr *repositoryRule) CallInternal(thread *starlark.Thread, args starlark.Tu
 	)
 }
 
-func (rr *repositoryRule) EncodeValue(path map[starlark.Value]struct{}, currentIdentifier *pg_label.CanonicalStarlarkIdentifier, options *ValueEncodingOptions) (model_core.PatchedMessage[*model_starlark_pb.Value, model_core.CreatedObjectTree], bool, error) {
+func (rr *repositoryRule[TReference, TMetadata]) EncodeValue(path map[starlark.Value]struct{}, currentIdentifier *pg_label.CanonicalStarlarkIdentifier, options *ValueEncodingOptions[TReference, TMetadata]) (model_core.PatchedMessage[*model_starlark_pb.Value, TMetadata], bool, error) {
 	if rr.Identifier == nil {
-		return model_core.PatchedMessage[*model_starlark_pb.Value, model_core.CreatedObjectTree]{}, false, errors.New("repository_rule does not have a name")
+		return model_core.PatchedMessage[*model_starlark_pb.Value, TMetadata]{}, false, errors.New("repository_rule does not have a name")
 	}
 	if currentIdentifier == nil || *currentIdentifier != *rr.Identifier {
 		// Not the canonical identifier under which this
 		// repository rule is known. Emit a reference.
-		return model_core.NewSimplePatchedMessage[model_core.CreatedObjectTree](
+		return model_core.NewSimplePatchedMessage[TMetadata](
 			&model_starlark_pb.Value{
 				Kind: &model_starlark_pb.Value_RepositoryRule{
 					RepositoryRule: &model_starlark_pb.RepositoryRule{
@@ -196,7 +197,7 @@ func (rr *repositoryRule) EncodeValue(path map[starlark.Value]struct{}, currentI
 
 	definition, needsCode, err := rr.definition.Encode(path, options)
 	if err != nil {
-		return model_core.PatchedMessage[*model_starlark_pb.Value, model_core.CreatedObjectTree]{}, false, err
+		return model_core.PatchedMessage[*model_starlark_pb.Value, TMetadata]{}, false, err
 	}
 	return model_core.NewPatchedMessage(
 		&model_starlark_pb.Value{
@@ -212,32 +213,32 @@ func (rr *repositoryRule) EncodeValue(path map[starlark.Value]struct{}, currentI
 	), needsCode, nil
 }
 
-type RepositoryRuleDefinition interface {
-	Encode(path map[starlark.Value]struct{}, options *ValueEncodingOptions) (model_core.PatchedMessage[*model_starlark_pb.RepositoryRule_Definition, model_core.CreatedObjectTree], bool, error)
-	GetAttrsCheap(thread *starlark.Thread) (map[pg_label.StarlarkIdentifier]*Attr, error)
+type RepositoryRuleDefinition[TReference any, TMetadata model_core.CloneableReferenceMetadata] interface {
+	Encode(path map[starlark.Value]struct{}, options *ValueEncodingOptions[TReference, TMetadata]) (model_core.PatchedMessage[*model_starlark_pb.RepositoryRule_Definition, TMetadata], bool, error)
+	GetAttrsCheap(thread *starlark.Thread) (map[pg_label.StarlarkIdentifier]*Attr[TReference, TMetadata], error)
 }
 
-type starlarkRepositoryRuleDefinition struct {
-	implementation NamedFunction
-	attrs          map[pg_label.StarlarkIdentifier]*Attr
+type starlarkRepositoryRuleDefinition[TReference any, TMetadata model_core.CloneableReferenceMetadata] struct {
+	implementation NamedFunction[TReference, TMetadata]
+	attrs          map[pg_label.StarlarkIdentifier]*Attr[TReference, TMetadata]
 }
 
-func NewStarlarkRepositoryRuleDefinition(implementation NamedFunction, attrs map[pg_label.StarlarkIdentifier]*Attr) RepositoryRuleDefinition {
-	return &starlarkRepositoryRuleDefinition{
+func NewStarlarkRepositoryRuleDefinition[TReference any, TMetadata model_core.CloneableReferenceMetadata](implementation NamedFunction[TReference, TMetadata], attrs map[pg_label.StarlarkIdentifier]*Attr[TReference, TMetadata]) RepositoryRuleDefinition[TReference, TMetadata] {
+	return &starlarkRepositoryRuleDefinition[TReference, TMetadata]{
 		implementation: implementation,
 		attrs:          attrs,
 	}
 }
 
-func (rrd *starlarkRepositoryRuleDefinition) Encode(path map[starlark.Value]struct{}, options *ValueEncodingOptions) (model_core.PatchedMessage[*model_starlark_pb.RepositoryRule_Definition, model_core.CreatedObjectTree], bool, error) {
+func (rrd *starlarkRepositoryRuleDefinition[TReference, TMetadata]) Encode(path map[starlark.Value]struct{}, options *ValueEncodingOptions[TReference, TMetadata]) (model_core.PatchedMessage[*model_starlark_pb.RepositoryRule_Definition, TMetadata], bool, error) {
 	implementation, implementationNeedsCode, err := rrd.implementation.Encode(path, options)
 	if err != nil {
-		return model_core.PatchedMessage[*model_starlark_pb.RepositoryRule_Definition, model_core.CreatedObjectTree]{}, false, err
+		return model_core.PatchedMessage[*model_starlark_pb.RepositoryRule_Definition, TMetadata]{}, false, err
 	}
 
 	namedAttrs, namedAttrsNeedCode, err := encodeNamedAttrs(rrd.attrs, path, options)
 	if err != nil {
-		return model_core.PatchedMessage[*model_starlark_pb.RepositoryRule_Definition, model_core.CreatedObjectTree]{}, false, err
+		return model_core.PatchedMessage[*model_starlark_pb.RepositoryRule_Definition, TMetadata]{}, false, err
 	}
 
 	return model_core.NewPatchedMessage(
@@ -249,25 +250,25 @@ func (rrd *starlarkRepositoryRuleDefinition) Encode(path map[starlark.Value]stru
 	), implementationNeedsCode || namedAttrsNeedCode, nil
 }
 
-func (rrd *starlarkRepositoryRuleDefinition) GetAttrsCheap(thread *starlark.Thread) (map[pg_label.StarlarkIdentifier]*Attr, error) {
+func (rrd *starlarkRepositoryRuleDefinition[TReference, TMetadata]) GetAttrsCheap(thread *starlark.Thread) (map[pg_label.StarlarkIdentifier]*Attr[TReference, TMetadata], error) {
 	return rrd.attrs, nil
 }
 
-type protoRepositoryRuleDefinition[TReference any] struct {
+type protoRepositoryRuleDefinition[TReference any, TMetadata model_core.CloneableReferenceMetadata] struct {
 	message         model_core.Message[*model_starlark_pb.RepositoryRule_Definition, TReference]
-	protoAttrsCache protoAttrsCache
+	protoAttrsCache protoAttrsCache[TReference, TMetadata]
 }
 
-func NewProtoRepositoryRuleDefinition[TReference any](message model_core.Message[*model_starlark_pb.RepositoryRule_Definition, TReference]) RepositoryRuleDefinition {
-	return &protoRepositoryRuleDefinition[TReference]{
+func NewProtoRepositoryRuleDefinition[TReference any, TMetadata model_core.CloneableReferenceMetadata](message model_core.Message[*model_starlark_pb.RepositoryRule_Definition, TReference]) RepositoryRuleDefinition[TReference, TMetadata] {
+	return &protoRepositoryRuleDefinition[TReference, TMetadata]{
 		message: message,
 	}
 }
 
-func (rrd *protoRepositoryRuleDefinition[TReference]) Encode(path map[starlark.Value]struct{}, options *ValueEncodingOptions) (model_core.PatchedMessage[*model_starlark_pb.RepositoryRule_Definition, model_core.CreatedObjectTree], bool, error) {
+func (rrd *protoRepositoryRuleDefinition[TReference, TMetadata]) Encode(path map[starlark.Value]struct{}, options *ValueEncodingOptions[TReference, TMetadata]) (model_core.PatchedMessage[*model_starlark_pb.RepositoryRule_Definition, TMetadata], bool, error) {
 	panic("rule definition was already encoded previously")
 }
 
-func (rrd *protoRepositoryRuleDefinition[TReference]) GetAttrsCheap(thread *starlark.Thread) (map[pg_label.StarlarkIdentifier]*Attr, error) {
+func (rrd *protoRepositoryRuleDefinition[TReference, TMetadata]) GetAttrsCheap(thread *starlark.Thread) (map[pg_label.StarlarkIdentifier]*Attr[TReference, TMetadata], error) {
 	return rrd.protoAttrsCache.getAttrsCheap(thread, rrd.message.Message.Attrs)
 }

@@ -23,6 +23,7 @@ import (
 	model_core "github.com/buildbarn/bonanza/pkg/model/core"
 	"github.com/buildbarn/bonanza/pkg/model/encoding"
 	model_parser "github.com/buildbarn/bonanza/pkg/model/parser"
+	model_starlark "github.com/buildbarn/bonanza/pkg/model/starlark"
 	"github.com/buildbarn/bonanza/pkg/proto/configuration/bonanza_builder"
 	model_analysis_pb "github.com/buildbarn/bonanza/pkg/proto/model/analysis"
 	model_build_pb "github.com/buildbarn/bonanza/pkg/proto/model/build"
@@ -43,6 +44,8 @@ import (
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/emptypb"
+
+	"go.starlark.net/starlark"
 )
 
 func main() {
@@ -119,6 +122,7 @@ func main() {
 			return util.StatusWrap(err, "Failed to marshal worker ID")
 		}
 
+		bzlFileBuiltins, buildFileBuiltins := model_starlark.GetBuiltins[builderReference, builderReferenceMetadata]()
 		executor := &builderExecutor{
 			objectDownloader:              objectDownloader,
 			parsedObjectPool:              parsedObjectPool,
@@ -134,6 +138,8 @@ func main() {
 				executionClientPrivateKey,
 				executionClientCertificateChain,
 			),
+			bzlFileBuiltins:   bzlFileBuiltins,
+			buildFileBuiltins: buildFileBuiltins,
 		}
 		client, err := remoteworker.NewClient(
 			remoteWorkerClient,
@@ -156,6 +162,67 @@ func main() {
 	})
 }
 
+type referenceWrappingParsedObjectReader struct {
+	base model_parser.ParsedObjectReader[object.LocalReference, model_core.Message[[]byte, object.LocalReference]]
+}
+
+func (r *referenceWrappingParsedObjectReader) ReadParsedObject(ctx context.Context, reference builderReference) (model_core.Message[[]byte, builderReference], error) {
+	m, err := r.base.ReadParsedObject(ctx, reference.GetLocalReference())
+	if err != nil {
+		return model_core.Message[[]byte, builderReference]{}, err
+	}
+
+	degree := m.OutgoingReferences.GetDegree()
+	outgoingReferences := make(object.OutgoingReferencesList[builderReference], 0, degree)
+	for i := range degree {
+		outgoingReferences = append(outgoingReferences, builderReference{
+			LocalReference: m.OutgoingReferences.GetOutgoingReference(i),
+		})
+	}
+	return model_core.NewMessage(m.Message, outgoingReferences), nil
+}
+
+type builderReference struct {
+	object.LocalReference
+}
+
+type builderReferenceMetadata struct {
+	contents *object.Contents
+	children []builderReferenceMetadata
+}
+
+func (builderReferenceMetadata) Discard()     {}
+func (builderReferenceMetadata) IsCloneable() {}
+
+func (m builderReferenceMetadata) ToObjectContentsWalker() dag.ObjectContentsWalker {
+	return m
+}
+
+func (m builderReferenceMetadata) GetContents(ctx context.Context) (*object.Contents, []dag.ObjectContentsWalker, error) {
+	if m.contents == nil {
+		return nil, nil, status.Error(codes.Internal, "Contents for this object are not available for upload, as this object was expected to already exist")
+	}
+
+	walkers := make([]dag.ObjectContentsWalker, 0, len(m.children))
+	for _, child := range m.children {
+		walkers = append(walkers, child)
+	}
+	return m.contents, walkers, nil
+}
+
+type builderObjectCapturer struct{}
+
+func (builderObjectCapturer) CaptureCreatedObject(createdObject model_core.CreatedObject[builderReferenceMetadata]) builderReferenceMetadata {
+	return builderReferenceMetadata{
+		contents: createdObject.Contents,
+		children: createdObject.Metadata,
+	}
+}
+
+func (builderObjectCapturer) CaptureExistingObject(builderReference) builderReferenceMetadata {
+	return builderReferenceMetadata{}
+}
+
 type builderExecutor struct {
 	objectDownloader              object.Downloader[object.GlobalReference]
 	parsedObjectPool              *model_parser.ParsedObjectPool
@@ -165,6 +232,8 @@ type builderExecutor struct {
 	filePool                      re_filesystem.FilePool
 	cacheDirectory                filesystem.Directory
 	executionClient               *remoteexecution.Client[*model_command_pb.Action, emptypb.Empty, *emptypb.Empty, *model_command_pb.Result]
+	bzlFileBuiltins               starlark.StringDict
+	buildFileBuiltins             starlark.StringDict
 }
 
 func (e *builderExecutor) CheckReadiness(ctx context.Context) error {
@@ -196,28 +265,36 @@ func (e *builderExecutor) Execute(ctx context.Context, action *model_build_pb.Ac
 	}
 	value, err := evaluation.FullyComputeValue(
 		ctx,
-		model_analysis.NewTypedComputer[object.LocalReference](model_analysis.NewBaseComputer(
-			model_parser.NewParsedObjectFetcher(
+		model_analysis.NewTypedComputer[builderReference](model_analysis.NewBaseComputer[builderReference](
+			model_parser.NewParsedObjectPoolIngester[builderReference](
 				e.parsedObjectPool,
-				object_namespacemapping.NewNamespaceAddingDownloader(e.objectDownloader, namespace),
+				&referenceWrappingParsedObjectReader{
+					base: model_parser.NewDownloadingParsedObjectReader(
+						object_namespacemapping.NewNamespaceAddingDownloader(e.objectDownloader, namespace),
+					),
+				},
 			),
-			buildSpecificationReference,
+			builderReference{buildSpecificationReference},
 			buildSpecificationEncoder,
+			builderObjectCapturer{},
 			e.httpClient,
 			e.filePool,
 			e.cacheDirectory,
 			e.executionClient,
 			namespace.InstanceName,
+			e.bzlFileBuiltins,
+			e.buildFileBuiltins,
 		)),
-		model_core.NewMessage[proto.Message, object.LocalReference](&model_analysis_pb.BuildResult_Key{}, object.OutgoingReferencesList[object.LocalReference]{}),
-		func(references []object.LocalReference, objectContentsWalkers []dag.ObjectContentsWalker) error {
-			for i, reference := range references {
+		model_core.NewMessage[proto.Message, builderReference](&model_analysis_pb.BuildResult_Key{}, object.OutgoingReferencesList[builderReference]{}),
+		func(localReferences []object.LocalReference, objectContentsWalkers []dag.ObjectContentsWalker) ([]builderReference, error) {
+			storedReferences := make(object.OutgoingReferencesList[builderReference], 0, len(localReferences))
+			for i, localReference := range localReferences {
 				if err := dag.UploadDAG(
 					ctx,
 					e.dagUploaderClient,
 					object.GlobalReference{
 						InstanceName:   instanceName,
-						LocalReference: reference,
+						LocalReference: localReference,
 					},
 					objectContentsWalkers[i],
 					e.objectContentsWalkerSemaphore,
@@ -225,10 +302,13 @@ func (e *builderExecutor) Execute(ctx context.Context, action *model_build_pb.Ac
 					// to upload is memory backed.
 					object.Unlimited,
 				); err != nil {
-					return fmt.Errorf("failed to store DAG with reference %e: %w", reference.String(), err)
+					return nil, fmt.Errorf("failed to store DAG with reference %e: %w", localReference.String(), err)
 				}
+				storedReferences = append(storedReferences, builderReference{
+					LocalReference: localReference,
+				})
 			}
-			return nil
+			return storedReferences, nil
 		},
 	)
 	if err != nil {

@@ -19,11 +19,6 @@ import (
 	"go.starlark.net/syntax"
 )
 
-var providersListUnpackerInto = unpack.Or([]unpack.UnpackerInto[[][]*Provider]{
-	unpack.Singleton(unpack.List(unpack.Type[*Provider]("provider"))),
-	unpack.List(unpack.List(unpack.Type[*Provider]("provider"))),
-})
-
 type allowFilesBoolUnpackerInto struct{}
 
 func (allowFilesBoolUnpackerInto) UnpackInto(thread *starlark.Thread, v starlark.Value, dst *[]string) error {
@@ -111,104 +106,8 @@ func sortAndDeduplicateSuffixes(list []string) []string {
 	)
 }
 
-var commonBuiltins = starlark.StringDict{
-	"Label": starlark.NewBuiltin(
-		"Label",
-		func(thread *starlark.Thread, b *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
-			if len(args) != 1 {
-				return nil, fmt.Errorf("%s: got %d positional arguments, want 1", b.Name(), len(args))
-			}
-			var input pg_label.ResolvedLabel
-			if err := starlark.UnpackArgs(
-				b.Name(), args, kwargs,
-				"input", unpack.Bind(thread, &input, NewLabelOrStringUnpackerInto(CurrentFilePackage(thread, 1))),
-			); err != nil {
-				return nil, err
-			}
-			return NewLabel(input), nil
-		},
-	),
-	"select": starlark.NewBuiltin(
-		"select",
-		func(thread *starlark.Thread, b *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
-			if len(args) != 1 {
-				return nil, fmt.Errorf("%s: got %d positional arguments, want 1", b.Name(), len(args))
-			}
-
-			var conditions map[pg_label.ResolvedLabel]starlark.Value
-			noMatchError := ""
-			if err := starlark.UnpackArgs(
-				b.Name(), args, kwargs,
-				"conditions", unpack.Bind(thread, &conditions, unpack.Dict(NewLabelOrStringUnpackerInto(CurrentFilePackage(thread, 1)), unpack.Any)),
-				"no_match_error?", unpack.Bind(thread, &noMatchError, unpack.String),
-			); err != nil {
-				return nil, err
-			}
-
-			// Even though select() takes the default
-			// condition as part of the dictionary, we store
-			// the default value separately. Extract it.
-			var defaultValue starlark.Value
-			for label, value := range conditions {
-				if label.GetPackagePath() == "conditions" && label.GetTargetName().String() == "default" {
-					if defaultValue != nil {
-						return nil, fmt.Errorf("%s: got multiple default conditions", b.Name())
-					}
-					delete(conditions, label)
-					defaultValue = value
-				}
-			}
-
-			return NewSelect(
-				[]SelectGroup{NewSelectGroup(conditions, defaultValue, noMatchError)},
-				/* concatenationOperator = */ 0,
-			), nil
-		},
-	),
-}
-
-var BuildFileBuiltins = starlark.StringDict{
-	"package": starlark.NewBuiltin(
-		"package",
-		func(thread *starlark.Thread, b *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
-			targetRegistrar := thread.Local(TargetRegistrarKey).(*TargetRegistrar[object.LocalReference])
-			if targetRegistrar.setDefaultInheritableAttrs {
-				return nil, fmt.Errorf("%s: function can only be invoked once", b.Name())
-			}
-			if len(targetRegistrar.targets) > 0 {
-				return nil, fmt.Errorf("%s: function can only be invoked before rule targets", b.Name())
-			}
-
-			newDefaultAttrs, err := getDefaultInheritableAttrs(
-				thread,
-				b,
-				args,
-				kwargs,
-				targetRegistrar.defaultInheritableAttrs,
-				targetRegistrar.inlinedTreeOptions,
-			)
-			if err != nil {
-				return nil, err
-			}
-
-			// We are not interested in embedding the new
-			// PatchedMessage into anything directly.
-			// Instead, we want to be able to pull copies of
-			// it when we encounter targets that don't have
-			// an explicit visibility.
-			newDefaultInheritableAttrs, metadata := newDefaultAttrs.SortAndSetReferences()
-			targetRegistrar.defaultInheritableAttrs = newDefaultInheritableAttrs
-			targetRegistrar.createDefaultInheritableAttrsMetadata = func(index int) model_core.CreatedObjectTree {
-				return metadata[index]
-			}
-			targetRegistrar.setDefaultInheritableAttrs = true
-			return starlark.None, nil
-		},
-	),
-}
-
-func labelSetting(thread *starlark.Thread, b *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple, flag bool) (starlark.Value, error) {
-	targetRegistrar := thread.Local(TargetRegistrarKey).(*TargetRegistrar[object.LocalReference])
+func labelSetting[TReference object.BasicReference, TMetadata model_core.CloneableReferenceMetadata](thread *starlark.Thread, b *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple, flag bool) (starlark.Value, error) {
+	targetRegistrar := thread.Local(TargetRegistrarKey).(*TargetRegistrar[TMetadata])
 	if targetRegistrar == nil {
 		return nil, errors.New("targets cannot be registered from within this context")
 	}
@@ -217,7 +116,7 @@ func labelSetting(thread *starlark.Thread, b *starlark.Builtin, args starlark.Tu
 	var name string
 	var buildSettingDefault string
 	var visibility []pg_label.ResolvedLabel
-	labelOrStringUnpackerInto := NewLabelOrStringUnpackerInto(currentPackage)
+	labelOrStringUnpackerInto := NewLabelOrStringUnpackerInto[TReference, TMetadata](currentPackage)
 	if err := starlark.UnpackArgs(
 		b.Name(), args, kwargs,
 		"name", unpack.Bind(thread, &name, unpack.Stringer(unpack.TargetName)),
@@ -260,10 +159,20 @@ func stringDictToStructFields(in starlark.StringDict) map[string]any {
 	return out
 }
 
-var BzlFileBuiltins starlark.StringDict
+func GetBuiltins[TReference object.BasicReference, TMetadata model_core.CloneableReferenceMetadata]() (starlark.StringDict, starlark.StringDict) {
+	providersListUnpackerInto := unpack.Or([]unpack.UnpackerInto[[][]*Provider[TReference, TMetadata]]{
+		unpack.Singleton(unpack.List(unpack.Type[*Provider[TReference, TMetadata]]("provider"))),
+		unpack.List(unpack.List(unpack.Type[*Provider[TReference, TMetadata]]("provider"))),
+	})
+	namedFunctionUnpackerInto := NewNamedFunctionUnpackerInto[TReference, TMetadata]()
+	toolchainTypeUnpackerInto := NewToolchainTypeUnpackerInto[TReference, TMetadata]()
+	transitionDefinitionUnpackerInto := NewTransitionDefinitionUnpackerInto[TReference, TMetadata]()
 
-func init() {
-	BzlFileBuiltins = starlark.StringDict{
+	noneTransitionDefinition := NewReferenceTransitionDefinition[TReference, TMetadata](&NoneTransitionReference)
+	targetTransitionDefinition := NewReferenceTransitionDefinition[TReference, TMetadata](&TargetTransitionReference)
+	unconfiguredTransitionDefinition := NewReferenceTransitionDefinition[TReference, TMetadata](&UnconfiguredTransitionReference)
+
+	bzlFileBuiltins := starlark.StringDict{
 		"analysis_test_transition": starlark.NewBuiltin(
 			"analysis_test_transition",
 			func(thread *starlark.Thread, b *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
@@ -283,39 +192,39 @@ func init() {
 				if len(args) > 1 {
 					return nil, fmt.Errorf("%s: got %d positional arguments, want at most 1", b.Name(), len(args))
 				}
-				var implementation NamedFunction
+				var implementation NamedFunction[TReference, TMetadata]
 				var attrAspects []string
-				attrs := map[pg_label.StarlarkIdentifier]*Attr{}
+				attrs := map[pg_label.StarlarkIdentifier]*Attr[TReference, TMetadata]{}
 				doc := ""
-				execGroups := map[string]*ExecGroup{}
+				execGroups := map[string]*ExecGroup[TReference, TMetadata]{}
 				var fragments []string
-				var provides []*Provider
-				var requiredAspectProviders [][]*Provider
-				var requiredProviders [][]*Provider
-				var requires []*Aspect
-				var toolchains []*ToolchainType
+				var provides []*Provider[TReference, TMetadata]
+				var requiredAspectProviders [][]*Provider[TReference, TMetadata]
+				var requiredProviders [][]*Provider[TReference, TMetadata]
+				var requires []*Aspect[TReference, TMetadata]
+				var toolchains []*ToolchainType[TReference, TMetadata]
 				if err := starlark.UnpackArgs(
 					b.Name(), args, kwargs,
 					// Positional arguments.
-					"implementation", unpack.Bind(thread, &implementation, NamedFunctionUnpackerInto),
+					"implementation", unpack.Bind(thread, &implementation, namedFunctionUnpackerInto),
 					// Keyword arguments.
 					"attr_aspects?", unpack.Bind(thread, &attrAspects, unpack.List(unpack.String)),
-					"attrs?", unpack.Bind(thread, &attrs, unpack.Dict(unpack.StarlarkIdentifier, unpack.Type[*Attr]("attr.*"))),
+					"attrs?", unpack.Bind(thread, &attrs, unpack.Dict(unpack.StarlarkIdentifier, unpack.Type[*Attr[TReference, TMetadata]]("attr.*"))),
 					"doc?", unpack.Bind(thread, &doc, unpack.String),
-					"exec_groups?", unpack.Bind(thread, &execGroups, unpack.Dict(unpack.String, unpack.Type[*ExecGroup]("exec_group"))),
+					"exec_groups?", unpack.Bind(thread, &execGroups, unpack.Dict(unpack.String, unpack.Type[*ExecGroup[TReference, TMetadata]]("exec_group"))),
 					"fragments?", unpack.Bind(thread, &fragments, unpack.List(unpack.String)),
-					"provides?", unpack.Bind(thread, &provides, unpack.List(unpack.Type[*Provider]("provider"))),
+					"provides?", unpack.Bind(thread, &provides, unpack.List(unpack.Type[*Provider[TReference, TMetadata]]("provider"))),
 					"required_aspect_providers?", unpack.Bind(thread, &requiredAspectProviders, providersListUnpackerInto),
 					"required_providers?", unpack.Bind(thread, &requiredProviders, providersListUnpackerInto),
-					"requires?", unpack.Bind(thread, &requires, unpack.List(unpack.Type[*Aspect]("Aspect"))),
-					"toolchains?", unpack.Bind(thread, &toolchains, unpack.List(ToolchainTypeUnpackerInto)),
+					"requires?", unpack.Bind(thread, &requires, unpack.List(unpack.Type[*Aspect[TReference, TMetadata]]("Aspect"))),
+					"toolchains?", unpack.Bind(thread, &toolchains, unpack.List(toolchainTypeUnpackerInto)),
 				); err != nil {
 					return nil, err
 				}
-				return NewAspect(nil, &model_starlark_pb.Aspect_Definition{}), nil
+				return NewAspect[TReference, TMetadata](nil, &model_starlark_pb.Aspect_Definition{}), nil
 			},
 		),
-		"attr": NewStructFromDict[object.LocalReference](nil, map[string]any{
+		"attr": NewStructFromDict[TReference, TMetadata](nil, map[string]any{
 			"bool": starlark.NewBuiltin(
 				"attr.bool",
 				func(thread *starlark.Thread, b *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
@@ -346,7 +255,7 @@ func init() {
 							return nil, fmt.Errorf("%s: for parameter default: %w", b.Name(), err)
 						}
 					}
-					return NewAttr(attrType, defaultValue), nil
+					return NewAttr[TReference, TMetadata](attrType, defaultValue), nil
 				},
 			),
 			"int": starlark.NewBuiltin(
@@ -381,7 +290,7 @@ func init() {
 							return nil, fmt.Errorf("%s: for parameter default: %w", b.Name(), err)
 						}
 					}
-					return NewAttr(attrType, defaultValue), nil
+					return NewAttr[TReference, TMetadata](attrType, defaultValue), nil
 				},
 			),
 			"label": starlark.NewBuiltin(
@@ -394,21 +303,21 @@ func init() {
 					var allowFiles []string
 					var allowRules []string
 					var allowSingleFile []string
-					var aspects []*Aspect
-					var cfg TransitionDefinition
+					var aspects []*Aspect[TReference, TMetadata]
+					var cfg TransitionDefinition[TReference, TMetadata]
 					var defaultValue starlark.Value = starlark.None
 					doc := ""
 					executable := false
 					var flags []string
 					mandatory := false
-					providers := [][]*Provider{{}}
+					providers := [][]*Provider[TReference, TMetadata]{{}}
 					if err := starlark.UnpackArgs(
 						b.Name(), args, kwargs,
 						"allow_files?", unpack.Bind(thread, &allowFiles, allowFilesUnpackerInto),
 						"allow_rules?", unpack.Bind(thread, &allowRules, unpack.IfNotNone(unpack.List(unpack.String))),
 						"allow_single_file?", unpack.Bind(thread, &allowSingleFile, allowFilesUnpackerInto),
-						"aspects?", unpack.Bind(thread, &aspects, unpack.List(unpack.Type[*Aspect]("aspect"))),
-						"cfg?", unpack.Bind(thread, &cfg, TransitionDefinitionUnpackerInto),
+						"aspects?", unpack.Bind(thread, &aspects, unpack.List(unpack.Type[*Aspect[TReference, TMetadata]]("aspect"))),
+						"cfg?", unpack.Bind(thread, &cfg, transitionDefinitionUnpackerInto),
 						"default?", &defaultValue,
 						"doc?", unpack.Bind(thread, &doc, unpack.String),
 						"executable?", unpack.Bind(thread, &executable, unpack.Bool),
@@ -428,21 +337,21 @@ func init() {
 						if executable {
 							return nil, errors.New("cfg must be provided when executable=True")
 						}
-						cfg = TargetTransitionDefinition
+						cfg = targetTransitionDefinition
 					}
 
-					attrType := NewLabelAttrType(!mandatory, len(allowSingleFile) > 0, executable, sortAndDeduplicateSuffixes(allowFiles), cfg)
+					attrType := NewLabelAttrType[TReference, TMetadata](!mandatory, len(allowSingleFile) > 0, executable, sortAndDeduplicateSuffixes(allowFiles), cfg)
 					if mandatory {
 						defaultValue = nil
 					} else {
 						if err := unpack.Or([]unpack.UnpackerInto[starlark.Value]{
-							unpack.Canonicalize(NamedFunctionUnpackerInto),
+							unpack.Canonicalize(namedFunctionUnpackerInto),
 							unpack.Canonicalize(attrType.GetCanonicalizer(CurrentFilePackage(thread, 1))),
 						}).UnpackInto(thread, defaultValue, &defaultValue); err != nil {
 							return nil, fmt.Errorf("%s: for parameter default: %w", b.Name(), err)
 						}
 					}
-					return NewAttr(attrType, defaultValue), nil
+					return NewAttr[TReference, TMetadata](attrType, defaultValue), nil
 				},
 			),
 			"label_keyed_string_dict": starlark.NewBuiltin(
@@ -454,20 +363,20 @@ func init() {
 
 					allowEmpty := true
 					var allowFiles []string
-					var aspects []*Aspect
-					cfg := TargetTransitionDefinition
+					var aspects []*Aspect[TReference, TMetadata]
+					cfg := targetTransitionDefinition
 					var defaultValue starlark.Value = starlark.NewDict(0)
 					doc := ""
 					mandatory := false
-					providers := [][]*Provider{{}}
+					providers := [][]*Provider[TReference, TMetadata]{{}}
 					if err := starlark.UnpackArgs(
 						b.Name(), args, kwargs,
 						// Positional arguments.
 						"allow_empty?", unpack.Bind(thread, &allowEmpty, unpack.Bool),
 						// Keyword arguments.
 						"allow_files?", unpack.Bind(thread, &allowFiles, allowFilesUnpackerInto),
-						"aspects?", unpack.Bind(thread, &aspects, unpack.List(unpack.Type[*Aspect]("aspect"))),
-						"cfg?", unpack.Bind(thread, &cfg, TransitionDefinitionUnpackerInto),
+						"aspects?", unpack.Bind(thread, &aspects, unpack.List(unpack.Type[*Aspect[TReference, TMetadata]]("aspect"))),
+						"cfg?", unpack.Bind(thread, &cfg, transitionDefinitionUnpackerInto),
 						"default?", &defaultValue,
 						"doc?", unpack.Bind(thread, &doc, unpack.String),
 						"mandatory?", unpack.Bind(thread, &mandatory, unpack.Bool),
@@ -476,18 +385,18 @@ func init() {
 						return nil, err
 					}
 
-					attrType := NewLabelKeyedStringDictAttrType(sortAndDeduplicateSuffixes(allowFiles), cfg)
+					attrType := NewLabelKeyedStringDictAttrType[TReference, TMetadata](sortAndDeduplicateSuffixes(allowFiles), cfg)
 					if mandatory {
 						defaultValue = nil
 					} else {
 						if err := unpack.Or([]unpack.UnpackerInto[starlark.Value]{
-							unpack.Canonicalize(NamedFunctionUnpackerInto),
+							unpack.Canonicalize(namedFunctionUnpackerInto),
 							unpack.Canonicalize(attrType.GetCanonicalizer(CurrentFilePackage(thread, 1))),
 						}).UnpackInto(thread, defaultValue, &defaultValue); err != nil {
 							return nil, fmt.Errorf("%s: for parameter default: %w", b.Name(), err)
 						}
 					}
-					return NewAttr(attrType, defaultValue), nil
+					return NewAttr[TReference, TMetadata](attrType, defaultValue), nil
 				},
 			),
 			"label_list": starlark.NewBuiltin(
@@ -500,13 +409,13 @@ func init() {
 					allowEmpty := true
 					var allowFiles []string
 					var allowRules []string
-					var aspects []*Aspect
-					cfg := TargetTransitionDefinition
+					var aspects []*Aspect[TReference, TMetadata]
+					cfg := targetTransitionDefinition
 					var defaultValue starlark.Value = starlark.NewList(nil)
 					doc := ""
 					var flags []string
 					mandatory := false
-					providers := [][]*Provider{{}}
+					providers := [][]*Provider[TReference, TMetadata]{{}}
 					if err := starlark.UnpackArgs(
 						b.Name(), args, kwargs,
 						// Positional arguments.
@@ -514,8 +423,8 @@ func init() {
 						// Keyword arguments.
 						"allow_files?", unpack.Bind(thread, &allowFiles, allowFilesUnpackerInto),
 						"allow_rules?", unpack.Bind(thread, &allowRules, unpack.IfNotNone(unpack.List(unpack.String))),
-						"aspects?", unpack.Bind(thread, &aspects, unpack.List(unpack.Type[*Aspect]("aspect"))),
-						"cfg?", unpack.Bind(thread, &cfg, TransitionDefinitionUnpackerInto),
+						"aspects?", unpack.Bind(thread, &aspects, unpack.List(unpack.Type[*Aspect[TReference, TMetadata]]("aspect"))),
+						"cfg?", unpack.Bind(thread, &cfg, transitionDefinitionUnpackerInto),
 						"default?", &defaultValue,
 						"doc?", unpack.Bind(thread, &doc, unpack.String),
 						"flags?", unpack.Bind(thread, &flags, unpack.List(unpack.String)),
@@ -525,18 +434,18 @@ func init() {
 						return nil, err
 					}
 
-					attrType := NewLabelListAttrType(sortAndDeduplicateSuffixes(allowFiles), cfg)
+					attrType := NewLabelListAttrType[TReference, TMetadata](sortAndDeduplicateSuffixes(allowFiles), cfg)
 					if mandatory {
 						defaultValue = nil
 					} else {
 						if err := unpack.Or([]unpack.UnpackerInto[starlark.Value]{
-							unpack.Canonicalize(NamedFunctionUnpackerInto),
+							unpack.Canonicalize(namedFunctionUnpackerInto),
 							unpack.Canonicalize(attrType.GetCanonicalizer(CurrentFilePackage(thread, 1))),
 						}).UnpackInto(thread, defaultValue, &defaultValue); err != nil {
 							return nil, fmt.Errorf("%s: for parameter default: %w", b.Name(), err)
 						}
 					}
-					return NewAttr(attrType, defaultValue), nil
+					return NewAttr[TReference, TMetadata](attrType, defaultValue), nil
 				},
 			),
 			"output": starlark.NewBuiltin(
@@ -556,7 +465,7 @@ func init() {
 						return nil, err
 					}
 
-					return NewAttr(NewOutputAttrType(""), nil), nil
+					return NewAttr[TReference, TMetadata](NewOutputAttrType[TReference, TMetadata](""), nil), nil
 				},
 			),
 			"output_list": starlark.NewBuiltin(
@@ -580,7 +489,7 @@ func init() {
 						return nil, err
 					}
 
-					return NewAttr(NewOutputListAttrType(), nil), nil
+					return NewAttr[TReference, TMetadata](NewOutputListAttrType[TReference, TMetadata](), nil), nil
 				},
 			),
 			"string": starlark.NewBuiltin(
@@ -609,13 +518,13 @@ func init() {
 						defaultValue = nil
 					} else {
 						if err := unpack.Or([]unpack.UnpackerInto[starlark.Value]{
-							unpack.Canonicalize(NamedFunctionUnpackerInto),
+							unpack.Canonicalize(namedFunctionUnpackerInto),
 							unpack.Canonicalize(attrType.GetCanonicalizer(CurrentFilePackage(thread, 1))),
 						}).UnpackInto(thread, defaultValue, &defaultValue); err != nil {
 							return nil, fmt.Errorf("%s: for parameter default: %w", b.Name(), err)
 						}
 					}
-					return NewAttr(attrType, defaultValue), nil
+					return NewAttr[TReference, TMetadata](attrType, defaultValue), nil
 				},
 			),
 			"string_dict": starlark.NewBuiltin(
@@ -646,13 +555,13 @@ func init() {
 						defaultValue = nil
 					} else {
 						if err := unpack.Or([]unpack.UnpackerInto[starlark.Value]{
-							unpack.Canonicalize(NamedFunctionUnpackerInto),
+							unpack.Canonicalize(namedFunctionUnpackerInto),
 							unpack.Canonicalize(attrType.GetCanonicalizer(CurrentFilePackage(thread, 1))),
 						}).UnpackInto(thread, defaultValue, &defaultValue); err != nil {
 							return nil, fmt.Errorf("%s: for parameter default: %w", b.Name(), err)
 						}
 					}
-					return NewAttr(attrType, defaultValue), nil
+					return NewAttr[TReference, TMetadata](attrType, defaultValue), nil
 				},
 			),
 			"string_list": starlark.NewBuiltin(
@@ -683,13 +592,13 @@ func init() {
 						defaultValue = nil
 					} else {
 						if err := unpack.Or([]unpack.UnpackerInto[starlark.Value]{
-							unpack.Canonicalize(NamedFunctionUnpackerInto),
+							unpack.Canonicalize(namedFunctionUnpackerInto),
 							unpack.Canonicalize(attrType.GetCanonicalizer(CurrentFilePackage(thread, 1))),
 						}).UnpackInto(thread, defaultValue, &defaultValue); err != nil {
 							return nil, fmt.Errorf("%s: for parameter default: %w", b.Name(), err)
 						}
 					}
-					return NewAttr(attrType, defaultValue), nil
+					return NewAttr[TReference, TMetadata](attrType, defaultValue), nil
 				},
 			),
 			"string_list_dict": starlark.NewBuiltin(
@@ -719,17 +628,17 @@ func init() {
 						defaultValue = nil
 					} else {
 						if err := unpack.Or([]unpack.UnpackerInto[starlark.Value]{
-							unpack.Canonicalize(NamedFunctionUnpackerInto),
+							unpack.Canonicalize(namedFunctionUnpackerInto),
 							unpack.Canonicalize(attrType.GetCanonicalizer(CurrentFilePackage(thread, 1))),
 						}).UnpackInto(thread, defaultValue, &defaultValue); err != nil {
 							return nil, fmt.Errorf("%s: for parameter default: %w", b.Name(), err)
 						}
 					}
-					return NewAttr(attrType, defaultValue), nil
+					return NewAttr[TReference, TMetadata](attrType, defaultValue), nil
 				},
 			),
 		}),
-		"config": NewStructFromDict[object.LocalReference](nil, map[string]any{
+		"config": NewStructFromDict[TReference, TMetadata](nil, map[string]any{
 			"bool": starlark.NewBuiltin(
 				"config.bool",
 				func(thread *starlark.Thread, b *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
@@ -757,7 +666,7 @@ func init() {
 						return nil, err
 					}
 					return NewTransition(
-						NewReferenceTransitionDefinition(
+						NewReferenceTransitionDefinition[TReference, TMetadata](
 							&model_starlark_pb.Transition_Reference{
 								Kind: &model_starlark_pb.Transition_Reference_ExecGroup{
 									ExecGroup: execGroup,
@@ -789,7 +698,7 @@ func init() {
 					if err := starlark.UnpackArgs(b.Name(), args, kwargs); err != nil {
 						return nil, err
 					}
-					return NewTransition(NoneTransitionDefinition), nil
+					return NewTransition(noneTransitionDefinition), nil
 				},
 			),
 			"string": starlark.NewBuiltin(
@@ -832,7 +741,7 @@ func init() {
 					if err := starlark.UnpackArgs(b.Name(), args, kwargs); err != nil {
 						return nil, err
 					}
-					return NewTransition(TargetTransitionDefinition), nil
+					return NewTransition(targetTransitionDefinition), nil
 				},
 			),
 			"unconfigured": starlark.NewBuiltin(
@@ -841,11 +750,11 @@ func init() {
 					if err := starlark.UnpackArgs(b.Name(), args, kwargs); err != nil {
 						return nil, err
 					}
-					return NewTransition(UnconfiguredTransitionDefinition), nil
+					return NewTransition(unconfiguredTransitionDefinition), nil
 				},
 			),
 		}),
-		"config_common": NewStructFromDict[object.LocalReference](nil, map[string]any{
+		"config_common": NewStructFromDict[TReference, TMetadata](nil, map[string]any{
 			"toolchain_type": starlark.NewBuiltin(
 				"config_common.toolchain_type",
 				func(thread *starlark.Thread, b *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
@@ -856,12 +765,12 @@ func init() {
 					mandatory := true
 					if err := starlark.UnpackArgs(
 						b.Name(), args, kwargs,
-						"name", unpack.Bind(thread, &name, NewLabelOrStringUnpackerInto(CurrentFilePackage(thread, 1))),
+						"name", unpack.Bind(thread, &name, NewLabelOrStringUnpackerInto[TReference, TMetadata](CurrentFilePackage(thread, 1))),
 						"mandatory?", unpack.Bind(thread, &mandatory, unpack.Bool),
 					); err != nil {
 						return nil, err
 					}
-					return NewToolchainType(name, mandatory), nil
+					return NewToolchainType[TReference, TMetadata](name, mandatory), nil
 				},
 			),
 		}),
@@ -885,67 +794,67 @@ func init() {
 				case "apple":
 					switch name {
 					case "xcode_config_label":
-						return NewLabel(pg_label.MustNewResolvedLabel("@@bazel_tools+//command_line_option:xcode_version_config")), nil
+						return NewLabel[TReference, TMetadata](pg_label.MustNewResolvedLabel("@@bazel_tools+//command_line_option:xcode_version_config")), nil
 					}
 				case "bazel_py":
 					switch name {
 					case "python_top":
-						return NewLabel(pg_label.MustNewResolvedLabel("@@bazel_tools+//command_line_option:python_top")), nil
+						return NewLabel[TReference, TMetadata](pg_label.MustNewResolvedLabel("@@bazel_tools+//command_line_option:python_top")), nil
 					}
 				case "coverage":
 					switch name {
 					case "output_generator":
-						return NewLabel(pg_label.MustNewResolvedLabel("@@bazel_tools+//command_line_option:coverage_output_generator")), nil
+						return NewLabel[TReference, TMetadata](pg_label.MustNewResolvedLabel("@@bazel_tools+//command_line_option:coverage_output_generator")), nil
 					}
 				case "cpp":
 					switch name {
 					case "cs_fdo_profile":
-						return NewLabel(pg_label.MustNewResolvedLabel("@@bazel_tools+//command_line_option:cs_fdo_profile")), nil
+						return NewLabel[TReference, TMetadata](pg_label.MustNewResolvedLabel("@@bazel_tools+//command_line_option:cs_fdo_profile")), nil
 					case "custom_malloc":
-						return NewLabel(pg_label.MustNewResolvedLabel("@@bazel_tools+//command_line_option:custom_malloc")), nil
+						return NewLabel[TReference, TMetadata](pg_label.MustNewResolvedLabel("@@bazel_tools+//command_line_option:custom_malloc")), nil
 					case "fdo_optimize":
-						return NewLabel(pg_label.MustNewResolvedLabel("@@bazel_tools+//command_line_option:fdo_optimize")), nil
+						return NewLabel[TReference, TMetadata](pg_label.MustNewResolvedLabel("@@bazel_tools+//command_line_option:fdo_optimize")), nil
 					case "fdo_prefetch_hints":
-						return NewLabel(pg_label.MustNewResolvedLabel("@@bazel_tools+//command_line_option:fdo_prefetch_hints")), nil
+						return NewLabel[TReference, TMetadata](pg_label.MustNewResolvedLabel("@@bazel_tools+//command_line_option:fdo_prefetch_hints")), nil
 					case "fdo_profile":
-						return NewLabel(pg_label.MustNewResolvedLabel("@@bazel_tools+//command_line_option:fdo_profile")), nil
+						return NewLabel[TReference, TMetadata](pg_label.MustNewResolvedLabel("@@bazel_tools+//command_line_option:fdo_profile")), nil
 					case "libc_top":
-						return NewLabel(pg_label.MustNewResolvedLabel("@@bazel_tools+//command_line_option:grte_top")), nil
+						return NewLabel[TReference, TMetadata](pg_label.MustNewResolvedLabel("@@bazel_tools+//command_line_option:grte_top")), nil
 					case "memprof_profile":
-						return NewLabel(pg_label.MustNewResolvedLabel("@@bazel_tools+//command_line_option:memprof_profile")), nil
+						return NewLabel[TReference, TMetadata](pg_label.MustNewResolvedLabel("@@bazel_tools+//command_line_option:memprof_profile")), nil
 					case "propeller_optimize":
-						return NewLabel(pg_label.MustNewResolvedLabel("@@bazel_tools+//command_line_option:propeller_optimize")), nil
+						return NewLabel[TReference, TMetadata](pg_label.MustNewResolvedLabel("@@bazel_tools+//command_line_option:propeller_optimize")), nil
 					case "proto_profile_path":
-						return NewLabel(pg_label.MustNewResolvedLabel("@@bazel_tools+//command_line_option:proto_profile_path")), nil
+						return NewLabel[TReference, TMetadata](pg_label.MustNewResolvedLabel("@@bazel_tools+//command_line_option:proto_profile_path")), nil
 					case "target_libc_top_DO_NOT_USE_ONLY_FOR_CC_TOOLCHAIN":
 						return starlark.None, nil
 					case "xbinary_fdo":
-						return NewLabel(pg_label.MustNewResolvedLabel("@@bazel_tools+//command_line_option:xbinary_fdo")), nil
+						return NewLabel[TReference, TMetadata](pg_label.MustNewResolvedLabel("@@bazel_tools+//command_line_option:xbinary_fdo")), nil
 					case "zipper":
 						return starlark.None, nil
 					}
 				case "java":
 					switch name {
 					case "java_toolchain_bytecode_optimizer":
-						return NewLabel(pg_label.MustNewResolvedLabel("@@bazel_tools+//command_line_option:proguard_top")), nil
+						return NewLabel[TReference, TMetadata](pg_label.MustNewResolvedLabel("@@bazel_tools+//command_line_option:proguard_top")), nil
 					case "local_java_optimization_configuration":
-						return NewLabel(pg_label.MustNewResolvedLabel("@@bazel_tools+//command_line_option:experimental_local_java_optimization_configuration")), nil
+						return NewLabel[TReference, TMetadata](pg_label.MustNewResolvedLabel("@@bazel_tools+//command_line_option:experimental_local_java_optimization_configuration")), nil
 					}
 				case "proto":
 					switch name {
 					case "proto_compiler":
-						return NewLabel(pg_label.MustNewResolvedLabel("@@bazel_tools+//command_line_option:proto_compiler")), nil
+						return NewLabel[TReference, TMetadata](pg_label.MustNewResolvedLabel("@@bazel_tools+//command_line_option:proto_compiler")), nil
 					case "proto_toolchain_for_cc":
-						return NewLabel(pg_label.MustNewResolvedLabel("@@bazel_tools+//command_line_option:proto_toolchain_for_cc")), nil
+						return NewLabel[TReference, TMetadata](pg_label.MustNewResolvedLabel("@@bazel_tools+//command_line_option:proto_toolchain_for_cc")), nil
 					case "proto_toolchain_for_java":
-						return NewLabel(pg_label.MustNewResolvedLabel("@@bazel_tools+//command_line_option:proto_toolchain_for_java")), nil
+						return NewLabel[TReference, TMetadata](pg_label.MustNewResolvedLabel("@@bazel_tools+//command_line_option:proto_toolchain_for_java")), nil
 					case "proto_toolchain_for_java_lite":
-						return NewLabel(pg_label.MustNewResolvedLabel("@@bazel_tools+//command_line_option:proto_toolchain_for_javalite")), nil
+						return NewLabel[TReference, TMetadata](pg_label.MustNewResolvedLabel("@@bazel_tools+//command_line_option:proto_toolchain_for_javalite")), nil
 					}
 				case "py":
 					switch name {
 					case "native_rules_allowlist":
-						return NewLabel(pg_label.MustNewResolvedLabel("@@bazel_tools+//command_line_option:python_native_rules_allowlist")), nil
+						return NewLabel[TReference, TMetadata](pg_label.MustNewResolvedLabel("@@bazel_tools+//command_line_option:python_native_rules_allowlist")), nil
 					}
 				}
 
@@ -960,15 +869,14 @@ func init() {
 				}
 				var direct []starlark.Value
 				order := "default"
-				// TODO: This should use TReference!
-				var transitive []*Depset[object.LocalReference]
+				var transitive []*Depset[TReference, TMetadata]
 				if err := starlark.UnpackArgs(
 					b.Name(), args, kwargs,
 					// Positional arguments.
 					"direct?", unpack.Bind(thread, &direct, unpack.List(unpack.Any)),
 					// Keyword arguments.
 					"order?", unpack.Bind(thread, &order, unpack.String),
-					"transitive?", unpack.Bind(thread, &transitive, unpack.List(unpack.Type[*Depset[object.LocalReference]]("depset"))),
+					"transitive?", unpack.Bind(thread, &transitive, unpack.List(unpack.Type[*Depset[TReference, TMetadata]]("depset"))),
 				); err != nil {
 					return nil, err
 				}
@@ -995,66 +903,66 @@ func init() {
 					return nil, fmt.Errorf("%s: got %d positional arguments, want 0", b.Name(), len(args))
 				}
 				var execCompatibleWith []pg_label.ResolvedLabel
-				var toolchains []*ToolchainType
+				var toolchains []*ToolchainType[TReference, TMetadata]
 				if err := starlark.UnpackArgs(
 					b.Name(), args, kwargs,
-					"exec_compatible_with?", unpack.Bind(thread, &execCompatibleWith, unpack.List(NewLabelOrStringUnpackerInto(CurrentFilePackage(thread, 1)))),
-					"toolchains?", unpack.Bind(thread, &toolchains, unpack.List(ToolchainTypeUnpackerInto)),
+					"exec_compatible_with?", unpack.Bind(thread, &execCompatibleWith, unpack.List(NewLabelOrStringUnpackerInto[TReference, TMetadata](CurrentFilePackage(thread, 1)))),
+					"toolchains?", unpack.Bind(thread, &toolchains, unpack.List(toolchainTypeUnpackerInto)),
 				); err != nil {
 					return nil, err
 				}
 				return NewExecGroup(execCompatibleWith, toolchains), nil
 			},
 		),
-		"json": NewStructFromDict[object.LocalReference](nil, stringDictToStructFields(json.Module.Members)),
+		"json": NewStructFromDict[TReference, TMetadata](nil, stringDictToStructFields(json.Module.Members)),
 		"module_extension": starlark.NewBuiltin(
 			"module_extension",
 			func(thread *starlark.Thread, b *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
 				if len(args) > 1 {
 					return nil, fmt.Errorf("%s: got %d positional arguments, want at most 1", b.Name(), len(args))
 				}
-				var implementation NamedFunction
+				var implementation NamedFunction[TReference, TMetadata]
 				archDependent := false
 				doc := ""
 				var environ []string
 				osDependent := false
-				var tagClasses map[pg_label.StarlarkIdentifier]*TagClass
+				var tagClasses map[pg_label.StarlarkIdentifier]*TagClass[TReference, TMetadata]
 				if err := starlark.UnpackArgs(
 					b.Name(), args, kwargs,
 					// Positional arguments.
-					"implementation", unpack.Bind(thread, &implementation, NamedFunctionUnpackerInto),
+					"implementation", unpack.Bind(thread, &implementation, namedFunctionUnpackerInto),
 					// Keyword arguments.
 					"arch_dependent?", unpack.Bind(thread, &archDependent, unpack.Bool),
 					"doc?", unpack.Bind(thread, &doc, unpack.String),
 					"environ?", unpack.Bind(thread, &environ, unpack.List(unpack.String)),
 					"os_dependent?", unpack.Bind(thread, &osDependent, unpack.Bool),
-					"tag_classes?", unpack.Bind(thread, &tagClasses, unpack.Dict(unpack.StarlarkIdentifier, unpack.Type[*TagClass]("tag_class"))),
+					"tag_classes?", unpack.Bind(thread, &tagClasses, unpack.Dict(unpack.StarlarkIdentifier, unpack.Type[*TagClass[TReference, TMetadata]]("tag_class"))),
 				); err != nil {
 					return nil, err
 				}
 				return NewModuleExtension(NewStarlarkModuleExtensionDefinition(implementation, tagClasses)), nil
 			},
 		),
-		"native": NewStructFromDict[object.LocalReference](nil, map[string]any{
+		"native": NewStructFromDict[TReference, TMetadata](nil, map[string]any{
 			"alias": starlark.NewBuiltin(
 				"native.alias",
 				func(thread *starlark.Thread, b *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
-					targetRegistrar := thread.Local(TargetRegistrarKey).(*TargetRegistrar[object.LocalReference])
+					targetRegistrar := thread.Local(TargetRegistrarKey).(*TargetRegistrar[TMetadata])
 					if targetRegistrar == nil {
 						return nil, errors.New("targets cannot be registered from within this context")
 					}
 					currentPackage := thread.Local(CanonicalPackageKey).(pg_label.CanonicalPackage)
 
 					var name string
-					var actual *Select
+					var actual *Select[TReference, TMetadata]
 					deprecation := ""
 					var tags []string
 					var visibility []pg_label.ResolvedLabel
-					labelOrStringUnpackerInto := NewLabelOrStringUnpackerInto(currentPackage)
+					labelOrStringUnpackerInto := NewLabelOrStringUnpackerInto[TReference, TMetadata](currentPackage)
 					if err := starlark.UnpackArgs(
 						b.Name(), args, kwargs,
 						"name", unpack.Bind(thread, &name, unpack.Stringer(unpack.TargetName)),
-						"actual", unpack.Bind(thread, &actual, NewSelectUnpackerInto(labelOrStringUnpackerInto)),
+						"actual", unpack.Bind(thread, &actual, NewSelectUnpackerInto[TReference, TMetadata](labelOrStringUnpackerInto)),
 						"deprecation?", unpack.Bind(thread, &deprecation, unpack.String),
 						"tags?", unpack.Bind(thread, &tags, unpack.List(unpack.String)),
 						"visibility?", unpack.Bind(thread, &visibility, unpack.IfNotNone(unpack.List(labelOrStringUnpackerInto))),
@@ -1062,7 +970,7 @@ func init() {
 						return nil, err
 					}
 
-					patcher := model_core.NewReferenceMessagePatcher[model_core.CreatedObjectTree]()
+					patcher := model_core.NewReferenceMessagePatcher[TMetadata]()
 					var visibilityPackageGroup *model_starlark_pb.PackageGroup
 					if len(visibility) == 0 {
 						// Unlike rule targets, exports_files()
@@ -1081,7 +989,7 @@ func init() {
 						visibilityPackageGroup = m.Message
 					}
 
-					valueEncodingOptions := thread.Local(ValueEncodingOptionsKey).(*ValueEncodingOptions)
+					valueEncodingOptions := thread.Local(ValueEncodingOptionsKey).(*ValueEncodingOptions[TReference, TMetadata])
 					actualGroups, _, err := actual.EncodeGroups(
 						/* path = */ map[starlark.Value]struct{}{},
 						valueEncodingOptions,
@@ -1142,7 +1050,7 @@ func init() {
 			"exports_files": starlark.NewBuiltin(
 				"native.exports_files",
 				func(thread *starlark.Thread, b *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
-					targetRegistrar := thread.Local(TargetRegistrarKey).(*TargetRegistrar[object.LocalReference])
+					targetRegistrar := thread.Local(TargetRegistrarKey).(*TargetRegistrar[TMetadata])
 					if targetRegistrar == nil {
 						return nil, errors.New("targets cannot be registered from within this context")
 					}
@@ -1158,7 +1066,7 @@ func init() {
 						// Positional arguments.
 						"srcs", unpack.Bind(thread, &srcs, unpack.List(unpack.Stringer(unpack.TargetName))),
 						// Keyword arguments.
-						"visibility?", unpack.Bind(thread, &visibility, unpack.List(NewLabelOrStringUnpackerInto(currentPackage))),
+						"visibility?", unpack.Bind(thread, &visibility, unpack.List(NewLabelOrStringUnpackerInto[TReference, TMetadata](currentPackage))),
 					); err != nil {
 						return nil, err
 					}
@@ -1231,19 +1139,19 @@ func init() {
 			"label_flag": starlark.NewBuiltin(
 				"native.label_flag",
 				func(thread *starlark.Thread, b *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
-					return labelSetting(thread, b, args, kwargs, true)
+					return labelSetting[TReference, TMetadata](thread, b, args, kwargs, true)
 				},
 			),
 			"label_setting": starlark.NewBuiltin(
 				"native.label_setting",
 				func(thread *starlark.Thread, b *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
-					return labelSetting(thread, b, args, kwargs, false)
+					return labelSetting[TReference, TMetadata](thread, b, args, kwargs, false)
 				},
 			),
 			"package_group": starlark.NewBuiltin(
 				"native.package_group",
 				func(thread *starlark.Thread, b *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
-					targetRegistrar := thread.Local(TargetRegistrarKey).(*TargetRegistrar[object.LocalReference])
+					targetRegistrar := thread.Local(TargetRegistrarKey).(*TargetRegistrar[TMetadata])
 					if targetRegistrar == nil {
 						return nil, errors.New("targets cannot be registered from within this context")
 					}
@@ -1256,7 +1164,7 @@ func init() {
 						b.Name(), args, kwargs,
 						"name", unpack.Bind(thread, &name, unpack.Stringer(unpack.TargetName)),
 						"packages?", unpack.Bind(thread, &packages, unpack.List(unpack.String)),
-						"includes?", unpack.Bind(thread, &includes, unpack.List(unpack.Stringer(NewLabelOrStringUnpackerInto(currentPackage)))),
+						"includes?", unpack.Bind(thread, &includes, unpack.List(unpack.Stringer(NewLabelOrStringUnpackerInto[TReference, TMetadata](currentPackage)))),
 					); err != nil {
 						return nil, err
 					}
@@ -1264,7 +1172,7 @@ func init() {
 					slices.Sort(includes)
 					return starlark.None, targetRegistrar.registerExplicitTarget(
 						name,
-						model_core.NewSimplePatchedMessage[model_core.CreatedObjectTree](
+						model_core.NewSimplePatchedMessage[TMetadata](
 							&model_starlark_pb.Target_Definition{
 								Kind: &model_starlark_pb.Target_Definition_PackageGroup{
 									PackageGroup: &model_starlark_pb.PackageGroup{
@@ -1311,11 +1219,11 @@ func init() {
 					var input pg_label.ResolvedLabel
 					if err := starlark.UnpackArgs(
 						b.Name(), args, kwargs,
-						"input", unpack.Bind(thread, &input, NewLabelOrStringUnpackerInto(canonicalPackage.(pg_label.CanonicalPackage))),
+						"input", unpack.Bind(thread, &input, NewLabelOrStringUnpackerInto[TReference, TMetadata](canonicalPackage.(pg_label.CanonicalPackage))),
 					); err != nil {
 						return nil, err
 					}
-					return NewLabel(input), nil
+					return NewLabel[TReference, TMetadata](input), nil
 				},
 			),
 			"starlark_doc_extract": starlark.NewBuiltin(
@@ -1334,7 +1242,7 @@ func init() {
 				doc := ""
 				dictLike := false
 				var fields any
-				var init *NamedFunction
+				var init *NamedFunction[TReference, TMetadata]
 				if err := starlark.UnpackArgs(
 					b.Name(), args, kwargs,
 					// Positional arguments.
@@ -1345,7 +1253,7 @@ func init() {
 						unpack.Decay(unpack.Dict(unpack.String, unpack.String)),
 						unpack.Decay(unpack.List(unpack.String)),
 					}))),
-					"init?", unpack.Bind(thread, &init, unpack.Pointer(NamedFunctionUnpackerInto)),
+					"init?", unpack.Bind(thread, &init, unpack.Pointer(namedFunctionUnpackerInto)),
 				); err != nil {
 					return nil, err
 				}
@@ -1362,7 +1270,7 @@ func init() {
 				}
 				sort.Strings(fieldNames)
 
-				provider := NewProvider(
+				provider := NewProvider[TReference](
 					NewProviderInstanceProperties(nil, dictLike),
 					slices.Compact(fieldNames),
 					init,
@@ -1383,8 +1291,8 @@ func init() {
 				if len(args) > 1 {
 					return nil, fmt.Errorf("%s: got %d positional arguments, want at most 1", b.Name(), len(args))
 				}
-				var implementation NamedFunction
-				attrs := map[pg_label.StarlarkIdentifier]*Attr{}
+				var implementation NamedFunction[TReference, TMetadata]
+				attrs := map[pg_label.StarlarkIdentifier]*Attr[TReference, TMetadata]{}
 				configure := false
 				doc := ""
 				var environ []string
@@ -1392,9 +1300,9 @@ func init() {
 				if err := starlark.UnpackArgs(
 					b.Name(), args, kwargs,
 					// Positional arguments.
-					"implementation", unpack.Bind(thread, &implementation, NamedFunctionUnpackerInto),
+					"implementation", unpack.Bind(thread, &implementation, namedFunctionUnpackerInto),
 					// Keyword arguments.
-					"attrs?", unpack.Bind(thread, &attrs, unpack.Dict(unpack.StarlarkIdentifier, unpack.Type[*Attr]("attr.*"))),
+					"attrs?", unpack.Bind(thread, &attrs, unpack.Dict(unpack.StarlarkIdentifier, unpack.Type[*Attr[TReference, TMetadata]]("attr.*"))),
 					"configure?", unpack.Bind(thread, &configure, unpack.Bool),
 					"doc?", unpack.Bind(thread, &doc, unpack.String),
 					"environ?", unpack.Bind(thread, &environ, unpack.List(unpack.String)),
@@ -1411,42 +1319,42 @@ func init() {
 				if len(args) > 1 {
 					return nil, fmt.Errorf("%s: got %d positional arguments, want at most 1", b.Name(), len(args))
 				}
-				var implementation NamedFunction
-				attrs := map[pg_label.StarlarkIdentifier]*Attr{}
+				var implementation NamedFunction[TReference, TMetadata]
+				attrs := map[pg_label.StarlarkIdentifier]*Attr[TReference, TMetadata]{}
 				var buildSetting *BuildSetting
-				var cfg *Transition
+				var cfg *Transition[TReference, TMetadata]
 				doc := ""
-				execGroups := map[string]*ExecGroup{}
+				execGroups := map[string]*ExecGroup[TReference, TMetadata]{}
 				executable := false
 				var execCompatibleWith []pg_label.ResolvedLabel
 				var fragments []string
 				var hostFragments []string
-				var initializer *NamedFunction
+				var initializer *NamedFunction[TReference, TMetadata]
 				outputs := map[pg_label.StarlarkIdentifier]string{}
-				var provides []*Provider
-				var subrules []*Subrule
+				var provides []*Provider[TReference, TMetadata]
+				var subrules []*Subrule[TReference, TMetadata]
 				test := false
-				var toolchains []*ToolchainType
+				var toolchains []*ToolchainType[TReference, TMetadata]
 				if err := starlark.UnpackArgs(
 					b.Name(), args, kwargs,
 					// Positional arguments.
-					"implementation", unpack.Bind(thread, &implementation, NamedFunctionUnpackerInto),
+					"implementation", unpack.Bind(thread, &implementation, namedFunctionUnpackerInto),
 					// Keyword arguments.
-					"attrs?", unpack.Bind(thread, &attrs, unpack.Dict(unpack.StarlarkIdentifier, unpack.Type[*Attr]("attr.*"))),
+					"attrs?", unpack.Bind(thread, &attrs, unpack.Dict(unpack.StarlarkIdentifier, unpack.Type[*Attr[TReference, TMetadata]]("attr.*"))),
 					"build_setting?", unpack.Bind(thread, &buildSetting, unpack.IfNotNone(unpack.Type[*BuildSetting]("config.*"))),
-					"cfg?", unpack.Bind(thread, &cfg, unpack.IfNotNone(unpack.Type[*Transition]("transition"))),
+					"cfg?", unpack.Bind(thread, &cfg, unpack.IfNotNone(unpack.Type[*Transition[TReference, TMetadata]]("transition"))),
 					"doc?", unpack.Bind(thread, &doc, unpack.String),
 					"executable?", unpack.Bind(thread, &executable, unpack.Bool),
-					"exec_compatible_with?", unpack.Bind(thread, &execCompatibleWith, unpack.List(NewLabelOrStringUnpackerInto(CurrentFilePackage(thread, 1)))),
-					"exec_groups?", unpack.Bind(thread, &execGroups, unpack.Dict(unpack.String, unpack.Type[*ExecGroup]("exec_group"))),
+					"exec_compatible_with?", unpack.Bind(thread, &execCompatibleWith, unpack.List(NewLabelOrStringUnpackerInto[TReference, TMetadata](CurrentFilePackage(thread, 1)))),
+					"exec_groups?", unpack.Bind(thread, &execGroups, unpack.Dict(unpack.String, unpack.Type[*ExecGroup[TReference, TMetadata]]("exec_group"))),
 					"fragments?", unpack.Bind(thread, &fragments, unpack.List(unpack.String)),
 					"host_fragments?", unpack.Bind(thread, &hostFragments, unpack.List(unpack.String)),
-					"initializer?", unpack.Bind(thread, &initializer, unpack.IfNotNone(unpack.Pointer(NamedFunctionUnpackerInto))),
+					"initializer?", unpack.Bind(thread, &initializer, unpack.IfNotNone(unpack.Pointer(namedFunctionUnpackerInto))),
 					"outputs?", unpack.Bind(thread, &outputs, unpack.Dict(unpack.StarlarkIdentifier, unpack.String)),
-					"provides?", unpack.Bind(thread, &provides, unpack.List(unpack.Type[*Provider]("provider"))),
-					"subrules?", unpack.Bind(thread, &subrules, unpack.List(unpack.Type[*Subrule]("subrule"))),
+					"provides?", unpack.Bind(thread, &provides, unpack.List(unpack.Type[*Provider[TReference, TMetadata]]("provider"))),
+					"subrules?", unpack.Bind(thread, &subrules, unpack.List(unpack.Type[*Subrule[TReference, TMetadata]]("subrule"))),
 					"test?", unpack.Bind(thread, &test, unpack.Bool),
-					"toolchains?", unpack.Bind(thread, &toolchains, unpack.List(ToolchainTypeUnpackerInto)),
+					"toolchains?", unpack.Bind(thread, &toolchains, unpack.List(toolchainTypeUnpackerInto)),
 				); err != nil {
 					return nil, err
 				}
@@ -1463,10 +1371,10 @@ func init() {
 					if _, ok := attrs[name]; ok {
 						return nil, fmt.Errorf("predeclared output %#v has the same name as existing attr", name)
 					}
-					attrs[name] = NewAttr(NewOutputAttrType(template), starlark.String(template))
+					attrs[name] = NewAttr[TReference, TMetadata](NewOutputAttrType[TReference, TMetadata](template), starlark.String(template))
 				}
 
-				return NewRule[object.LocalReference](nil, NewStarlarkRuleDefinition(
+				return NewRule(nil, NewStarlarkRuleDefinition(
 					attrs,
 					buildSetting,
 					cfg,
@@ -1489,7 +1397,7 @@ func init() {
 				for _, kwarg := range kwargs {
 					entries[string(kwarg[0].(starlark.String))] = kwarg[1]
 				}
-				return NewStructFromDict[object.LocalReference](nil, entries), nil
+				return NewStructFromDict[TReference, TMetadata](nil, entries), nil
 			},
 		),
 		"subrule": starlark.NewBuiltin(
@@ -1498,20 +1406,20 @@ func init() {
 				if len(args) > 1 {
 					return nil, fmt.Errorf("%s: got %d positional arguments, want at most 1", b.Name(), len(args))
 				}
-				var implementation NamedFunction
-				attrs := map[pg_label.StarlarkIdentifier]*Attr{}
+				var implementation NamedFunction[TReference, TMetadata]
+				attrs := map[pg_label.StarlarkIdentifier]*Attr[TReference, TMetadata]{}
 				var fragments []string
-				var subrules []*Subrule
-				var toolchains []*ToolchainType
+				var subrules []*Subrule[TReference, TMetadata]
+				var toolchains []*ToolchainType[TReference, TMetadata]
 				if err := starlark.UnpackArgs(
 					b.Name(), args, kwargs,
 					// Positional arguments.
-					"implementation", unpack.Bind(thread, &implementation, NamedFunctionUnpackerInto),
+					"implementation", unpack.Bind(thread, &implementation, namedFunctionUnpackerInto),
 					// Keyword arguments.
-					"attrs?", unpack.Bind(thread, &attrs, unpack.Dict(unpack.StarlarkIdentifier, unpack.Type[*Attr]("attr.*"))),
+					"attrs?", unpack.Bind(thread, &attrs, unpack.Dict(unpack.StarlarkIdentifier, unpack.Type[*Attr[TReference, TMetadata]]("attr.*"))),
 					"fragments?", unpack.Bind(thread, &fragments, unpack.List(unpack.String)),
-					"subrules?", unpack.Bind(thread, &subrules, unpack.List(unpack.Type[*Subrule]("subrule"))),
-					"toolchains?", unpack.Bind(thread, &toolchains, unpack.List(ToolchainTypeUnpackerInto)),
+					"subrules?", unpack.Bind(thread, &subrules, unpack.List(unpack.Type[*Subrule[TReference, TMetadata]]("subrule"))),
+					"toolchains?", unpack.Bind(thread, &toolchains, unpack.List(toolchainTypeUnpackerInto)),
 				); err != nil {
 					return nil, err
 				}
@@ -1529,18 +1437,18 @@ func init() {
 				if len(args) > 1 {
 					return nil, fmt.Errorf("%s: got %d positional arguments, want at most 1", b.Name(), len(args))
 				}
-				attrs := map[pg_label.StarlarkIdentifier]*Attr{}
+				attrs := map[pg_label.StarlarkIdentifier]*Attr[TReference, TMetadata]{}
 				doc := ""
 				if err := starlark.UnpackArgs(
 					b.Name(), args, kwargs,
 					// Positional arguments.
-					"attrs?", unpack.Bind(thread, &attrs, unpack.Dict(unpack.StarlarkIdentifier, unpack.Type[*Attr]("attr.*"))),
+					"attrs?", unpack.Bind(thread, &attrs, unpack.Dict(unpack.StarlarkIdentifier, unpack.Type[*Attr[TReference, TMetadata]]("attr.*"))),
 					// Keyword arguments.
 					"doc?", unpack.Bind(thread, &doc, unpack.String),
 				); err != nil {
 					return nil, err
 				}
-				return NewTagClass(NewStarlarkTagClassDefinition(attrs)), nil
+				return NewTagClass(NewStarlarkTagClassDefinition[TReference, TMetadata](attrs)), nil
 			},
 		),
 		"transition": starlark.NewBuiltin(
@@ -1549,12 +1457,12 @@ func init() {
 				if len(args) > 0 {
 					return nil, fmt.Errorf("%s: got %d positional arguments, want 0", b.Name(), len(args))
 				}
-				var implementation NamedFunction
+				var implementation NamedFunction[TReference, TMetadata]
 				var inputs []string
 				var outputs []string
 				if err := starlark.UnpackArgs(
 					b.Name(), args, kwargs,
-					"implementation", unpack.Bind(thread, &implementation, NamedFunctionUnpackerInto),
+					"implementation", unpack.Bind(thread, &implementation, namedFunctionUnpackerInto),
 					// Don't convert inputs and outputs to labels.
 					// The provided strings should not be
 					// normalized, as they need to become the keys
@@ -1585,11 +1493,95 @@ func init() {
 			},
 		),
 	}
-}
+	buildFileBuiltins := starlark.StringDict{
+		"package": starlark.NewBuiltin(
+			"package",
+			func(thread *starlark.Thread, b *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
+				targetRegistrar := thread.Local(TargetRegistrarKey).(*TargetRegistrar[TMetadata])
+				if targetRegistrar.setDefaultInheritableAttrs {
+					return nil, fmt.Errorf("%s: function can only be invoked once", b.Name())
+				}
+				if len(targetRegistrar.targets) > 0 {
+					return nil, fmt.Errorf("%s: function can only be invoked before rule targets", b.Name())
+				}
 
-func init() {
-	for name, builtin := range commonBuiltins {
-		BuildFileBuiltins[name] = builtin
-		BzlFileBuiltins[name] = builtin
+				newDefaultAttrs, err := getDefaultInheritableAttrs[TMetadata](
+					thread,
+					b,
+					args,
+					kwargs,
+					targetRegistrar.defaultInheritableAttrs,
+					targetRegistrar.inlinedTreeOptions,
+					targetRegistrar.objectCapturer,
+				)
+				if err != nil {
+					return nil, err
+				}
+
+				targetRegistrar.defaultInheritableAttrs = model_core.PatchedMessageToCloneable(newDefaultAttrs)
+				targetRegistrar.setDefaultInheritableAttrs = true
+				return starlark.None, nil
+			},
+		),
 	}
+
+	for k, v := range (starlark.StringDict{
+		"Label": starlark.NewBuiltin(
+			"Label",
+			func(thread *starlark.Thread, b *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
+				if len(args) != 1 {
+					return nil, fmt.Errorf("%s: got %d positional arguments, want 1", b.Name(), len(args))
+				}
+				var input pg_label.ResolvedLabel
+				if err := starlark.UnpackArgs(
+					b.Name(), args, kwargs,
+					"input", unpack.Bind(thread, &input, NewLabelOrStringUnpackerInto[TReference, TMetadata](CurrentFilePackage(thread, 1))),
+				); err != nil {
+					return nil, err
+				}
+				return NewLabel[TReference, TMetadata](input), nil
+			},
+		),
+		"select": starlark.NewBuiltin(
+			"select",
+			func(thread *starlark.Thread, b *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
+				if len(args) != 1 {
+					return nil, fmt.Errorf("%s: got %d positional arguments, want 1", b.Name(), len(args))
+				}
+
+				var conditions map[pg_label.ResolvedLabel]starlark.Value
+				noMatchError := ""
+				if err := starlark.UnpackArgs(
+					b.Name(), args, kwargs,
+					"conditions", unpack.Bind(thread, &conditions, unpack.Dict(NewLabelOrStringUnpackerInto[TReference, TMetadata](CurrentFilePackage(thread, 1)), unpack.Any)),
+					"no_match_error?", unpack.Bind(thread, &noMatchError, unpack.String),
+				); err != nil {
+					return nil, err
+				}
+
+				// Even though select() takes the default
+				// condition as part of the dictionary, we store
+				// the default value separately. Extract it.
+				var defaultValue starlark.Value
+				for label, value := range conditions {
+					if label.GetPackagePath() == "conditions" && label.GetTargetName().String() == "default" {
+						if defaultValue != nil {
+							return nil, fmt.Errorf("%s: got multiple default conditions", b.Name())
+						}
+						delete(conditions, label)
+						defaultValue = value
+					}
+				}
+
+				return NewSelect[TReference, TMetadata](
+					[]SelectGroup{NewSelectGroup(conditions, defaultValue, noMatchError)},
+					/* concatenationOperator = */ 0,
+				), nil
+			},
+		),
+	}) {
+		bzlFileBuiltins[k] = v
+		buildFileBuiltins[k] = v
+	}
+	return bzlFileBuiltins, buildFileBuiltins
 }

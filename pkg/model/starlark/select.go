@@ -11,6 +11,7 @@ import (
 	model_core "github.com/buildbarn/bonanza/pkg/model/core"
 	model_starlark_pb "github.com/buildbarn/bonanza/pkg/proto/model/starlark"
 	"github.com/buildbarn/bonanza/pkg/starlark/unpack"
+	"github.com/buildbarn/bonanza/pkg/storage/object"
 
 	"go.starlark.net/starlark"
 	"go.starlark.net/syntax"
@@ -30,51 +31,51 @@ func NewSelectGroup(conditions map[pg_label.ResolvedLabel]starlark.Value, defaul
 	}
 }
 
-type Select struct {
+type Select[TReference any, TMetadata model_core.CloneableReferenceMetadata] struct {
 	groups                []SelectGroup
 	concatenationOperator syntax.Token
 }
 
 var (
-	_ EncodableValue     = &Select{}
-	_ HasLabels          = &Select{}
-	_ starlark.HasBinary = &Select{}
-	_ starlark.Value     = &Select{}
+	_ EncodableValue[object.LocalReference, model_core.CloneableReferenceMetadata] = (*Select[object.LocalReference, model_core.CloneableReferenceMetadata])(nil)
+	_ HasLabels                                                                    = (*Select[object.LocalReference, model_core.CloneableReferenceMetadata])(nil)
+	_ starlark.HasBinary                                                           = (*Select[object.LocalReference, model_core.CloneableReferenceMetadata])(nil)
+	_ starlark.Value                                                               = (*Select[object.LocalReference, model_core.CloneableReferenceMetadata])(nil)
 )
 
-func NewSelect(groups []SelectGroup, concatenationOperator syntax.Token) *Select {
-	return &Select{
+func NewSelect[TReference any, TMetadata model_core.CloneableReferenceMetadata](groups []SelectGroup, concatenationOperator syntax.Token) *Select[TReference, TMetadata] {
+	return &Select[TReference, TMetadata]{
 		groups:                groups,
 		concatenationOperator: concatenationOperator,
 	}
 }
 
-func (Select) String() string {
+func (Select[TReference, TMetadata]) String() string {
 	return "<select>"
 }
 
-func (Select) Type() string {
+func (Select[TReference, TMetadata]) Type() string {
 	return "select"
 }
 
-func (Select) Freeze() {}
+func (Select[TReference, TMetadata]) Freeze() {}
 
-func (Select) Truth() starlark.Bool {
+func (Select[TReference, TMetadata]) Truth() starlark.Bool {
 	return starlark.True
 }
 
-func (Select) Hash(thread *starlark.Thread) (uint32, error) {
+func (Select[TReference, TMetadata]) Hash(thread *starlark.Thread) (uint32, error) {
 	return 0, errors.New("select cannot be hashed")
 }
 
-func (s *Select) validateConcatenationOperator(op syntax.Token) error {
+func (s *Select[TReference, TMetadata]) validateConcatenationOperator(op syntax.Token) error {
 	if s.concatenationOperator != 0 && op != s.concatenationOperator {
 		return fmt.Errorf("cannot perform select %s select %s select", s.concatenationOperator, op)
 	}
 	return nil
 }
 
-func (s *Select) Binary(thread *starlark.Thread, op syntax.Token, y starlark.Value, side starlark.Side) (starlark.Value, error) {
+func (s *Select[TReference, TMetadata]) Binary(thread *starlark.Thread, op syntax.Token, y starlark.Value, side starlark.Side) (starlark.Value, error) {
 	if op != syntax.PLUS && op != syntax.PIPE {
 		return nil, errors.New("select only supports operators + and |")
 	}
@@ -83,7 +84,7 @@ func (s *Select) Binary(thread *starlark.Thread, op syntax.Token, y starlark.Val
 	}
 	var newGroups []SelectGroup
 	switch other := y.(type) {
-	case *Select:
+	case *Select[TReference, TMetadata]:
 		if err := other.validateConcatenationOperator(op); err != nil {
 			return nil, err
 		}
@@ -100,15 +101,15 @@ func (s *Select) Binary(thread *starlark.Thread, op syntax.Token, y starlark.Val
 			newGroups = append([]SelectGroup{newGroup}, s.groups...)
 		}
 	}
-	return &Select{
+	return &Select[TReference, TMetadata]{
 		groups:                newGroups,
 		concatenationOperator: op,
 	}, nil
 }
 
-func (s *Select) EncodeGroups(path map[starlark.Value]struct{}, options *ValueEncodingOptions) (model_core.PatchedMessage[[]*model_starlark_pb.Select_Group, model_core.CreatedObjectTree], bool, error) {
+func (s *Select[TReference, TMetadata]) EncodeGroups(path map[starlark.Value]struct{}, options *ValueEncodingOptions[TReference, TMetadata]) (model_core.PatchedMessage[[]*model_starlark_pb.Select_Group, TMetadata], bool, error) {
 	groups := make([]*model_starlark_pb.Select_Group, 0, len(s.groups))
-	patcher := model_core.NewReferenceMessagePatcher[model_core.CreatedObjectTree]()
+	patcher := model_core.NewReferenceMessagePatcher[TMetadata]()
 	needsCode := false
 
 	for _, group := range s.groups {
@@ -120,9 +121,9 @@ func (s *Select) EncodeGroups(path map[starlark.Value]struct{}, options *ValueEn
 			maps.Keys(group.conditions),
 			func(a, b pg_label.ResolvedLabel) int { return strings.Compare(a.String(), b.String()) },
 		) {
-			value, valueNeedsCode, err := EncodeValue(group.conditions[condition], path, nil, options)
+			value, valueNeedsCode, err := EncodeValue[TReference, TMetadata](group.conditions[condition], path, nil, options)
 			if err != nil {
-				return model_core.PatchedMessage[[]*model_starlark_pb.Select_Group, model_core.CreatedObjectTree]{}, false, err
+				return model_core.PatchedMessage[[]*model_starlark_pb.Select_Group, TMetadata]{}, false, err
 			}
 
 			encodedGroup.Conditions = append(encodedGroup.Conditions, &model_starlark_pb.Select_Condition{
@@ -134,9 +135,9 @@ func (s *Select) EncodeGroups(path map[starlark.Value]struct{}, options *ValueEn
 		}
 
 		if group.defaultValue != nil {
-			value, valueNeedsCode, err := EncodeValue(group.defaultValue, path, nil, options)
+			value, valueNeedsCode, err := EncodeValue[TReference, TMetadata](group.defaultValue, path, nil, options)
 			if err != nil {
-				return model_core.PatchedMessage[[]*model_starlark_pb.Select_Group, model_core.CreatedObjectTree]{}, false, err
+				return model_core.PatchedMessage[[]*model_starlark_pb.Select_Group, TMetadata]{}, false, err
 			}
 			needsCode = needsCode || valueNeedsCode
 
@@ -156,10 +157,10 @@ func (s *Select) EncodeGroups(path map[starlark.Value]struct{}, options *ValueEn
 	return model_core.NewPatchedMessage(groups, patcher), needsCode, nil
 }
 
-func (s *Select) EncodeValue(path map[starlark.Value]struct{}, currentIdentifier *pg_label.CanonicalStarlarkIdentifier, options *ValueEncodingOptions) (model_core.PatchedMessage[*model_starlark_pb.Value, model_core.CreatedObjectTree], bool, error) {
+func (s *Select[TReference, TMetadata]) EncodeValue(path map[starlark.Value]struct{}, currentIdentifier *pg_label.CanonicalStarlarkIdentifier, options *ValueEncodingOptions[TReference, TMetadata]) (model_core.PatchedMessage[*model_starlark_pb.Value, TMetadata], bool, error) {
 	groups, needsCode, err := s.EncodeGroups(path, options)
 	if err != nil {
-		return model_core.PatchedMessage[*model_starlark_pb.Value, model_core.CreatedObjectTree]{}, false, err
+		return model_core.PatchedMessage[*model_starlark_pb.Value, TMetadata]{}, false, err
 	}
 
 	concatenationOperator := model_starlark_pb.Select_NONE
@@ -183,7 +184,7 @@ func (s *Select) EncodeValue(path map[starlark.Value]struct{}, currentIdentifier
 	), needsCode, nil
 }
 
-func (s *Select) VisitLabels(thread *starlark.Thread, path map[starlark.Value]struct{}, visitor func(pg_label.ResolvedLabel) error) error {
+func (s *Select[TReference, TMetadata]) VisitLabels(thread *starlark.Thread, path map[starlark.Value]struct{}, visitor func(pg_label.ResolvedLabel) error) error {
 	for _, sg := range s.groups {
 		for conditionIdentifier, conditionValue := range sg.conditions {
 			visitor(conditionIdentifier)
@@ -200,19 +201,19 @@ func (s *Select) VisitLabels(thread *starlark.Thread, path map[starlark.Value]st
 	return nil
 }
 
-type selectUnpackerInto struct {
+type selectUnpackerInto[TReference any, TMetadata model_core.CloneableReferenceMetadata] struct {
 	valueUnpackerInto unpack.Canonicalizer
 }
 
-func NewSelectUnpackerInto(valueUnpackerInto unpack.Canonicalizer) unpack.UnpackerInto[*Select] {
-	return &selectUnpackerInto{
+func NewSelectUnpackerInto[TReference any, TMetadata model_core.CloneableReferenceMetadata](valueUnpackerInto unpack.Canonicalizer) unpack.UnpackerInto[*Select[TReference, TMetadata]] {
+	return &selectUnpackerInto[TReference, TMetadata]{
 		valueUnpackerInto: valueUnpackerInto,
 	}
 }
 
-func (ui *selectUnpackerInto) UnpackInto(thread *starlark.Thread, v starlark.Value, dst **Select) error {
+func (ui *selectUnpackerInto[TReference, TMetadata]) UnpackInto(thread *starlark.Thread, v starlark.Value, dst **Select[TReference, TMetadata]) error {
 	switch typedV := v.(type) {
-	case *Select:
+	case *Select[TReference, TMetadata]:
 		if actual := typedV.concatenationOperator; actual != 0 {
 			if expected := ui.valueUnpackerInto.GetConcatenationOperator(); actual != expected {
 				if expected == 0 {
@@ -244,7 +245,7 @@ func (ui *selectUnpackerInto) UnpackInto(thread *starlark.Thread, v starlark.Val
 
 			canonicalizedGroups = append(canonicalizedGroups, NewSelectGroup(canonicalizedConditions, defaultValue, group.noMatchError))
 		}
-		*dst = &Select{
+		*dst = &Select[TReference, TMetadata]{
 			groups:                canonicalizedGroups,
 			concatenationOperator: typedV.concatenationOperator,
 		}
@@ -253,21 +254,21 @@ func (ui *selectUnpackerInto) UnpackInto(thread *starlark.Thread, v starlark.Val
 		if err != nil {
 			return err
 		}
-		*dst = &Select{
+		*dst = &Select[TReference, TMetadata]{
 			groups: []SelectGroup{NewSelectGroup(nil, canonicalValue, "")},
 		}
 	}
 	return nil
 }
 
-func (ui *selectUnpackerInto) Canonicalize(thread *starlark.Thread, v starlark.Value) (starlark.Value, error) {
-	var s *Select
+func (ui *selectUnpackerInto[TReference, TMetadata]) Canonicalize(thread *starlark.Thread, v starlark.Value) (starlark.Value, error) {
+	var s *Select[TReference, TMetadata]
 	if err := ui.UnpackInto(thread, v, &s); err != nil {
 		return nil, err
 	}
 	return s, nil
 }
 
-func (selectUnpackerInto) GetConcatenationOperator() syntax.Token {
+func (selectUnpackerInto[TReference, TMetadata]) GetConcatenationOperator() syntax.Token {
 	return 0
 }

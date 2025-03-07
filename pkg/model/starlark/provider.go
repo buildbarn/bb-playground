@@ -38,61 +38,61 @@ func NewProviderInstanceProperties(identifier *pg_label.CanonicalStarlarkIdentif
 	}
 }
 
-type Provider struct {
+type Provider[TReference object.BasicReference, TMetadata model_core.CloneableReferenceMetadata] struct {
 	*ProviderInstanceProperties
 	fields       []string
-	initFunction *NamedFunction
+	initFunction *NamedFunction[TReference, TMetadata]
 }
 
 var (
-	_ EncodableValue          = &Provider{}
-	_ NamedGlobal             = &Provider{}
-	_ starlark.Callable       = &Provider{}
-	_ starlark.TotallyOrdered = &Provider{}
+	_ EncodableValue[object.LocalReference, model_core.CloneableReferenceMetadata] = (*Provider[object.LocalReference, model_core.CloneableReferenceMetadata])(nil)
+	_ NamedGlobal                                                                  = (*Provider[object.LocalReference, model_core.CloneableReferenceMetadata])(nil)
+	_ starlark.Callable                                                            = (*Provider[object.LocalReference, model_core.CloneableReferenceMetadata])(nil)
+	_ starlark.TotallyOrdered                                                      = (*Provider[object.LocalReference, model_core.CloneableReferenceMetadata])(nil)
 )
 
-func NewProvider(instanceProperties *ProviderInstanceProperties, fields []string, initFunction *NamedFunction) *Provider {
-	return &Provider{
+func NewProvider[TReference object.BasicReference, TMetadata model_core.CloneableReferenceMetadata](instanceProperties *ProviderInstanceProperties, fields []string, initFunction *NamedFunction[TReference, TMetadata]) *Provider[TReference, TMetadata] {
+	return &Provider[TReference, TMetadata]{
 		ProviderInstanceProperties: instanceProperties,
 		fields:                     fields,
 		initFunction:               initFunction,
 	}
 }
 
-func (p *Provider) String() string {
+func (p *Provider[TReference, TMetadata]) String() string {
 	return "<provider>"
 }
 
-func (p *Provider) Type() string {
+func (p *Provider[TReference, TMetadata]) Type() string {
 	return "provider"
 }
 
-func (p *Provider) Freeze() {}
+func (p *Provider[TReference, TMetadata]) Freeze() {}
 
-func (p *Provider) Truth() starlark.Bool {
+func (p *Provider[TReference, TMetadata]) Truth() starlark.Bool {
 	return starlark.True
 }
 
-func (p *Provider) Hash(thread *starlark.Thread) (uint32, error) {
+func (p *Provider[TReference, TMetadata]) Hash(thread *starlark.Thread) (uint32, error) {
 	if p.Identifier == nil {
 		return 0, errors.New("provider without a name cannot be hashed")
 	}
 	return starlark.String(p.Identifier.String()).Hash(thread)
 }
 
-func (p *Provider) Cmp(other starlark.Value, depth int) (int, error) {
-	pOther := other.(*Provider)
+func (p *Provider[TReference, TMetadata]) Cmp(other starlark.Value, depth int) (int, error) {
+	pOther := other.(*Provider[TReference, TMetadata])
 	if p.Identifier == nil || pOther.Identifier == nil {
 		return 0, errors.New("provider without a name cannot be compared")
 	}
 	return strings.Compare(p.Identifier.String(), pOther.Identifier.String()), nil
 }
 
-func (p *Provider) Name() string {
+func (p *Provider[TReference, TMetadata]) Name() string {
 	return "provider"
 }
 
-func (p *Provider) CallInternal(thread *starlark.Thread, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
+func (p *Provider[TReference, TMetadata]) CallInternal(thread *starlark.Thread, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
 	var fields map[string]any
 	if p.initFunction == nil {
 		// Trivially constructible provider.
@@ -132,25 +132,25 @@ func (p *Provider) CallInternal(thread *starlark.Thread, args starlark.Tuple, kw
 		}
 	}
 
-	return NewStructFromDict[object.LocalReference](p.ProviderInstanceProperties, fields), nil
+	return NewStructFromDict[TReference, TMetadata](p.ProviderInstanceProperties, fields), nil
 }
 
-func (p *Provider) EncodeValue(path map[starlark.Value]struct{}, currentIdentifier *pg_label.CanonicalStarlarkIdentifier, options *ValueEncodingOptions) (model_core.PatchedMessage[*model_starlark_pb.Value, model_core.CreatedObjectTree], bool, error) {
+func (p *Provider[TReference, TMetadata]) EncodeValue(path map[starlark.Value]struct{}, currentIdentifier *pg_label.CanonicalStarlarkIdentifier, options *ValueEncodingOptions[TReference, TMetadata]) (model_core.PatchedMessage[*model_starlark_pb.Value, TMetadata], bool, error) {
 	instanceProperties, err := p.ProviderInstanceProperties.Encode()
 	if err != nil {
-		return model_core.PatchedMessage[*model_starlark_pb.Value, model_core.CreatedObjectTree]{}, false, err
+		return model_core.PatchedMessage[*model_starlark_pb.Value, TMetadata]{}, false, err
 	}
 
 	provider := &model_starlark_pb.Provider{
 		InstanceProperties: instanceProperties,
 	}
-	patcher := model_core.NewReferenceMessagePatcher[model_core.CreatedObjectTree]()
+	patcher := model_core.NewReferenceMessagePatcher[TMetadata]()
 	needsCode := false
 
 	if p.initFunction != nil {
 		initFunction, initFunctionNeedsCode, err := p.initFunction.Encode(path, options)
 		if err != nil {
-			return model_core.PatchedMessage[*model_starlark_pb.Value, model_core.CreatedObjectTree]{}, false, err
+			return model_core.PatchedMessage[*model_starlark_pb.Value, TMetadata]{}, false, err
 		}
 		provider.InitFunction = initFunction.Message
 		patcher.Merge(initFunction.Patcher)

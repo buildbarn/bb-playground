@@ -1,13 +1,9 @@
 package core
 
 import (
-	"context"
-
-	"github.com/buildbarn/bonanza/pkg/storage/dag"
 	"github.com/buildbarn/bonanza/pkg/storage/object"
 
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/proto"
 )
 
 // CreatedObject holds the contents of an object that was created using
@@ -32,46 +28,46 @@ func (CreatedObjectTree) Discard() {
 	// instances of CreatedObjectTree.
 }
 
-// ExistingCreatedObjectTree is a placeholder value for
-// CreatedObjectTree that can be used to indicate that a child of a
-// CreatedObject is already present in storage, and that the contents of
-// this subtree are not present in memory.
-var ExistingCreatedObjectTree CreatedObjectTree
-
-type createdObjectContentsWalker struct {
-	object CreatedObjectTree
+// CreatedObjectCapturer can be used as a factory type for reference
+// metadata. Given the contents of an object and the metadata of all of
+// its children, it may yield new metadata.
+type CreatedObjectCapturer[TMetadata any] interface {
+	CaptureCreatedObject(CreatedObject[TMetadata]) TMetadata
 }
 
-func NewCreatedObjectContentsWalker(root CreatedObjectTree) dag.ObjectContentsWalker {
-	return &createdObjectContentsWalker{
-		object: root,
-	}
+// CreatedOrExistingObjectCapturer is an extension to
+// CreatedObjectCapturer, also providing a method to construct metadata
+// belonging to objects that already exist in storage. This can be used
+// to efficiently construct Merkle trees that are derived from ones
+// created previously.
+type CreatedOrExistingObjectCapturer[TReference, TMetadata any] interface {
+	CreatedObjectCapturer[TMetadata]
+
+	CaptureExistingObject(TReference) TMetadata
 }
 
-func (w *createdObjectContentsWalker) GetContents(ctx context.Context) (*object.Contents, []dag.ObjectContentsWalker, error) {
-	if w.object.Contents == nil {
-		return nil, nil, status.Error(codes.Internal, "Contents for this object are not available for upload, as this object was expected to already exist")
-	}
-	walkers := make([]dag.ObjectContentsWalker, 0, len(w.object.Metadata))
-	for _, child := range w.object.Metadata {
-		walkers = append(walkers, NewCreatedObjectContentsWalker(child))
-	}
-	return w.object.Contents, walkers, nil
-}
-
-func (w *createdObjectContentsWalker) Discard() {
-	// GetContents() may only be invoked once. Prevent misuse.
-	w.object = CreatedObjectTree{}
-}
-
-// MapCreatedObjectsToWalkers is a helper function for creating
-// ObjectContentsWalkers for all CreatedObjectTrees contained a
-// ReferenceMessagePatcher.
-func MapCreatedObjectsToWalkers(patcher *ReferenceMessagePatcher[CreatedObjectTree]) *ReferenceMessagePatcher[dag.ObjectContentsWalker] {
-	return MapReferenceMessagePatcherMetadata(
-		patcher,
-		func(reference object.LocalReference, tree CreatedObjectTree) dag.ObjectContentsWalker {
-			return NewCreatedObjectContentsWalker(tree)
+// NewPatchedMessageFromExistingCaptured is identical to
+// NewPatchedMessageFromExisting, except that it automatically creates
+// metadata for all references contained the message using the provided
+// capturer.
+func NewPatchedMessageFromExistingCaptured[
+	TMessage any,
+	TMetadata ReferenceMetadata,
+	TMessagePtr interface {
+		*TMessage
+		proto.Message
+	},
+	TReference object.BasicReference,
+](
+	capturer CreatedOrExistingObjectCapturer[TReference, TMetadata],
+	m Message[TMessagePtr, TReference],
+) PatchedMessage[TMessagePtr, TMetadata] {
+	return NewPatchedMessageFromExisting(
+		m,
+		func(index int) TMetadata {
+			return capturer.CaptureExistingObject(
+				m.OutgoingReferences.GetOutgoingReference(index),
+			)
 		},
 	)
 }

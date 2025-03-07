@@ -17,7 +17,7 @@ import (
 	"google.golang.org/protobuf/types/known/anypb"
 )
 
-func getKeyString(key model_core.Message[proto.Message, object.LocalReference]) (string, error) {
+func getKeyString[TReference object.BasicReference](key model_core.Message[proto.Message, TReference]) (string, error) {
 	// Marshal the outgoing references of the key.
 	degree := key.OutgoingReferences.GetDegree()
 	marshaledKey := varint.AppendForward(nil, degree)
@@ -37,7 +37,7 @@ func getKeyString(key model_core.Message[proto.Message, object.LocalReference]) 
 	return string(marshaledKey), nil
 }
 
-func appendFormattedKey(out []byte, key model_core.Message[proto.Message, object.LocalReference]) []byte {
+func appendFormattedKey[TReference object.BasicReference](out []byte, key model_core.Message[proto.Message, TReference]) []byte {
 	out, _ = protojson.MarshalOptions{}.MarshalAppend(out, key.Message)
 	if degree := key.OutgoingReferences.GetDegree(); degree > 0 {
 		out = append(out, " ["...)
@@ -52,19 +52,19 @@ func appendFormattedKey(out []byte, key model_core.Message[proto.Message, object
 	return out
 }
 
-type keyState struct {
-	parent              *keyState
-	key                 model_core.Message[proto.Message, object.LocalReference]
-	next                *keyState
-	value               valueState
-	missingDependencies []*keyState
+type keyState[TReference object.BasicReference] struct {
+	parent              *keyState[TReference]
+	key                 model_core.Message[proto.Message, TReference]
+	next                *keyState[TReference]
+	value               valueState[TReference]
+	missingDependencies []*keyState[TReference]
 }
 
-func (ks *keyState) getKeyType() string {
+func (ks *keyState[TReference]) getKeyType() string {
 	return string(ks.key.Message.ProtoReflect().Descriptor().FullName().Parent().Name())
 }
 
-func (ks *keyState) getDependencyCycle(cyclePath *[]*keyState, seen map[*keyState]int) int {
+func (ks *keyState[TReference]) getDependencyCycle(cyclePath *[]*keyState[TReference], seen map[*keyState[TReference]]int) int {
 	pathLength := len(*cyclePath)
 	for _, ksDep := range ks.missingDependencies {
 		*cyclePath = append(*cyclePath, ksDep)
@@ -83,15 +83,15 @@ func (ks *keyState) getDependencyCycle(cyclePath *[]*keyState, seen map[*keyStat
 	return -1
 }
 
-type valueState interface {
-	compute(ctx context.Context, c Computer[object.LocalReference], e *fullyComputingEnvironment) error
+type valueState[TReference object.BasicReference] interface {
+	compute(ctx context.Context, c Computer[TReference], e *fullyComputingEnvironment[TReference]) error
 }
 
-type messageValueState struct {
-	value model_core.Message[proto.Message, object.LocalReference]
+type messageValueState[TReference object.BasicReference] struct {
+	value model_core.Message[proto.Message, TReference]
 }
 
-func (vs *messageValueState) compute(ctx context.Context, c Computer[object.LocalReference], e *fullyComputingEnvironment) error {
+func (vs *messageValueState[TReference]) compute(ctx context.Context, c Computer[TReference], e *fullyComputingEnvironment[TReference]) error {
 	value, err := c.ComputeMessageValue(ctx, e.keyState.key, e)
 	if err != nil {
 		return err
@@ -100,26 +100,25 @@ func (vs *messageValueState) compute(ctx context.Context, c Computer[object.Loca
 	// Value got computed. Write any objects referenced by the
 	// values to storage.
 	p := e.pool
-	references, objectContentsWalkers := value.Patcher.SortAndSetReferences()
-	if len(references) > 0 {
-		if err := p.storeValueChildren(references, objectContentsWalkers); err != nil {
+	localReferences, objectContentsWalkers := value.Patcher.SortAndSetReferences()
+	var storedReferences []TReference
+	if len(localReferences) > 0 {
+		storedReferences, err = p.storeValueChildren(localReferences, objectContentsWalkers)
+		if err != nil {
 			return err
 		}
 	}
 
-	vs.value = model_core.Message[proto.Message, object.LocalReference]{
-		Message:            value.Message,
-		OutgoingReferences: references,
-	}
+	vs.value = model_core.NewMessage(value.Message, object.OutgoingReferencesList[TReference](storedReferences))
 	return nil
 }
 
-type nativeValueState struct {
+type nativeValueState[TReference object.BasicReference] struct {
 	value any
 	isSet bool
 }
 
-func (vs *nativeValueState) compute(ctx context.Context, c Computer[object.LocalReference], e *fullyComputingEnvironment) error {
+func (vs *nativeValueState[TReference]) compute(ctx context.Context, c Computer[TReference], e *fullyComputingEnvironment[TReference]) error {
 	value, err := c.ComputeNativeValue(ctx, e.keyState.key, e)
 	if err != nil {
 		return err
@@ -129,51 +128,51 @@ func (vs *nativeValueState) compute(ctx context.Context, c Computer[object.Local
 	return nil
 }
 
-type fullyComputingKeyPool struct {
+type fullyComputingKeyPool[TReference object.BasicReference] struct {
 	// Constant fields.
-	storeValueChildren ValueChildrenStorer
+	storeValueChildren ValueChildrenStorer[TReference]
 
 	// Variable fields.
-	keys                   map[string]*keyState
-	firstPendingKey        *keyState
-	lastPendingKey         **keyState
-	firstMissingDependency *keyState
+	keys                   map[string]*keyState[TReference]
+	firstPendingKey        *keyState[TReference]
+	lastPendingKey         **keyState[TReference]
+	firstMissingDependency *keyState[TReference]
 	err                    error
 }
 
-func (p *fullyComputingKeyPool) setError(err error) {
+func (p *fullyComputingKeyPool[TReference]) setError(err error) {
 	if p.err == nil {
 		p.err = err
 	}
 }
 
-func (p *fullyComputingKeyPool) enqueue(ks *keyState) {
+func (p *fullyComputingKeyPool[TReference]) enqueue(ks *keyState[TReference]) {
 	*p.lastPendingKey = ks
 	p.lastPendingKey = &ks.next
 }
 
-type fullyComputingEnvironment struct {
-	pool                *fullyComputingKeyPool
-	keyState            *keyState
-	missingDependencies []*keyState
+type fullyComputingEnvironment[TReference object.BasicReference] struct {
+	pool                *fullyComputingKeyPool[TReference]
+	keyState            *keyState[TReference]
+	missingDependencies []*keyState[TReference]
 }
 
-func (e *fullyComputingEnvironment) getKeyState(patchedKey model_core.PatchedMessage[proto.Message, dag.ObjectContentsWalker], vs valueState) *keyState {
+func (e *fullyComputingEnvironment[TReference]) getKeyState(patchedKey model_core.PatchedMessage[proto.Message, dag.ObjectContentsWalker], vs valueState[TReference]) *keyState[TReference] {
 	// If the key contains outgoing references, ensure children are
 	// written, so that they can be reloaded during evaluation.
 	p := e.pool
-	references, objectContentsWalkers := patchedKey.Patcher.SortAndSetReferences()
-	if len(references) > 0 {
-		if err := e.pool.storeValueChildren(references, objectContentsWalkers); err != nil {
+	localReferences, objectContentsWalkers := patchedKey.Patcher.SortAndSetReferences()
+	var storedReferences []TReference
+	if len(localReferences) > 0 {
+		var err error
+		storedReferences, err = e.pool.storeValueChildren(localReferences, objectContentsWalkers)
+		if err != nil {
 			p.setError(err)
 			return nil
 		}
 	}
 
-	key := model_core.Message[proto.Message, object.LocalReference]{
-		Message:            patchedKey.Message,
-		OutgoingReferences: references,
-	}
+	key := model_core.NewMessage(patchedKey.Message, object.OutgoingReferencesList[TReference](storedReferences))
 	keyStr, err := getKeyString(key)
 	if err != nil {
 		p.setError(err)
@@ -181,7 +180,7 @@ func (e *fullyComputingEnvironment) getKeyState(patchedKey model_core.PatchedMes
 	}
 	ks, ok := p.keys[keyStr]
 	if !ok {
-		ks = &keyState{
+		ks = &keyState[TReference]{
 			parent: e.keyState,
 			key:    key,
 			value:  vs,
@@ -193,24 +192,24 @@ func (e *fullyComputingEnvironment) getKeyState(patchedKey model_core.PatchedMes
 	return ks
 }
 
-func (e *fullyComputingEnvironment) GetMessageValue(patchedKey model_core.PatchedMessage[proto.Message, dag.ObjectContentsWalker]) model_core.Message[proto.Message, object.LocalReference] {
-	ks := e.getKeyState(patchedKey, &messageValueState{})
+func (e *fullyComputingEnvironment[TReference]) GetMessageValue(patchedKey model_core.PatchedMessage[proto.Message, dag.ObjectContentsWalker]) model_core.Message[proto.Message, TReference] {
+	ks := e.getKeyState(patchedKey, &messageValueState[TReference]{})
 	if ks == nil {
-		return model_core.Message[proto.Message, object.LocalReference]{}
+		return model_core.Message[proto.Message, TReference]{}
 	}
-	vs := ks.value.(*messageValueState)
+	vs := ks.value.(*messageValueState[TReference])
 	if !vs.value.IsSet() {
 		e.missingDependencies = append(e.missingDependencies, ks)
 	}
 	return vs.value
 }
 
-func (e *fullyComputingEnvironment) GetNativeValue(patchedKey model_core.PatchedMessage[proto.Message, dag.ObjectContentsWalker]) (any, bool) {
-	ks := e.getKeyState(patchedKey, &nativeValueState{})
+func (e *fullyComputingEnvironment[TReference]) GetNativeValue(patchedKey model_core.PatchedMessage[proto.Message, dag.ObjectContentsWalker]) (any, bool) {
+	ks := e.getKeyState(patchedKey, &nativeValueState[TReference]{})
 	if ks == nil {
 		return nil, false
 	}
-	vs := ks.value.(*nativeValueState)
+	vs := ks.value.(*nativeValueState[TReference])
 	if !vs.isSet {
 		e.missingDependencies = append(e.missingDependencies, ks)
 		return nil, false
@@ -218,22 +217,22 @@ func (e *fullyComputingEnvironment) GetNativeValue(patchedKey model_core.Patched
 	return vs.value, true
 }
 
-type ValueChildrenStorer func(references []object.LocalReference, objectContentsWalkers []dag.ObjectContentsWalker) error
+type ValueChildrenStorer[TReference any] func(localReferences []object.LocalReference, objectContentsWalkers []dag.ObjectContentsWalker) ([]TReference, error)
 
-func FullyComputeValue(ctx context.Context, c Computer[object.LocalReference], requestedKey model_core.Message[proto.Message, object.LocalReference], storeValueChildren ValueChildrenStorer) (model_core.Message[proto.Message, object.LocalReference], error) {
+func FullyComputeValue[TReference object.BasicReference](ctx context.Context, c Computer[TReference], requestedKey model_core.Message[proto.Message, TReference], storeValueChildren ValueChildrenStorer[TReference]) (model_core.Message[proto.Message, TReference], error) {
 	requestedKeyStr, err := getKeyString(requestedKey)
 	if err != nil {
-		return model_core.Message[proto.Message, object.LocalReference]{}, err
+		return model_core.Message[proto.Message, TReference]{}, err
 	}
-	requestedValueState := &messageValueState{}
-	requestedKeyState := &keyState{
+	requestedValueState := &messageValueState[TReference]{}
+	requestedKeyState := &keyState[TReference]{
 		key:   requestedKey,
 		value: requestedValueState,
 	}
-	p := fullyComputingKeyPool{
+	p := fullyComputingKeyPool[TReference]{
 		storeValueChildren: storeValueChildren,
 
-		keys: map[string]*keyState{
+		keys: map[string]*keyState[TReference]{
 			requestedKeyStr: requestedKeyState,
 		},
 		firstPendingKey: requestedKeyState,
@@ -243,7 +242,7 @@ func FullyComputeValue(ctx context.Context, c Computer[object.LocalReference], r
 	for !requestedValueState.value.IsSet() {
 		ks := p.firstPendingKey
 		if ks == p.firstMissingDependency {
-			var stack []*keyState
+			var stack []*keyState[TReference]
 			traceLongestKeyType := 0
 			for ksIter := ks; ksIter != nil; ksIter = ksIter.parent {
 				stack = append(stack, ksIter)
@@ -252,7 +251,7 @@ func FullyComputeValue(ctx context.Context, c Computer[object.LocalReference], r
 				}
 			}
 			slices.Reverse(stack)
-			seen := make(map[*keyState]int, len(stack))
+			seen := make(map[*keyState[TReference]]int, len(stack))
 			for index, ksIter := range stack {
 				seen[ksIter] = index
 			}
@@ -271,7 +270,7 @@ func FullyComputeValue(ctx context.Context, c Computer[object.LocalReference], r
 				}
 				cycleStr = appendFormattedKey(cycleStr, ksIter.key)
 			}
-			return model_core.Message[proto.Message, object.LocalReference]{}, fmt.Errorf("Traceback (most recent key last):%s\nCyclic evaluation dependency detected", string(cycleStr))
+			return model_core.Message[proto.Message, TReference]{}, fmt.Errorf("Traceback (most recent key last):%s\nCyclic evaluation dependency detected", string(cycleStr))
 		}
 
 		p.firstPendingKey = ks.next
@@ -288,7 +287,7 @@ func FullyComputeValue(ctx context.Context, c Computer[object.LocalReference], r
 		}
 		fmt.Printf("\x1b[?7l%-*s  %s\x1b[?7h", longestKeyType, keyType, string(appendFormattedKey(nil, ks.key)))
 
-		e := fullyComputingEnvironment{
+		e := fullyComputingEnvironment[TReference]{
 			pool:     &p,
 			keyState: ks,
 		}
@@ -297,7 +296,7 @@ func FullyComputeValue(ctx context.Context, c Computer[object.LocalReference], r
 			if !errors.Is(err, ErrMissingDependency) {
 				fmt.Printf("\n")
 
-				var stack []*keyState
+				var stack []*keyState[TReference]
 				traceLongestKeyType := 0
 				for ksIter := ks; ksIter != nil; ksIter = ksIter.parent {
 					stack = append(stack, ksIter)
@@ -316,7 +315,7 @@ func FullyComputeValue(ctx context.Context, c Computer[object.LocalReference], r
 					}
 					stackStr = appendFormattedKey(stackStr, ksIter.key)
 				}
-				return model_core.Message[proto.Message, object.LocalReference]{}, fmt.Errorf("Traceback (most recent key last):%s\n%w", string(stackStr), err)
+				return model_core.Message[proto.Message, TReference]{}, fmt.Errorf("Traceback (most recent key last):%s\n%w", string(stackStr), err)
 			}
 			// Value could not be computed, because one of
 			// its dependencies hasn't been computed yet.

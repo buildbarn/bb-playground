@@ -22,7 +22,7 @@ type expandCanonicalTargetPatternEnvironment[TReference any] interface {
 
 // expandCanonicalTargetPattern returns canonical labels for each target
 // matched by a canonical target pattern.
-func (c *baseComputer[TReference]) expandCanonicalTargetPattern(
+func (c *baseComputer[TReference, TMetadata]) expandCanonicalTargetPattern(
 	ctx context.Context,
 	e expandCanonicalTargetPatternEnvironment[TReference],
 	targetPattern label.CanonicalTargetPattern,
@@ -75,7 +75,7 @@ func (c *baseComputer[TReference]) expandCanonicalTargetPattern(
 	}
 }
 
-func (c *baseComputer[TReference]) ComputeTargetPatternExpansionValue(ctx context.Context, key *model_analysis_pb.TargetPatternExpansion_Key, e TargetPatternExpansionEnvironment[TReference]) (PatchedTargetPatternExpansionValue, error) {
+func (c *baseComputer[TReference, TMetadata]) ComputeTargetPatternExpansionValue(ctx context.Context, key *model_analysis_pb.TargetPatternExpansion_Key, e TargetPatternExpansionEnvironment[TReference]) (PatchedTargetPatternExpansionValue, error) {
 	treeBuilder := btree.NewSplitProllyBuilder(
 		/* minimumSizeBytes = */ 32*1024,
 		/* maximumSizeBytes = */ 128*1024,
@@ -214,7 +214,7 @@ func (c *baseComputer[TReference]) ComputeTargetPatternExpansionValue(ctx contex
 	}, nil
 }
 
-func (c *baseComputer[TReference]) addPackageToTargetPatternExpansion(
+func (c *baseComputer[TReference, TMetadata]) addPackageToTargetPatternExpansion(
 	ctx context.Context,
 	canonicalPackage label.CanonicalPackage,
 	packageValue model_core.Message[*model_analysis_pb.Package_Value, TReference],

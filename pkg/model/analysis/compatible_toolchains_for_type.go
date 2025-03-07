@@ -18,7 +18,7 @@ import (
 	"github.com/buildbarn/bonanza/pkg/storage/dag"
 )
 
-func (c *baseComputer[TReference]) getConfigurationByReference(ctx context.Context, configurationReference model_core.Message[*model_core_pb.Reference, TReference]) (model_core.Message[*model_analysis_pb.Configuration, TReference], error) {
+func (c *baseComputer[TReference, TMetadata]) getConfigurationByReference(ctx context.Context, configurationReference model_core.Message[*model_core_pb.Reference, TReference]) (model_core.Message[*model_analysis_pb.Configuration, TReference], error) {
 	if configurationReference.Message == nil {
 		// Empty configuration.
 		return model_core.NewSimpleMessage[TReference](&model_analysis_pb.Configuration{}), nil
@@ -28,7 +28,7 @@ func (c *baseComputer[TReference]) getConfigurationByReference(ctx context.Conte
 
 var commandLineOptionPlatformsLabel = label.MustNewCanonicalLabel("@@bazel_tools+//command_line_option:platforms")
 
-func (c *baseComputer[TReference]) ComputeCompatibleToolchainsForTypeValue(ctx context.Context, key model_core.Message[*model_analysis_pb.CompatibleToolchainsForType_Key, TReference], e CompatibleToolchainsForTypeEnvironment[TReference]) (PatchedCompatibleToolchainsForTypeValue, error) {
+func (c *baseComputer[TReference, TMetadata]) ComputeCompatibleToolchainsForTypeValue(ctx context.Context, key model_core.Message[*model_analysis_pb.CompatibleToolchainsForType_Key, TReference], e CompatibleToolchainsForTypeEnvironment[TReference]) (PatchedCompatibleToolchainsForTypeValue, error) {
 	registeredToolchains := e.GetRegisteredToolchainsForTypeValue(&model_analysis_pb.RegisteredToolchainsForType_Key{
 		ToolchainType: key.Message.ToolchainType,
 	})

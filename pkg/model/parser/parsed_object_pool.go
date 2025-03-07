@@ -38,37 +38,33 @@ func NewParsedObjectPool(evictionSet eviction.Set[ParsedObjectEvictionKey], maxi
 	}
 }
 
-type ParsedObjectFetcher[TReference any] struct {
-	pool       *ParsedObjectPool
-	downloader object.Downloader[TReference]
+type ParsedObjectPoolIngester[TReference any] struct {
+	pool      *ParsedObjectPool
+	rawReader ParsedObjectReader[TReference, model_core.Message[[]byte, TReference]]
 }
 
-func NewParsedObjectFetcher[TReference any](
+func NewParsedObjectPoolIngester[TReference any](
 	pool *ParsedObjectPool,
-	downloader object.Downloader[TReference],
-) *ParsedObjectFetcher[TReference] {
-	return &ParsedObjectFetcher[TReference]{
-		pool:       pool,
-		downloader: downloader,
+	rawReader ParsedObjectReader[TReference, model_core.Message[[]byte, TReference]],
+) *ParsedObjectPoolIngester[TReference] {
+	return &ParsedObjectPoolIngester[TReference]{
+		pool:      pool,
+		rawReader: rawReader,
 	}
 }
 
-type ParsedObjectReader[TReference, TParsedObject any] interface {
-	ReadParsedObject(ctx context.Context, reference TReference) (TParsedObject, error)
-}
-
 type poolBackedParsedObjectReader[TReference object.BasicReference, TParsedObject any] struct {
-	fetcher *ParsedObjectFetcher[TReference]
-	parser  ObjectParser[TReference, TParsedObject]
+	ingester *ParsedObjectPoolIngester[TReference]
+	parser   ObjectParser[TReference, TParsedObject]
 }
 
 func LookupParsedObjectReader[TReference object.BasicReference, TParsedObject any](
-	fetcher *ParsedObjectFetcher[TReference],
+	ingester *ParsedObjectPoolIngester[TReference],
 	parser ObjectParser[TReference, TParsedObject],
 ) ParsedObjectReader[TReference, TParsedObject] {
 	return &poolBackedParsedObjectReader[TReference, TParsedObject]{
-		fetcher: fetcher,
-		parser:  parser,
+		ingester: ingester,
+		parser:   parser,
 	}
 }
 
@@ -78,8 +74,8 @@ func (r *poolBackedParsedObjectReader[TReference, TParsedObject]) ReadParsedObje
 		reference: reference.GetLocalReference(),
 	}
 
-	f := r.fetcher
-	p := f.pool
+	i := r.ingester
+	p := i.pool
 	p.lock.Lock()
 	if object, ok := p.objects[insertionKey]; ok {
 		// Return cached instance of the parsed object.
@@ -89,29 +85,18 @@ func (r *poolBackedParsedObjectReader[TReference, TParsedObject]) ReadParsedObje
 	}
 	p.lock.Unlock()
 
-	contents, err := f.downloader.DownloadObject(ctx, reference)
+	raw, err := i.rawReader.ReadParsedObject(ctx, reference)
 	if err != nil {
 		var badParsedObject TParsedObject
 		return badParsedObject, err
 	}
 
-	var outgoingReferences object.OutgoingReferences[TReference]
-	if objectOutgoingReferences, ok := (object.OutgoingReferences[object.LocalReference])(contents).(object.OutgoingReferences[TReference]); ok {
-		outgoingReferences = objectOutgoingReferences
-	} else {
-		panic("TODO")
-	}
-
-	payload := contents.GetPayload()
-	parsedObject, parsedObjectSizeBytes, err := r.parser.ParseObject(model_core.NewMessage(
-		contents.GetPayload(),
-		outgoingReferences,
-	))
+	parsedObject, parsedObjectSizeBytes, err := r.parser.ParseObject(raw)
 	if err != nil {
 		var badParsedObject TParsedObject
 		return badParsedObject, err
 	}
-	sizeBytes := reference.GetSizeBytes() - len(payload) + parsedObjectSizeBytes
+	sizeBytes := reference.GetSizeBytes() - len(raw.Message) + parsedObjectSizeBytes
 
 	p.lock.Lock()
 	if _, ok := p.objects[insertionKey]; ok {

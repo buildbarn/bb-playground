@@ -20,38 +20,38 @@ import (
 
 const externalDirectoryName = "external"
 
-type File struct {
+type File[TReference object.BasicReference, TMetadata model_core.CloneableReferenceMetadata] struct {
 	definition *model_starlark_pb.File
 }
 
 var (
-	_ EncodableValue      = File{}
-	_ starlark.Comparable = File{}
-	_ starlark.HasAttrs   = File{}
+	_ EncodableValue[object.LocalReference, model_core.CloneableReferenceMetadata] = File[object.LocalReference, model_core.CloneableReferenceMetadata]{}
+	_ starlark.Comparable                                                          = File[object.LocalReference, model_core.CloneableReferenceMetadata]{}
+	_ starlark.HasAttrs                                                            = File[object.LocalReference, model_core.CloneableReferenceMetadata]{}
 )
 
-func NewFile(definition *model_starlark_pb.File) File {
-	return File{
+func NewFile[TReference object.BasicReference, TMetadata model_core.CloneableReferenceMetadata](definition *model_starlark_pb.File) File[TReference, TMetadata] {
+	return File[TReference, TMetadata]{
 		definition: definition,
 	}
 }
 
-func (File) String() string {
+func (File[TReference, TMetadata]) String() string {
 	return "<File>"
 }
 
-func (File) Type() string {
+func (File[TReference, TMetadata]) Type() string {
 	return "File"
 }
 
-func (File) Freeze() {
+func (File[TReference, TMetadata]) Freeze() {
 }
 
-func (File) Truth() starlark.Bool {
+func (File[TReference, TMetadata]) Truth() starlark.Bool {
 	return starlark.True
 }
 
-func (f File) Hash(thread *starlark.Thread) (uint32, error) {
+func (f File[TReference, TMetadata]) Hash(thread *starlark.Thread) (uint32, error) {
 	data, err := proto.Marshal(f.definition)
 	if err != nil {
 		return 0, err
@@ -61,18 +61,18 @@ func (f File) Hash(thread *starlark.Thread) (uint32, error) {
 	return h.Sum32(), nil
 }
 
-func (f File) CompareSameType(thread *starlark.Thread, op syntax.Token, other starlark.Value, depth int) (bool, error) {
+func (f File[TReference, TMetadata]) CompareSameType(thread *starlark.Thread, op syntax.Token, other starlark.Value, depth int) (bool, error) {
 	switch op {
 	case syntax.EQL:
-		return proto.Equal(f.definition, other.(File).definition), nil
+		return proto.Equal(f.definition, other.(File[TReference, TMetadata]).definition), nil
 	case syntax.NEQ:
-		return !proto.Equal(f.definition, other.(File).definition), nil
+		return !proto.Equal(f.definition, other.(File[TReference, TMetadata]).definition), nil
 	default:
 		return false, errors.New("File can only be compared for equality")
 	}
 }
 
-func (f File) appendOwner(parts []string) []string {
+func (f File[TReference, TMetadata]) appendOwner(parts []string) []string {
 	if o := f.definition.Owner; o != nil {
 		parts = append(
 			parts,
@@ -84,7 +84,7 @@ func (f File) appendOwner(parts []string) []string {
 	return parts
 }
 
-func (f File) getPath() (string, error) {
+func (f File[TReference, TMetadata]) getPath() (string, error) {
 	canonicalPackage, err := pg_label.NewCanonicalPackage(f.definition.Package)
 	if err != nil {
 		return "", fmt.Errorf("invalid canonical package %#v: %w", f.definition.Package, err)
@@ -101,7 +101,7 @@ func (f File) getPath() (string, error) {
 	), nil
 }
 
-func (f File) Attr(thread *starlark.Thread, name string) (starlark.Value, error) {
+func (f File[TReference, TMetadata]) Attr(thread *starlark.Thread, name string) (starlark.Value, error) {
 	switch name {
 	case "basename":
 		return starlark.String(go_path.Base(f.definition.PackageRelativePath)), nil
@@ -143,7 +143,7 @@ func (f File) Attr(thread *starlark.Thread, name string) (starlark.Value, error)
 			return nil, fmt.Errorf("invalid target name %#v: %w", targetNameStr, err)
 		}
 
-		return NewLabel(canonicalPackage.AppendTargetName(targetName).AsResolved()), nil
+		return NewLabel[TReference, TMetadata](canonicalPackage.AppendTargetName(targetName).AsResolved()), nil
 	case "path":
 		p, err := f.getPath()
 		if err != nil {
@@ -156,8 +156,7 @@ func (f File) Attr(thread *starlark.Thread, name string) (starlark.Value, error)
 			return nil, fmt.Errorf("invalid canonical package %#v: %w", f.definition.Package, err)
 		}
 		parts := f.appendOwner(make([]string, 0, 6))
-		// TODO: Should we have a dedicated root type?
-		return newStructFromLists[object.LocalReference](
+		return newStructFromLists[TReference, TMetadata](
 			nil,
 			[]string{"path"},
 			[]any{
@@ -199,12 +198,12 @@ var fileAttrNames = []string{
 	"short_path",
 }
 
-func (File) AttrNames() []string {
+func (File[TReference, TMetadata]) AttrNames() []string {
 	return fileAttrNames
 }
 
-func (f File) EncodeValue(path map[starlark.Value]struct{}, currentIdentifier *pg_label.CanonicalStarlarkIdentifier, options *ValueEncodingOptions) (model_core.PatchedMessage[*model_starlark_pb.Value, model_core.CreatedObjectTree], bool, error) {
-	return model_core.NewSimplePatchedMessage[model_core.CreatedObjectTree](
+func (f File[TReference, TMetadata]) EncodeValue(path map[starlark.Value]struct{}, currentIdentifier *pg_label.CanonicalStarlarkIdentifier, options *ValueEncodingOptions[TReference, TMetadata]) (model_core.PatchedMessage[*model_starlark_pb.Value, TMetadata], bool, error) {
+	return model_core.NewSimplePatchedMessage[TMetadata](
 		&model_starlark_pb.Value{
 			Kind: &model_starlark_pb.Value_File{
 				File: f.definition,

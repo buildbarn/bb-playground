@@ -16,7 +16,7 @@ import (
 	"github.com/buildbarn/bonanza/pkg/storage/dag"
 )
 
-func (c *baseComputer[TReference]) lookupTargetDefinitionInTargetList(ctx context.Context, targetList model_core.Message[[]*model_analysis_pb.Package_Value_Target, TReference], targetName label.TargetName) (model_core.Message[*model_starlark_pb.Target_Definition, TReference], error) {
+func (c *baseComputer[TReference, TMetadata]) lookupTargetDefinitionInTargetList(ctx context.Context, targetList model_core.Message[[]*model_analysis_pb.Package_Value_Target, TReference], targetName label.TargetName) (model_core.Message[*model_starlark_pb.Target_Definition, TReference], error) {
 	targetNameStr := targetName.String()
 	target, err := btree.Find(
 		ctx,
@@ -51,7 +51,7 @@ func (c *baseComputer[TReference]) lookupTargetDefinitionInTargetList(ctx contex
 	return model_core.NewNestedMessage(targetList, definition), nil
 }
 
-func (c *baseComputer[TReference]) ComputeTargetValue(ctx context.Context, key *model_analysis_pb.Target_Key, e TargetEnvironment[TReference]) (PatchedTargetValue, error) {
+func (c *baseComputer[TReference, TMetadata]) ComputeTargetValue(ctx context.Context, key *model_analysis_pb.Target_Key, e TargetEnvironment[TReference]) (PatchedTargetValue, error) {
 	targetLabel, err := label.NewCanonicalLabel(key.Label)
 	if err != nil {
 		return PatchedTargetValue{}, fmt.Errorf("invalid target label: %w", err)

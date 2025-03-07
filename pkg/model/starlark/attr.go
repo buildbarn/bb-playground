@@ -11,6 +11,7 @@ import (
 	model_core "github.com/buildbarn/bonanza/pkg/model/core"
 	model_starlark_pb "github.com/buildbarn/bonanza/pkg/proto/model/starlark"
 	"github.com/buildbarn/bonanza/pkg/starlark/unpack"
+	"github.com/buildbarn/bonanza/pkg/storage/object"
 
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/emptypb"
@@ -19,50 +20,50 @@ import (
 	"go.starlark.net/syntax"
 )
 
-type Attr struct {
+type Attr[TReference any, TMetadata model_core.CloneableReferenceMetadata] struct {
 	attrType     AttrType
 	defaultValue starlark.Value
 }
 
 var (
-	_ EncodableValue      = &Attr{}
-	_ starlark.Comparable = &Attr{}
+	_ EncodableValue[object.LocalReference, model_core.CloneableReferenceMetadata] = (*Attr[object.LocalReference, model_core.CloneableReferenceMetadata])(nil)
+	_ starlark.Comparable                                                          = (*Attr[object.LocalReference, model_core.CloneableReferenceMetadata])(nil)
 )
 
-func NewAttr(attrType AttrType, defaultValue starlark.Value) *Attr {
-	return &Attr{
+func NewAttr[TReference any, TMetadata model_core.CloneableReferenceMetadata](attrType AttrType, defaultValue starlark.Value) *Attr[TReference, TMetadata] {
+	return &Attr[TReference, TMetadata]{
 		attrType:     attrType,
 		defaultValue: defaultValue,
 	}
 }
 
-func (a *Attr) String() string {
+func (a *Attr[TReference, TMetadata]) String() string {
 	return fmt.Sprintf("<attr.%s>", a.attrType.Type())
 }
 
-func (a *Attr) Type() string {
+func (a *Attr[TReference, TMetadata]) Type() string {
 	return "attr." + a.attrType.Type()
 }
 
-func (Attr) Freeze() {}
+func (Attr[TReference, TMetadata]) Freeze() {}
 
-func (Attr) Truth() starlark.Bool {
+func (Attr[TReference, TMetadata]) Truth() starlark.Bool {
 	return starlark.True
 }
 
-func (a *Attr) Hash(thread *starlark.Thread) (uint32, error) {
+func (a *Attr[TReference, TMetadata]) Hash(thread *starlark.Thread) (uint32, error) {
 	return 0, fmt.Errorf("attr.%s cannot be hashed", a.attrType.Type())
 }
 
-func (a *Attr) Encode(path map[starlark.Value]struct{}, options *ValueEncodingOptions) (model_core.PatchedMessage[*model_starlark_pb.Attr, model_core.CreatedObjectTree], bool, error) {
-	patcher := model_core.NewReferenceMessagePatcher[model_core.CreatedObjectTree]()
+func (a *Attr[TReference, TMetadata]) Encode(path map[starlark.Value]struct{}, options *ValueEncodingOptions[TReference, TMetadata]) (model_core.PatchedMessage[*model_starlark_pb.Attr, TMetadata], bool, error) {
+	patcher := model_core.NewReferenceMessagePatcher[TMetadata]()
 	var attr model_starlark_pb.Attr
 	var needsCode bool
 
 	if a.defaultValue != nil {
-		defaultValue, defaultValueNeedsCode, err := EncodeValue(a.defaultValue, path, nil, options)
+		defaultValue, defaultValueNeedsCode, err := EncodeValue[TReference, TMetadata](a.defaultValue, path, nil, options)
 		if err != nil {
-			return model_core.PatchedMessage[*model_starlark_pb.Attr, model_core.CreatedObjectTree]{}, false, err
+			return model_core.PatchedMessage[*model_starlark_pb.Attr, TMetadata]{}, false, err
 		}
 		attr.Default = defaultValue.Message
 		patcher.Merge(defaultValue.Patcher)
@@ -70,15 +71,15 @@ func (a *Attr) Encode(path map[starlark.Value]struct{}, options *ValueEncodingOp
 	}
 
 	if err := a.attrType.Encode(&attr); err != nil {
-		return model_core.PatchedMessage[*model_starlark_pb.Attr, model_core.CreatedObjectTree]{}, false, err
+		return model_core.PatchedMessage[*model_starlark_pb.Attr, TMetadata]{}, false, err
 	}
 	return model_core.NewPatchedMessage(&attr, patcher), needsCode, nil
 }
 
-func (a *Attr) EncodeValue(path map[starlark.Value]struct{}, currentIdentifier *pg_label.CanonicalStarlarkIdentifier, options *ValueEncodingOptions) (model_core.PatchedMessage[*model_starlark_pb.Value, model_core.CreatedObjectTree], bool, error) {
+func (a *Attr[TReference, TMetadata]) EncodeValue(path map[starlark.Value]struct{}, currentIdentifier *pg_label.CanonicalStarlarkIdentifier, options *ValueEncodingOptions[TReference, TMetadata]) (model_core.PatchedMessage[*model_starlark_pb.Value, TMetadata], bool, error) {
 	attr, needsCode, err := a.Encode(path, options)
 	if err != nil {
-		return model_core.PatchedMessage[*model_starlark_pb.Value, model_core.CreatedObjectTree]{}, false, err
+		return model_core.PatchedMessage[*model_starlark_pb.Value, TMetadata]{}, false, err
 	}
 	return model_core.NewPatchedMessage(
 		&model_starlark_pb.Value{
@@ -90,13 +91,13 @@ func (a *Attr) EncodeValue(path map[starlark.Value]struct{}, currentIdentifier *
 	), needsCode, nil
 }
 
-func (a *Attr) CompareSameType(thread *starlark.Thread, op syntax.Token, other starlark.Value, depth int) (bool, error) {
+func (a *Attr[TReference, TMetadata]) CompareSameType(thread *starlark.Thread, op syntax.Token, other starlark.Value, depth int) (bool, error) {
 	// Compare the types.
 	var m1, m2 model_starlark_pb.Attr
 	if err := a.attrType.Encode(&m1); err != nil {
 		return false, err
 	}
-	a2 := other.(*Attr)
+	a2 := other.(*Attr[TReference, TMetadata])
 	if err := a2.attrType.Encode(&m2); err != nil {
 		return false, err
 	}
@@ -238,16 +239,16 @@ func (intListAttrType) IsOutput() (string, bool) {
 	return "", false
 }
 
-type labelAttrType struct {
+type labelAttrType[TReference any, TMetadata model_core.CloneableReferenceMetadata] struct {
 	allowNone       bool
 	allowSingleFile bool
 	executable      bool
 	valueAllowFiles []string
-	valueCfg        TransitionDefinition
+	valueCfg        TransitionDefinition[TReference, TMetadata]
 }
 
-func NewLabelAttrType(allowNone, allowSingleFile, executable bool, valueAllowFiles []string, valueCfg TransitionDefinition) AttrType {
-	return &labelAttrType{
+func NewLabelAttrType[TReference any, TMetadata model_core.CloneableReferenceMetadata](allowNone, allowSingleFile, executable bool, valueAllowFiles []string, valueCfg TransitionDefinition[TReference, TMetadata]) AttrType {
+	return &labelAttrType[TReference, TMetadata]{
 		allowNone:       allowNone,
 		allowSingleFile: allowSingleFile,
 		executable:      executable,
@@ -256,11 +257,11 @@ func NewLabelAttrType(allowNone, allowSingleFile, executable bool, valueAllowFil
 	}
 }
 
-func (labelAttrType) Type() string {
+func (labelAttrType[TReference, TMetadata]) Type() string {
 	return "label"
 }
 
-func (at *labelAttrType) Encode(out *model_starlark_pb.Attr) error {
+func (at *labelAttrType[TReference, TMetadata]) Encode(out *model_starlark_pb.Attr) error {
 	valueCfg, err := at.valueCfg.EncodeReference()
 	if err != nil {
 		return err
@@ -279,35 +280,35 @@ func (at *labelAttrType) Encode(out *model_starlark_pb.Attr) error {
 	return nil
 }
 
-func (ui *labelAttrType) GetCanonicalizer(currentPackage pg_label.CanonicalPackage) unpack.Canonicalizer {
-	canonicalizer := NewLabelOrStringUnpackerInto(currentPackage)
+func (ui *labelAttrType[TReference, TMetadata]) GetCanonicalizer(currentPackage pg_label.CanonicalPackage) unpack.Canonicalizer {
+	canonicalizer := NewLabelOrStringUnpackerInto[TReference, TMetadata](currentPackage)
 	if ui.allowNone {
 		canonicalizer = unpack.IfNotNone(canonicalizer)
 	}
 	return canonicalizer
 }
 
-func (labelAttrType) IsOutput() (string, bool) {
+func (labelAttrType[TReference, TMetadata]) IsOutput() (string, bool) {
 	return "", false
 }
 
-type labelKeyedStringDictAttrType struct {
+type labelKeyedStringDictAttrType[TReference any, TMetadata model_core.CloneableReferenceMetadata] struct {
 	dictKeyAllowFiles []string
-	dictKeyCfg        TransitionDefinition
+	dictKeyCfg        TransitionDefinition[TReference, TMetadata]
 }
 
-func NewLabelKeyedStringDictAttrType(dictKeyAllowFiles []string, dictKeyCfg TransitionDefinition) AttrType {
-	return &labelKeyedStringDictAttrType{
+func NewLabelKeyedStringDictAttrType[TReference any, TMetadata model_core.CloneableReferenceMetadata](dictKeyAllowFiles []string, dictKeyCfg TransitionDefinition[TReference, TMetadata]) AttrType {
+	return &labelKeyedStringDictAttrType[TReference, TMetadata]{
 		dictKeyAllowFiles: dictKeyAllowFiles,
 		dictKeyCfg:        dictKeyCfg,
 	}
 }
 
-func (labelKeyedStringDictAttrType) Type() string {
+func (labelKeyedStringDictAttrType[TReference, TMetadata]) Type() string {
 	return "label_keyed_string_dict"
 }
 
-func (at *labelKeyedStringDictAttrType) Encode(out *model_starlark_pb.Attr) error {
+func (at *labelKeyedStringDictAttrType[TReference, TMetadata]) Encode(out *model_starlark_pb.Attr) error {
 	dictKeyCfg, err := at.dictKeyCfg.EncodeReference()
 	if err != nil {
 		return err
@@ -323,31 +324,31 @@ func (at *labelKeyedStringDictAttrType) Encode(out *model_starlark_pb.Attr) erro
 	return nil
 }
 
-func (labelKeyedStringDictAttrType) GetCanonicalizer(currentPackage pg_label.CanonicalPackage) unpack.Canonicalizer {
-	return unpack.Dict(NewLabelOrStringUnpackerInto(currentPackage), unpack.String)
+func (labelKeyedStringDictAttrType[TReference, TMetadata]) GetCanonicalizer(currentPackage pg_label.CanonicalPackage) unpack.Canonicalizer {
+	return unpack.Dict(NewLabelOrStringUnpackerInto[TReference, TMetadata](currentPackage), unpack.String)
 }
 
-func (labelKeyedStringDictAttrType) IsOutput() (string, bool) {
+func (labelKeyedStringDictAttrType[TReference, TMetadata]) IsOutput() (string, bool) {
 	return "", false
 }
 
-type labelListAttrType struct {
+type labelListAttrType[TReference any, TMetadata model_core.CloneableReferenceMetadata] struct {
 	listValueAllowFiles []string
-	listValueCfg        TransitionDefinition
+	listValueCfg        TransitionDefinition[TReference, TMetadata]
 }
 
-func NewLabelListAttrType(listValueAllowFiles []string, listValueCfg TransitionDefinition) AttrType {
-	return &labelListAttrType{
+func NewLabelListAttrType[TReference any, TMetadata model_core.CloneableReferenceMetadata](listValueAllowFiles []string, listValueCfg TransitionDefinition[TReference, TMetadata]) AttrType {
+	return &labelListAttrType[TReference, TMetadata]{
 		listValueAllowFiles: listValueAllowFiles,
 		listValueCfg:        listValueCfg,
 	}
 }
 
-func (labelListAttrType) Type() string {
+func (labelListAttrType[TReference, TMetadata]) Type() string {
 	return "label_list"
 }
 
-func (at *labelListAttrType) Encode(out *model_starlark_pb.Attr) error {
+func (at *labelListAttrType[TReference, TMetadata]) Encode(out *model_starlark_pb.Attr) error {
 	listValueCfg, err := at.listValueCfg.EncodeReference()
 	if err != nil {
 		return err
@@ -363,29 +364,29 @@ func (at *labelListAttrType) Encode(out *model_starlark_pb.Attr) error {
 	return nil
 }
 
-func (labelListAttrType) GetCanonicalizer(currentPackage pg_label.CanonicalPackage) unpack.Canonicalizer {
-	return unpack.List(NewLabelOrStringUnpackerInto(currentPackage))
+func (labelListAttrType[TReference, TMetadata]) GetCanonicalizer(currentPackage pg_label.CanonicalPackage) unpack.Canonicalizer {
+	return unpack.List(NewLabelOrStringUnpackerInto[TReference, TMetadata](currentPackage))
 }
 
-func (labelListAttrType) IsOutput() (string, bool) {
+func (labelListAttrType[TReference, TMetadata]) IsOutput() (string, bool) {
 	return "", false
 }
 
-type outputAttrType struct {
+type outputAttrType[TReference any, TMetadata model_core.CloneableReferenceMetadata] struct {
 	filenameTemplate string
 }
 
-func NewOutputAttrType(filenameTemplate string) AttrType {
-	return &outputAttrType{
+func NewOutputAttrType[TReference any, TMetadata model_core.CloneableReferenceMetadata](filenameTemplate string) AttrType {
+	return &outputAttrType[TReference, TMetadata]{
 		filenameTemplate: filenameTemplate,
 	}
 }
 
-func (outputAttrType) Type() string {
+func (outputAttrType[TReference, TMetadata]) Type() string {
 	return "output"
 }
 
-func (at *outputAttrType) Encode(out *model_starlark_pb.Attr) error {
+func (at *outputAttrType[TReference, TMetadata]) Encode(out *model_starlark_pb.Attr) error {
 	out.Type = &model_starlark_pb.Attr_Output{
 		Output: &model_starlark_pb.Attr_OutputType{
 			FilenameTemplate: at.filenameTemplate,
@@ -394,36 +395,36 @@ func (at *outputAttrType) Encode(out *model_starlark_pb.Attr) error {
 	return nil
 }
 
-func (outputAttrType) GetCanonicalizer(currentPackage pg_label.CanonicalPackage) unpack.Canonicalizer {
-	return NewLabelOrStringUnpackerInto(currentPackage)
+func (outputAttrType[TReference, TMetadata]) GetCanonicalizer(currentPackage pg_label.CanonicalPackage) unpack.Canonicalizer {
+	return NewLabelOrStringUnpackerInto[TReference, TMetadata](currentPackage)
 }
 
-func (at *outputAttrType) IsOutput() (string, bool) {
+func (at *outputAttrType[TReference, TMetadata]) IsOutput() (string, bool) {
 	return at.filenameTemplate, true
 }
 
-type outputListAttrType struct{}
+type outputListAttrType[TReference any, TMetadata model_core.CloneableReferenceMetadata] struct{}
 
-func NewOutputListAttrType() AttrType {
-	return &outputListAttrType{}
+func NewOutputListAttrType[TReference any, TMetadata model_core.CloneableReferenceMetadata]() AttrType {
+	return &outputListAttrType[TReference, TMetadata]{}
 }
 
-func (at *outputListAttrType) Type() string {
+func (at *outputListAttrType[TReference, TMetadata]) Type() string {
 	return "output_list"
 }
 
-func (at *outputListAttrType) Encode(out *model_starlark_pb.Attr) error {
+func (at *outputListAttrType[TReference, TMetadata]) Encode(out *model_starlark_pb.Attr) error {
 	out.Type = &model_starlark_pb.Attr_OutputList{
 		OutputList: &model_starlark_pb.Attr_OutputListType{},
 	}
 	return nil
 }
 
-func (at *outputListAttrType) GetCanonicalizer(currentPackage pg_label.CanonicalPackage) unpack.Canonicalizer {
-	return unpack.List(NewLabelOrStringUnpackerInto(currentPackage))
+func (at *outputListAttrType[TReference, TMetadata]) GetCanonicalizer(currentPackage pg_label.CanonicalPackage) unpack.Canonicalizer {
+	return unpack.List(NewLabelOrStringUnpackerInto[TReference, TMetadata](currentPackage))
 }
 
-func (outputListAttrType) IsOutput() (string, bool) {
+func (outputListAttrType[TReference, TMetadata]) IsOutput() (string, bool) {
 	return "", true
 }
 
@@ -531,9 +532,9 @@ func (stringListDictAttrType) IsOutput() (string, bool) {
 	return "", false
 }
 
-func encodeNamedAttrs(attrs map[pg_label.StarlarkIdentifier]*Attr, path map[starlark.Value]struct{}, options *ValueEncodingOptions) (model_core.PatchedMessage[[]*model_starlark_pb.NamedAttr, model_core.CreatedObjectTree], bool, error) {
+func encodeNamedAttrs[TReference any, TMetadata model_core.CloneableReferenceMetadata](attrs map[pg_label.StarlarkIdentifier]*Attr[TReference, TMetadata], path map[starlark.Value]struct{}, options *ValueEncodingOptions[TReference, TMetadata]) (model_core.PatchedMessage[[]*model_starlark_pb.NamedAttr, TMetadata], bool, error) {
 	encodedAttrs := make([]*model_starlark_pb.NamedAttr, 0, len(attrs))
-	patcher := model_core.NewReferenceMessagePatcher[model_core.CreatedObjectTree]()
+	patcher := model_core.NewReferenceMessagePatcher[TMetadata]()
 	needsCode := false
 	for _, name := range slices.SortedFunc(
 		maps.Keys(attrs),
@@ -541,7 +542,7 @@ func encodeNamedAttrs(attrs map[pg_label.StarlarkIdentifier]*Attr, path map[star
 	) {
 		attr, attrNeedsCode, err := attrs[name].Encode(path, options)
 		if err != nil {
-			return model_core.PatchedMessage[[]*model_starlark_pb.NamedAttr, model_core.CreatedObjectTree]{}, false, fmt.Errorf("attr %#v: %w", name, err)
+			return model_core.PatchedMessage[[]*model_starlark_pb.NamedAttr, TMetadata]{}, false, fmt.Errorf("attr %#v: %w", name, err)
 		}
 		encodedAttrs = append(encodedAttrs, &model_starlark_pb.NamedAttr{
 			Name: name.String(),

@@ -13,12 +13,12 @@ import (
 	"go.starlark.net/starlark"
 )
 
-type ExecGroup struct {
+type ExecGroup[TReference any, TMetadata model_core.CloneableReferenceMetadata] struct {
 	execCompatibleWith []string
-	toolchains         []*ToolchainType
+	toolchains         []*ToolchainType[TReference, TMetadata]
 }
 
-func NewExecGroup(execCompatibleWith []pg_label.ResolvedLabel, toolchains []*ToolchainType) *ExecGroup {
+func NewExecGroup[TReference any, TMetadata model_core.CloneableReferenceMetadata](execCompatibleWith []pg_label.ResolvedLabel, toolchains []*ToolchainType[TReference, TMetadata]) *ExecGroup[TReference, TMetadata] {
 	execCompatibleWithStrings := make([]string, 0, len(execCompatibleWith))
 	for _, label := range execCompatibleWith {
 		execCompatibleWithStrings = append(execCompatibleWithStrings, label.String())
@@ -27,7 +27,7 @@ func NewExecGroup(execCompatibleWith []pg_label.ResolvedLabel, toolchains []*Too
 
 	// Bazel permits listing the same toolchain multiple types, and
 	// with different properties. Deduplicate and merge them.
-	toolchainsMap := map[string]*ToolchainType{}
+	toolchainsMap := map[string]*ToolchainType[TReference, TMetadata]{}
 	for _, toolchain := range toolchains {
 		key := toolchain.toolchainType.String()
 		if existingToolchain, ok := toolchainsMap[key]; ok {
@@ -36,36 +36,36 @@ func NewExecGroup(execCompatibleWith []pg_label.ResolvedLabel, toolchains []*Too
 			toolchainsMap[key] = toolchain
 		}
 	}
-	deduplicatedToolchains := make([]*ToolchainType, 0, len(toolchainsMap))
+	deduplicatedToolchains := make([]*ToolchainType[TReference, TMetadata], 0, len(toolchainsMap))
 	for _, key := range slices.Sorted(maps.Keys(toolchainsMap)) {
 		deduplicatedToolchains = append(deduplicatedToolchains, toolchainsMap[key])
 	}
 
-	return &ExecGroup{
+	return &ExecGroup[TReference, TMetadata]{
 		execCompatibleWith: slices.Compact(execCompatibleWithStrings),
 		toolchains:         deduplicatedToolchains,
 	}
 }
 
-func (ExecGroup) String() string {
+func (ExecGroup[TReference, TMetadata]) String() string {
 	return "<exec_group>"
 }
 
-func (ExecGroup) Type() string {
+func (ExecGroup[TReference, TMetadata]) Type() string {
 	return "exec_group"
 }
 
-func (ExecGroup) Freeze() {}
+func (ExecGroup[TReference, TMetadata]) Freeze() {}
 
-func (ExecGroup) Truth() starlark.Bool {
+func (ExecGroup[TReference, TMetadata]) Truth() starlark.Bool {
 	return starlark.True
 }
 
-func (ExecGroup) Hash(thread *starlark.Thread) (uint32, error) {
+func (ExecGroup[TReference, TMetadata]) Hash(thread *starlark.Thread) (uint32, error) {
 	return 0, errors.New("exec_group cannot be hashed")
 }
 
-func (eg *ExecGroup) Encode() *model_starlark_pb.ExecGroup {
+func (eg *ExecGroup[TReference, TMetadata]) Encode() *model_starlark_pb.ExecGroup {
 	execGroup := model_starlark_pb.ExecGroup{
 		ExecCompatibleWith: eg.execCompatibleWith,
 		Toolchains:         make([]*model_starlark_pb.ToolchainType, 0, len(eg.toolchains)),
@@ -76,8 +76,8 @@ func (eg *ExecGroup) Encode() *model_starlark_pb.ExecGroup {
 	return &execGroup
 }
 
-func (eg *ExecGroup) EncodeValue(path map[starlark.Value]struct{}, currentIdentifier *pg_label.CanonicalStarlarkIdentifier, options *ValueEncodingOptions) (model_core.PatchedMessage[*model_starlark_pb.Value, model_core.CreatedObjectTree], bool, error) {
-	return model_core.NewSimplePatchedMessage[model_core.CreatedObjectTree](
+func (eg *ExecGroup[TReference, TMetadata]) EncodeValue(path map[starlark.Value]struct{}, currentIdentifier *pg_label.CanonicalStarlarkIdentifier, options *ValueEncodingOptions[TReference, TMetadata]) (model_core.PatchedMessage[*model_starlark_pb.Value, TMetadata], bool, error) {
+	return model_core.NewSimplePatchedMessage[TMetadata](
 		&model_starlark_pb.Value{
 			Kind: &model_starlark_pb.Value_ExecGroup{
 				ExecGroup: eg.Encode(),

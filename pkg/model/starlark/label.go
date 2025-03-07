@@ -9,47 +9,48 @@ import (
 	model_core "github.com/buildbarn/bonanza/pkg/model/core"
 	model_starlark_pb "github.com/buildbarn/bonanza/pkg/proto/model/starlark"
 	"github.com/buildbarn/bonanza/pkg/starlark/unpack"
+	"github.com/buildbarn/bonanza/pkg/storage/object"
 
 	"go.starlark.net/starlark"
 	"go.starlark.net/syntax"
 )
 
-type label struct {
+type label[TReference any, TMetadata model_core.CloneableReferenceMetadata] struct {
 	value pg_label.ResolvedLabel
 }
 
 var (
-	_ EncodableValue    = label{}
-	_ HasLabels         = label{}
-	_ starlark.HasAttrs = label{}
-	_ starlark.Value    = label{}
+	_ EncodableValue[object.LocalReference, model_core.CloneableReferenceMetadata] = label[object.LocalReference, model_core.CloneableReferenceMetadata]{}
+	_ HasLabels                                                                    = label[object.LocalReference, model_core.CloneableReferenceMetadata]{}
+	_ starlark.HasAttrs                                                            = label[object.LocalReference, model_core.CloneableReferenceMetadata]{}
+	_ starlark.Value                                                               = label[object.LocalReference, model_core.CloneableReferenceMetadata]{}
 )
 
-func NewLabel(value pg_label.ResolvedLabel) starlark.Value {
-	return label{
+func NewLabel[TReference any, TMetadata model_core.CloneableReferenceMetadata](value pg_label.ResolvedLabel) starlark.Value {
+	return label[TReference, TMetadata]{
 		value: value,
 	}
 }
 
-func (l label) String() string {
+func (l label[TReference, TMetadata]) String() string {
 	return l.value.String()
 }
 
-func (l label) Type() string {
+func (l label[TReference, TMetadata]) Type() string {
 	return "Label"
 }
 
-func (l label) Freeze() {}
+func (l label[TReference, TMetadata]) Freeze() {}
 
-func (l label) Truth() starlark.Bool {
+func (l label[TReference, TMetadata]) Truth() starlark.Bool {
 	return starlark.True
 }
 
-func (l label) Hash(thread *starlark.Thread) (uint32, error) {
+func (l label[TReference, TMetadata]) Hash(thread *starlark.Thread) (uint32, error) {
 	return starlark.String(l.value.String()).Hash(thread)
 }
 
-func (l label) Attr(thread *starlark.Thread, name string) (starlark.Value, error) {
+func (l label[TReference, TMetadata]) Attr(thread *starlark.Thread, name string) (starlark.Value, error) {
 	switch name {
 	case "name":
 		return starlark.String(l.value.GetTargetName().String()), nil
@@ -72,7 +73,7 @@ func (l label) Attr(thread *starlark.Thread, name string) (starlark.Value, error
 				); err != nil {
 					return nil, err
 				}
-				return NewLabel(l.value.AppendTargetName(targetName)), nil
+				return NewLabel[TReference, TMetadata](l.value.AppendTargetName(targetName)), nil
 			},
 		), nil
 	case "workspace_root":
@@ -98,12 +99,12 @@ var labelAttrNames = []string{
 	"workspace_root",
 }
 
-func (l label) AttrNames() []string {
+func (l label[TReference, TMetadata]) AttrNames() []string {
 	return labelAttrNames
 }
 
-func (l label) EncodeValue(path map[starlark.Value]struct{}, currentIdentifier *pg_label.CanonicalStarlarkIdentifier, options *ValueEncodingOptions) (model_core.PatchedMessage[*model_starlark_pb.Value, model_core.CreatedObjectTree], bool, error) {
-	return model_core.NewSimplePatchedMessage[model_core.CreatedObjectTree](
+func (l label[TReference, TMetadata]) EncodeValue(path map[starlark.Value]struct{}, currentIdentifier *pg_label.CanonicalStarlarkIdentifier, options *ValueEncodingOptions[TReference, TMetadata]) (model_core.PatchedMessage[*model_starlark_pb.Value, TMetadata], bool, error) {
+	return model_core.NewSimplePatchedMessage[TMetadata](
 		&model_starlark_pb.Value{
 			Kind: &model_starlark_pb.Value_Label{
 				Label: l.value.String(),
@@ -112,7 +113,7 @@ func (l label) EncodeValue(path map[starlark.Value]struct{}, currentIdentifier *
 	), false, nil
 }
 
-func (l label) VisitLabels(thread *starlark.Thread, path map[starlark.Value]struct{}, visitor func(pg_label.ResolvedLabel) error) error {
+func (l label[TReference, TMetadata]) VisitLabels(thread *starlark.Thread, path map[starlark.Value]struct{}, visitor func(pg_label.ResolvedLabel) error) error {
 	if err := visitor(l.value); err != nil {
 		return fmt.Errorf("label %#v: %w", l.value.String(), err)
 	}
@@ -129,17 +130,17 @@ const (
 	RootModuleResolverKey    = "root_module_resolver"
 )
 
-type labelOrStringUnpackerInto struct {
+type labelOrStringUnpackerInto[TReference any, TMetadata model_core.CloneableReferenceMetadata] struct {
 	basePackage pg_label.CanonicalPackage
 }
 
-func NewLabelOrStringUnpackerInto(basePackage pg_label.CanonicalPackage) unpack.UnpackerInto[pg_label.ResolvedLabel] {
-	return &labelOrStringUnpackerInto{
+func NewLabelOrStringUnpackerInto[TReference any, TMetadata model_core.CloneableReferenceMetadata](basePackage pg_label.CanonicalPackage) unpack.UnpackerInto[pg_label.ResolvedLabel] {
+	return &labelOrStringUnpackerInto[TReference, TMetadata]{
 		basePackage: basePackage,
 	}
 }
 
-func (ui *labelOrStringUnpackerInto) UnpackInto(thread *starlark.Thread, v starlark.Value, dst *pg_label.ResolvedLabel) error {
+func (ui *labelOrStringUnpackerInto[TReference, TMetadata]) UnpackInto(thread *starlark.Thread, v starlark.Value, dst *pg_label.ResolvedLabel) error {
 	switch typedV := v.(type) {
 	case starlark.String:
 		// Label value is a bare string. Parse it.
@@ -192,7 +193,7 @@ func (ui *labelOrStringUnpackerInto) UnpackInto(thread *starlark.Thread, v starl
 			WithCanonicalRepo(rootModule.ToModuleInstance(nil).GetBareCanonicalRepo()).
 			AsResolved()
 		return nil
-	case label:
+	case label[TReference, TMetadata]:
 		// Label value is already wrapped in Label().
 		*dst = typedV.value
 		return nil
@@ -201,24 +202,26 @@ func (ui *labelOrStringUnpackerInto) UnpackInto(thread *starlark.Thread, v starl
 	}
 }
 
-func (ui *labelOrStringUnpackerInto) Canonicalize(thread *starlark.Thread, v starlark.Value) (starlark.Value, error) {
+func (ui *labelOrStringUnpackerInto[TReference, TMetadata]) Canonicalize(thread *starlark.Thread, v starlark.Value) (starlark.Value, error) {
 	var l pg_label.ResolvedLabel
 	if err := ui.UnpackInto(thread, v, &l); err != nil {
 		return nil, err
 	}
-	return label{value: l}, nil
+	return label[TReference, TMetadata]{value: l}, nil
 }
 
-func (labelOrStringUnpackerInto) GetConcatenationOperator() syntax.Token {
+func (labelOrStringUnpackerInto[TReference, TMetadata]) GetConcatenationOperator() syntax.Token {
 	return 0
 }
 
-type labelUnpackerInto struct{}
+type labelUnpackerInto[TReference any, TMetadata model_core.CloneableReferenceMetadata] struct{}
 
-var LabelUnpackerInto unpack.UnpackerInto[pg_label.ResolvedLabel] = labelUnpackerInto{}
+func NewLabelUnpackerInto[TReference any, TMetadata model_core.CloneableReferenceMetadata]() unpack.UnpackerInto[pg_label.ResolvedLabel] {
+	return labelUnpackerInto[TReference, TMetadata]{}
+}
 
-func (labelUnpackerInto) UnpackInto(thread *starlark.Thread, v starlark.Value, dst *pg_label.ResolvedLabel) error {
-	l, ok := v.(label)
+func (labelUnpackerInto[TReference, TMetadata]) UnpackInto(thread *starlark.Thread, v starlark.Value, dst *pg_label.ResolvedLabel) error {
+	l, ok := v.(label[TReference, TMetadata])
 	if !ok {
 		return fmt.Errorf("got %s, want Label", v.Type())
 	}
@@ -226,15 +229,15 @@ func (labelUnpackerInto) UnpackInto(thread *starlark.Thread, v starlark.Value, d
 	return nil
 }
 
-func (ui labelUnpackerInto) Canonicalize(thread *starlark.Thread, v starlark.Value) (starlark.Value, error) {
+func (ui labelUnpackerInto[TReference, TMetadata]) Canonicalize(thread *starlark.Thread, v starlark.Value) (starlark.Value, error) {
 	var l pg_label.ResolvedLabel
 	if err := ui.UnpackInto(thread, v, &l); err != nil {
 		return nil, err
 	}
-	return label{value: l}, nil
+	return label[TReference, TMetadata]{value: l}, nil
 }
 
-func (labelUnpackerInto) GetConcatenationOperator() syntax.Token {
+func (labelUnpackerInto[TReference, TMetadata]) GetConcatenationOperator() syntax.Token {
 	return 0
 }
 

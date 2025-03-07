@@ -23,7 +23,7 @@ import (
 	"google.golang.org/grpc/status"
 )
 
-func (c *baseComputer[TReference]) ComputeActionResultValue(ctx context.Context, key model_core.Message[*model_analysis_pb.ActionResult_Key, TReference], e ActionResultEnvironment[TReference]) (PatchedActionResultValue, error) {
+func (c *baseComputer[TReference, TMetadata]) ComputeActionResultValue(ctx context.Context, key model_core.Message[*model_analysis_pb.ActionResult_Key, TReference], e ActionResultEnvironment[TReference]) (PatchedActionResultValue, error) {
 	commandEncodersValue := e.GetCommandEncodersValue(&model_analysis_pb.CommandEncoders_Key{})
 	if !commandEncodersValue.IsSet() {
 		return PatchedActionResultValue{}, evaluation.ErrMissingDependency
@@ -99,7 +99,7 @@ func (c *baseComputer[TReference]) ComputeActionResultValue(ctx context.Context,
 	return model_core.NewPatchedMessage(result, patcher), nil
 }
 
-func (c *baseComputer[TReference]) convertDictToEnvironmentVariableList(environment map[string]string, commandEncoder model_encoding.BinaryEncoder) (model_core.PatchedMessage[[]*model_command_pb.EnvironmentVariableList_Element, dag.ObjectContentsWalker], error) {
+func (c *baseComputer[TReference, TMetadata]) convertDictToEnvironmentVariableList(environment map[string]string, commandEncoder model_encoding.BinaryEncoder) (model_core.PatchedMessage[[]*model_command_pb.EnvironmentVariableList_Element, dag.ObjectContentsWalker], error) {
 	environmentVariablesBuilder := btree.NewSplitProllyBuilder(
 		1<<16,
 		1<<18,
@@ -139,7 +139,7 @@ func (c *baseComputer[TReference]) convertDictToEnvironmentVariableList(environm
 	return environmentVariablesBuilder.FinalizeList()
 }
 
-func (c *baseComputer[TReference]) getOutputsFromActionResult(ctx context.Context, actionResult model_core.Message[*model_analysis_pb.ActionResult_Value, TReference], directoryReaders *DirectoryReaders[TReference]) (model_core.Message[*model_command_pb.Outputs, TReference], error) {
+func (c *baseComputer[TReference, TMetadata]) getOutputsFromActionResult(ctx context.Context, actionResult model_core.Message[*model_analysis_pb.ActionResult_Value, TReference], directoryReaders *DirectoryReaders[TReference]) (model_core.Message[*model_command_pb.Outputs, TReference], error) {
 	if actionResult.Message.OutputsReference == nil {
 		// Action did not yield any outputs. Return an empty
 		// outputs message, so any code that attempts to access

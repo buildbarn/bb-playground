@@ -26,28 +26,28 @@ var declaredToolchainInfoProviderIdentifier = label.MustNewCanonicalStarlarkIden
 
 const toolchainRuleIdentifier = "@@builtins_core+//:exports.bzl%toolchain"
 
-type registeredToolchainExtractingModuleDotBazelHandler[TReference object.BasicReference] struct {
+type registeredToolchainExtractingModuleDotBazelHandler[TReference object.BasicReference, TMetadata BaseComputerReferenceMetadata] struct {
 	context                    context.Context
-	computer                   *baseComputer[TReference]
+	computer                   *baseComputer[TReference, TMetadata]
 	environment                RegisteredToolchainsEnvironment[TReference]
 	moduleInstance             label.ModuleInstance
 	ignoreDevDependencies      bool
 	registeredToolchainsByType map[string][]*model_analysis_pb.RegisteredToolchain
 }
 
-func (registeredToolchainExtractingModuleDotBazelHandler[TReference]) BazelDep(name label.Module, version *label.ModuleVersion, maxCompatibilityLevel int, repoName label.ApparentRepo, devDependency bool) error {
+func (registeredToolchainExtractingModuleDotBazelHandler[TReference, TMetadata]) BazelDep(name label.Module, version *label.ModuleVersion, maxCompatibilityLevel int, repoName label.ApparentRepo, devDependency bool) error {
 	return nil
 }
 
-func (registeredToolchainExtractingModuleDotBazelHandler[TReference]) Module(name label.Module, version *label.ModuleVersion, compatibilityLevel int, repoName label.ApparentRepo, bazelCompatibility []string) error {
+func (registeredToolchainExtractingModuleDotBazelHandler[TReference, TMetadata]) Module(name label.Module, version *label.ModuleVersion, compatibilityLevel int, repoName label.ApparentRepo, bazelCompatibility []string) error {
 	return nil
 }
 
-func (registeredToolchainExtractingModuleDotBazelHandler[TReference]) RegisterExecutionPlatforms(platformTargetPatterns []label.ApparentTargetPattern, devDependency bool) error {
+func (registeredToolchainExtractingModuleDotBazelHandler[TReference, TMetadata]) RegisterExecutionPlatforms(platformTargetPatterns []label.ApparentTargetPattern, devDependency bool) error {
 	return nil
 }
 
-func (h *registeredToolchainExtractingModuleDotBazelHandler[TReference]) RegisterToolchains(toolchainTargetPatterns []label.ApparentTargetPattern, devDependency bool) error {
+func (h *registeredToolchainExtractingModuleDotBazelHandler[TReference, TMetadata]) RegisterToolchains(toolchainTargetPatterns []label.ApparentTargetPattern, devDependency bool) error {
 	if !devDependency || !h.ignoreDevDependencies {
 		missingDependencies := false
 		listReader := h.computer.valueReaders.List
@@ -251,20 +251,20 @@ func (h *registeredToolchainExtractingModuleDotBazelHandler[TReference]) Registe
 	return nil
 }
 
-func (registeredToolchainExtractingModuleDotBazelHandler[TReference]) UseExtension(extensionBzlFile label.ApparentLabel, extensionName label.StarlarkIdentifier, devDependency, isolate bool) (pg_starlark.ModuleExtensionProxy, error) {
+func (registeredToolchainExtractingModuleDotBazelHandler[TReference, TMetadata]) UseExtension(extensionBzlFile label.ApparentLabel, extensionName label.StarlarkIdentifier, devDependency, isolate bool) (pg_starlark.ModuleExtensionProxy, error) {
 	return pg_starlark.NullModuleExtensionProxy, nil
 }
 
-func (registeredToolchainExtractingModuleDotBazelHandler[TReference]) UseRepoRule(repoRuleBzlFile label.ApparentLabel, repoRuleName string) (pg_starlark.RepoRuleProxy, error) {
+func (registeredToolchainExtractingModuleDotBazelHandler[TReference, TMetadata]) UseRepoRule(repoRuleBzlFile label.ApparentLabel, repoRuleName string) (pg_starlark.RepoRuleProxy, error) {
 	return func(name label.ApparentRepo, devDependency bool, attrs map[string]starlark.Value) error {
 		return nil
 	}, nil
 }
 
-func (c *baseComputer[TReference]) ComputeRegisteredToolchainsValue(ctx context.Context, key *model_analysis_pb.RegisteredToolchains_Key, e RegisteredToolchainsEnvironment[TReference]) (PatchedRegisteredToolchainsValue, error) {
+func (c *baseComputer[TReference, TMetadata]) ComputeRegisteredToolchainsValue(ctx context.Context, key *model_analysis_pb.RegisteredToolchains_Key, e RegisteredToolchainsEnvironment[TReference]) (PatchedRegisteredToolchainsValue, error) {
 	registeredToolchainsByType := map[string][]*model_analysis_pb.RegisteredToolchain{}
 	if err := c.visitModuleDotBazelFilesBreadthFirst(ctx, e, func(moduleInstance label.ModuleInstance, ignoreDevDependencies bool) pg_starlark.ChildModuleDotBazelHandler {
-		return &registeredToolchainExtractingModuleDotBazelHandler[TReference]{
+		return &registeredToolchainExtractingModuleDotBazelHandler[TReference, TMetadata]{
 			context:                    ctx,
 			computer:                   c,
 			environment:                e,

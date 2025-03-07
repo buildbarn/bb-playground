@@ -23,8 +23,8 @@ import (
 
 var platformInfoProviderIdentifier = label.MustNewCanonicalStarlarkIdentifier("@@builtins_core+//:exports.bzl%PlatformInfo")
 
-type registeredExecutionPlatformExtractingModuleDotBazelHandler[TReference object.BasicReference] struct {
-	computer              *baseComputer[TReference]
+type registeredExecutionPlatformExtractingModuleDotBazelHandler[TReference object.BasicReference, TMetadata BaseComputerReferenceMetadata] struct {
+	computer              *baseComputer[TReference, TMetadata]
 	context               context.Context
 	environment           RegisteredExecutionPlatformsEnvironment[TReference]
 	moduleInstance        label.ModuleInstance
@@ -32,15 +32,15 @@ type registeredExecutionPlatformExtractingModuleDotBazelHandler[TReference objec
 	executionPlatforms    *[]*model_analysis_pb.ExecutionPlatform
 }
 
-func (registeredExecutionPlatformExtractingModuleDotBazelHandler[TReference]) BazelDep(name label.Module, version *label.ModuleVersion, maxCompatibilityLevel int, repoName label.ApparentRepo, devDependency bool) error {
+func (registeredExecutionPlatformExtractingModuleDotBazelHandler[TReference, TMetadata]) BazelDep(name label.Module, version *label.ModuleVersion, maxCompatibilityLevel int, repoName label.ApparentRepo, devDependency bool) error {
 	return nil
 }
 
-func (registeredExecutionPlatformExtractingModuleDotBazelHandler[TReference]) Module(name label.Module, version *label.ModuleVersion, compatibilityLevel int, repoName label.ApparentRepo, bazelCompatibility []string) error {
+func (registeredExecutionPlatformExtractingModuleDotBazelHandler[TReference, TMetadata]) Module(name label.Module, version *label.ModuleVersion, compatibilityLevel int, repoName label.ApparentRepo, bazelCompatibility []string) error {
 	return nil
 }
 
-func (c *baseComputer[TReference]) extractFromPlatformInfoConstraints(ctx context.Context, value model_core.Message[*model_starlark_pb.Value, TReference]) ([]*model_analysis_pb.Constraint, error) {
+func (c *baseComputer[TReference, TMetadata]) extractFromPlatformInfoConstraints(ctx context.Context, value model_core.Message[*model_starlark_pb.Value, TReference]) ([]*model_analysis_pb.Constraint, error) {
 	dict, ok := value.Message.Kind.(*model_starlark_pb.Value_Dict)
 	if !ok {
 		return nil, errors.New("constraints field of PlatformInfo")
@@ -76,7 +76,7 @@ func (c *baseComputer[TReference]) extractFromPlatformInfoConstraints(ctx contex
 	return sortedConstraints, nil
 }
 
-func (h *registeredExecutionPlatformExtractingModuleDotBazelHandler[TReference]) RegisterExecutionPlatforms(platformTargetPatterns []label.ApparentTargetPattern, devDependency bool) error {
+func (h *registeredExecutionPlatformExtractingModuleDotBazelHandler[TReference, TMetadata]) RegisterExecutionPlatforms(platformTargetPatterns []label.ApparentTargetPattern, devDependency bool) error {
 	if !devDependency || !h.ignoreDevDependencies {
 		listReader := h.computer.valueReaders.List
 		for _, apparentPlatformTargetPattern := range platformTargetPatterns {
@@ -152,24 +152,24 @@ func (h *registeredExecutionPlatformExtractingModuleDotBazelHandler[TReference])
 	return nil
 }
 
-func (registeredExecutionPlatformExtractingModuleDotBazelHandler[TReference]) RegisterToolchains(toolchainTargetPatterns []label.ApparentTargetPattern, devDependency bool) error {
+func (registeredExecutionPlatformExtractingModuleDotBazelHandler[TReference, TMetadata]) RegisterToolchains(toolchainTargetPatterns []label.ApparentTargetPattern, devDependency bool) error {
 	return nil
 }
 
-func (registeredExecutionPlatformExtractingModuleDotBazelHandler[TReference]) UseExtension(extensionBzlFile label.ApparentLabel, extensionName label.StarlarkIdentifier, devDependency, isolate bool) (pg_starlark.ModuleExtensionProxy, error) {
+func (registeredExecutionPlatformExtractingModuleDotBazelHandler[TReference, TMetadata]) UseExtension(extensionBzlFile label.ApparentLabel, extensionName label.StarlarkIdentifier, devDependency, isolate bool) (pg_starlark.ModuleExtensionProxy, error) {
 	return pg_starlark.NullModuleExtensionProxy, nil
 }
 
-func (registeredExecutionPlatformExtractingModuleDotBazelHandler[TReference]) UseRepoRule(repoRuleBzlFile label.ApparentLabel, repoRuleName string) (pg_starlark.RepoRuleProxy, error) {
+func (registeredExecutionPlatformExtractingModuleDotBazelHandler[TReference, TMetadata]) UseRepoRule(repoRuleBzlFile label.ApparentLabel, repoRuleName string) (pg_starlark.RepoRuleProxy, error) {
 	return func(name label.ApparentRepo, devDependency bool, attrs map[string]starlark.Value) error {
 		return nil
 	}, nil
 }
 
-func (c *baseComputer[TReference]) ComputeRegisteredExecutionPlatformsValue(ctx context.Context, key *model_analysis_pb.RegisteredExecutionPlatforms_Key, e RegisteredExecutionPlatformsEnvironment[TReference]) (PatchedRegisteredExecutionPlatformsValue, error) {
+func (c *baseComputer[TReference, TMetadata]) ComputeRegisteredExecutionPlatformsValue(ctx context.Context, key *model_analysis_pb.RegisteredExecutionPlatforms_Key, e RegisteredExecutionPlatformsEnvironment[TReference]) (PatchedRegisteredExecutionPlatformsValue, error) {
 	var executionPlatforms []*model_analysis_pb.ExecutionPlatform
 	if err := c.visitModuleDotBazelFilesBreadthFirst(ctx, e, func(moduleInstance label.ModuleInstance, ignoreDevDependencies bool) pg_starlark.ChildModuleDotBazelHandler {
-		return &registeredExecutionPlatformExtractingModuleDotBazelHandler[TReference]{
+		return &registeredExecutionPlatformExtractingModuleDotBazelHandler[TReference, TMetadata]{
 			computer:              c,
 			context:               ctx,
 			environment:           e,

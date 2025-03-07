@@ -196,9 +196,11 @@ func (e *localExecutor) Execute(ctx context.Context, action *model_command_pb.Ac
 			Status: status.Convert(util.StatusWrap(err, "Invalid namespace")).Proto(),
 		}, 0, remoteworker_pb.CurrentState_Completed_FAILED
 	}
-	parsedObjectFetcher := model_parser.NewParsedObjectFetcher(
+	parsedObjectPoolIngester := model_parser.NewParsedObjectPoolIngester(
 		e.parsedObjectPool,
-		object_namespacemapping.NewNamespaceAddingDownloader(e.objectDownloader, namespace),
+		model_parser.NewDownloadingParsedObjectReader(
+			object_namespacemapping.NewNamespaceAddingDownloader(e.objectDownloader, namespace),
+		),
 	)
 
 	// Fetch the Command message, so that we know the arguments and
@@ -213,7 +215,7 @@ func (e *localExecutor) Execute(ctx context.Context, action *model_command_pb.Ac
 		}, 0, remoteworker_pb.CurrentState_Completed_FAILED
 	}
 	commandReader := model_parser.LookupParsedObjectReader[object.LocalReference](
-		parsedObjectFetcher,
+		parsedObjectPoolIngester,
 		model_parser.NewChainedObjectParser(
 			model_parser.NewEncodedObjectParser[object.LocalReference](commandEncoder),
 			model_parser.NewMessageObjectParser[object.LocalReference, model_command_pb.Command](),
@@ -241,7 +243,7 @@ func (e *localExecutor) Execute(ctx context.Context, action *model_command_pb.Ac
 	for element := range btree.AllLeaves(
 		ctx,
 		model_parser.LookupParsedObjectReader(
-			parsedObjectFetcher,
+			parsedObjectPoolIngester,
 			model_parser.NewChainedObjectParser(
 				model_parser.NewEncodedObjectParser[object.LocalReference](commandEncoder),
 				model_parser.NewMessageListObjectParser[object.LocalReference, model_command_pb.ArgumentList_Element](),
@@ -274,7 +276,7 @@ func (e *localExecutor) Execute(ctx context.Context, action *model_command_pb.Ac
 	for entry := range btree.AllLeaves(
 		ctx,
 		model_parser.LookupParsedObjectReader(
-			parsedObjectFetcher,
+			parsedObjectPoolIngester,
 			model_parser.NewChainedObjectParser(
 				model_parser.NewEncodedObjectParser[object.LocalReference](commandEncoder),
 				model_parser.NewMessageListObjectParser[object.LocalReference, model_command_pb.EnvironmentVariableList_Element](),
@@ -358,14 +360,14 @@ func (e *localExecutor) Execute(ctx context.Context, action *model_command_pb.Ac
 			pg_vfs.NewObjectBackedInitialContentsFetcher(
 				ctxWithIOError,
 				model_parser.LookupParsedObjectReader(
-					parsedObjectFetcher,
+					parsedObjectPoolIngester,
 					model_parser.NewChainedObjectParser(
 						model_parser.NewEncodedObjectParser[object.LocalReference](directoryEncoder),
 						model_filesystem.NewDirectoryClusterObjectParser[object.LocalReference](),
 					),
 				),
 				model_parser.LookupParsedObjectReader(
-					parsedObjectFetcher,
+					parsedObjectPoolIngester,
 					model_parser.NewChainedObjectParser(
 						model_parser.NewEncodedObjectParser[object.LocalReference](directoryEncoder),
 						model_parser.NewMessageObjectParser[object.LocalReference, model_filesystem_pb.Leaves](),
@@ -376,14 +378,14 @@ func (e *localExecutor) Execute(ctx context.Context, action *model_command_pb.Ac
 						ctxWithIOError,
 						model_filesystem.NewFileReader(
 							model_parser.LookupParsedObjectReader(
-								parsedObjectFetcher,
+								parsedObjectPoolIngester,
 								model_parser.NewChainedObjectParser(
 									model_parser.NewEncodedObjectParser[object.LocalReference](fileCreationParameters.GetFileContentsListEncoder()),
 									model_filesystem.NewFileContentsListObjectParser[object.LocalReference](),
 								),
 							),
 							model_parser.LookupParsedObjectReader(
-								parsedObjectFetcher,
+								parsedObjectPoolIngester,
 								model_parser.NewChainedObjectParser(
 									model_parser.NewEncodedObjectParser[object.LocalReference](fileCreationParameters.GetChunkEncoder()),
 									model_parser.NewRawObjectParser[object.LocalReference](),

@@ -18,7 +18,7 @@ import (
 	"github.com/buildbarn/bonanza/pkg/storage/dag"
 )
 
-func (c *baseComputer[TReference]) ComputePackagesAtAndBelowValue(ctx context.Context, key *model_analysis_pb.PackagesAtAndBelow_Key, e PackagesAtAndBelowEnvironment[TReference]) (PatchedPackagesAtAndBelowValue, error) {
+func (c *baseComputer[TReference, TMetadata]) ComputePackagesAtAndBelowValue(ctx context.Context, key *model_analysis_pb.PackagesAtAndBelow_Key, e PackagesAtAndBelowEnvironment[TReference]) (PatchedPackagesAtAndBelowValue, error) {
 	basePackage, err := label.NewCanonicalPackage(key.BasePackage)
 	if err != nil {
 		return PatchedPackagesAtAndBelowValue{}, errors.New("invalid base package")

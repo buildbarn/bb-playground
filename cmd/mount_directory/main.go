@@ -76,36 +76,38 @@ func main() {
 		if err != nil {
 			return util.StatusWrap(err, "Failed to create parsed object pool")
 		}
-		parsedObjectFetcher := model_parser.NewParsedObjectFetcher(
+		parsedObjectPoolIngester := model_parser.NewParsedObjectPoolIngester(
 			parsedObjectPool,
-			object_namespacemapping.NewNamespaceAddingDownloader(
-				object_grpc.NewGRPCDownloader(object_pb.NewDownloaderClient(grpcClient)),
-				namespace,
+			model_parser.NewDownloadingParsedObjectReader(
+				object_namespacemapping.NewNamespaceAddingDownloader(
+					object_grpc.NewGRPCDownloader(object_pb.NewDownloaderClient(grpcClient)),
+					namespace,
+				),
 			),
 		)
 		leavesReader := model_parser.LookupParsedObjectReader(
-			parsedObjectFetcher,
+			parsedObjectPoolIngester,
 			model_parser.NewChainedObjectParser(
 				model_parser.NewEncodedObjectParser[object.LocalReference](directoryEncoder),
 				model_parser.NewMessageObjectParser[object.LocalReference, model_filesystem_pb.Leaves](),
 			),
 		)
 		directoryClusterReader := model_parser.LookupParsedObjectReader(
-			parsedObjectFetcher,
+			parsedObjectPoolIngester,
 			model_parser.NewChainedObjectParser(
 				model_parser.NewEncodedObjectParser[object.LocalReference](directoryEncoder),
 				model_filesystem.NewDirectoryClusterObjectParser[object.LocalReference](),
 			),
 		)
 		fileContentsListReader := model_parser.LookupParsedObjectReader(
-			parsedObjectFetcher,
+			parsedObjectPoolIngester,
 			model_parser.NewChainedObjectParser(
 				model_parser.NewEncodedObjectParser[object.LocalReference](concatenatedFileEncoder),
 				model_filesystem.NewFileContentsListObjectParser[object.LocalReference](),
 			),
 		)
 		fileChunkReader := model_parser.LookupParsedObjectReader(
-			parsedObjectFetcher,
+			parsedObjectPoolIngester,
 			model_parser.NewChainedObjectParser(
 				model_parser.NewEncodedObjectParser[object.LocalReference](smallFileEncoder),
 				model_parser.NewRawObjectParser[object.LocalReference](),

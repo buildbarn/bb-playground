@@ -9,7 +9,7 @@ import (
 	"github.com/buildbarn/bonanza/pkg/storage/dag"
 )
 
-func (c *baseComputer[TReference]) ComputeModuleRegistryUrlsValue(ctx context.Context, key *model_analysis_pb.ModuleRegistryUrls_Key, e ModuleRegistryUrlsEnvironment[TReference]) (PatchedModuleRegistryUrlsValue, error) {
+func (c *baseComputer[TReference, TMetadata]) ComputeModuleRegistryUrlsValue(ctx context.Context, key *model_analysis_pb.ModuleRegistryUrls_Key, e ModuleRegistryUrlsEnvironment[TReference]) (PatchedModuleRegistryUrlsValue, error) {
 	buildSpecification := e.GetBuildSpecificationValue(&model_analysis_pb.BuildSpecification_Key{})
 	if !buildSpecification.IsSet() {
 		return PatchedModuleRegistryUrlsValue{}, evaluation.ErrMissingDependency

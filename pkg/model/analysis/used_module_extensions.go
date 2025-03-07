@@ -27,18 +27,18 @@ type moduleExtensionUser struct {
 	tagClasses map[string]*model_analysis_pb.ModuleExtension_TagClass
 }
 
-type usedModuleExtensionOptions[TReference object.BasicReference] struct {
+type usedModuleExtensionOptions[TReference object.BasicReference, TMetadata BaseComputerReferenceMetadata] struct {
 	environment UsedModuleExtensionsEnvironment[TReference]
-	patcher     *model_core.ReferenceMessagePatcher[model_core.CreatedObjectTree]
+	patcher     *model_core.ReferenceMessagePatcher[TMetadata]
 }
 
-type usedModuleExtensionProxy[TReference object.BasicReference] struct {
-	handler       *usedModuleExtensionExtractingModuleDotBazelHandler[TReference]
+type usedModuleExtensionProxy[TReference object.BasicReference, TMetadata BaseComputerReferenceMetadata] struct {
+	handler       *usedModuleExtensionExtractingModuleDotBazelHandler[TReference, TMetadata]
 	user          *moduleExtensionUser
 	devDependency bool
 }
 
-func (p *usedModuleExtensionProxy[TReference]) Tag(className string, attrs map[string]starlark.Value) error {
+func (p *usedModuleExtensionProxy[TReference, TMetadata]) Tag(className string, attrs map[string]starlark.Value) error {
 	meu := p.user
 	tagClass, ok := meu.tagClasses[className]
 	if !ok {
@@ -52,7 +52,7 @@ func (p *usedModuleExtensionProxy[TReference]) Tag(className string, attrs map[s
 	for key, value := range attrs {
 		attrsMap[key] = value
 	}
-	fields, _, err := model_starlark.NewStructFromDict[TReference](nil, attrsMap).
+	fields, _, err := model_starlark.NewStructFromDict[TReference, TMetadata](nil, attrsMap).
 		EncodeStructFields(map[starlark.Value]struct{}{}, p.handler.valueEncodingOptions)
 	if err != nil {
 		return err
@@ -66,36 +66,36 @@ func (p *usedModuleExtensionProxy[TReference]) Tag(className string, attrs map[s
 	return nil
 }
 
-func (usedModuleExtensionProxy[TReference]) UseRepo(repos map[label.ApparentRepo]label.ApparentRepo) error {
+func (usedModuleExtensionProxy[TReference, TMetadata]) UseRepo(repos map[label.ApparentRepo]label.ApparentRepo) error {
 	return nil
 }
 
-type usedModuleExtensionExtractingModuleDotBazelHandler[TReference object.BasicReference] struct {
-	options               *usedModuleExtensionOptions[TReference]
+type usedModuleExtensionExtractingModuleDotBazelHandler[TReference object.BasicReference, TMetadata BaseComputerReferenceMetadata] struct {
+	options               *usedModuleExtensionOptions[TReference, TMetadata]
 	moduleInstance        label.ModuleInstance
 	isRoot                bool
 	ignoreDevDependencies bool
 	usedModuleExtensions  map[label.ModuleExtension]*usedModuleExtension
-	valueEncodingOptions  *model_starlark.ValueEncodingOptions
+	valueEncodingOptions  *model_starlark.ValueEncodingOptions[TReference, TMetadata]
 }
 
-func (usedModuleExtensionExtractingModuleDotBazelHandler[TReference]) BazelDep(name label.Module, version *label.ModuleVersion, maxCompatibilityLevel int, repoName label.ApparentRepo, devDependency bool) error {
+func (usedModuleExtensionExtractingModuleDotBazelHandler[TReference, TMetadata]) BazelDep(name label.Module, version *label.ModuleVersion, maxCompatibilityLevel int, repoName label.ApparentRepo, devDependency bool) error {
 	return nil
 }
 
-func (usedModuleExtensionExtractingModuleDotBazelHandler[TReference]) Module(name label.Module, version *label.ModuleVersion, compatibilityLevel int, repoName label.ApparentRepo, bazelCompatibility []string) error {
+func (usedModuleExtensionExtractingModuleDotBazelHandler[TReference, TMetadata]) Module(name label.Module, version *label.ModuleVersion, compatibilityLevel int, repoName label.ApparentRepo, bazelCompatibility []string) error {
 	return nil
 }
 
-func (usedModuleExtensionExtractingModuleDotBazelHandler[TReference]) RegisterExecutionPlatforms(platformTargetPatterns []label.ApparentTargetPattern, devDependency bool) error {
+func (usedModuleExtensionExtractingModuleDotBazelHandler[TReference, TMetadata]) RegisterExecutionPlatforms(platformTargetPatterns []label.ApparentTargetPattern, devDependency bool) error {
 	return nil
 }
 
-func (usedModuleExtensionExtractingModuleDotBazelHandler[TReference]) RegisterToolchains(toolchainTargetPatterns []label.ApparentTargetPattern, devDependency bool) error {
+func (usedModuleExtensionExtractingModuleDotBazelHandler[TReference, TMetadata]) RegisterToolchains(toolchainTargetPatterns []label.ApparentTargetPattern, devDependency bool) error {
 	return nil
 }
 
-func (h *usedModuleExtensionExtractingModuleDotBazelHandler[TReference]) UseExtension(extensionBzlFile label.ApparentLabel, extensionName label.StarlarkIdentifier, devDependency, isolate bool) (pg_starlark.ModuleExtensionProxy, error) {
+func (h *usedModuleExtensionExtractingModuleDotBazelHandler[TReference, TMetadata]) UseExtension(extensionBzlFile label.ApparentLabel, extensionName label.StarlarkIdentifier, devDependency, isolate bool) (pg_starlark.ModuleExtensionProxy, error) {
 	if devDependency && h.ignoreDevDependencies {
 		return pg_starlark.NullModuleExtensionProxy, nil
 	}
@@ -148,28 +148,28 @@ func (h *usedModuleExtensionExtractingModuleDotBazelHandler[TReference]) UseExte
 		ume.message.Users = append(ume.message.Users, &meu.message)
 	}
 
-	return &usedModuleExtensionProxy[TReference]{
+	return &usedModuleExtensionProxy[TReference, TMetadata]{
 		handler:       h,
 		user:          meu,
 		devDependency: devDependency,
 	}, nil
 }
 
-func (usedModuleExtensionExtractingModuleDotBazelHandler[TReference]) UseRepoRule(repoRuleBzlFile label.ApparentLabel, repoRuleName string) (pg_starlark.RepoRuleProxy, error) {
+func (usedModuleExtensionExtractingModuleDotBazelHandler[TReference, TMetadata]) UseRepoRule(repoRuleBzlFile label.ApparentLabel, repoRuleName string) (pg_starlark.RepoRuleProxy, error) {
 	return func(name label.ApparentRepo, devDependency bool, attrs map[string]starlark.Value) error {
 		return nil
 	}, nil
 }
 
-func (c *baseComputer[TReference]) ComputeUsedModuleExtensionsValue(ctx context.Context, key *model_analysis_pb.UsedModuleExtensions_Key, e UsedModuleExtensionsEnvironment[TReference]) (PatchedUsedModuleExtensionsValue, error) {
-	options := usedModuleExtensionOptions[TReference]{
+func (c *baseComputer[TReference, TMetadata]) ComputeUsedModuleExtensionsValue(ctx context.Context, key *model_analysis_pb.UsedModuleExtensions_Key, e UsedModuleExtensionsEnvironment[TReference]) (PatchedUsedModuleExtensionsValue, error) {
+	options := usedModuleExtensionOptions[TReference, TMetadata]{
 		environment: e,
-		patcher:     model_core.NewReferenceMessagePatcher[model_core.CreatedObjectTree](),
+		patcher:     model_core.NewReferenceMessagePatcher[TMetadata](),
 	}
 	usedModuleExtensions := map[label.ModuleExtension]*usedModuleExtension{}
 	isRoot := true
 	if err := c.visitModuleDotBazelFilesBreadthFirst(ctx, e, func(moduleInstance label.ModuleInstance, ignoreDevDependencies bool) pg_starlark.ChildModuleDotBazelHandler {
-		h := &usedModuleExtensionExtractingModuleDotBazelHandler[TReference]{
+		h := &usedModuleExtensionExtractingModuleDotBazelHandler[TReference, TMetadata]{
 			options:               &options,
 			moduleInstance:        moduleInstance,
 			isRoot:                isRoot,
@@ -208,6 +208,6 @@ func (c *baseComputer[TReference]) ComputeUsedModuleExtensionsValue(ctx context.
 		&model_analysis_pb.UsedModuleExtensions_Value{
 			ModuleExtensions: sortedModuleExtensions,
 		},
-		model_core.MapCreatedObjectsToWalkers(options.patcher),
+		model_core.MapReferenceMetadataToWalkers(options.patcher),
 	), nil
 }

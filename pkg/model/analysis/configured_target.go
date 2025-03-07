@@ -46,7 +46,7 @@ type constraintValuesToConstraintsEnvironment[TReference any] interface {
 // values to a list of Constraint messages that include both the
 // constraint setting and constraint value labels. These can be used to
 // perform matching of constraints.
-func (c *baseComputer[TReference]) constraintValuesToConstraints(ctx context.Context, e constraintValuesToConstraintsEnvironment[TReference], fromPackage label.CanonicalPackage, constraintValues []string) ([]*model_analysis_pb.Constraint, error) {
+func (c *baseComputer[TReference, TMetadata]) constraintValuesToConstraints(ctx context.Context, e constraintValuesToConstraintsEnvironment[TReference], fromPackage label.CanonicalPackage, constraintValues []string) ([]*model_analysis_pb.Constraint, error) {
 	constraints := make(map[string]string, len(constraintValues))
 	missingDependencies := false
 	for _, constraintValue := range constraintValues {
@@ -276,7 +276,7 @@ func getSingleFileConfiguredTargetValue(file *model_starlark_pb.File) PatchedCon
 	)
 }
 
-func (c *baseComputer[TReference]) ComputeConfiguredTargetValue(ctx context.Context, key model_core.Message[*model_analysis_pb.ConfiguredTarget_Key, TReference], e ConfiguredTargetEnvironment[TReference]) (PatchedConfiguredTargetValue, error) {
+func (c *baseComputer[TReference, TMetadata]) ComputeConfiguredTargetValue(ctx context.Context, key model_core.Message[*model_analysis_pb.ConfiguredTarget_Key, TReference], e ConfiguredTargetEnvironment[TReference]) (PatchedConfiguredTargetValue, error) {
 	targetLabel, err := label.NewCanonicalLabel(key.Message.Label)
 	if err != nil {
 		return PatchedConfiguredTargetValue{}, fmt.Errorf("invalid target label: %w", err)
@@ -412,7 +412,7 @@ func (c *baseComputer[TReference]) ComputeConfiguredTargetValue(ctx context.Cont
 		}
 
 		thread := c.newStarlarkThread(ctx, e, allBuiltinsModulesNames.Message.BuiltinsModuleNames)
-		rc := &ruleContext[TReference]{
+		rc := &ruleContext[TReference, TMetadata]{
 			computer:               c,
 			context:                ctx,
 			environment:            e,
@@ -427,7 +427,7 @@ func (c *baseComputer[TReference]) ComputeConfiguredTargetValue(ctx context.Cont
 			multipleFiles:          make([]starlark.Value, len(ruleDefinition.Message.Attrs)),
 			outputs:                make([]starlark.Value, len(ruleDefinition.Message.Attrs)),
 			execGroups:             make([]*ruleContextExecGroupState, len(ruleDefinition.Message.ExecGroups)),
-			fragments:              map[string]*model_starlark.Struct[TReference]{},
+			fragments:              map[string]*model_starlark.Struct[TReference, TMetadata]{},
 		}
 		thread.SetLocal(model_starlark.CurrentCtxKey, rc)
 
@@ -462,7 +462,7 @@ func (c *baseComputer[TReference]) ComputeConfiguredTargetValue(ctx context.Cont
 
 			implementationArgs := append(
 				starlark.Tuple{
-					&subruleContext[TReference]{ruleContext: rc},
+					&subruleContext[TReference, TMetadata]{ruleContext: rc},
 				},
 				args...,
 			)
@@ -505,7 +505,7 @@ func (c *baseComputer[TReference]) ComputeConfiguredTargetValue(ctx context.Cont
 			return starlark.Call(
 				thread,
 				model_starlark.NewNamedFunction(
-					model_starlark.NewProtoNamedFunctionDefinition(
+					model_starlark.NewProtoNamedFunctionDefinition[TReference, TMetadata](
 						model_core.NewNestedMessage(subruleDefinition, subruleDefinition.Message.Implementation),
 					),
 				),
@@ -517,7 +517,7 @@ func (c *baseComputer[TReference]) ComputeConfiguredTargetValue(ctx context.Cont
 		returnValue, err := starlark.Call(
 			thread,
 			model_starlark.NewNamedFunction(
-				model_starlark.NewProtoNamedFunctionDefinition(
+				model_starlark.NewProtoNamedFunctionDefinition[TReference, TMetadata](
 					model_core.NewNestedMessage(ruleDefinition, ruleDefinition.Message.Implementation),
 				),
 			),
@@ -536,10 +536,10 @@ func (c *baseComputer[TReference]) ComputeConfiguredTargetValue(ctx context.Cont
 
 		// Bazel permits returning either a single provider, or
 		// a list of providers.
-		var providerInstances []*model_starlark.Struct[TReference]
-		structUnpackerInto := unpack.Type[*model_starlark.Struct[TReference]]("struct")
+		var providerInstances []*model_starlark.Struct[TReference, TMetadata]
+		structUnpackerInto := unpack.Type[*model_starlark.Struct[TReference, TMetadata]]("struct")
 		if err := unpack.IfNotNone(
-			unpack.Or([]unpack.UnpackerInto[[]*model_starlark.Struct[TReference]]{
+			unpack.Or([]unpack.UnpackerInto[[]*model_starlark.Struct[TReference, TMetadata]]{
 				unpack.Singleton(structUnpackerInto),
 				unpack.List(structUnpackerInto),
 			}),
@@ -549,7 +549,7 @@ func (c *baseComputer[TReference]) ComputeConfiguredTargetValue(ctx context.Cont
 
 		// Convert list of providers to a map where the provider
 		// identifier is the key.
-		providerInstancesByIdentifier := make(map[label.CanonicalStarlarkIdentifier]*model_starlark.Struct[TReference], len(providerInstances))
+		providerInstancesByIdentifier := make(map[label.CanonicalStarlarkIdentifier]*model_starlark.Struct[TReference, TMetadata], len(providerInstances))
 		for _, providerInstance := range providerInstances {
 			providerIdentifier, err := providerInstance.GetProviderIdentifier()
 			if err != nil {
@@ -580,37 +580,37 @@ func (c *baseComputer[TReference]) ComputeConfiguredTargetValue(ctx context.Cont
 				case "data_runfiles", "default_runfiles":
 					if attrValue == starlark.None {
 						attrValue = model_starlark.NewRunfiles(
-							model_starlark.NewDepsetFromList[TReference](nil, model_starlark_pb.Depset_DEFAULT),
-							model_starlark.NewDepsetFromList[TReference](nil, model_starlark_pb.Depset_DEFAULT),
-							model_starlark.NewDepsetFromList[TReference](nil, model_starlark_pb.Depset_DEFAULT),
+							model_starlark.NewDepsetFromList[TReference, TMetadata](nil, model_starlark_pb.Depset_DEFAULT),
+							model_starlark.NewDepsetFromList[TReference, TMetadata](nil, model_starlark_pb.Depset_DEFAULT),
+							model_starlark.NewDepsetFromList[TReference, TMetadata](nil, model_starlark_pb.Depset_DEFAULT),
 						)
 					}
 				case "files":
 					if attrValue == starlark.None {
-						attrValue = model_starlark.NewDepsetFromList[TReference](nil, model_starlark_pb.Depset_DEFAULT)
+						attrValue = model_starlark.NewDepsetFromList[TReference, TMetadata](nil, model_starlark_pb.Depset_DEFAULT)
 					}
 				}
 				newAttrs[attrName] = attrValue
 			}
-			providerInstancesByIdentifier[defaultInfoProviderIdentifier] = model_starlark.NewStructFromDict[TReference](defaultInfoProviderInstanceProperties, newAttrs)
+			providerInstancesByIdentifier[defaultInfoProviderIdentifier] = model_starlark.NewStructFromDict[TReference, TMetadata](defaultInfoProviderInstanceProperties, newAttrs)
 		} else {
 			// Rule did not return DefaultInfo. Return an
 			// empty one.
-			providerInstancesByIdentifier[defaultInfoProviderIdentifier] = model_starlark.NewStructFromDict[TReference](
+			providerInstancesByIdentifier[defaultInfoProviderIdentifier] = model_starlark.NewStructFromDict[TReference, TMetadata](
 				defaultInfoProviderInstanceProperties,
 				map[string]any{
 					"data_runfiles": model_starlark.NewRunfiles[TReference](
-						model_starlark.NewDepsetFromList[TReference](nil, model_starlark_pb.Depset_DEFAULT),
-						model_starlark.NewDepsetFromList[TReference](nil, model_starlark_pb.Depset_DEFAULT),
-						model_starlark.NewDepsetFromList[TReference](nil, model_starlark_pb.Depset_DEFAULT),
+						model_starlark.NewDepsetFromList[TReference, TMetadata](nil, model_starlark_pb.Depset_DEFAULT),
+						model_starlark.NewDepsetFromList[TReference, TMetadata](nil, model_starlark_pb.Depset_DEFAULT),
+						model_starlark.NewDepsetFromList[TReference, TMetadata](nil, model_starlark_pb.Depset_DEFAULT),
 					),
 					"default_runfiles": model_starlark.NewRunfiles[TReference](
-						model_starlark.NewDepsetFromList[TReference](nil, model_starlark_pb.Depset_DEFAULT),
-						model_starlark.NewDepsetFromList[TReference](nil, model_starlark_pb.Depset_DEFAULT),
-						model_starlark.NewDepsetFromList[TReference](nil, model_starlark_pb.Depset_DEFAULT),
+						model_starlark.NewDepsetFromList[TReference, TMetadata](nil, model_starlark_pb.Depset_DEFAULT),
+						model_starlark.NewDepsetFromList[TReference, TMetadata](nil, model_starlark_pb.Depset_DEFAULT),
+						model_starlark.NewDepsetFromList[TReference, TMetadata](nil, model_starlark_pb.Depset_DEFAULT),
 					),
-					"files": model_starlark.NewDepsetFromList[TReference](nil, model_starlark_pb.Depset_DEFAULT),
-					"files_to_run": model_starlark.NewStructFromDict[TReference](
+					"files": model_starlark.NewDepsetFromList[TReference, TMetadata](nil, model_starlark_pb.Depset_DEFAULT),
+					"files_to_run": model_starlark.NewStructFromDict[TReference, TMetadata](
 						model_starlark.NewProviderInstanceProperties(&filesToRunProviderIdentifier, false),
 						map[string]any{
 							"executable":            starlark.None,
@@ -623,7 +623,7 @@ func (c *baseComputer[TReference]) ComputeConfiguredTargetValue(ctx context.Cont
 		}
 
 		encodedProviderInstances := make([]*model_starlark_pb.Struct, 0, len(providerInstancesByIdentifier))
-		patcher := model_core.NewReferenceMessagePatcher[model_core.CreatedObjectTree]()
+		patcher := model_core.NewReferenceMessagePatcher[TMetadata]()
 		for _, providerIdentifier := range slices.SortedFunc(
 			maps.Keys(providerInstancesByIdentifier),
 			func(a, b label.CanonicalStarlarkIdentifier) int {
@@ -643,7 +643,7 @@ func (c *baseComputer[TReference]) ComputeConfiguredTargetValue(ctx context.Cont
 			&model_analysis_pb.ConfiguredTarget_Value{
 				ProviderInstances: encodedProviderInstances,
 			},
-			model_core.MapCreatedObjectsToWalkers(patcher),
+			model_core.MapReferenceMetadataToWalkers(patcher),
 		), nil
 	case *model_starlark_pb.Target_Definition_SourceFileTarget:
 		// Handcraft a DefaultInfo provider for this source file.
@@ -657,8 +657,8 @@ func (c *baseComputer[TReference]) ComputeConfiguredTargetValue(ctx context.Cont
 	}
 }
 
-type ruleContext[TReference object.BasicReference] struct {
-	computer               *baseComputer[TReference]
+type ruleContext[TReference object.BasicReference, TMetadata BaseComputerReferenceMetadata] struct {
+	computer               *baseComputer[TReference, TMetadata]
 	context                context.Context
 	environment            ConfiguredTargetEnvironment[TReference]
 	ruleIdentifier         label.CanonicalStarlarkIdentifier
@@ -674,38 +674,38 @@ type ruleContext[TReference object.BasicReference] struct {
 	outputs                []starlark.Value
 	execGroups             []*ruleContextExecGroupState
 	tags                   *starlark.List
-	fragments              map[string]*model_starlark.Struct[TReference]
+	fragments              map[string]*model_starlark.Struct[TReference, TMetadata]
 }
 
-var _ starlark.HasAttrs = (*ruleContext[object.GlobalReference])(nil)
+var _ starlark.HasAttrs = (*ruleContext[object.GlobalReference, BaseComputerReferenceMetadata])(nil)
 
-func (rc *ruleContext[TReference]) String() string {
+func (rc *ruleContext[TReference, TMetadata]) String() string {
 	return fmt.Sprintf("<ctx for %s>", rc.targetLabel.String())
 }
 
-func (ruleContext[TReference]) Type() string {
+func (ruleContext[TReference, TMetadata]) Type() string {
 	return "ctx"
 }
 
-func (ruleContext[TReference]) Freeze() {
+func (ruleContext[TReference, TMetadata]) Freeze() {
 }
 
-func (ruleContext[TReference]) Truth() starlark.Bool {
+func (ruleContext[TReference, TMetadata]) Truth() starlark.Bool {
 	return starlark.True
 }
 
-func (ruleContext[TReference]) Hash(thread *starlark.Thread) (uint32, error) {
+func (ruleContext[TReference, TMetadata]) Hash(thread *starlark.Thread) (uint32, error) {
 	return 0, errors.New("ctx cannot be hashed")
 }
 
-func (rc *ruleContext[TReference]) Attr(thread *starlark.Thread, name string) (starlark.Value, error) {
+func (rc *ruleContext[TReference, TMetadata]) Attr(thread *starlark.Thread, name string) (starlark.Value, error) {
 	switch name {
 	case "actions":
-		return &ruleContextActions[TReference]{
+		return &ruleContextActions[TReference, TMetadata]{
 			ruleContext: rc,
 		}, nil
 	case "attr":
-		return &ruleContextAttr[TReference]{
+		return &ruleContextAttr[TReference, TMetadata]{
 			ruleContext: rc,
 		}, nil
 	case "build_setting_value":
@@ -751,7 +751,7 @@ func (rc *ruleContext[TReference]) Attr(thread *starlark.Thread, name string) (s
 				encodedValue = model_core.NewNestedMessage(rc.ruleTarget, rc.ruleTarget.Message.BuildSettingDefault)
 			}
 
-			value, err := model_starlark.DecodeValue(
+			value, err := model_starlark.DecodeValue[TReference, TMetadata](
 				encodedValue,
 				/* currentIdentifier = */ nil,
 				rc.computer.getValueDecodingOptions(rc.context, func(resolvedLabel label.ResolvedLabel) (starlark.Value, error) {
@@ -767,7 +767,7 @@ func (rc *ruleContext[TReference]) Attr(thread *starlark.Thread, name string) (s
 	case "configuration":
 		// TODO: Should we move this into a rule like we do for
 		// ctx.fragments?
-		return model_starlark.NewStructFromDict[TReference](nil, map[string]any{
+		return model_starlark.NewStructFromDict[TReference, TMetadata](nil, map[string]any{
 			"coverage_enabled": starlark.False,
 			"has_separate_genfiles_directory": starlark.NewBuiltin("ctx.configuration.has_separate_genfiles_directory", func(thread *starlark.Thread, b *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
 				return starlark.False, nil
@@ -789,18 +789,18 @@ func (rc *ruleContext[TReference]) Attr(thread *starlark.Thread, name string) (s
 	case "coverage_instrumented":
 		return starlark.NewBuiltin("ctx.coverage_instrumented", rc.doCoverageInstrumented), nil
 	case "bin_dir":
-		return model_starlark.NewStructFromDict[TReference](nil, map[string]any{
+		return model_starlark.NewStructFromDict[TReference, TMetadata](nil, map[string]any{
 			// TODO: Fill in the right configuration in the path.
 			"path": starlark.String("bazel-bin/TODO-CONFIGURATION/bin"),
 		}), nil
 	case "disabled_features":
 		return starlark.NewList(nil), nil
 	case "exec_groups":
-		return &ruleContextExecGroups[TReference]{
+		return &ruleContextExecGroups[TReference, TMetadata]{
 			ruleContext: rc,
 		}, nil
 	case "executable":
-		return &ruleContextExecutable[TReference]{
+		return &ruleContextExecutable[TReference, TMetadata]{
 			ruleContext: rc,
 		}, nil
 	case "expand_location":
@@ -809,20 +809,20 @@ func (rc *ruleContext[TReference]) Attr(thread *starlark.Thread, name string) (s
 		// TODO: Do we want to support ctx.features in a meaningful way?
 		return starlark.NewList(nil), nil
 	case "file":
-		return &ruleContextFile[TReference]{
+		return &ruleContextFile[TReference, TMetadata]{
 			ruleContext: rc,
 		}, nil
 	case "files":
-		return &ruleContextFiles[TReference]{
+		return &ruleContextFiles[TReference, TMetadata]{
 			ruleContext: rc,
 		}, nil
 	case "fragments":
-		return &ruleContextFragments[TReference]{
+		return &ruleContextFragments[TReference, TMetadata]{
 			ruleContext: rc,
 		}, nil
 	case "info_file":
 		// Fill all of this in properly.
-		return model_starlark.NewFile(&model_starlark_pb.File{
+		return model_starlark.NewFile[TReference, TMetadata](&model_starlark_pb.File{
 			Owner: &model_starlark_pb.File_Owner{
 				Cfg:        []byte{0xbe, 0x8a, 0x60, 0x1c, 0xe3, 0x03, 0x44, 0xf0},
 				TargetName: "stamp",
@@ -832,9 +832,9 @@ func (rc *ruleContext[TReference]) Attr(thread *starlark.Thread, name string) (s
 			Type:                model_starlark_pb.File_FILE,
 		}), nil
 	case "label":
-		return model_starlark.NewLabel(rc.targetLabel.AsResolved()), nil
+		return model_starlark.NewLabel[TReference, TMetadata](rc.targetLabel.AsResolved()), nil
 	case "outputs":
-		return &ruleContextOutputs[TReference]{
+		return &ruleContextOutputs[TReference, TMetadata]{
 			ruleContext: rc,
 		}, nil
 	case "runfiles":
@@ -850,7 +850,7 @@ func (rc *ruleContext[TReference]) Attr(thread *starlark.Thread, name string) (s
 		if !ok {
 			return nil, errors.New("rule does not have a default exec group")
 		}
-		return &toolchainContext[TReference]{
+		return &toolchainContext[TReference, TMetadata]{
 			ruleContext:    rc,
 			execGroupIndex: execGroupIndex,
 		}, nil
@@ -866,7 +866,7 @@ func (rc *ruleContext[TReference]) Attr(thread *starlark.Thread, name string) (s
 		return d, nil
 	case "version_file":
 		// Fill all of this in properly.
-		return model_starlark.NewFile(&model_starlark_pb.File{
+		return model_starlark.NewFile[TReference, TMetadata](&model_starlark_pb.File{
 			Owner: &model_starlark_pb.File_Owner{
 				Cfg:        []byte{0xbe, 0x8a, 0x60, 0x1c, 0xe3, 0x03, 0x44, 0xf0},
 				TargetName: "stamp",
@@ -882,7 +882,7 @@ func (rc *ruleContext[TReference]) Attr(thread *starlark.Thread, name string) (s
 	}
 }
 
-func (rc *ruleContext[TReference]) configureAttr(thread *starlark.Thread, namedAttr *model_starlark_pb.NamedAttr, valueParts model_core.Message[[]*model_starlark_pb.Value, TReference], visibilityFromPackage label.CanonicalPackage) (starlark.Value, error) {
+func (rc *ruleContext[TReference, TMetadata]) configureAttr(thread *starlark.Thread, namedAttr *model_starlark_pb.NamedAttr, valueParts model_core.Message[[]*model_starlark_pb.Value, TReference], visibilityFromPackage label.CanonicalPackage) (starlark.Value, error) {
 	// See if any transitions need to be applied.
 	var cfg *model_starlark_pb.Transition_Reference
 	isScalar := false
@@ -951,7 +951,7 @@ func (rc *ruleContext[TReference]) configureAttr(thread *starlark.Thread, namedA
 	decodedParts := make([]starlark.Value, 0, len(valueParts.Message))
 	if len(configurationReferences) == 0 {
 		for _, valuePart := range valueParts.Message {
-			decodedPart, err := model_starlark.DecodeValue(
+			decodedPart, err := model_starlark.DecodeValue[TReference, TMetadata](
 				model_core.NewNestedMessage(valueParts, valuePart),
 				/* currentIdentifier = */ nil,
 				rc.computer.getValueDecodingOptions(rc.context, func(resolvedLabel label.ResolvedLabel) (starlark.Value, error) {
@@ -959,7 +959,7 @@ func (rc *ruleContext[TReference]) configureAttr(thread *starlark.Thread, namedA
 					// unconfigured. Provide a
 					// target reference that does
 					// not contain any providers.
-					return model_starlark.NewTargetReference(
+					return model_starlark.NewTargetReference[TReference, TMetadata](
 						resolvedLabel,
 						model_core.NewSimpleMessage[TReference]([]*model_starlark_pb.Struct(nil)),
 					), nil
@@ -1026,7 +1026,7 @@ func (rc *ruleContext[TReference]) configureAttr(thread *starlark.Thread, namedA
 						return starlark.None, nil
 					}
 
-					return model_starlark.NewTargetReference(
+					return model_starlark.NewTargetReference[TReference, TMetadata](
 						canonicalLabel.AsResolved(),
 						model_core.NewNestedMessage(configuredTarget, configuredTarget.Message.ProviderInstances),
 					), nil
@@ -1035,7 +1035,7 @@ func (rc *ruleContext[TReference]) configureAttr(thread *starlark.Thread, namedA
 				}
 			})
 			for _, valuePart := range valueParts.Message {
-				decodedPart, err := model_starlark.DecodeValue(
+				decodedPart, err := model_starlark.DecodeValue[TReference, TMetadata](
 					model_core.NewNestedMessage(valueParts, valuePart),
 					/* currentIdentifier = */ nil,
 					valueDecodingOptions,
@@ -1094,21 +1094,21 @@ var ruleContextAttrNames = []string{
 	"workspace_name",
 }
 
-func (ruleContext[TReference]) AttrNames() []string {
+func (ruleContext[TReference, TMetadata]) AttrNames() []string {
 	return ruleContextAttrNames
 }
 
-func (ruleContext[TReference]) doCoverageInstrumented(thread *starlark.Thread, b *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
+func (ruleContext[TReference, TMetadata]) doCoverageInstrumented(thread *starlark.Thread, b *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
 	return starlark.False, nil
 }
 
-func (ruleContext[TReference]) doExpandLocation(thread *starlark.Thread, b *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
+func (ruleContext[TReference, TMetadata]) doExpandLocation(thread *starlark.Thread, b *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
 	var input string
-	var targets []*model_starlark.TargetReference[TReference]
+	var targets []*model_starlark.TargetReference[TReference, TMetadata]
 	if err := starlark.UnpackArgs(
 		b.Name(), args, kwargs,
 		"input", unpack.Bind(thread, &input, unpack.String),
-		"targets?", unpack.Bind(thread, &targets, unpack.List(unpack.Type[*model_starlark.TargetReference[TReference]]("Target"))),
+		"targets?", unpack.Bind(thread, &targets, unpack.List(unpack.Type[*model_starlark.TargetReference[TReference, TMetadata]]("Target"))),
 	); err != nil {
 		return nil, err
 	}
@@ -1117,32 +1117,32 @@ func (ruleContext[TReference]) doExpandLocation(thread *starlark.Thread, b *star
 	return starlark.String(input), nil
 }
 
-func toSymlinkEntryDepset[TReference object.BasicReference](v any) *model_starlark.Depset[TReference] {
+func toSymlinkEntryDepset[TReference object.BasicReference, TMetadata BaseComputerReferenceMetadata](v any) *model_starlark.Depset[TReference, TMetadata] {
 	switch typedV := v.(type) {
-	case *model_starlark.Depset[TReference]:
+	case *model_starlark.Depset[TReference, TMetadata]:
 		return typedV
 	case map[string]string:
 		panic("TODO: convert dict of strings to SymlinkEntry list")
 	case nil:
-		return model_starlark.NewDepsetFromList[TReference](nil, model_starlark_pb.Depset_DEFAULT)
+		return model_starlark.NewDepsetFromList[TReference, TMetadata](nil, model_starlark_pb.Depset_DEFAULT)
 	default:
 		panic("unknown type")
 	}
 }
 
-func (ruleContext[TReference]) doRunfiles(thread *starlark.Thread, b *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
+func (ruleContext[TReference, TMetadata]) doRunfiles(thread *starlark.Thread, b *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
 	var files []starlark.Value
-	var transitiveFiles *model_starlark.Depset[TReference]
+	var transitiveFiles *model_starlark.Depset[TReference, TMetadata]
 	var symlinks any
 	var rootSymlinks any
 	symlinksUnpackerInto := unpack.Or([]unpack.UnpackerInto[any]{
 		unpack.Decay(unpack.Dict(unpack.String, unpack.String)),
-		unpack.Decay(unpack.Type[*model_starlark.Depset[TReference]]("depset")),
+		unpack.Decay(unpack.Type[*model_starlark.Depset[TReference, TMetadata]]("depset")),
 	})
 	if err := starlark.UnpackArgs(
 		b.Name(), args, kwargs,
-		"files?", unpack.Bind(thread, &files, unpack.List(unpack.Canonicalize(unpack.Type[model_starlark.File]("File")))),
-		"transitive_files?", unpack.Bind(thread, &transitiveFiles, unpack.IfNotNone(unpack.Type[*model_starlark.Depset[TReference]]("depset"))),
+		"files?", unpack.Bind(thread, &files, unpack.List(unpack.Canonicalize(unpack.Type[model_starlark.File[TReference, TMetadata]]("File")))),
+		"transitive_files?", unpack.Bind(thread, &transitiveFiles, unpack.IfNotNone(unpack.Type[*model_starlark.Depset[TReference, TMetadata]]("depset"))),
 		"symlinks?", unpack.Bind(thread, &symlinks, symlinksUnpackerInto),
 		"root_symlinks?", unpack.Bind(thread, &rootSymlinks, symlinksUnpackerInto),
 	); err != nil {
@@ -1150,12 +1150,12 @@ func (ruleContext[TReference]) doRunfiles(thread *starlark.Thread, b *starlark.B
 	}
 
 	if transitiveFiles == nil {
-		transitiveFiles = model_starlark.NewDepsetFromList[TReference](nil, model_starlark_pb.Depset_DEFAULT)
+		transitiveFiles = model_starlark.NewDepsetFromList[TReference, TMetadata](nil, model_starlark_pb.Depset_DEFAULT)
 	}
 	filesDepset, err := model_starlark.NewDepset(
 		thread,
 		files,
-		[]*model_starlark.Depset[TReference]{transitiveFiles},
+		[]*model_starlark.Depset[TReference, TMetadata]{transitiveFiles},
 		model_starlark_pb.Depset_DEFAULT,
 	)
 	if err != nil {
@@ -1164,19 +1164,19 @@ func (ruleContext[TReference]) doRunfiles(thread *starlark.Thread, b *starlark.B
 
 	return model_starlark.NewRunfiles(
 		filesDepset,
-		toSymlinkEntryDepset[TReference](rootSymlinks),
-		toSymlinkEntryDepset[TReference](symlinks),
+		toSymlinkEntryDepset[TReference, TMetadata](rootSymlinks),
+		toSymlinkEntryDepset[TReference, TMetadata](symlinks),
 	), nil
 }
 
-func (ruleContext[TReference]) doTargetPlatformHasConstraint(thread *starlark.Thread, b *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
+func (ruleContext[TReference, TMetadata]) doTargetPlatformHasConstraint(thread *starlark.Thread, b *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
 	if len(args) != 1 {
 		return nil, fmt.Errorf("%s: got %d positional arguments, want 1", b.Name(), len(args))
 	}
-	var constraintValue *model_starlark.Struct[TReference]
+	var constraintValue *model_starlark.Struct[TReference, TMetadata]
 	if err := starlark.UnpackArgs(
 		b.Name(), args, kwargs,
-		"constraintValue", unpack.Bind(thread, &constraintValue, unpack.Type[*model_starlark.Struct[TReference]]("struct")),
+		"constraintValue", unpack.Bind(thread, &constraintValue, unpack.Type[*model_starlark.Struct[TReference, TMetadata]]("struct")),
 	); err != nil {
 		return nil, err
 	}
@@ -1184,7 +1184,7 @@ func (ruleContext[TReference]) doTargetPlatformHasConstraint(thread *starlark.Th
 	return nil, errors.New("TODO: Implement target platform has constraint")
 }
 
-func (rc *ruleContext[TReference]) getAttrValueParts(namedAttr *model_starlark_pb.NamedAttr) (valueParts model_core.Message[[]*model_starlark_pb.Value, TReference], visibilityFromPackage label.CanonicalPackage, err error) {
+func (rc *ruleContext[TReference, TMetadata]) getAttrValueParts(namedAttr *model_starlark_pb.NamedAttr) (valueParts model_core.Message[[]*model_starlark_pb.Value, TReference], visibilityFromPackage label.CanonicalPackage, err error) {
 	attr := namedAttr.Attr
 	var badCanonicalPackage label.CanonicalPackage
 	if attr == nil {
@@ -1239,7 +1239,7 @@ func (rc *ruleContext[TReference]) getAttrValueParts(namedAttr *model_starlark_p
 		nil
 }
 
-func (rc *ruleContext[TReference]) getPatchedConfigurationReference() model_core.PatchedMessage[*model_core_pb.Reference, dag.ObjectContentsWalker] {
+func (rc *ruleContext[TReference, TMetadata]) getPatchedConfigurationReference() model_core.PatchedMessage[*model_core_pb.Reference, dag.ObjectContentsWalker] {
 	// TODO: This function should likely not exist, as we need to
 	// take transitions into account.
 	return model_core.NewPatchedMessageFromExisting(
@@ -1250,32 +1250,32 @@ func (rc *ruleContext[TReference]) getPatchedConfigurationReference() model_core
 	)
 }
 
-type ruleContextActions[TReference object.BasicReference] struct {
-	ruleContext *ruleContext[TReference]
+type ruleContextActions[TReference object.BasicReference, TMetadata BaseComputerReferenceMetadata] struct {
+	ruleContext *ruleContext[TReference, TMetadata]
 }
 
-var _ starlark.HasAttrs = (*ruleContextActions[object.GlobalReference])(nil)
+var _ starlark.HasAttrs = (*ruleContextActions[object.GlobalReference, BaseComputerReferenceMetadata])(nil)
 
-func (ruleContextActions[TReference]) String() string {
+func (ruleContextActions[TReference, TMetadata]) String() string {
 	return "<ctx.actions>"
 }
 
-func (ruleContextActions[TReference]) Type() string {
+func (ruleContextActions[TReference, TMetadata]) Type() string {
 	return "ctx.actions"
 }
 
-func (ruleContextActions[TReference]) Freeze() {
+func (ruleContextActions[TReference, TMetadata]) Freeze() {
 }
 
-func (ruleContextActions[TReference]) Truth() starlark.Bool {
+func (ruleContextActions[TReference, TMetadata]) Truth() starlark.Bool {
 	return starlark.True
 }
 
-func (ruleContextActions[TReference]) Hash(thread *starlark.Thread) (uint32, error) {
+func (ruleContextActions[TReference, TMetadata]) Hash(thread *starlark.Thread) (uint32, error) {
 	return 0, errors.New("ctx.actions cannot be hashed")
 }
 
-func (rca *ruleContextActions[TReference]) Attr(thread *starlark.Thread, name string) (starlark.Value, error) {
+func (rca *ruleContextActions[TReference, TMetadata]) Attr(thread *starlark.Thread, name string) (starlark.Value, error) {
 	switch name {
 	case "args":
 		return starlark.NewBuiltin("ctx.actions.args", rca.doArgs), nil
@@ -1314,30 +1314,30 @@ var ruleContextActionsAttrNames = []string{
 	"write",
 }
 
-func (rca *ruleContextActions[TReference]) AttrNames() []string {
+func (rca *ruleContextActions[TReference, TMetadata]) AttrNames() []string {
 	return ruleContextActionsAttrNames
 }
 
-func (rca *ruleContextActions[TReference]) doArgs(thread *starlark.Thread, b *starlark.Builtin, arguments starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
+func (rca *ruleContextActions[TReference, TMetadata]) doArgs(thread *starlark.Thread, b *starlark.Builtin, arguments starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
 	return &args{}, nil
 }
 
-func (rca *ruleContextActions[TReference]) doDeclareDirectory(thread *starlark.Thread, b *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
+func (rca *ruleContextActions[TReference, TMetadata]) doDeclareDirectory(thread *starlark.Thread, b *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
 	if len(args) > 1 {
 		return nil, fmt.Errorf("%s: got %d positional arguments, want at most 1", b.Name(), len(args))
 	}
 	var filename label.TargetName
-	var sibling *model_starlark.File
+	var sibling *model_starlark.File[TReference, TMetadata]
 	if err := starlark.UnpackArgs(
 		b.Name(), args, kwargs,
 		"filename", unpack.Bind(thread, &filename, unpack.TargetName),
-		"sibling?", unpack.Bind(thread, &sibling, unpack.IfNotNone(unpack.Pointer(unpack.Type[model_starlark.File]("File")))),
+		"sibling?", unpack.Bind(thread, &sibling, unpack.IfNotNone(unpack.Pointer(unpack.Type[model_starlark.File[TReference, TMetadata]]("File")))),
 	); err != nil {
 		return nil, err
 	}
 
 	rc := rca.ruleContext
-	return model_starlark.NewFile(&model_starlark_pb.File{
+	return model_starlark.NewFile[TReference, TMetadata](&model_starlark_pb.File{
 		Owner: &model_starlark_pb.File_Owner{
 			// TODO: Fill in a proper hash.
 			Cfg:        []byte{0xbe, 0x8a, 0x60, 0x1c, 0xe3, 0x03, 0x44, 0xf0},
@@ -1349,22 +1349,22 @@ func (rca *ruleContextActions[TReference]) doDeclareDirectory(thread *starlark.T
 	}), nil
 }
 
-func (rca *ruleContextActions[TReference]) doDeclareFile(thread *starlark.Thread, b *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
+func (rca *ruleContextActions[TReference, TMetadata]) doDeclareFile(thread *starlark.Thread, b *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
 	if len(args) > 1 {
 		return nil, fmt.Errorf("%s: got %d positional arguments, want at most 1", b.Name(), len(args))
 	}
 	var filename label.TargetName
-	var sibling *model_starlark.File
+	var sibling *model_starlark.File[TReference, TMetadata]
 	if err := starlark.UnpackArgs(
 		b.Name(), args, kwargs,
 		"filename", unpack.Bind(thread, &filename, unpack.TargetName),
-		"sibling?", unpack.Bind(thread, &sibling, unpack.IfNotNone(unpack.Pointer(unpack.Type[model_starlark.File]("File")))),
+		"sibling?", unpack.Bind(thread, &sibling, unpack.IfNotNone(unpack.Pointer(unpack.Type[model_starlark.File[TReference, TMetadata]]("File")))),
 	); err != nil {
 		return nil, err
 	}
 
 	rc := rca.ruleContext
-	return model_starlark.NewFile(&model_starlark_pb.File{
+	return model_starlark.NewFile[TReference, TMetadata](&model_starlark_pb.File{
 		Owner: &model_starlark_pb.File_Owner{
 			// TODO: Fill in a proper hash.
 			Cfg:        []byte{0xbe, 0x8a, 0x60, 0x1c, 0xe3, 0x03, 0x44, 0xf0},
@@ -1376,19 +1376,19 @@ func (rca *ruleContextActions[TReference]) doDeclareFile(thread *starlark.Thread
 	}), nil
 }
 
-func (rca *ruleContextActions[TReference]) doExpandTemplate(thread *starlark.Thread, b *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
+func (rca *ruleContextActions[TReference, TMetadata]) doExpandTemplate(thread *starlark.Thread, b *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
 	if len(args) != 0 {
 		return nil, fmt.Errorf("%s: got %d positional arguments, want 0", b.Name(), len(args))
 	}
-	var output model_starlark.File
-	var template model_starlark.File
+	var output model_starlark.File[TReference, TMetadata]
+	var template model_starlark.File[TReference, TMetadata]
 	isExecutable := false
 	var substitutions map[string]string
 	if err := starlark.UnpackArgs(
 		b.Name(), args, kwargs,
 		// Required arguments.
-		"output", unpack.Bind(thread, &output, unpack.Type[model_starlark.File]("File")),
-		"template", unpack.Bind(thread, &template, unpack.Type[model_starlark.File]("File")),
+		"output", unpack.Bind(thread, &output, unpack.Type[model_starlark.File[TReference, TMetadata]]("File")),
+		"template", unpack.Bind(thread, &template, unpack.Type[model_starlark.File[TReference, TMetadata]]("File")),
 		// Optional arguments.
 		// TODO: Add TemplateDict and computed_substitutions.
 		"is_executable?", unpack.Bind(thread, &isExecutable, unpack.Bool),
@@ -1400,12 +1400,12 @@ func (rca *ruleContextActions[TReference]) doExpandTemplate(thread *starlark.Thr
 	return starlark.None, nil
 }
 
-func (rca *ruleContextActions[TReference]) doRun(thread *starlark.Thread, b *starlark.Builtin, fnArgs starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
+func (rca *ruleContextActions[TReference, TMetadata]) doRun(thread *starlark.Thread, b *starlark.Builtin, fnArgs starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
 	if len(fnArgs) != 0 {
 		return nil, fmt.Errorf("%s: got %d positional arguments, want 0", b.Name(), len(fnArgs))
 	}
 	var executable any
-	var outputs []model_starlark.File
+	var outputs []model_starlark.File[TReference, TMetadata]
 	var arguments []any
 	var env map[string]string
 	execGroup := ""
@@ -1413,7 +1413,7 @@ func (rca *ruleContextActions[TReference]) doRun(thread *starlark.Thread, b *sta
 	var inputs any
 	mnemonic := ""
 	var progressMessage string
-	var resourceSet *model_starlark.NamedFunction
+	var resourceSet *model_starlark.NamedFunction[TReference, TMetadata]
 	var toolchain *label.ResolvedLabel
 	var tools []any
 	useDefaultShellEnv := false
@@ -1422,10 +1422,10 @@ func (rca *ruleContextActions[TReference]) doRun(thread *starlark.Thread, b *sta
 		// Required arguments.
 		"executable", unpack.Bind(thread, &executable, unpack.Or([]unpack.UnpackerInto[any]{
 			unpack.Decay(unpack.String),
-			unpack.Decay(unpack.Type[model_starlark.File]("File")),
-			unpack.Decay(unpack.Type[*model_starlark.Struct[TReference]]("struct")),
+			unpack.Decay(unpack.Type[model_starlark.File[TReference, TMetadata]]("File")),
+			unpack.Decay(unpack.Type[*model_starlark.Struct[TReference, TMetadata]]("struct")),
 		})),
-		"outputs", unpack.Bind(thread, &outputs, unpack.List(unpack.Type[model_starlark.File]("File"))),
+		"outputs", unpack.Bind(thread, &outputs, unpack.List(unpack.Type[model_starlark.File[TReference, TMetadata]]("File"))),
 		// Optional arguments.
 		"arguments?", unpack.Bind(thread, &arguments, unpack.List(unpack.Or([]unpack.UnpackerInto[any]{
 			unpack.Decay(unpack.Type[*args]("Args")),
@@ -1435,19 +1435,19 @@ func (rca *ruleContextActions[TReference]) doRun(thread *starlark.Thread, b *sta
 		"exec_group?", unpack.Bind(thread, &execGroup, unpack.IfNotNone(unpack.String)),
 		"execution_requirements?", unpack.Bind(thread, &executionRequirements, unpack.Dict(unpack.String, unpack.String)),
 		"inputs?", unpack.Bind(thread, &inputs, unpack.Or([]unpack.UnpackerInto[any]{
-			unpack.Decay(unpack.Type[*model_starlark.Depset[TReference]]("depset")),
-			unpack.Decay(unpack.List(unpack.Type[model_starlark.File]("File"))),
+			unpack.Decay(unpack.Type[*model_starlark.Depset[TReference, TMetadata]]("depset")),
+			unpack.Decay(unpack.List(unpack.Type[model_starlark.File[TReference, TMetadata]]("File"))),
 		})),
 		"mnemonic?", unpack.Bind(thread, &mnemonic, unpack.IfNotNone(unpack.String)),
 		"progress_message?", unpack.Bind(thread, &progressMessage, unpack.IfNotNone(unpack.String)),
-		"resource_set?", unpack.Bind(thread, &resourceSet, unpack.IfNotNone(unpack.Pointer(model_starlark.NamedFunctionUnpackerInto))),
-		"toolchain?", unpack.Bind(thread, &toolchain, unpack.IfNotNone(unpack.Pointer(model_starlark.NewLabelOrStringUnpackerInto(model_starlark.CurrentFilePackage(thread, 1))))),
+		"resource_set?", unpack.Bind(thread, &resourceSet, unpack.IfNotNone(unpack.Pointer(model_starlark.NewNamedFunctionUnpackerInto[TReference, TMetadata]()))),
+		"toolchain?", unpack.Bind(thread, &toolchain, unpack.IfNotNone(unpack.Pointer(model_starlark.NewLabelOrStringUnpackerInto[TReference, TMetadata](model_starlark.CurrentFilePackage(thread, 1))))),
 		"tools?", unpack.Bind(thread, &tools, unpack.Or([]unpack.UnpackerInto[[]any]{
-			unpack.Singleton(unpack.Decay(unpack.Type[*model_starlark.Depset[TReference]]("depset"))),
+			unpack.Singleton(unpack.Decay(unpack.Type[*model_starlark.Depset[TReference, TMetadata]]("depset"))),
 			unpack.List(unpack.Or([]unpack.UnpackerInto[any]{
-				unpack.Decay(unpack.Type[*model_starlark.Depset[TReference]]("depset")),
-				unpack.Decay(unpack.Type[model_starlark.File]("File")),
-				unpack.Decay(unpack.Type[*model_starlark.Struct[TReference]]("struct")),
+				unpack.Decay(unpack.Type[*model_starlark.Depset[TReference, TMetadata]]("depset")),
+				unpack.Decay(unpack.Type[model_starlark.File[TReference, TMetadata]]("File")),
+				unpack.Decay(unpack.Type[*model_starlark.Struct[TReference, TMetadata]]("struct")),
 			})),
 		})),
 		"use_default_shell_env?", unpack.Bind(thread, &useDefaultShellEnv, unpack.Bool),
@@ -1458,12 +1458,12 @@ func (rca *ruleContextActions[TReference]) doRun(thread *starlark.Thread, b *sta
 	return starlark.None, nil
 }
 
-func (rca *ruleContextActions[TReference]) doRunShell(thread *starlark.Thread, b *starlark.Builtin, fnArgs starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
+func (rca *ruleContextActions[TReference, TMetadata]) doRunShell(thread *starlark.Thread, b *starlark.Builtin, fnArgs starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
 	if len(fnArgs) != 0 {
 		return nil, fmt.Errorf("%s: got %d positional arguments, want 0", b.Name(), len(fnArgs))
 	}
 	var command string
-	var outputs []model_starlark.File
+	var outputs []model_starlark.File[TReference, TMetadata]
 	var arguments []any
 	var env map[string]string
 	execGroup := ""
@@ -1471,14 +1471,14 @@ func (rca *ruleContextActions[TReference]) doRunShell(thread *starlark.Thread, b
 	var inputs any
 	mnemonic := ""
 	progressMessage := ""
-	var resourceSet *model_starlark.NamedFunction
+	var resourceSet *model_starlark.NamedFunction[TReference, TMetadata]
 	var toolchain *label.ResolvedLabel
 	var tools []any
 	useDefaultShellEnv := false
 	if err := starlark.UnpackArgs(
 		b.Name(), fnArgs, kwargs,
 		// Required arguments.
-		"outputs", unpack.Bind(thread, &outputs, unpack.List(unpack.Type[model_starlark.File]("File"))),
+		"outputs", unpack.Bind(thread, &outputs, unpack.List(unpack.Type[model_starlark.File[TReference, TMetadata]]("File"))),
 		"command", unpack.Bind(thread, &command, unpack.String),
 		// Optional arguments.
 		"arguments?", unpack.Bind(thread, &arguments, unpack.List(unpack.Or([]unpack.UnpackerInto[any]{
@@ -1489,19 +1489,19 @@ func (rca *ruleContextActions[TReference]) doRunShell(thread *starlark.Thread, b
 		"exec_group?", unpack.Bind(thread, &execGroup, unpack.IfNotNone(unpack.String)),
 		"execution_requirements?", unpack.Bind(thread, &executionRequirements, unpack.Dict(unpack.String, unpack.String)),
 		"inputs?", unpack.Bind(thread, &inputs, unpack.Or([]unpack.UnpackerInto[any]{
-			unpack.Decay(unpack.Type[*model_starlark.Depset[TReference]]("depset")),
-			unpack.Decay(unpack.List(unpack.Type[model_starlark.File]("File"))),
+			unpack.Decay(unpack.Type[*model_starlark.Depset[TReference, TMetadata]]("depset")),
+			unpack.Decay(unpack.List(unpack.Type[model_starlark.File[TReference, TMetadata]]("File"))),
 		})),
 		"mnemonic?", unpack.Bind(thread, &mnemonic, unpack.IfNotNone(unpack.String)),
 		"progress_message?", unpack.Bind(thread, &progressMessage, unpack.IfNotNone(unpack.String)),
-		"resource_set?", unpack.Bind(thread, &resourceSet, unpack.IfNotNone(unpack.Pointer(model_starlark.NamedFunctionUnpackerInto))),
-		"toolchain?", unpack.Bind(thread, &toolchain, unpack.IfNotNone(unpack.Pointer(model_starlark.NewLabelOrStringUnpackerInto(model_starlark.CurrentFilePackage(thread, 1))))),
+		"resource_set?", unpack.Bind(thread, &resourceSet, unpack.IfNotNone(unpack.Pointer(model_starlark.NewNamedFunctionUnpackerInto[TReference, TMetadata]()))),
+		"toolchain?", unpack.Bind(thread, &toolchain, unpack.IfNotNone(unpack.Pointer(model_starlark.NewLabelOrStringUnpackerInto[TReference, TMetadata](model_starlark.CurrentFilePackage(thread, 1))))),
 		"tools?", unpack.Bind(thread, &tools, unpack.Or([]unpack.UnpackerInto[[]any]{
-			unpack.Singleton(unpack.Decay(unpack.Type[*model_starlark.Depset[TReference]]("depset"))),
+			unpack.Singleton(unpack.Decay(unpack.Type[*model_starlark.Depset[TReference, TMetadata]]("depset"))),
 			unpack.List(unpack.Or([]unpack.UnpackerInto[any]{
-				unpack.Decay(unpack.Type[*model_starlark.Depset[TReference]]("depset")),
-				unpack.Decay(unpack.Type[model_starlark.File]("File")),
-				unpack.Decay(unpack.Type[*model_starlark.Struct[TReference]]("struct")),
+				unpack.Decay(unpack.Type[*model_starlark.Depset[TReference, TMetadata]]("depset")),
+				unpack.Decay(unpack.Type[model_starlark.File[TReference, TMetadata]]("File")),
+				unpack.Decay(unpack.Type[*model_starlark.Struct[TReference, TMetadata]]("struct")),
 			})),
 		})),
 		"use_default_shell_env?", unpack.Bind(thread, &useDefaultShellEnv, unpack.Bool),
@@ -1513,16 +1513,16 @@ func (rca *ruleContextActions[TReference]) doRunShell(thread *starlark.Thread, b
 	return starlark.None, nil
 }
 
-func (rca *ruleContextActions[TReference]) doSymlink(thread *starlark.Thread, b *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
-	var output model_starlark.File
-	var targetFile *model_starlark.File
+func (rca *ruleContextActions[TReference, TMetadata]) doSymlink(thread *starlark.Thread, b *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
+	var output model_starlark.File[TReference, TMetadata]
+	var targetFile *model_starlark.File[TReference, TMetadata]
 	targetPath := ""
 	isExecutable := false
 	progressMessage := ""
 	if err := starlark.UnpackArgs(
 		b.Name(), args, kwargs,
-		"output", unpack.Bind(thread, &output, unpack.Type[model_starlark.File]("File")),
-		"target_file?", unpack.Bind(thread, &targetFile, unpack.IfNotNone(unpack.Pointer(unpack.Type[model_starlark.File]("File")))),
+		"output", unpack.Bind(thread, &output, unpack.Type[model_starlark.File[TReference, TMetadata]]("File")),
+		"target_file?", unpack.Bind(thread, &targetFile, unpack.IfNotNone(unpack.Pointer(unpack.Type[model_starlark.File[TReference, TMetadata]]("File")))),
 		"target_path?", unpack.Bind(thread, &targetPath, unpack.IfNotNone(unpack.String)),
 		"is_executable?", unpack.Bind(thread, &isExecutable, unpack.Bool),
 		"progress_message?", unpack.Bind(thread, &progressMessage, unpack.IfNotNone(unpack.String)),
@@ -1534,21 +1534,21 @@ func (rca *ruleContextActions[TReference]) doSymlink(thread *starlark.Thread, b 
 	return starlark.None, nil
 }
 
-func (rca *ruleContextActions[TReference]) doTransformInfoFile(thread *starlark.Thread, b *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
+func (rca *ruleContextActions[TReference, TMetadata]) doTransformInfoFile(thread *starlark.Thread, b *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
 	return starlark.None, nil
 }
 
-func (rca *ruleContextActions[TReference]) doTransformVersionFile(thread *starlark.Thread, b *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
+func (rca *ruleContextActions[TReference, TMetadata]) doTransformVersionFile(thread *starlark.Thread, b *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
 	return starlark.None, nil
 }
 
-func (rca *ruleContextActions[TReference]) doWrite(thread *starlark.Thread, b *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
-	var output model_starlark.File
+func (rca *ruleContextActions[TReference, TMetadata]) doWrite(thread *starlark.Thread, b *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
+	var output model_starlark.File[TReference, TMetadata]
 	var content string
 	isExecutable := false
 	if err := starlark.UnpackArgs(
 		b.Name(), args, kwargs,
-		"output", unpack.Bind(thread, &output, unpack.Type[model_starlark.File]("File")),
+		"output", unpack.Bind(thread, &output, unpack.Type[model_starlark.File[TReference, TMetadata]]("File")),
 		// TODO: Accept Args.
 		"content", unpack.Bind(thread, &content, unpack.String),
 		"is_executable?", unpack.Bind(thread, &isExecutable, unpack.Bool),
@@ -1558,32 +1558,32 @@ func (rca *ruleContextActions[TReference]) doWrite(thread *starlark.Thread, b *s
 	return starlark.None, nil
 }
 
-type ruleContextAttr[TReference object.BasicReference] struct {
-	ruleContext *ruleContext[TReference]
+type ruleContextAttr[TReference object.BasicReference, TMetadata BaseComputerReferenceMetadata] struct {
+	ruleContext *ruleContext[TReference, TMetadata]
 }
 
-var _ starlark.HasAttrs = (*ruleContextAttr[object.GlobalReference])(nil)
+var _ starlark.HasAttrs = (*ruleContextAttr[object.GlobalReference, BaseComputerReferenceMetadata])(nil)
 
-func (ruleContextAttr[TReference]) String() string {
+func (ruleContextAttr[TReference, TMetadata]) String() string {
 	return "<ctx.attr>"
 }
 
-func (ruleContextAttr[TReference]) Type() string {
+func (ruleContextAttr[TReference, TMetadata]) Type() string {
 	return "ctx.attr"
 }
 
-func (ruleContextAttr[TReference]) Freeze() {
+func (ruleContextAttr[TReference, TMetadata]) Freeze() {
 }
 
-func (ruleContextAttr[TReference]) Truth() starlark.Bool {
+func (ruleContextAttr[TReference, TMetadata]) Truth() starlark.Bool {
 	return starlark.True
 }
 
-func (ruleContextAttr[TReference]) Hash(thread *starlark.Thread) (uint32, error) {
+func (ruleContextAttr[TReference, TMetadata]) Hash(thread *starlark.Thread) (uint32, error) {
 	return 0, errors.New("ctx.attr cannot be hashed")
 }
 
-func (rca *ruleContextAttr[TReference]) Attr(thread *starlark.Thread, name string) (starlark.Value, error) {
+func (rca *ruleContextAttr[TReference, TMetadata]) Attr(thread *starlark.Thread, name string) (starlark.Value, error) {
 	rc := rca.ruleContext
 	switch name {
 	case "tags":
@@ -1627,7 +1627,7 @@ func (rca *ruleContextAttr[TReference]) Attr(thread *starlark.Thread, name strin
 	}
 }
 
-func (rca *ruleContextAttr[TReference]) AttrNames() []string {
+func (rca *ruleContextAttr[TReference, TMetadata]) AttrNames() []string {
 	attrs := rca.ruleContext.ruleDefinition.Message.Attrs
 	attrNames := append(
 		make([]string, 0, len(attrs)+1),
@@ -1640,32 +1640,32 @@ func (rca *ruleContextAttr[TReference]) AttrNames() []string {
 	return attrNames
 }
 
-type ruleContextExecGroups[TReference object.BasicReference] struct {
-	ruleContext *ruleContext[TReference]
+type ruleContextExecGroups[TReference object.BasicReference, TMetadata BaseComputerReferenceMetadata] struct {
+	ruleContext *ruleContext[TReference, TMetadata]
 }
 
-var _ starlark.Mapping = (*ruleContextExecGroups[object.GlobalReference])(nil)
+var _ starlark.Mapping = (*ruleContextExecGroups[object.GlobalReference, BaseComputerReferenceMetadata])(nil)
 
-func (ruleContextExecGroups[TReference]) String() string {
+func (ruleContextExecGroups[TReference, TMetadata]) String() string {
 	return "<ctx.exec_groups>"
 }
 
-func (ruleContextExecGroups[TReference]) Type() string {
+func (ruleContextExecGroups[TReference, TMetadata]) Type() string {
 	return "ctx.exec_groups"
 }
 
-func (ruleContextExecGroups[TReference]) Freeze() {
+func (ruleContextExecGroups[TReference, TMetadata]) Freeze() {
 }
 
-func (ruleContextExecGroups[TReference]) Truth() starlark.Bool {
+func (ruleContextExecGroups[TReference, TMetadata]) Truth() starlark.Bool {
 	return starlark.True
 }
 
-func (ruleContextExecGroups[TReference]) Hash(thread *starlark.Thread) (uint32, error) {
+func (ruleContextExecGroups[TReference, TMetadata]) Hash(thread *starlark.Thread) (uint32, error) {
 	return 0, errors.New("ctx.exec_groups cannot be hashed")
 }
 
-func (rca *ruleContextExecGroups[TReference]) Get(thread *starlark.Thread, key starlark.Value) (starlark.Value, bool, error) {
+func (rca *ruleContextExecGroups[TReference, TMetadata]) Get(thread *starlark.Thread, key starlark.Value) (starlark.Value, bool, error) {
 	var execGroupName string
 	if err := unpack.String.UnpackInto(thread, key, &execGroupName); err != nil {
 		return nil, false, err
@@ -1684,32 +1684,32 @@ func (rca *ruleContextExecGroups[TReference]) Get(thread *starlark.Thread, key s
 	return nil, true, fmt.Errorf("TODO: use exec group with index %d", execGroupIndex)
 }
 
-type ruleContextExecutable[TReference object.BasicReference] struct {
-	ruleContext *ruleContext[TReference]
+type ruleContextExecutable[TReference object.BasicReference, TMetadata BaseComputerReferenceMetadata] struct {
+	ruleContext *ruleContext[TReference, TMetadata]
 }
 
-var _ starlark.HasAttrs = (*ruleContextExecutable[object.GlobalReference])(nil)
+var _ starlark.HasAttrs = (*ruleContextExecutable[object.GlobalReference, BaseComputerReferenceMetadata])(nil)
 
-func (ruleContextExecutable[TReference]) String() string {
+func (ruleContextExecutable[TReference, TMetadata]) String() string {
 	return "<ctx.executable>"
 }
 
-func (ruleContextExecutable[TReference]) Type() string {
+func (ruleContextExecutable[TReference, TMetadata]) Type() string {
 	return "ctx.executable"
 }
 
-func (ruleContextExecutable[TReference]) Freeze() {
+func (ruleContextExecutable[TReference, TMetadata]) Freeze() {
 }
 
-func (ruleContextExecutable[TReference]) Truth() starlark.Bool {
+func (ruleContextExecutable[TReference, TMetadata]) Truth() starlark.Bool {
 	return starlark.True
 }
 
-func (ruleContextExecutable[TReference]) Hash(thread *starlark.Thread) (uint32, error) {
+func (ruleContextExecutable[TReference, TMetadata]) Hash(thread *starlark.Thread) (uint32, error) {
 	return 0, errors.New("ctx.executable cannot be hashed")
 }
 
-func (rce *ruleContextExecutable[TReference]) Attr(thread *starlark.Thread, name string) (starlark.Value, error) {
+func (rce *ruleContextExecutable[TReference, TMetadata]) Attr(thread *starlark.Thread, name string) (starlark.Value, error) {
 	rc := rce.ruleContext
 	ruleDefinitionAttrs := rc.ruleDefinition.Message.Attrs
 	ruleDefinitionAttrIndex, ok := sort.Find(
@@ -1783,11 +1783,11 @@ func (rce *ruleContextExecutable[TReference]) Attr(thread *starlark.Thread, name
 				return nil, fmt.Errorf("failed to obtain field \"files_to_run.executable\" of DefaultInfo provider of target with label %#v: %w", visibleTarget.Message.Label, err)
 			}
 
-			executable, err = model_starlark.DecodeValue(
+			executable, err = model_starlark.DecodeValue[TReference, TMetadata](
 				encodedExecutable,
 				/* currentIdentifier = */ nil,
 				rc.computer.getValueDecodingOptions(rc.context, func(resolvedLabel label.ResolvedLabel) (starlark.Value, error) {
-					return model_starlark.NewLabel(resolvedLabel), nil
+					return model_starlark.NewLabel[TReference, TMetadata](resolvedLabel), nil
 				}),
 			)
 			if err != nil {
@@ -1807,36 +1807,36 @@ func (rce *ruleContextExecutable[TReference]) Attr(thread *starlark.Thread, name
 	return executable, nil
 }
 
-func (ruleContextExecutable[TReference]) AttrNames() []string {
+func (ruleContextExecutable[TReference, TMetadata]) AttrNames() []string {
 	panic("TODO")
 }
 
-type ruleContextFile[TReference object.BasicReference] struct {
-	ruleContext *ruleContext[TReference]
+type ruleContextFile[TReference object.BasicReference, TMetadata BaseComputerReferenceMetadata] struct {
+	ruleContext *ruleContext[TReference, TMetadata]
 }
 
-var _ starlark.HasAttrs = (*ruleContextFile[object.GlobalReference])(nil)
+var _ starlark.HasAttrs = (*ruleContextFile[object.GlobalReference, BaseComputerReferenceMetadata])(nil)
 
-func (ruleContextFile[TReference]) String() string {
+func (ruleContextFile[TReference, TMetadata]) String() string {
 	return "<ctx.file>"
 }
 
-func (ruleContextFile[TReference]) Type() string {
+func (ruleContextFile[TReference, TMetadata]) Type() string {
 	return "ctx.file"
 }
 
-func (ruleContextFile[TReference]) Freeze() {
+func (ruleContextFile[TReference, TMetadata]) Freeze() {
 }
 
-func (ruleContextFile[TReference]) Truth() starlark.Bool {
+func (ruleContextFile[TReference, TMetadata]) Truth() starlark.Bool {
 	return starlark.True
 }
 
-func (ruleContextFile[TReference]) Hash(thread *starlark.Thread) (uint32, error) {
+func (ruleContextFile[TReference, TMetadata]) Hash(thread *starlark.Thread) (uint32, error) {
 	return 0, errors.New("ctx.file cannot be hashed")
 }
 
-func (rcf *ruleContextFile[TReference]) Attr(thread *starlark.Thread, name string) (starlark.Value, error) {
+func (rcf *ruleContextFile[TReference, TMetadata]) Attr(thread *starlark.Thread, name string) (starlark.Value, error) {
 	rc := rcf.ruleContext
 	ruleDefinitionAttrs := rc.ruleDefinition.Message.Attrs
 	ruleDefinitionAttrIndex, ok := sort.Find(
@@ -1908,11 +1908,11 @@ func (rcf *ruleContextFile[TReference]) Attr(thread *starlark.Thread, name strin
 				return nil, fmt.Errorf("target with label %#v does not yield exactly one file", visibleTarget.Message.Label)
 			}
 
-			file, err = model_starlark.DecodeValue(
+			file, err = model_starlark.DecodeValue[TReference, TMetadata](
 				model_core.NewNestedMessage(files, element.Leaf),
 				/* currentIdentifier = */ nil,
 				rc.computer.getValueDecodingOptions(rc.context, func(resolvedLabel label.ResolvedLabel) (starlark.Value, error) {
-					return model_starlark.NewLabel(resolvedLabel), nil
+					return model_starlark.NewLabel[TReference, TMetadata](resolvedLabel), nil
 				}),
 			)
 			if err != nil {
@@ -1932,7 +1932,7 @@ func (rcf *ruleContextFile[TReference]) Attr(thread *starlark.Thread, name strin
 	return file, nil
 }
 
-func (rcf *ruleContextFile[TReference]) AttrNames() []string {
+func (rcf *ruleContextFile[TReference, TMetadata]) AttrNames() []string {
 	var attrNames []string
 	for _, namedAttr := range rcf.ruleContext.ruleDefinition.Message.Attrs {
 		if labelType, ok := namedAttr.Attr.GetType().(*model_starlark_pb.Attr_Label); ok && labelType.Label.AllowSingleFile {
@@ -1942,32 +1942,32 @@ func (rcf *ruleContextFile[TReference]) AttrNames() []string {
 	return attrNames
 }
 
-type ruleContextFiles[TReference object.BasicReference] struct {
-	ruleContext *ruleContext[TReference]
+type ruleContextFiles[TReference object.BasicReference, TMetadata BaseComputerReferenceMetadata] struct {
+	ruleContext *ruleContext[TReference, TMetadata]
 }
 
-var _ starlark.HasAttrs = (*ruleContextFiles[object.GlobalReference])(nil)
+var _ starlark.HasAttrs = (*ruleContextFiles[object.GlobalReference, BaseComputerReferenceMetadata])(nil)
 
-func (ruleContextFiles[TReference]) String() string {
+func (ruleContextFiles[TReference, TMetadata]) String() string {
 	return "<ctx.files>"
 }
 
-func (ruleContextFiles[TReference]) Type() string {
+func (ruleContextFiles[TReference, TMetadata]) Type() string {
 	return "ctx.files"
 }
 
-func (ruleContextFiles[TReference]) Freeze() {
+func (ruleContextFiles[TReference, TMetadata]) Freeze() {
 }
 
-func (ruleContextFiles[TReference]) Truth() starlark.Bool {
+func (ruleContextFiles[TReference, TMetadata]) Truth() starlark.Bool {
 	return starlark.True
 }
 
-func (ruleContextFiles[TReference]) Hash(thread *starlark.Thread) (uint32, error) {
+func (ruleContextFiles[TReference, TMetadata]) Hash(thread *starlark.Thread) (uint32, error) {
 	return 0, errors.New("ctx.files cannot be hashed")
 }
 
-func (rcf *ruleContextFiles[TReference]) Attr(thread *starlark.Thread, name string) (starlark.Value, error) {
+func (rcf *ruleContextFiles[TReference, TMetadata]) Attr(thread *starlark.Thread, name string) (starlark.Value, error) {
 	rc := rcf.ruleContext
 	ruleDefinitionAttrs := rc.ruleDefinition.Message.Attrs
 	ruleDefinitionAttrIndex, ok := sort.Find(
@@ -2071,7 +2071,7 @@ func (rcf *ruleContextFiles[TReference]) Attr(thread *starlark.Thread, name stri
 
 		// Place all of the gathered file elements in a single
 		// depset and convert it back to a list.
-		filesDepset := model_starlark.NewDepsetFromList[TReference](filesDepsetElements, model_starlark_pb.Depset_DEFAULT)
+		filesDepset := model_starlark.NewDepsetFromList[TReference, TMetadata](filesDepsetElements, model_starlark_pb.Depset_DEFAULT)
 		files, err = filesDepset.ToList(thread)
 		if err != nil {
 			return nil, err
@@ -2084,7 +2084,7 @@ func (rcf *ruleContextFiles[TReference]) Attr(thread *starlark.Thread, name stri
 	return files, nil
 }
 
-func (rcf *ruleContextFiles[TReference]) AttrNames() []string {
+func (rcf *ruleContextFiles[TReference, TMetadata]) AttrNames() []string {
 	var attrNames []string
 	for _, namedAttr := range rcf.ruleContext.ruleDefinition.Message.Attrs {
 		switch namedAttr.Attr.GetType().(type) {
@@ -2096,32 +2096,32 @@ func (rcf *ruleContextFiles[TReference]) AttrNames() []string {
 	return attrNames
 }
 
-type ruleContextFragments[TReference object.BasicReference] struct {
-	ruleContext *ruleContext[TReference]
+type ruleContextFragments[TReference object.BasicReference, TMetadata BaseComputerReferenceMetadata] struct {
+	ruleContext *ruleContext[TReference, TMetadata]
 }
 
-var _ starlark.HasAttrs = (*ruleContextFragments[object.GlobalReference])(nil)
+var _ starlark.HasAttrs = (*ruleContextFragments[object.GlobalReference, BaseComputerReferenceMetadata])(nil)
 
-func (ruleContextFragments[TReference]) String() string {
+func (ruleContextFragments[TReference, TMetadata]) String() string {
 	return "<ctx.fragments>"
 }
 
-func (ruleContextFragments[TReference]) Type() string {
+func (ruleContextFragments[TReference, TMetadata]) Type() string {
 	return "ctx.fragments"
 }
 
-func (ruleContextFragments[TReference]) Freeze() {
+func (ruleContextFragments[TReference, TMetadata]) Freeze() {
 }
 
-func (ruleContextFragments[TReference]) Truth() starlark.Bool {
+func (ruleContextFragments[TReference, TMetadata]) Truth() starlark.Bool {
 	return starlark.True
 }
 
-func (ruleContextFragments[TReference]) Hash(thread *starlark.Thread) (uint32, error) {
+func (ruleContextFragments[TReference, TMetadata]) Hash(thread *starlark.Thread) (uint32, error) {
 	return 0, errors.New("ctx.fragments cannot be hashed")
 }
 
-func (rcf *ruleContextFragments[TReference]) Attr(thread *starlark.Thread, name string) (starlark.Value, error) {
+func (rcf *ruleContextFragments[TReference, TMetadata]) Attr(thread *starlark.Thread, name string) (starlark.Value, error) {
 	rc := rcf.ruleContext
 	fragmentInfo, ok := rc.fragments[name]
 	if !ok {
@@ -2138,7 +2138,7 @@ func (rcf *ruleContextFragments[TReference]) Attr(thread *starlark.Thread, name 
 		if err != nil {
 			return nil, err
 		}
-		fragmentInfo, err = model_starlark.DecodeStruct(
+		fragmentInfo, err = model_starlark.DecodeStruct[TReference, TMetadata](
 			model_core.NewNestedMessage(encodedFragmentInfo, &model_starlark_pb.Struct{
 				ProviderInstanceProperties: &model_starlark_pb.Provider_InstanceProperties{
 					ProviderIdentifier: fragmentInfoProviderIdentifier.String(),
@@ -2146,7 +2146,7 @@ func (rcf *ruleContextFragments[TReference]) Attr(thread *starlark.Thread, name 
 				Fields: encodedFragmentInfo.Message,
 			}),
 			rc.computer.getValueDecodingOptions(rc.context, func(resolvedLabel label.ResolvedLabel) (starlark.Value, error) {
-				return model_starlark.NewLabel(resolvedLabel), nil
+				return model_starlark.NewLabel[TReference, TMetadata](resolvedLabel), nil
 			}),
 		)
 		if err != nil {
@@ -2157,37 +2157,37 @@ func (rcf *ruleContextFragments[TReference]) Attr(thread *starlark.Thread, name 
 	return fragmentInfo, nil
 }
 
-func (ruleContextFragments[TReference]) AttrNames() []string {
+func (ruleContextFragments[TReference, TMetadata]) AttrNames() []string {
 	// TODO: implement.
 	return nil
 }
 
-type ruleContextOutputs[TReference object.BasicReference] struct {
-	ruleContext *ruleContext[TReference]
+type ruleContextOutputs[TReference object.BasicReference, TMetadata BaseComputerReferenceMetadata] struct {
+	ruleContext *ruleContext[TReference, TMetadata]
 }
 
-var _ starlark.HasAttrs = (*ruleContextOutputs[object.GlobalReference])(nil)
+var _ starlark.HasAttrs = (*ruleContextOutputs[object.GlobalReference, BaseComputerReferenceMetadata])(nil)
 
-func (ruleContextOutputs[TReference]) String() string {
+func (ruleContextOutputs[TReference, TMetadata]) String() string {
 	return "<ctx.outputs>"
 }
 
-func (ruleContextOutputs[TReference]) Type() string {
+func (ruleContextOutputs[TReference, TMetadata]) Type() string {
 	return "ctx.outputs"
 }
 
-func (ruleContextOutputs[TReference]) Freeze() {
+func (ruleContextOutputs[TReference, TMetadata]) Freeze() {
 }
 
-func (ruleContextOutputs[TReference]) Truth() starlark.Bool {
+func (ruleContextOutputs[TReference, TMetadata]) Truth() starlark.Bool {
 	return starlark.True
 }
 
-func (ruleContextOutputs[TReference]) Hash(thread *starlark.Thread) (uint32, error) {
+func (ruleContextOutputs[TReference, TMetadata]) Hash(thread *starlark.Thread) (uint32, error) {
 	return 0, errors.New("ctx.outputs cannot be hashed")
 }
 
-func (rco *ruleContextOutputs[TReference]) Attr(thread *starlark.Thread, name string) (starlark.Value, error) {
+func (rco *ruleContextOutputs[TReference, TMetadata]) Attr(thread *starlark.Thread, name string) (starlark.Value, error) {
 	rc := rco.ruleContext
 	ruleDefinitionAttrs := rc.ruleDefinition.Message.Attrs
 	ruleDefinitionAttrIndex, ok := sort.Find(
@@ -2215,7 +2215,7 @@ func (rco *ruleContextOutputs[TReference]) Attr(thread *starlark.Thread, name st
 			return nil, errors.New("values of output attrs cannot consist of multiple parts, as they are not configurable")
 		}
 
-		outputs, err = model_starlark.DecodeValue(
+		outputs, err = model_starlark.DecodeValue[TReference, TMetadata](
 			model_core.NewNestedMessage(valueParts, valueParts.Message[0]),
 			/* currentIdentifier = */ nil,
 			rc.computer.getValueDecodingOptions(rc.context, func(resolvedLabel label.ResolvedLabel) (starlark.Value, error) {
@@ -2227,7 +2227,7 @@ func (rco *ruleContextOutputs[TReference]) Attr(thread *starlark.Thread, name st
 				if canonicalPackage != rc.targetLabel.GetCanonicalPackage() {
 					return nil, fmt.Errorf("output attr %#v contains to label %#v, which refers to a different package", name, canonicalLabel.String())
 				}
-				return model_starlark.NewFile(&model_starlark_pb.File{
+				return model_starlark.NewFile[TReference, TMetadata](&model_starlark_pb.File{
 					Owner: &model_starlark_pb.File_Owner{
 						// TODO: Fill in a proper hash.
 						Cfg:        []byte{0xbe, 0x8a, 0x60, 0x1c, 0xe3, 0x03, 0x44, 0xf0},
@@ -2250,39 +2250,39 @@ func (rco *ruleContextOutputs[TReference]) Attr(thread *starlark.Thread, name st
 	return outputs, nil
 }
 
-func (ruleContextOutputs[TReference]) AttrNames() []string {
+func (ruleContextOutputs[TReference, TMetadata]) AttrNames() []string {
 	return nil
 }
 
-type toolchainContext[TReference object.BasicReference] struct {
-	ruleContext    *ruleContext[TReference]
+type toolchainContext[TReference object.BasicReference, TMetadata BaseComputerReferenceMetadata] struct {
+	ruleContext    *ruleContext[TReference, TMetadata]
 	execGroupIndex int
 }
 
-var _ starlark.Mapping = (*toolchainContext[object.GlobalReference])(nil)
+var _ starlark.Mapping = (*toolchainContext[object.GlobalReference, BaseComputerReferenceMetadata])(nil)
 
-func (toolchainContext[TReference]) String() string {
+func (toolchainContext[TReference, TMetadata]) String() string {
 	return "<toolchain context>"
 }
 
-func (toolchainContext[TReference]) Type() string {
+func (toolchainContext[TReference, TMetadata]) Type() string {
 	return "ToolchainContext"
 }
 
-func (toolchainContext[TReference]) Freeze() {
+func (toolchainContext[TReference, TMetadata]) Freeze() {
 }
 
-func (toolchainContext[TReference]) Truth() starlark.Bool {
+func (toolchainContext[TReference, TMetadata]) Truth() starlark.Bool {
 	return starlark.True
 }
 
-func (toolchainContext[TReference]) Hash(thread *starlark.Thread) (uint32, error) {
+func (toolchainContext[TReference, TMetadata]) Hash(thread *starlark.Thread) (uint32, error) {
 	return 0, errors.New("ToolchainContext cannot be hashed")
 }
 
-func (tc *toolchainContext[TReference]) Get(thread *starlark.Thread, v starlark.Value) (starlark.Value, bool, error) {
+func (tc *toolchainContext[TReference, TMetadata]) Get(thread *starlark.Thread, v starlark.Value) (starlark.Value, bool, error) {
 	rc := tc.ruleContext
-	labelUnpackerInto := unpack.Stringer(model_starlark.NewLabelOrStringUnpackerInto(model_starlark.CurrentFilePackage(thread, 0)))
+	labelUnpackerInto := unpack.Stringer(model_starlark.NewLabelOrStringUnpackerInto[TReference, TMetadata](model_starlark.CurrentFilePackage(thread, 0)))
 	var toolchainType string
 	if err := labelUnpackerInto.UnpackInto(thread, v, &toolchainType); err != nil {
 		return nil, false, err
@@ -2358,7 +2358,7 @@ func (tc *toolchainContext[TReference]) Get(thread *starlark.Thread, v starlark.
 				return nil, true, err
 			}
 
-			toolchainInfo, err = model_starlark.DecodeStruct(
+			toolchainInfo, err = model_starlark.DecodeStruct[TReference, TMetadata](
 				model_core.NewNestedMessage(encodedToolchainInfo, &model_starlark_pb.Struct{
 					ProviderInstanceProperties: &model_starlark_pb.Provider_InstanceProperties{
 						ProviderIdentifier: toolchainInfoProviderIdentifier.String(),
@@ -2366,7 +2366,7 @@ func (tc *toolchainContext[TReference]) Get(thread *starlark.Thread, v starlark.
 					Fields: encodedToolchainInfo.Message,
 				}),
 				rc.computer.getValueDecodingOptions(rc.context, func(resolvedLabel label.ResolvedLabel) (starlark.Value, error) {
-					return model_starlark.NewLabel(resolvedLabel), nil
+					return model_starlark.NewLabel[TReference, TMetadata](resolvedLabel), nil
 				}),
 			)
 			if err != nil {
@@ -2487,37 +2487,37 @@ func (a *args) doUseParamFile(thread *starlark.Thread, b *starlark.Builtin, args
 	return a, nil
 }
 
-type subruleContext[TReference object.BasicReference] struct {
-	ruleContext *ruleContext[TReference]
+type subruleContext[TReference object.BasicReference, TMetadata BaseComputerReferenceMetadata] struct {
+	ruleContext *ruleContext[TReference, TMetadata]
 }
 
-var _ starlark.HasAttrs = (*subruleContext[object.GlobalReference])(nil)
+var _ starlark.HasAttrs = (*subruleContext[object.GlobalReference, BaseComputerReferenceMetadata])(nil)
 
-func (sc *subruleContext[TReference]) String() string {
+func (sc *subruleContext[TReference, TMetadata]) String() string {
 	rc := sc.ruleContext
 	return fmt.Sprintf("<subrule_ctx for %s>", rc.targetLabel.String())
 }
 
-func (subruleContext[TReference]) Type() string {
+func (subruleContext[TReference, TMetadata]) Type() string {
 	return "subrule_ctx"
 }
 
-func (subruleContext[TReference]) Freeze() {
+func (subruleContext[TReference, TMetadata]) Freeze() {
 }
 
-func (subruleContext[TReference]) Truth() starlark.Bool {
+func (subruleContext[TReference, TMetadata]) Truth() starlark.Bool {
 	return starlark.True
 }
 
-func (subruleContext[TReference]) Hash(thread *starlark.Thread) (uint32, error) {
+func (subruleContext[TReference, TMetadata]) Hash(thread *starlark.Thread) (uint32, error) {
 	return 0, errors.New("subrule_ctx cannot be hashed")
 }
 
-func (sc *subruleContext[TReference]) Attr(thread *starlark.Thread, name string) (starlark.Value, error) {
+func (sc *subruleContext[TReference, TMetadata]) Attr(thread *starlark.Thread, name string) (starlark.Value, error) {
 	rc := sc.ruleContext
 	switch name {
 	case "fragments":
-		return &ruleContextFragments[TReference]{
+		return &ruleContextFragments[TReference, TMetadata]{
 			ruleContext: rc,
 		}, nil
 	default:
@@ -2529,6 +2529,6 @@ var subruleContextAttrNames = []string{
 	"fragments",
 }
 
-func (subruleContext[TReference]) AttrNames() []string {
+func (subruleContext[TReference, TMetadata]) AttrNames() []string {
 	return subruleContextAttrNames
 }

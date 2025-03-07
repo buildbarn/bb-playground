@@ -10,7 +10,7 @@ import (
 	"github.com/buildbarn/bonanza/pkg/storage/dag"
 )
 
-func (c *baseComputer[TReference]) ComputeModulesWithMultipleVersionsValue(ctx context.Context, key *model_analysis_pb.ModulesWithMultipleVersions_Key, e ModulesWithMultipleVersionsEnvironment[TReference]) (PatchedModulesWithMultipleVersionsValue, error) {
+func (c *baseComputer[TReference, TMetadata]) ComputeModulesWithMultipleVersionsValue(ctx context.Context, key *model_analysis_pb.ModulesWithMultipleVersions_Key, e ModulesWithMultipleVersionsEnvironment[TReference]) (PatchedModulesWithMultipleVersionsValue, error) {
 	modulesWithOverridesValue := e.GetModulesWithOverridesValue(&model_analysis_pb.ModulesWithOverrides_Key{})
 	if !modulesWithOverridesValue.IsSet() {
 		return PatchedModulesWithMultipleVersionsValue{}, evaluation.ErrMissingDependency
@@ -26,7 +26,7 @@ func (c *baseComputer[TReference]) ComputeModulesWithMultipleVersionsValue(ctx c
 	}), nil
 }
 
-func (c *baseComputer[TReference]) ComputeModulesWithMultipleVersionsObjectValue(ctx context.Context, key *model_analysis_pb.ModulesWithMultipleVersionsObject_Key, e ModulesWithMultipleVersionsObjectEnvironment[TReference]) (map[label.Module]OverrideVersions, error) {
+func (c *baseComputer[TReference, TMetadata]) ComputeModulesWithMultipleVersionsObjectValue(ctx context.Context, key *model_analysis_pb.ModulesWithMultipleVersionsObject_Key, e ModulesWithMultipleVersionsObjectEnvironment[TReference]) (map[label.Module]OverrideVersions, error) {
 	modulesWithMultipleVersionsValue := e.GetModulesWithMultipleVersionsValue(&model_analysis_pb.ModulesWithMultipleVersions_Key{})
 	if !modulesWithMultipleVersionsValue.IsSet() {
 		return nil, evaluation.ErrMissingDependency

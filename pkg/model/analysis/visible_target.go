@@ -135,7 +135,7 @@ func checkRuleTargetVisibility[TReference any](fromPackage label.CanonicalPackag
 	)
 }
 
-func (c *baseComputer[TReference]) ComputeVisibleTargetValue(ctx context.Context, key model_core.Message[*model_analysis_pb.VisibleTarget_Key, TReference], e VisibleTargetEnvironment[TReference]) (PatchedVisibleTargetValue, error) {
+func (c *baseComputer[TReference, TMetadata]) ComputeVisibleTargetValue(ctx context.Context, key model_core.Message[*model_analysis_pb.VisibleTarget_Key, TReference], e VisibleTargetEnvironment[TReference]) (PatchedVisibleTargetValue, error) {
 	fromPackage, err := label.NewCanonicalPackage(key.Message.FromPackage)
 	if err != nil {
 		return PatchedVisibleTargetValue{}, fmt.Errorf("invalid from package: %w", err)

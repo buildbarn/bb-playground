@@ -7,21 +7,21 @@ import (
 	model_starlark_pb "github.com/buildbarn/bonanza/pkg/proto/model/starlark"
 )
 
-type RepoRegistrar struct {
-	repos map[string]model_core.PatchedMessage[*model_starlark_pb.Repo, model_core.CreatedObjectTree]
+type RepoRegistrar[TMetadata model_core.ReferenceMetadata] struct {
+	repos map[string]model_core.PatchedMessage[*model_starlark_pb.Repo, TMetadata]
 }
 
-func NewRepoRegistrar() *RepoRegistrar {
-	return &RepoRegistrar{
-		repos: map[string]model_core.PatchedMessage[*model_starlark_pb.Repo, model_core.CreatedObjectTree]{},
+func NewRepoRegistrar[TMetadata model_core.ReferenceMetadata]() *RepoRegistrar[TMetadata] {
+	return &RepoRegistrar[TMetadata]{
+		repos: map[string]model_core.PatchedMessage[*model_starlark_pb.Repo, TMetadata]{},
 	}
 }
 
-func (rr *RepoRegistrar) GetRepos() map[string]model_core.PatchedMessage[*model_starlark_pb.Repo, model_core.CreatedObjectTree] {
+func (rr *RepoRegistrar[TMetadata]) GetRepos() map[string]model_core.PatchedMessage[*model_starlark_pb.Repo, TMetadata] {
 	return rr.repos
 }
 
-func (rr *RepoRegistrar) registerRepo(name string, repo model_core.PatchedMessage[*model_starlark_pb.Repo, model_core.CreatedObjectTree]) error {
+func (rr *RepoRegistrar[TMetadata]) registerRepo(name string, repo model_core.PatchedMessage[*model_starlark_pb.Repo, TMetadata]) error {
 	if _, ok := rr.repos[name]; ok {
 		return fmt.Errorf("module extension contains multiple repos with name %#v", name)
 	}

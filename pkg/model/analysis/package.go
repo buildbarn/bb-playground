@@ -25,7 +25,7 @@ var buildDotBazelTargetNames = []label.TargetName{
 	label.MustNewTargetName("BUILD"),
 }
 
-func (c *baseComputer[TReference]) ComputePackageValue(ctx context.Context, key *model_analysis_pb.Package_Key, e PackageEnvironment[TReference]) (PatchedPackageValue, error) {
+func (c *baseComputer[TReference, TMetadata]) ComputePackageValue(ctx context.Context, key *model_analysis_pb.Package_Key, e PackageEnvironment[TReference]) (PatchedPackageValue, error) {
 	canonicalPackage, err := label.NewCanonicalPackage(key.Label)
 	if err != nil {
 		return PatchedPackageValue{}, fmt.Errorf("invalid package label: %w", err)
@@ -97,8 +97,14 @@ func (c *baseComputer[TReference]) ComputePackageValue(ctx context.Context, key 
 			}, nil
 		})
 
-		repoDefaultAttrs := model_core.NewNestedMessage(repoDefaultAttrsValue, repoDefaultAttrsValue.Message.InheritableAttrs)
-		targetRegistrar := model_starlark.NewTargetRegistrar(c.getInlinedTreeOptions(), repoDefaultAttrs)
+		repoDefaultAttrs := model_core.PatchedMessageToCloneable(
+			model_core.NewPatchedMessageFromExistingCaptured(
+				c.objectCapturer,
+				model_core.NewNestedMessage(repoDefaultAttrsValue, repoDefaultAttrsValue.Message.InheritableAttrs),
+			),
+		)
+
+		targetRegistrar := model_starlark.NewTargetRegistrar[TMetadata](c.getInlinedTreeOptions(), c.objectCapturer, repoDefaultAttrs)
 		thread.SetLocal(model_starlark.TargetRegistrarKey, targetRegistrar)
 
 		thread.SetLocal(model_starlark.GlobalResolverKey, func(identifier label.CanonicalStarlarkIdentifier) (model_core.Message[*model_starlark_pb.Value, TReference], error) {
@@ -136,7 +142,7 @@ func (c *baseComputer[TReference]) ComputePackageValue(ctx context.Context, key 
 			btree.NewObjectCreatingNodeMerger(
 				c.getValueObjectEncoder(),
 				c.getReferenceFormat(),
-				/* parentNodeComputer = */ func(createdObject model_core.CreatedObject[model_core.CreatedObjectTree], childNodes []*model_analysis_pb.Package_Value_Target) (model_core.PatchedMessage[*model_analysis_pb.Package_Value_Target, model_core.CreatedObjectTree], error) {
+				/* parentNodeComputer = */ func(createdObject model_core.CreatedObject[TMetadata], childNodes []*model_analysis_pb.Package_Value_Target) (model_core.PatchedMessage[*model_analysis_pb.Package_Value_Target, TMetadata], error) {
 					var firstName string
 					switch firstElement := childNodes[0].Level.(type) {
 					case *model_analysis_pb.Package_Value_Target_Leaf:
@@ -144,14 +150,14 @@ func (c *baseComputer[TReference]) ComputePackageValue(ctx context.Context, key 
 					case *model_analysis_pb.Package_Value_Target_Parent_:
 						firstName = firstElement.Parent.FirstName
 					}
-					patcher := model_core.NewReferenceMessagePatcher[model_core.CreatedObjectTree]()
+					patcher := model_core.NewReferenceMessagePatcher[TMetadata]()
 					return model_core.NewPatchedMessage(
 						&model_analysis_pb.Package_Value_Target{
 							Level: &model_analysis_pb.Package_Value_Target_Parent_{
 								Parent: &model_analysis_pb.Package_Value_Target_Parent{
 									Reference: patcher.AddReference(
 										createdObject.Contents.GetReference(),
-										model_core.CreatedObjectTree(createdObject),
+										c.objectCapturer.CaptureCreatedObject(createdObject),
 									),
 									FirstName: firstName,
 								},
@@ -171,7 +177,7 @@ func (c *baseComputer[TReference]) ComputePackageValue(ctx context.Context, key 
 				// provided explicitly. Assume it refers
 				// to a source file with private
 				// visibility.
-				target = model_core.NewSimplePatchedMessage[model_core.CreatedObjectTree](
+				target = model_core.NewSimplePatchedMessage[TMetadata](
 					&model_starlark_pb.Target_Definition{
 						Kind: &model_starlark_pb.Target_Definition_SourceFileTarget{
 							SourceFileTarget: &model_starlark_pb.SourceFileTarget{
@@ -207,7 +213,7 @@ func (c *baseComputer[TReference]) ComputePackageValue(ctx context.Context, key 
 			Message: &model_analysis_pb.Package_Value{
 				Targets: targetsList.Message,
 			},
-			Patcher: model_core.MapCreatedObjectsToWalkers(targetsList.Patcher),
+			Patcher: model_core.MapReferenceMetadataToWalkers(targetsList.Patcher),
 		}, nil
 	}
 

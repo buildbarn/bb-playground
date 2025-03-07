@@ -611,7 +611,7 @@ func inferArchiveFormatFromURL(url string) (model_analysis_pb.HttpArchiveContent
 	return 0, false
 }
 
-func (c *baseComputer[TReference]) fetchModuleFromRegistry(
+func (c *baseComputer[TReference, TMetadata]) fetchModuleFromRegistry(
 	ctx context.Context,
 	module *model_analysis_pb.BuildListModule,
 	e RepoEnvironment[TReference],
@@ -780,7 +780,7 @@ type applyPatchesEnvironment[TReference object.BasicReference] interface {
 	GetFileReaderValue(key *model_analysis_pb.FileReader_Key) (*model_filesystem.FileReader[TReference], bool)
 }
 
-func (c *baseComputer[TReference]) applyPatches(
+func (c *baseComputer[TReference, TMetadata]) applyPatches(
 	ctx context.Context,
 	e applyPatchesEnvironment[TReference],
 	rootRef model_core.Message[*model_filesystem_pb.DirectoryReference, TReference],
@@ -852,7 +852,7 @@ func (c *baseComputer[TReference]) applyPatches(
 	)
 }
 
-func (c *baseComputer[TReference]) applyPatch(
+func (c *baseComputer[TReference, TMetadata]) applyPatch(
 	ctx context.Context,
 	rootDirectory *changeTrackingDirectory[TReference],
 	loadOptions *changeTrackingDirectoryLoadOptions[TReference],
@@ -965,12 +965,12 @@ func (c *baseComputer[TReference]) applyPatch(
 
 // newRepositoryOS creates a repository_os object that can be embedded
 // into module_ctx and repository_ctx objects.
-func newRepositoryOS(thread *starlark.Thread, repoPlatform *model_analysis_pb.RegisteredRepoPlatform_Value) starlark.Value {
+func newRepositoryOS[TReference object.BasicReference, TMetadata BaseComputerReferenceMetadata](thread *starlark.Thread, repoPlatform *model_analysis_pb.RegisteredRepoPlatform_Value) starlark.Value {
 	environ := starlark.NewDict(len(repoPlatform.RepositoryOsEnviron))
 	for _, entry := range repoPlatform.RepositoryOsEnviron {
 		environ.SetKey(thread, starlark.String(entry.Name), starlark.String(entry.Value))
 	}
-	s := model_starlark.NewStructFromDict[object.LocalReference](nil, map[string]any{
+	s := model_starlark.NewStructFromDict[TReference, TMetadata](nil, map[string]any{
 		"arch":    starlark.String(repoPlatform.RepositoryOsArch),
 		"environ": environ,
 		"name":    starlark.String(repoPlatform.RepositoryOsName),
@@ -996,8 +996,8 @@ type moduleOrRepositoryContextEnvironment[TReference object.BasicReference] inte
 	GetStableInputRootPathObjectValue(*model_analysis_pb.StableInputRootPathObject_Key) (*model_starlark.BarePath, bool)
 }
 
-type moduleOrRepositoryContext[TReference object.BasicReference] struct {
-	computer               *baseComputer[TReference]
+type moduleOrRepositoryContext[TReference object.BasicReference, TMetadata BaseComputerReferenceMetadata] struct {
+	computer               *baseComputer[TReference, TMetadata]
 	context                context.Context
 	environment            moduleOrRepositoryContextEnvironment[TReference]
 	subdirectoryComponents []path.Component
@@ -1020,8 +1020,8 @@ type moduleOrRepositoryContext[TReference object.BasicReference] struct {
 	patchedFilesWriter *model_filesystem.SectionWriter
 }
 
-func (c *baseComputer[TReference]) newModuleOrRepositoryContext(ctx context.Context, e moduleOrRepositoryContextEnvironment[TReference], subdirectoryComponents []path.Component) (*moduleOrRepositoryContext[TReference], error) {
-	return &moduleOrRepositoryContext[TReference]{
+func (c *baseComputer[TReference, TMetadata]) newModuleOrRepositoryContext(ctx context.Context, e moduleOrRepositoryContextEnvironment[TReference], subdirectoryComponents []path.Component) (*moduleOrRepositoryContext[TReference, TMetadata], error) {
+	return &moduleOrRepositoryContext[TReference, TMetadata]{
 		computer:               c,
 		context:                ctx,
 		environment:            e,
@@ -1031,13 +1031,13 @@ func (c *baseComputer[TReference]) newModuleOrRepositoryContext(ctx context.Cont
 	}, nil
 }
 
-func (mrc *moduleOrRepositoryContext[TReference]) release() {
+func (mrc *moduleOrRepositoryContext[TReference, TMetadata]) release() {
 	if mrc.patchedFiles != nil {
 		mrc.patchedFiles.Close()
 	}
 }
 
-func (mrc *moduleOrRepositoryContext[TReference]) resolveRepoDirectory() (*changeTrackingDirectory[TReference], error) {
+func (mrc *moduleOrRepositoryContext[TReference, TMetadata]) resolveRepoDirectory() (*changeTrackingDirectory[TReference], error) {
 	repoDirectory := mrc.inputRootDirectory
 	for _, component := range mrc.subdirectoryComponents {
 		childDirectory, ok := repoDirectory.directories[component]
@@ -1049,7 +1049,7 @@ func (mrc *moduleOrRepositoryContext[TReference]) resolveRepoDirectory() (*chang
 	return repoDirectory, nil
 }
 
-func (mrc *moduleOrRepositoryContext[TReference]) maybeGetCommandEncoder() {
+func (mrc *moduleOrRepositoryContext[TReference, TMetadata]) maybeGetCommandEncoder() {
 	if mrc.commandEncoder == nil {
 		if v, ok := mrc.environment.GetCommandEncoderObjectValue(&model_analysis_pb.CommandEncoderObject_Key{}); ok {
 			mrc.commandEncoder = v
@@ -1057,7 +1057,7 @@ func (mrc *moduleOrRepositoryContext[TReference]) maybeGetCommandEncoder() {
 	}
 }
 
-func (mrc *moduleOrRepositoryContext[TReference]) maybeGetDirectoryCreationParameters() {
+func (mrc *moduleOrRepositoryContext[TReference, TMetadata]) maybeGetDirectoryCreationParameters() {
 	mrc.maybeGetDirectoryReaders()
 	if mrc.directoryCreationParameters == nil {
 		if v, ok := mrc.environment.GetDirectoryCreationParametersObjectValue(&model_analysis_pb.DirectoryCreationParametersObject_Key{}); ok {
@@ -1066,7 +1066,7 @@ func (mrc *moduleOrRepositoryContext[TReference]) maybeGetDirectoryCreationParam
 	}
 }
 
-func (mrc *moduleOrRepositoryContext[TReference]) maybeGetDirectoryCreationParametersMessage() {
+func (mrc *moduleOrRepositoryContext[TReference, TMetadata]) maybeGetDirectoryCreationParametersMessage() {
 	if mrc.directoryCreationParametersMessage == nil {
 		if v := mrc.environment.GetDirectoryCreationParametersValue(&model_analysis_pb.DirectoryCreationParameters_Key{}); v.IsSet() {
 			mrc.directoryCreationParametersMessage = v.Message.DirectoryCreationParameters
@@ -1074,7 +1074,7 @@ func (mrc *moduleOrRepositoryContext[TReference]) maybeGetDirectoryCreationParam
 	}
 }
 
-func (mrc *moduleOrRepositoryContext[TReference]) maybeGetDirectoryReaders() {
+func (mrc *moduleOrRepositoryContext[TReference, TMetadata]) maybeGetDirectoryReaders() {
 	if mrc.directoryReaders == nil {
 		if v, ok := mrc.environment.GetDirectoryReadersValue(&model_analysis_pb.DirectoryReaders_Key{}); ok {
 			mrc.directoryReaders = v
@@ -1087,7 +1087,7 @@ func (mrc *moduleOrRepositoryContext[TReference]) maybeGetDirectoryReaders() {
 	}
 }
 
-func (mrc *moduleOrRepositoryContext[TReference]) maybeGetFileCreationParameters() {
+func (mrc *moduleOrRepositoryContext[TReference, TMetadata]) maybeGetFileCreationParameters() {
 	if mrc.fileCreationParameters == nil {
 		if v, ok := mrc.environment.GetFileCreationParametersObjectValue(&model_analysis_pb.FileCreationParametersObject_Key{}); ok {
 			mrc.fileCreationParameters = v
@@ -1095,7 +1095,7 @@ func (mrc *moduleOrRepositoryContext[TReference]) maybeGetFileCreationParameters
 	}
 }
 
-func (mrc *moduleOrRepositoryContext[TReference]) maybeGetFileCreationParametersMessage() {
+func (mrc *moduleOrRepositoryContext[TReference, TMetadata]) maybeGetFileCreationParametersMessage() {
 	if mrc.fileCreationParametersMessage == nil {
 		if v := mrc.environment.GetFileCreationParametersValue(&model_analysis_pb.FileCreationParameters_Key{}); v.IsSet() {
 			mrc.fileCreationParametersMessage = v.Message.FileCreationParameters
@@ -1103,7 +1103,7 @@ func (mrc *moduleOrRepositoryContext[TReference]) maybeGetFileCreationParameters
 	}
 }
 
-func (mrc *moduleOrRepositoryContext[TReference]) maybeGetFileReader() {
+func (mrc *moduleOrRepositoryContext[TReference, TMetadata]) maybeGetFileReader() {
 	if mrc.fileReader == nil {
 		if v, ok := mrc.environment.GetFileReaderValue(&model_analysis_pb.FileReader_Key{}); ok {
 			mrc.fileReader = v
@@ -1111,7 +1111,7 @@ func (mrc *moduleOrRepositoryContext[TReference]) maybeGetFileReader() {
 	}
 }
 
-func (mrc *moduleOrRepositoryContext[TReference]) maybeInitializePatchedFiles() error {
+func (mrc *moduleOrRepositoryContext[TReference, TMetadata]) maybeInitializePatchedFiles() error {
 	if mrc.patchedFiles == nil {
 		patchedFiles, err := mrc.computer.filePool.NewFile()
 		if err != nil {
@@ -1123,13 +1123,13 @@ func (mrc *moduleOrRepositoryContext[TReference]) maybeInitializePatchedFiles() 
 	return nil
 }
 
-func (mrc *moduleOrRepositoryContext[TReference]) maybeGetRepoPlatform() {
+func (mrc *moduleOrRepositoryContext[TReference, TMetadata]) maybeGetRepoPlatform() {
 	if !mrc.repoPlatform.IsSet() {
 		mrc.repoPlatform = mrc.environment.GetRegisteredRepoPlatformValue(&model_analysis_pb.RegisteredRepoPlatform_Key{})
 	}
 }
 
-func (mrc *moduleOrRepositoryContext[TReference]) maybeGetStableInputRootPath() error {
+func (mrc *moduleOrRepositoryContext[TReference, TMetadata]) maybeGetStableInputRootPath() error {
 	if mrc.virtualRootScopeWalkerFactory == nil {
 		stableInputRootPath, ok := mrc.environment.GetStableInputRootPathObjectValue(&model_analysis_pb.StableInputRootPathObject_Key{})
 		if !ok {
@@ -1148,9 +1148,9 @@ func (mrc *moduleOrRepositoryContext[TReference]) maybeGetStableInputRootPath() 
 
 		mrc.defaultWorkingDirectoryPath = defaultWorkingDirectoryPath
 		externalPath := stableInputRootPath.Append(externalDirectoryName)
-		mrc.pathUnpackerInto = &externalRepoAddingPathUnpackerInto[TReference]{
+		mrc.pathUnpackerInto = &externalRepoAddingPathUnpackerInto[TReference, TMetadata]{
 			context: mrc,
-			base: model_starlark.NewPathOrLabelOrStringUnpackerInto(
+			base: model_starlark.NewPathOrLabelOrStringUnpackerInto[TReference, TMetadata](
 				func(canonicalRepo label.CanonicalRepo) (*model_starlark.BarePath, error) {
 					// Map labels to paths under external/${repo}.
 					return externalPath.Append(path.MustNewComponent(canonicalRepo.String())), nil
@@ -1164,7 +1164,7 @@ func (mrc *moduleOrRepositoryContext[TReference]) maybeGetStableInputRootPath() 
 	return nil
 }
 
-func (mrc *moduleOrRepositoryContext[TReference]) doDownload(thread *starlark.Thread, b *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
+func (mrc *moduleOrRepositoryContext[TReference, TMetadata]) doDownload(thread *starlark.Thread, b *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
 	mrc.maybeGetDirectoryReaders()
 	if err := mrc.maybeGetStableInputRootPath(); err != nil {
 		return nil, err
@@ -1229,7 +1229,7 @@ func (mrc *moduleOrRepositoryContext[TReference]) doDownload(thread *starlark.Th
 	if fileContentsValue.Message.Exists == nil {
 		// File does not exist, or allow_fail was set and an
 		// error occurred.
-		return model_starlark.NewStructFromDict[TReference](nil, map[string]any{
+		return model_starlark.NewStructFromDict[TReference, TMetadata](nil, map[string]any{
 			"success": starlark.Bool(false),
 		}), nil
 	}
@@ -1259,13 +1259,13 @@ func (mrc *moduleOrRepositoryContext[TReference]) doDownload(thread *starlark.Th
 		return nil, err
 	}
 
-	return model_starlark.NewStructFromDict[TReference](nil, map[string]any{
+	return model_starlark.NewStructFromDict[TReference, TMetadata](nil, map[string]any{
 		"success": starlark.Bool(true),
 		// TODO: Add "sha256" and "integrity" fields.
 	}), nil
 }
 
-func (mrc *moduleOrRepositoryContext[TReference]) doDownloadAndExtract(thread *starlark.Thread, b *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
+func (mrc *moduleOrRepositoryContext[TReference, TMetadata]) doDownloadAndExtract(thread *starlark.Thread, b *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
 	mrc.maybeGetDirectoryReaders()
 	if err := mrc.maybeGetStableInputRootPath(); err != nil {
 		return nil, err
@@ -1343,7 +1343,7 @@ func (mrc *moduleOrRepositoryContext[TReference]) doDownloadAndExtract(thread *s
 	if archiveContentsValue.Message.Exists == nil {
 		// File does not exist, or allow_fail was set and an
 		// error occurred.
-		return model_starlark.NewStructFromDict[TReference](nil, map[string]any{
+		return model_starlark.NewStructFromDict[TReference, TMetadata](nil, map[string]any{
 			"success": starlark.Bool(false),
 		}), nil
 	}
@@ -1371,13 +1371,13 @@ func (mrc *moduleOrRepositoryContext[TReference]) doDownloadAndExtract(thread *s
 
 	*r.stack.Peek() = *rootDirectoryResolver.currentDirectory
 
-	return model_starlark.NewStructFromDict[TReference](nil, map[string]any{
+	return model_starlark.NewStructFromDict[TReference, TMetadata](nil, map[string]any{
 		"success": starlark.Bool(true),
 		// TODO: Add "sha256" and "integrity" fields.
 	}), nil
 }
 
-func (mrc *moduleOrRepositoryContext[TReference]) doExecute(thread *starlark.Thread, b *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
+func (mrc *moduleOrRepositoryContext[TReference, TMetadata]) doExecute(thread *starlark.Thread, b *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
 	mrc.maybeGetCommandEncoder()
 	mrc.maybeGetDirectoryCreationParameters()
 	mrc.maybeGetDirectoryCreationParametersMessage()
@@ -1625,18 +1625,18 @@ func (mrc *moduleOrRepositoryContext[TReference]) doExecute(thread *starlark.Thr
 	}
 	*inputRepoDirectory = *outputRepoDirectory
 
-	return model_starlark.NewStructFromDict[TReference](nil, map[string]any{
+	return model_starlark.NewStructFromDict[TReference, TMetadata](nil, map[string]any{
 		"return_code": starlark.MakeInt64(actionResult.Message.ExitCode),
 		"stderr":      starlark.String(stderr),
 		"stdout":      starlark.String(stdout),
 	}), nil
 }
 
-func (moduleOrRepositoryContext[TReference]) doExtract(thread *starlark.Thread, b *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
+func (moduleOrRepositoryContext[TReference, TMetadata]) doExtract(thread *starlark.Thread, b *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
 	return nil, errors.New("TODO: Implement!")
 }
 
-func (mrc *moduleOrRepositoryContext[TReference]) doFile(thread *starlark.Thread, b *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
+func (mrc *moduleOrRepositoryContext[TReference, TMetadata]) doFile(thread *starlark.Thread, b *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
 	mrc.maybeGetDirectoryReaders()
 	stableInputRootPathError := mrc.maybeGetStableInputRootPath()
 	if mrc.directoryLoadOptions == nil {
@@ -1699,7 +1699,7 @@ func (mrc *moduleOrRepositoryContext[TReference]) doFile(thread *starlark.Thread
 	return starlark.None, nil
 }
 
-func (moduleOrRepositoryContext[TReference]) doGetenv(thread *starlark.Thread, b *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
+func (moduleOrRepositoryContext[TReference, TMetadata]) doGetenv(thread *starlark.Thread, b *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
 	var name string
 	var defaultValue *string
 	if err := starlark.UnpackArgs(
@@ -1717,7 +1717,7 @@ func (moduleOrRepositoryContext[TReference]) doGetenv(thread *starlark.Thread, b
 	return starlark.String(*defaultValue), nil
 }
 
-func (mrc *moduleOrRepositoryContext[TReference]) doPath(thread *starlark.Thread, b *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
+func (mrc *moduleOrRepositoryContext[TReference, TMetadata]) doPath(thread *starlark.Thread, b *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
 	if err := mrc.maybeGetStableInputRootPath(); err != nil {
 		return nil, err
 	}
@@ -1732,7 +1732,7 @@ func (mrc *moduleOrRepositoryContext[TReference]) doPath(thread *starlark.Thread
 	return model_starlark.NewPath(filePath, mrc), nil
 }
 
-func (mrc *moduleOrRepositoryContext[TReference]) doRead(thread *starlark.Thread, b *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
+func (mrc *moduleOrRepositoryContext[TReference, TMetadata]) doRead(thread *starlark.Thread, b *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
 	mrc.maybeGetDirectoryReaders()
 	mrc.maybeGetFileReader()
 	if err := mrc.maybeGetStableInputRootPath(); err != nil {
@@ -1891,7 +1891,7 @@ func (mrc *moduleOrRepositoryContext[TReference]) doRead(thread *starlark.Thread
 	return starlark.String(string(stdout)), nil
 }
 
-func (moduleOrRepositoryContext[TReference]) doReportProgress(thread *starlark.Thread, b *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
+func (moduleOrRepositoryContext[TReference, TMetadata]) doReportProgress(thread *starlark.Thread, b *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
 	var status string
 	if err := starlark.UnpackArgs(
 		b.Name(), args, kwargs,
@@ -1902,7 +1902,7 @@ func (moduleOrRepositoryContext[TReference]) doReportProgress(thread *starlark.T
 	return starlark.None, nil
 }
 
-func (mrc *moduleOrRepositoryContext[TReference]) doWatch(thread *starlark.Thread, b *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
+func (mrc *moduleOrRepositoryContext[TReference, TMetadata]) doWatch(thread *starlark.Thread, b *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
 	if err := mrc.maybeGetStableInputRootPath(); err != nil {
 		return nil, err
 	}
@@ -1917,7 +1917,7 @@ func (mrc *moduleOrRepositoryContext[TReference]) doWatch(thread *starlark.Threa
 	return starlark.None, nil
 }
 
-func (mrc *moduleOrRepositoryContext[TReference]) doWhich(thread *starlark.Thread, b *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
+func (mrc *moduleOrRepositoryContext[TReference, TMetadata]) doWhich(thread *starlark.Thread, b *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
 	mrc.maybeGetCommandEncoder()
 	mrc.maybeGetDirectoryCreationParameters()
 	mrc.maybeGetDirectoryCreationParametersMessage()
@@ -2059,7 +2059,7 @@ func (mrc *moduleOrRepositoryContext[TReference]) doWhich(thread *starlark.Threa
 	}
 }
 
-func (mrc *moduleOrRepositoryContext[TReference]) Exists(p *model_starlark.BarePath) (bool, error) {
+func (mrc *moduleOrRepositoryContext[TReference, TMetadata]) Exists(p *model_starlark.BarePath) (bool, error) {
 	mrc.maybeGetDirectoryReaders()
 	if err := mrc.maybeGetStableInputRootPath(); err != nil {
 		return false, err
@@ -2187,15 +2187,15 @@ func (mrc *moduleOrRepositoryContext[TReference]) Exists(p *model_starlark.BareP
 	return actionResult.Message.ExitCode == 0, nil
 }
 
-func (moduleOrRepositoryContext[TReference]) IsDir(*model_starlark.BarePath) (bool, error) {
+func (moduleOrRepositoryContext[TReference, TMetadata]) IsDir(*model_starlark.BarePath) (bool, error) {
 	return false, errors.New("TODO: Implement path.is_dir()!")
 }
 
-func (moduleOrRepositoryContext[TReference]) Readdir(*model_starlark.BarePath) ([]path.Component, error) {
+func (moduleOrRepositoryContext[TReference, TMetadata]) Readdir(*model_starlark.BarePath) ([]path.Component, error) {
 	return nil, errors.New("TODO: Implement path.readdir()!")
 }
 
-func (moduleOrRepositoryContext[TReference]) Realpath(*model_starlark.BarePath) (*model_starlark.BarePath, error) {
+func (moduleOrRepositoryContext[TReference, TMetadata]) Realpath(*model_starlark.BarePath) (*model_starlark.BarePath, error) {
 	return nil, errors.New("TODO: Implement path.realpath()!")
 }
 
@@ -2204,13 +2204,13 @@ func (moduleOrRepositoryContext[TReference]) Realpath(*model_starlark.BarePath) 
 // refer to ones belonging to external repositories. If they do, it
 // ensures that the repo belonging to that path is added to the input
 // root.
-type externalRepoAddingPathUnpackerInto[TReference object.BasicReference] struct {
-	context      *moduleOrRepositoryContext[TReference]
+type externalRepoAddingPathUnpackerInto[TReference object.BasicReference, TMetadata BaseComputerReferenceMetadata] struct {
+	context      *moduleOrRepositoryContext[TReference, TMetadata]
 	base         unpack.UnpackerInto[*model_starlark.BarePath]
 	externalPath *model_starlark.BarePath
 }
 
-func (ui *externalRepoAddingPathUnpackerInto[TReference]) maybeAddExternalRepo(bp *model_starlark.BarePath) error {
+func (ui *externalRepoAddingPathUnpackerInto[TReference, TMetadata]) maybeAddExternalRepo(bp *model_starlark.BarePath) error {
 	mrc := ui.context
 	if components := bp.GetRelativeTo(ui.externalPath); len(components) >= 1 {
 		repoName := components[0]
@@ -2250,14 +2250,14 @@ func (ui *externalRepoAddingPathUnpackerInto[TReference]) maybeAddExternalRepo(b
 	return nil
 }
 
-func (ui *externalRepoAddingPathUnpackerInto[TReference]) UnpackInto(thread *starlark.Thread, v starlark.Value, dst **model_starlark.BarePath) error {
+func (ui *externalRepoAddingPathUnpackerInto[TReference, TMetadata]) UnpackInto(thread *starlark.Thread, v starlark.Value, dst **model_starlark.BarePath) error {
 	if err := ui.base.UnpackInto(thread, v, dst); err != nil {
 		return err
 	}
 	return ui.maybeAddExternalRepo(*dst)
 }
 
-func (ui *externalRepoAddingPathUnpackerInto[TReference]) Canonicalize(thread *starlark.Thread, v starlark.Value) (starlark.Value, error) {
+func (ui *externalRepoAddingPathUnpackerInto[TReference, TMetadata]) Canonicalize(thread *starlark.Thread, v starlark.Value) (starlark.Value, error) {
 	var bp *model_starlark.BarePath
 	if err := ui.UnpackInto(thread, v, &bp); err != nil {
 		return nil, err
@@ -2268,7 +2268,7 @@ func (ui *externalRepoAddingPathUnpackerInto[TReference]) Canonicalize(thread *s
 	return starlark.String(bp.GetUNIXString()), nil
 }
 
-func (ui *externalRepoAddingPathUnpackerInto[TReference]) GetConcatenationOperator() syntax.Token {
+func (ui *externalRepoAddingPathUnpackerInto[TReference, TMetadata]) GetConcatenationOperator() syntax.Token {
 	return ui.base.GetConcatenationOperator()
 }
 
@@ -2281,7 +2281,7 @@ func (ui *externalRepoAddingPathUnpackerInto[TReference]) GetConcatenationOperat
 // function can expand symbolic links without depending on the stable
 // input root path, or files stored on the host file system of the repo
 // platform workers.
-func (mrc *moduleOrRepositoryContext[TReference]) relativizeSymlinks(maximumEscapementLevels uint32) error {
+func (mrc *moduleOrRepositoryContext[TReference, TMetadata]) relativizeSymlinks(maximumEscapementLevels uint32) error {
 	mrc.maybeGetDirectoryCreationParameters()
 	if err := mrc.maybeGetStableInputRootPath(); err != nil {
 		return err
@@ -2363,7 +2363,7 @@ func (r *changeTrackingDirectoryNormalizingPathResolver[TReference]) OnUp() (pat
 	return r, nil
 }
 
-func (mrc *moduleOrRepositoryContext[TReference]) relativizeSymlinksRecursively(dStack util.NonEmptyStack[*changeTrackingDirectory[TReference]], dPath *path.Trace, maximumEscapementLevels uint32) error {
+func (mrc *moduleOrRepositoryContext[TReference, TMetadata]) relativizeSymlinksRecursively(dStack util.NonEmptyStack[*changeTrackingDirectory[TReference]], dPath *path.Trace, maximumEscapementLevels uint32) error {
 	d := dStack.Peek()
 	if d.currentReference.IsSet() {
 		currentMaximumEscapementLevels := d.currentReference.Message.MaximumSymlinkEscapementLevels
@@ -2441,7 +2441,7 @@ func (mrc *moduleOrRepositoryContext[TReference]) relativizeSymlinksRecursively(
 	return nil
 }
 
-func (c *baseComputer[TReference]) fetchModuleExtensionRepo(ctx context.Context, canonicalRepo label.CanonicalRepo, apparentRepo label.ApparentRepo, e RepoEnvironment[TReference]) (PatchedRepoValue, error) {
+func (c *baseComputer[TReference, TMetadata]) fetchModuleExtensionRepo(ctx context.Context, canonicalRepo label.CanonicalRepo, apparentRepo label.ApparentRepo, e RepoEnvironment[TReference]) (PatchedRepoValue, error) {
 	// Obtain the definition of the declared repo.
 	repoValue := e.GetModuleExtensionRepoValue(&model_analysis_pb.ModuleExtensionRepo_Key{
 		CanonicalRepo: canonicalRepo.String(),
@@ -2462,7 +2462,7 @@ func (c *baseComputer[TReference]) fetchModuleExtensionRepo(ctx context.Context,
 	)
 }
 
-func (c *baseComputer[TReference]) fetchRepo(ctx context.Context, canonicalRepo label.CanonicalRepo, apparentRepo label.ApparentRepo, repo model_core.Message[*model_starlark_pb.Repo_Definition, TReference], e RepoEnvironment[TReference]) (PatchedRepoValue, error) {
+func (c *baseComputer[TReference, TMetadata]) fetchRepo(ctx context.Context, canonicalRepo label.CanonicalRepo, apparentRepo label.ApparentRepo, repo model_core.Message[*model_starlark_pb.Repo_Definition, TReference], e RepoEnvironment[TReference]) (PatchedRepoValue, error) {
 	// Obtain the definition of the repository rule used by the repo.
 	rootModuleValue := e.GetRootModuleValue(&model_analysis_pb.RootModule_Key{})
 	allBuiltinsModulesNames := e.GetBuiltinsModuleNamesValue(&model_analysis_pb.BuiltinsModuleNames_Key{})
@@ -2500,11 +2500,11 @@ func (c *baseComputer[TReference]) fetchRepo(ctx context.Context, canonicalRepo 
 
 	for _, publicAttr := range repositoryRule.Attrs.Public {
 		if value, ok := attrValues[publicAttr.Name]; ok {
-			decodedValue, err := model_starlark.DecodeValue(
+			decodedValue, err := model_starlark.DecodeValue[TReference, TMetadata](
 				value,
 				/* currentIdentifier = */ nil,
 				c.getValueDecodingOptions(ctx, func(resolvedLabel label.ResolvedLabel) (starlark.Value, error) {
-					return model_starlark.NewLabel(resolvedLabel), nil
+					return model_starlark.NewLabel[TReference, TMetadata](resolvedLabel), nil
 				}),
 			)
 			if err != nil {
@@ -2549,7 +2549,7 @@ func (c *baseComputer[TReference]) fetchRepo(ctx context.Context, canonicalRepo 
 	repositoryContext.maybeGetDirectoryReaders()
 	repositoryContext.maybeGetFileCreationParameters()
 
-	repositoryCtx := model_starlark.NewStructFromDict[TReference](nil, map[string]any{
+	repositoryCtx := model_starlark.NewStructFromDict[TReference, TMetadata](nil, map[string]any{
 		// Fields shared with module_ctx.
 		"download":             starlark.NewBuiltin("repository_ctx.download", repositoryContext.doDownload),
 		"download_and_extract": starlark.NewBuiltin("repository_ctx.download_and_extract", repositoryContext.doDownloadAndExtract),
@@ -2557,7 +2557,7 @@ func (c *baseComputer[TReference]) fetchRepo(ctx context.Context, canonicalRepo 
 		"extract":              starlark.NewBuiltin("repository_ctx.extract", repositoryContext.doExtract),
 		"file":                 starlark.NewBuiltin("repository_ctx.file", repositoryContext.doFile),
 		"getenv":               starlark.NewBuiltin("repository_ctx.getenv", repositoryContext.doGetenv),
-		"os":                   newRepositoryOS(thread, repoPlatform.Message),
+		"os":                   newRepositoryOS[TReference, TMetadata](thread, repoPlatform.Message),
 		"path":                 starlark.NewBuiltin("repository_ctx.path", repositoryContext.doPath),
 		"read":                 starlark.NewBuiltin("repository_ctx.read", repositoryContext.doRead),
 		"report_progress":      starlark.NewBuiltin("repository_ctx.report_progress", repositoryContext.doReportProgress),
@@ -2565,7 +2565,7 @@ func (c *baseComputer[TReference]) fetchRepo(ctx context.Context, canonicalRepo 
 		"which":                starlark.NewBuiltin("repository_ctx.which", repositoryContext.doWhich),
 
 		// Fields specific to repository_ctx.
-		"attr": model_starlark.NewStructFromDict[TReference](nil, attrs),
+		"attr": model_starlark.NewStructFromDict[TReference, TMetadata](nil, attrs),
 		"delete": starlark.NewBuiltin(
 			"repository_ctx.delete",
 			func(thread *starlark.Thread, b *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
@@ -2879,7 +2879,7 @@ func (c *baseComputer[TReference]) fetchRepo(ctx context.Context, canonicalRepo 
 	)
 }
 
-func (c *baseComputer[TReference]) createMerkleTreeFromChangeTrackingDirectory(ctx context.Context, rootDirectory *changeTrackingDirectory[TReference], directoryCreationParameters *model_filesystem.DirectoryCreationParameters, directoryReaders *DirectoryReaders[TReference], fileCreationParameters *model_filesystem.FileCreationParameters, patchedFiles io.ReaderAt) (model_core.PatchedMessage[*model_filesystem_pb.DirectoryReference, dag.ObjectContentsWalker], error) {
+func (c *baseComputer[TReference, TMetadata]) createMerkleTreeFromChangeTrackingDirectory(ctx context.Context, rootDirectory *changeTrackingDirectory[TReference], directoryCreationParameters *model_filesystem.DirectoryCreationParameters, directoryReaders *DirectoryReaders[TReference], fileCreationParameters *model_filesystem.FileCreationParameters, patchedFiles io.ReaderAt) (model_core.PatchedMessage[*model_filesystem_pb.DirectoryReference, dag.ObjectContentsWalker], error) {
 	if r := rootDirectory.currentReference; r.IsSet() {
 		// Directory remained completely unmodified. Simply
 		// return the original directory.
@@ -2964,7 +2964,7 @@ func (c *baseComputer[TReference]) createMerkleTreeFromChangeTrackingDirectory(c
 	), nil
 }
 
-func (c *baseComputer[TReference]) returnRepoMerkleTree(ctx context.Context, rootDirectory *changeTrackingDirectory[TReference], directoryCreationParameters *model_filesystem.DirectoryCreationParameters, directoryReaders *DirectoryReaders[TReference], fileCreationParameters *model_filesystem.FileCreationParameters, patchedFiles io.ReaderAt) (PatchedRepoValue, error) {
+func (c *baseComputer[TReference, TMetadata]) returnRepoMerkleTree(ctx context.Context, rootDirectory *changeTrackingDirectory[TReference], directoryCreationParameters *model_filesystem.DirectoryCreationParameters, directoryReaders *DirectoryReaders[TReference], fileCreationParameters *model_filesystem.FileCreationParameters, patchedFiles io.ReaderAt) (PatchedRepoValue, error) {
 	rootDirectoryReference, err := c.createMerkleTreeFromChangeTrackingDirectory(ctx, rootDirectory, directoryCreationParameters, directoryReaders, fileCreationParameters, patchedFiles)
 	if err != nil {
 		return PatchedRepoValue{}, err
@@ -2977,7 +2977,7 @@ func (c *baseComputer[TReference]) returnRepoMerkleTree(ctx context.Context, roo
 	}, nil
 }
 
-func (c *baseComputer[TReference]) ComputeRepoValue(ctx context.Context, key *model_analysis_pb.Repo_Key, e RepoEnvironment[TReference]) (PatchedRepoValue, error) {
+func (c *baseComputer[TReference, TMetadata]) ComputeRepoValue(ctx context.Context, key *model_analysis_pb.Repo_Key, e RepoEnvironment[TReference]) (PatchedRepoValue, error) {
 	canonicalRepo, err := label.NewCanonicalRepo(key.CanonicalRepo)
 	if err != nil {
 		return PatchedRepoValue{}, fmt.Errorf("invalid canonical repo: %w", err)

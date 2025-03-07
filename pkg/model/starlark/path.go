@@ -7,6 +7,7 @@ import (
 
 	bb_path "github.com/buildbarn/bb-storage/pkg/filesystem/path"
 	pg_label "github.com/buildbarn/bonanza/pkg/label"
+	model_core "github.com/buildbarn/bonanza/pkg/model/core"
 	"github.com/buildbarn/bonanza/pkg/starlark/unpack"
 
 	"go.starlark.net/starlark"
@@ -123,8 +124,8 @@ type path struct {
 }
 
 var (
-	_ starlark.Value    = &path{}
-	_ starlark.HasAttrs = &label{}
+	_ starlark.Value    = (*path)(nil)
+	_ starlark.HasAttrs = (*path)(nil)
 )
 
 func NewPath(bp *BarePath, filesystem Filesystem) starlark.Value {
@@ -311,19 +312,19 @@ func (r *PathResolver) OnUp() (bb_path.ComponentWalker, error) {
 
 type RepoPathResolver func(canonicalRepo pg_label.CanonicalRepo) (*BarePath, error)
 
-type pathOrLabelOrStringUnpackerInto struct {
+type pathOrLabelOrStringUnpackerInto[TReference any, TMetadata model_core.CloneableReferenceMetadata] struct {
 	repoPathResolver RepoPathResolver
 	workingDirectory *BarePath
 }
 
-func NewPathOrLabelOrStringUnpackerInto(repoPathResolver RepoPathResolver, workingDirectory *BarePath) unpack.UnpackerInto[*BarePath] {
-	return &pathOrLabelOrStringUnpackerInto{
+func NewPathOrLabelOrStringUnpackerInto[TReference any, TMetadata model_core.CloneableReferenceMetadata](repoPathResolver RepoPathResolver, workingDirectory *BarePath) unpack.UnpackerInto[*BarePath] {
+	return &pathOrLabelOrStringUnpackerInto[TReference, TMetadata]{
 		repoPathResolver: repoPathResolver,
 		workingDirectory: workingDirectory,
 	}
 }
 
-func (ui *pathOrLabelOrStringUnpackerInto) UnpackInto(thread *starlark.Thread, v starlark.Value, dst **BarePath) error {
+func (ui *pathOrLabelOrStringUnpackerInto[TReference, TMetadata]) UnpackInto(thread *starlark.Thread, v starlark.Value, dst **BarePath) error {
 	switch typedV := v.(type) {
 	case starlark.String:
 		r := PathResolver{
@@ -334,7 +335,7 @@ func (ui *pathOrLabelOrStringUnpackerInto) UnpackInto(thread *starlark.Thread, v
 		}
 		*dst = r.CurrentPath
 		return nil
-	case label:
+	case label[TReference, TMetadata]:
 		canonicalLabel, err := typedV.value.AsCanonical()
 		if err != nil {
 			return err
@@ -356,7 +357,7 @@ func (ui *pathOrLabelOrStringUnpackerInto) UnpackInto(thread *starlark.Thread, v
 	}
 }
 
-func (ui *pathOrLabelOrStringUnpackerInto) Canonicalize(thread *starlark.Thread, v starlark.Value) (starlark.Value, error) {
+func (ui *pathOrLabelOrStringUnpackerInto[TReference, TMetadata]) Canonicalize(thread *starlark.Thread, v starlark.Value) (starlark.Value, error) {
 	var bp *BarePath
 	if err := ui.UnpackInto(thread, v, &bp); err != nil {
 		return nil, err
@@ -364,6 +365,6 @@ func (ui *pathOrLabelOrStringUnpackerInto) Canonicalize(thread *starlark.Thread,
 	return starlark.String(bp.GetUNIXString()), nil
 }
 
-func (pathOrLabelOrStringUnpackerInto) GetConcatenationOperator() syntax.Token {
+func (pathOrLabelOrStringUnpackerInto[TReference, TMetadata]) GetConcatenationOperator() syntax.Token {
 	return 0
 }

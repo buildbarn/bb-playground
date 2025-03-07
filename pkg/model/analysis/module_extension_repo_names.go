@@ -12,7 +12,7 @@ import (
 	"github.com/buildbarn/bonanza/pkg/storage/dag"
 )
 
-func (c *baseComputer[TReference]) ComputeModuleExtensionRepoNamesValue(ctx context.Context, key *model_analysis_pb.ModuleExtensionRepoNames_Key, e ModuleExtensionRepoNamesEnvironment[TReference]) (PatchedModuleExtensionRepoNamesValue, error) {
+func (c *baseComputer[TReference, TMetadata]) ComputeModuleExtensionRepoNamesValue(ctx context.Context, key *model_analysis_pb.ModuleExtensionRepoNames_Key, e ModuleExtensionRepoNamesEnvironment[TReference]) (PatchedModuleExtensionRepoNamesValue, error) {
 	moduleExtensionReposValue := e.GetModuleExtensionReposValue(&model_analysis_pb.ModuleExtensionRepos_Key{
 		ModuleExtension: key.ModuleExtension,
 	})
