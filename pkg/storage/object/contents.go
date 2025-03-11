@@ -23,6 +23,9 @@ type Contents struct {
 
 var _ OutgoingReferences[LocalReference] = (*Contents)(nil)
 
+// NewContentsFromFullData constructs object contents from raw data that
+// is read from disk or an incoming RPC message. Construction fails if
+// the provided data does not match the expected reference.
 func NewContentsFromFullData(reference LocalReference, data []byte) (*Contents, error) {
 	c := &Contents{
 		data:      data,
@@ -43,6 +46,8 @@ func NewContentsFromFullData(reference LocalReference, data []byte) (*Contents, 
 	return c, nil
 }
 
+// MustNewContents constructs object contents given a list of outgoing
+// references and a payload. This function may be used as part of tests.
 func MustNewContents(referenceFormatValue object.ReferenceFormat_Value, references []LocalReference, payload []byte) *Contents {
 	referenceFormat := MustNewReferenceFormat(referenceFormatValue)
 	contents, err := referenceFormat.NewContents(references, payload)
@@ -52,14 +57,20 @@ func MustNewContents(referenceFormatValue object.ReferenceFormat_Value, referenc
 	return contents
 }
 
+// GetReference returns the reference that corresponds to this object's
+// contents.
 func (c *Contents) GetReference() LocalReference {
 	return c.reference
 }
 
+// GetDegree returns the number of outgoing references the object has.
+// This method is provided to satisfy the OutgoingReferences interface.
 func (c *Contents) GetDegree() int {
 	return c.reference.GetDegree()
 }
 
+// GetOutgoingReference returns one of the outgoing references that is
+// part of this object.
 func (c *Contents) GetOutgoingReference(i int) LocalReference {
 	outgoingReferences := c.data[:c.GetDegree()*referenceSizeBytes]
 	return LocalReference{
@@ -67,6 +78,9 @@ func (c *Contents) GetOutgoingReference(i int) LocalReference {
 	}
 }
 
+// DetachOutgoingReferences copies all of the outgoing references into
+// an OutgoingReferencesList, allowing the object contents to be garbage
+// collected while keeping the outgoing references available.
 func (c *Contents) DetachOutgoingReferences() OutgoingReferences[LocalReference] {
 	degree := c.GetDegree()
 	l := make(OutgoingReferencesList[LocalReference], 0, degree)
@@ -78,10 +92,16 @@ func (c *Contents) DetachOutgoingReferences() OutgoingReferences[LocalReference]
 	return l
 }
 
+// GetFullData returns the full object contents, including the binary
+// representation of outgoing references that are stored at the
+// beginning. This method can be used to encode contents for
+// transmission across the network, or writing them to disk.
 func (c *Contents) GetFullData() []byte {
 	return c.data
 }
 
+// GetPayload returns the payload of the object, not including the
+// outgoing references that are stored at the beginning.
 func (c *Contents) GetPayload() []byte {
 	return c.data[c.GetDegree()*referenceSizeBytes:]
 }
@@ -96,6 +116,13 @@ func (c *Contents) cloneWithReference(r LocalReference) *Contents {
 	}
 }
 
+// Flatten the reference of the object, so that its height and degree
+// are both zero.
+//
+// This is used by the read caching backend, where we want to cache
+// individual objects as opposed to graphs. When writing objects to the
+// local cache, we set the height and degree to zero, so that there is
+// no need to track any leases.
 func (c *Contents) Flatten() *Contents {
 	return c.cloneWithReference(c.reference.Flatten())
 }
@@ -133,6 +160,13 @@ func (c *Contents) validateOutgoingReferences() error {
 	return nil
 }
 
+// Unflatten the reference of the object, so that its height and degree
+// are set to the desired value.
+//
+// This is used by the read caching backend, where we want to cache
+// individual objects as opposed to graphs. When reading objects from
+// the local cache, their heights and degrees will be set to zero. This
+// method can be used to undo this transformation.
 func (c *Contents) Unflatten(newReference LocalReference) (*Contents, error) {
 	if *(*[35]byte)(newReference.rawReference[:]) != *(*[35]byte)(c.reference.rawReference[:]) {
 		return nil, status.Error(codes.InvalidArgument, "Hash and size of flattened and unflattened references do not match")

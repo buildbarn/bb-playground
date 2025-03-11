@@ -69,6 +69,12 @@ func (existingObjectContentsWalker) GetContents(ctx context.Context) (*object.Co
 
 func (existingObjectContentsWalker) Discard() {}
 
+// ExistingObjectContentsWalker is an implementation of
+// ObjectContentsWalker that always returns an error when an attempt is
+// made to upload. It can be used in places where we expect the
+// underlying object to already be present in storage. The storage
+// server should therefore never attempt to request the object's
+// contents from the client.
 var ExistingObjectContentsWalker ObjectContentsWalker = existingObjectContentsWalker{}
 
 type requestableObjectState struct {

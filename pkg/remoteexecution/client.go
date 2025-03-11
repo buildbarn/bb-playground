@@ -18,6 +18,7 @@ import (
 	"google.golang.org/protobuf/types/known/anypb"
 )
 
+// Client for issuing remote execution requests against a scheduler.
 type Client[
 	TAction proto.Message,
 	TEvent any,
@@ -32,6 +33,8 @@ type Client[
 	clientCertificateChain [][]byte
 }
 
+// NewClient creates a new remote execution client that uses a provided
+// gRPC client and X.509 client key pair.
 func NewClient[
 	TAction proto.Message,
 	TEvent any,
@@ -52,6 +55,10 @@ func NewClient[
 	}
 }
 
+// RunAction encrypts an action and sends it to a scheduler to request
+// its execution on a worker. An iterator is returned that yields any
+// execution events reported by the worker. Upon completion, the result
+// message is set.
 func (c *Client[TAction, TEvent, TEventPtr, TResult]) RunAction(ctx context.Context, platformECDHPublicKey *ecdh.PublicKey, action TAction, actionAdditionalData *remoteexecution_pb.Action_AdditionalData, result TResult, errOut *error) iter.Seq[TEventPtr] {
 	marshaledPlatformECDHPublicKey, err := x509.MarshalPKIXPublicKey(platformECDHPublicKey)
 	if err != nil {
