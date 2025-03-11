@@ -122,9 +122,7 @@ func TestDownloaderServer(t *testing.T) {
 		})
 		require.NoError(t, err)
 		testutil.RequireEqualProto(t, &object_pb.DownloadObjectResponse{
-			Contents: &object_pb.Contents{
-				Data: []byte("Hello"),
-			},
+			Contents: []byte("Hello"),
 		}, response)
 	})
 }

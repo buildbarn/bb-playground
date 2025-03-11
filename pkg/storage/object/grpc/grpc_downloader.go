@@ -30,7 +30,7 @@ func (d *grpcDownloader) DownloadObject(ctx context.Context, reference object.Gl
 	if err != nil {
 		return nil, err
 	}
-	contents, err := object.NewContentsFromProto(reference.LocalReference, response.Contents)
+	contents, err := object.NewContentsFromFullData(reference.LocalReference, response.Contents)
 	if err != nil {
 		return nil, util.StatusWrapWithCode(err, codes.Internal, "Server returned invalid object contents")
 	}

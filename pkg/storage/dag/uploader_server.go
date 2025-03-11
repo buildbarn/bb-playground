@@ -389,7 +389,7 @@ func (r *dagReceiver[TLease]) processIncomingMessages() error {
 			}
 			delete(r.replicatingObjects, provideObjectContents.LowestReferenceIndex)
 
-			if provideObjectContents.ObjectContents == nil {
+			if len(provideObjectContents.ObjectContents) == 0 {
 				// Client left ObjectContents unset. This can
 				// be used to clients to cancel the
 				// transmission of DAGs without tearing down
@@ -401,7 +401,7 @@ func (r *dagReceiver[TLease]) processIncomingMessages() error {
 				r.lock.Unlock()
 
 				// Validate the contents of the provided object.
-				contents, err := object.NewContentsFromProto(o.reference, provideObjectContents.ObjectContents)
+				contents, err := object.NewContentsFromFullData(o.reference, provideObjectContents.ObjectContents)
 				if err != nil {
 					return util.StatusWrapf(err, "Invalid contents for object with reference %s", o.reference)
 				}

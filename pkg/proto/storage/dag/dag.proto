@@ -128,7 +128,7 @@ message UploadDagsRequest {
     // object. The server SHOULD respond with FinalizeDag messages for
     // each of the DAGs containing the object with
     // UploadDagsResponse.FinalizeDag.status.code set to CANCELLED.
-    bonanza.storage.object.Contents object_contents = 2;
+    bytes object_contents = 2;
   }
 
   oneof type {

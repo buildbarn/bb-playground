@@ -33,8 +33,8 @@ func (s *uploaderServer) UploadObject(ctx context.Context, request *object.Uploa
 		return nil, util.StatusWrap(err, "Invalid reference")
 	}
 	var contents *Contents
-	if request.Contents != nil {
-		contents, err = NewContentsFromProto(reference.LocalReference, request.Contents)
+	if len(request.Contents) > 0 {
+		contents, err = NewContentsFromFullData(reference.LocalReference, request.Contents)
 		if err != nil {
 			return nil, util.StatusWrap(err, "Invalid object contents")
 		}
@@ -75,9 +75,9 @@ func (s *uploaderServer) UploadObject(ctx context.Context, request *object.Uploa
 			},
 		}, nil
 	case UploadObjectIncomplete[[]byte]:
-		var contentsMessage *object.Contents
+		var contents []byte
 		if resultData.Contents != nil {
-			contentsMessage = resultData.Contents.ToProto()
+			contents = resultData.Contents.GetFullData()
 		}
 		wantLeases := make([]uint32, 0, len(resultData.WantOutgoingReferencesLeases))
 		for _, lease := range resultData.WantOutgoingReferencesLeases {
@@ -86,7 +86,7 @@ func (s *uploaderServer) UploadObject(ctx context.Context, request *object.Uploa
 		return &object.UploadObjectResponse{
 			Type: &object.UploadObjectResponse_Incomplete_{
 				Incomplete: &object.UploadObjectResponse_Incomplete{
-					Contents:                     contentsMessage,
+					Contents:                     contents,
 					WantOutgoingReferencesLeases: wantLeases,
 				},
 			},

@@ -298,7 +298,7 @@ func UploadDAG(ctx context.Context, client dag_pb.UploaderClient, rootReference 
 						Type: &dag_pb.UploadDagsRequest_ProvideObjectContents_{
 							ProvideObjectContents: &dag_pb.UploadDagsRequest_ProvideObjectContents{
 								LowestReferenceIndex: requestObject.LowestReferenceIndex,
-								ObjectContents:       contents.ToProto(),
+								ObjectContents:       contents.GetFullData(),
 							},
 						},
 					})

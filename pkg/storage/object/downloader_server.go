@@ -34,6 +34,6 @@ func (s *downloaderServer) DownloadObject(ctx context.Context, request *object.D
 		return nil, err
 	}
 	return &object.DownloadObjectResponse{
-		Contents: contents.ToProto(),
+		Contents: contents.GetFullData(),
 	}, nil
 }

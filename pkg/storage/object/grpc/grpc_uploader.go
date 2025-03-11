@@ -33,7 +33,7 @@ func (u *grpcUploader) UploadObject(ctx context.Context, reference object.Global
 		WantContentsIfIncomplete: wantContentsIfIncomplete,
 	}
 	if contents != nil {
-		request.Contents = contents.ToProto()
+		request.Contents = contents.GetFullData()
 	}
 
 	response, err := u.client.UploadObject(ctx, request)
@@ -59,7 +59,7 @@ func (u *grpcUploader) UploadObject(ctx context.Context, reference object.Global
 	case *object_pb.UploadObjectResponse_Incomplete_:
 		var result object.UploadObjectIncomplete[[]byte]
 		if contents := responseType.Incomplete.Contents; wantContentsIfIncomplete {
-			result.Contents, err = object.NewContentsFromProto(reference.LocalReference, contents)
+			result.Contents, err = object.NewContentsFromFullData(reference.LocalReference, contents)
 			if err != nil {
 				return nil, util.StatusWrapWithCode(err, codes.Internal, "Server returned invalid object contents")
 			}

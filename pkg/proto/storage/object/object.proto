@@ -103,11 +103,6 @@ message Namespace {
   ReferenceFormat.Value reference_format = 2;
 }
 
-message Contents {
-  // The data contained within the object.
-  bytes data = 1;
-}
-
 message DownloadObjectRequest {
   // The namespace from which to download the object.
   bonanza.storage.object.Namespace namespace = 1;
@@ -118,7 +113,7 @@ message DownloadObjectRequest {
 
 message DownloadObjectResponse {
   // The contents of the object that was requested.
-  bonanza.storage.object.Contents contents = 1;
+  bytes contents = 1;
 }
 
 message UploadObjectRequest {
@@ -132,7 +127,7 @@ message UploadObjectRequest {
   // it only wants to update the leases of the outgoing references of
   // the object. In that case the server may return NOT_FOUND errors if
   // the provided object does not already exist.
-  Contents contents = 3;
+  bytes contents = 3;
 
   // Leases of objects associated with each of the outgoing references.
   // The size of the list MUST be equal to the degree of the object.
@@ -165,7 +160,7 @@ message UploadObjectResponse {
   message Incomplete {
     // The contents of the object. This field is only set if
     // UploadObjectRequest.want_contents_if_incomplete is set.
-    Contents contents = 1;
+    bytes contents = 1;
 
     // A non-empty list of indices of outgoing references of the object
     // for which leases are either not present or expired. The caller is

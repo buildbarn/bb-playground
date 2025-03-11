@@ -24,13 +24,6 @@ type Contents struct {
 
 var _ OutgoingReferences[LocalReference] = (*Contents)(nil)
 
-func NewContentsFromProto(reference LocalReference, m *object.Contents) (*Contents, error) {
-	if m == nil {
-		return nil, status.Error(codes.InvalidArgument, "No contents message provided")
-	}
-	return NewContentsFromFullData(reference, m.Data)
-}
-
 func NewContentsFromFullData(reference LocalReference, data []byte) (*Contents, error) {
 	c := &Contents{
 		referenceFormat: reference.GetReferenceFormat(),
@@ -151,12 +144,6 @@ func (c *Contents) Unflatten(newReference LocalReference) (*Contents, error) {
 		return nil, err
 	}
 	return cFlat, nil
-}
-
-func (c *Contents) ToProto() *object.Contents {
-	return &object.Contents{
-		Data: c.data,
-	}
 }
 
 type referenceStatsComputer struct {
