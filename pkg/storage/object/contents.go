@@ -17,18 +17,16 @@ import (
 
 // Contents of an object read from storage, or to be written to storage.
 type Contents struct {
-	referenceFormat ReferenceFormat
-	data            []byte
-	reference       LocalReference
+	data      []byte
+	reference LocalReference
 }
 
 var _ OutgoingReferences[LocalReference] = (*Contents)(nil)
 
 func NewContentsFromFullData(reference LocalReference, data []byte) (*Contents, error) {
 	c := &Contents{
-		referenceFormat: reference.GetReferenceFormat(),
-		data:            data,
-		reference:       reference,
+		data:      data,
+		reference: reference,
 	}
 
 	if expectedSizeBytes := reference.GetSizeBytes(); len(c.data) != expectedSizeBytes {
@@ -93,9 +91,8 @@ func (c *Contents) cloneWithReference(r LocalReference) *Contents {
 		return c
 	}
 	return &Contents{
-		referenceFormat: c.referenceFormat,
-		data:            c.data,
-		reference:       r,
+		data:      c.data,
+		reference: r,
 	}
 }
 
@@ -106,8 +103,9 @@ func (c *Contents) Flatten() *Contents {
 func (c *Contents) validateOutgoingReferences() error {
 	var rcs referenceStatsComputer
 	degree := c.GetDegree()
+	referenceFormat := c.reference.GetReferenceFormat()
 	for i := 0; i < degree; i++ {
-		outgoingReference, err := c.referenceFormat.NewLocalReference(c.data[i*referenceSizeBytes : (i+1)*referenceSizeBytes])
+		outgoingReference, err := referenceFormat.NewLocalReference(c.data[i*referenceSizeBytes : (i+1)*referenceSizeBytes])
 		if err != nil {
 			return util.StatusWrapf(err, "Invalid reference at index %d", i)
 		}

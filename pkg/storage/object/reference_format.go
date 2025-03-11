@@ -157,8 +157,7 @@ func (rf ReferenceFormat) NewContents(outgoingReferences []LocalReference, paylo
 	*(*[5]byte)(rawReference[35:]) = rcs.getStats()
 
 	return &Contents{
-		referenceFormat: rf,
-		data:            data,
-		reference:       LocalReference{rawReference: rawReference},
+		data:      data,
+		reference: LocalReference{rawReference: rawReference},
 	}, nil
 }
