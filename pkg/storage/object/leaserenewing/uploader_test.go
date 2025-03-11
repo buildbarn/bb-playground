@@ -17,11 +17,11 @@ import (
 	"go.uber.org/mock/gomock"
 )
 
-func TestLeaseRenewingUploader(t *testing.T) {
+func TestUploader(t *testing.T) {
 	ctrl, ctx := gomock.WithContext(context.Background(), t)
 
 	baseUploader := NewMockUploaderForTesting(ctrl)
-	uploader := leaserenewing.NewLeaseRenewingUploader(
+	uploader := leaserenewing.NewUploader(
 		baseUploader,
 		semaphore.NewWeighted(1),
 		object.NewLimit(&object_pb.Limit{

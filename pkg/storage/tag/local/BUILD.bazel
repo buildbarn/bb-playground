@@ -2,7 +2,7 @@ load("@rules_go//go:def.bzl", "go_library")
 
 go_library(
     name = "local",
-    srcs = ["local_store.go"],
+    srcs = ["store.go"],
     importpath = "github.com/buildbarn/bonanza/pkg/storage/tag/local",
     visibility = ["//visibility:public"],
     deps = [

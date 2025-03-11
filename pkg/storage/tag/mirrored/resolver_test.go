@@ -18,12 +18,12 @@ import (
 	"go.uber.org/mock/gomock"
 )
 
-func TestMirroredResolver(t *testing.T) {
+func TestResolver(t *testing.T) {
 	ctrl, ctx := gomock.WithContext(context.Background(), t)
 
 	replicaA := NewMockResolverForTesting(ctrl)
 	replicaB := NewMockResolverForTesting(ctrl)
-	resolver := mirrored.NewMirroredResolver(replicaA, replicaB)
+	resolver := mirrored.NewResolver(replicaA, replicaB)
 
 	namespace := object.MustNewNamespace(&object_pb.Namespace{
 		InstanceName:    "hello/world",

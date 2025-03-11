@@ -4,8 +4,8 @@ load("@rules_go//go:def.bzl", "go_library", "go_test")
 go_library(
     name = "mirrored",
     srcs = [
-        "mirrored_resolver.go",
-        "mirrored_updater.go",
+        "resolver.go",
+        "updater.go",
     ],
     importpath = "github.com/buildbarn/bonanza/pkg/storage/tag/mirrored",
     visibility = ["//visibility:public"],
@@ -24,9 +24,9 @@ go_library(
 go_test(
     name = "mirrored_test",
     srcs = [
-        "mirrored_resolver_test.go",
-        "mirrored_updater_test.go",
         "mocks_tag_test.go",
+        "resolver_test.go",
+        "updater_test.go",
     ],
     embed = [":mirrored"],
     deps = [

@@ -1,5 +1,7 @@
 package tag
 
+// Store for tags, which is both accessible for reading (resolving) and
+// writing (updating).
 type Store[TNamespace any, TReference any, TLease any] interface {
 	Resolver[TNamespace]
 	Updater[TReference, TLease]

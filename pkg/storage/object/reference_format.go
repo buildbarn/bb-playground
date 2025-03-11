@@ -11,8 +11,15 @@ import (
 	"google.golang.org/grpc/status"
 )
 
+// ReferenceFormat describes the algorithm to use to compute the
+// LocalReference of an object. Right now only a single algorithm is
+// supported, called "SHA256_V1".
 type ReferenceFormat struct{}
 
+// NewReferenceFormat converts a ReferenceFormat enumeration value that
+// is used as part of gRPC requests to a native type. Right now it
+// merely validates that the provided enumeration value corresponds to
+// SHA256_V1.
 func NewReferenceFormat(value object.ReferenceFormat_Value) (ReferenceFormat, error) {
 	if value != object.ReferenceFormat_SHA256_V1 {
 		return ReferenceFormat{}, status.Error(codes.InvalidArgument, "This implementation only supports reference format SHA256_V1")
@@ -20,6 +27,8 @@ func NewReferenceFormat(value object.ReferenceFormat_Value) (ReferenceFormat, er
 	return ReferenceFormat{}, nil
 }
 
+// MustNewReferenceFormat is identical to NewReferenceFormat, requiring
+// that the call succeeds.
 func MustNewReferenceFormat(value object.ReferenceFormat_Value) ReferenceFormat {
 	referenceFormat, err := NewReferenceFormat(value)
 	if err != nil {
@@ -28,14 +37,21 @@ func MustNewReferenceFormat(value object.ReferenceFormat_Value) ReferenceFormat 
 	return referenceFormat
 }
 
+// ToProto converts a ReferenceFormat to an enumeration value that can
+// be embedded into gRPC request messages.
 func (ReferenceFormat) ToProto() object.ReferenceFormat_Value {
 	return object.ReferenceFormat_SHA256_V1
 }
 
+// GetReferenceSizeBytes returns the size in bytes of references encoded
+// in this format.
 func (ReferenceFormat) GetReferenceSizeBytes() int {
 	return referenceSizeBytes
 }
 
+// NewLocalReference converts a reference that is stored in binary
+// format to an in-memory representation. It also validates that all
+// fields contained in the reference are within bounds.
 func (ReferenceFormat) NewLocalReference(rawReference []byte) (r LocalReference, err error) {
 	// Construct the reference.
 	if len(rawReference) != referenceSizeBytes {
@@ -96,10 +112,18 @@ func (ReferenceFormat) NewLocalReference(rawReference []byte) (r LocalReference,
 	return
 }
 
+// GetMaximumObjectSizeBytes returns the maximum size of objects encoded
+// in this format. This size is guaranteed to be small enough to permit
+// safe transmission of such objects as part of gRPC requests and
+// responses, and to instantiate the object in memory of a reasonably
+// modern computer.
 func (ReferenceFormat) GetMaximumObjectSizeBytes() int {
 	return maximumObjectSizeBytes
 }
 
+// NewContents creates a new object having the provided set of outgoing
+// references and data payload. It is assumed that outgoing references
+// are provided in sorted order.
 func (rf ReferenceFormat) NewContents(outgoingReferences []LocalReference, payload []byte) (*Contents, error) {
 	sizeBytes := len(outgoingReferences)*referenceSizeBytes + len(payload)
 	if sizeBytes < minimumObjectSizeBytes || sizeBytes > maximumObjectSizeBytes {

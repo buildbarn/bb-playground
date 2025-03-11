@@ -15,6 +15,8 @@ type resolverServer struct {
 	resolver Resolver[object.Namespace]
 }
 
+// NewResolverServer creates a gRPC server that is capable of resolving
+// tags to an object.
 func NewResolverServer(resolver Resolver[object.Namespace]) tag.ResolverServer {
 	return &resolverServer{
 		resolver: resolver,

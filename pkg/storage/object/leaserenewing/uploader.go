@@ -15,18 +15,20 @@ import (
 	"google.golang.org/grpc/status"
 )
 
-type LeaseRenewingReference[T any] interface {
+// Reference is a constraint for the types of references that are used
+// by Uploader.
+type Reference[T any] interface {
 	comparable
 	object.BasicReference
 
 	WithLocalReference(localReference object.LocalReference) T
 }
 
-// LeaseRenewingUploader is a decorator for object.Uploader that
-// intercepts results that indicate that an object is incomplete due to
-// expired leases. For these objects, it recursively traverses all
-// children until leases are complete.
-type LeaseRenewingUploader[TReference LeaseRenewingReference[TReference], TLease any] struct {
+// Uploader is a decorator for object.Uploader that intercepts results
+// that indicate that an object is incomplete due to expired leases. For
+// these objects, it recursively traverses all children until leases are
+// complete.
+type Uploader[TReference Reference[TReference], TLease any] struct {
 	base                           object.Uploader[TReference, TLease]
 	objectStoreSemaphore           *semaphore.Weighted
 	maximumUnfinalizedParentsLimit object.Limit
@@ -39,10 +41,10 @@ type LeaseRenewingUploader[TReference LeaseRenewingReference[TReference], TLease
 	pendingObjectsWakeup             pg_sync.ConditionVariable
 }
 
-// NewLeaseRenewingUploader creates a LeaseRenewingUploader that
-// dectorates a provided object.Uploader.
-func NewLeaseRenewingUploader[TReference LeaseRenewingReference[TReference], TLease any](base object.Uploader[TReference, TLease], objectStoreSemaphore *semaphore.Weighted, maximumUnfinalizedParentsLimit object.Limit) *LeaseRenewingUploader[TReference, TLease] {
-	u := &LeaseRenewingUploader[TReference, TLease]{
+// NewUploader creates a Uploader that dectorates a provided
+// object.Uploader.
+func NewUploader[TReference Reference[TReference], TLease any](base object.Uploader[TReference, TLease], objectStoreSemaphore *semaphore.Weighted, maximumUnfinalizedParentsLimit object.Limit) *Uploader[TReference, TLease] {
+	u := &Uploader[TReference, TLease]{
 		base:                           base,
 		objectStoreSemaphore:           objectStoreSemaphore,
 		maximumUnfinalizedParentsLimit: maximumUnfinalizedParentsLimit,
@@ -56,7 +58,7 @@ func NewLeaseRenewingUploader[TReference LeaseRenewingReference[TReference], TLe
 // getOrCreateObjectState looks up the state that is tracked by the
 // lease renewing process for a single object. If no state exists, it is
 // created.
-func (u *LeaseRenewingUploader[TReference, TLease]) getOrCreateObjectState(reference TReference) *objectState[TReference, TLease] {
+func (u *Uploader[TReference, TLease]) getOrCreateObjectState(reference TReference) *objectState[TReference, TLease] {
 	o, ok := u.objectsByReference[reference]
 	if !ok {
 		o = &objectState[TReference, TLease]{
@@ -73,13 +75,17 @@ func (u *LeaseRenewingUploader[TReference, TLease]) getOrCreateObjectState(refer
 // objects. This function is either called when the object is fully
 // renewed, or if an error has occurred that prevents us from renewing
 // it successfully.
-func (u *LeaseRenewingUploader[TReference, TLease]) detachObjectState(o *objectState[TReference, TLease]) {
+func (u *Uploader[TReference, TLease]) detachObjectState(o *objectState[TReference, TLease]) {
 	if u.objectsByReference[o.reference] == o {
 		delete(u.objectsByReference, o.reference)
 	}
 }
 
-func (u *LeaseRenewingUploader[TReference, TLease]) UploadObject(ctx context.Context, reference TReference, contents *object.Contents, childrenLeases []TLease, wantContentsIfIncomplete bool) (object.UploadObjectResult[TLease], error) {
+// UploadObject uploads an object to storage. When called without any
+// object contents or leases and the backend indicates that one or more
+// leases are missing, it will automatically attempt to check existence
+// of the object's children, so that the object's lease may be renewed.
+func (u *Uploader[TReference, TLease]) UploadObject(ctx context.Context, reference TReference, contents *object.Contents, childrenLeases []TLease, wantContentsIfIncomplete bool) (object.UploadObjectResult[TLease], error) {
 	// Only pick up requests that do nothing more than obtain leases
 	// of an existing parent object. This makes it safe to use this
 	// backend recursively.
@@ -123,7 +129,7 @@ func (u *LeaseRenewingUploader[TReference, TLease]) UploadObject(ctx context.Con
 
 // getPendingObject returns the next object for which leases need to be
 // renewed.
-func (u *LeaseRenewingUploader[TReference, TLease]) getPendingObject(ctx context.Context) (*objectState[TReference, TLease], error) {
+func (u *Uploader[TReference, TLease]) getPendingObject(ctx context.Context) (*objectState[TReference, TLease], error) {
 	u.lock.Lock()
 	for {
 		if len(u.pendingObjects.Slice) > 0 {
@@ -140,7 +146,7 @@ func (u *LeaseRenewingUploader[TReference, TLease]) getPendingObject(ctx context
 
 // finalizeObjectLocked is called when leases of an object have finished
 // rewing, or after an error occurred in the process.
-func (u *LeaseRenewingUploader[TReference, TLease]) finalizeObjectLocked(o *objectState[TReference, TLease], lease *TLease, result object.UploadObjectResult[TLease], err error) {
+func (u *Uploader[TReference, TLease]) finalizeObjectLocked(o *objectState[TReference, TLease], lease *TLease, result object.UploadObjectResult[TLease], err error) {
 	u.detachObjectState(o)
 
 	// If this object has one or more callers of UploadObject(),
@@ -255,7 +261,9 @@ func (u *LeaseRenewingUploader[TReference, TLease]) finalizeObjectLocked(o *obje
 	u.pendingObjectsWakeup.Broadcast()
 }
 
-func (u *LeaseRenewingUploader[TReference, TLease]) ProcessSingleObject(ctx context.Context) bool {
+// ProcessSingleObject needs to be invoked repeatedly to ensure that
+// Uploader renews leases for objects that are queued.
+func (u *Uploader[TReference, TLease]) ProcessSingleObject(ctx context.Context) bool {
 	o, err := u.getPendingObject(ctx)
 	if err != nil {
 		return false
@@ -316,7 +324,7 @@ func (u *LeaseRenewingUploader[TReference, TLease]) ProcessSingleObject(ctx cont
 
 // objectState contains all of the state associated with an object that
 // is in the process of having its leases requested and/or renewed.
-type objectState[TReference LeaseRenewingReference[TReference], TLease any] struct {
+type objectState[TReference Reference[TReference], TLease any] struct {
 	reference TReference
 
 	// If set, one or more UploadObject() calls exist that match the
@@ -341,7 +349,7 @@ type hasCallersState[TLease any] struct {
 	err    error
 }
 
-type unfinalizedParent[TReference LeaseRenewingReference[TReference], TLease any] struct {
+type unfinalizedParent[TReference Reference[TReference], TLease any] struct {
 	object *objectState[TReference, TLease]
 	lease  *TLease
 }
@@ -349,7 +357,7 @@ type unfinalizedParent[TReference LeaseRenewingReference[TReference], TLease any
 // hasUnfinalizedChildrenState contains all state for a single object
 // that is incomplete, in the process of having its leases renewed, and
 // is waiting to obtain leases for all of its children.
-type hasUnfinalizedChildrenState[TReference LeaseRenewingReference[TReference], TLease any] struct {
+type hasUnfinalizedChildrenState[TReference Reference[TReference], TLease any] struct {
 	originalIncompleteResult *object.UploadObjectIncomplete[TLease]
 	leases                   []TLease
 	childErr                 error
@@ -358,7 +366,7 @@ type hasUnfinalizedChildrenState[TReference LeaseRenewingReference[TReference], 
 
 // pendingObjectsHeap is a binary heap of objects whose leases still
 // need to be obtained.
-type pendingObjectsHeap[TReference LeaseRenewingReference[TReference], TLease any] struct {
+type pendingObjectsHeap[TReference Reference[TReference], TLease any] struct {
 	ds.Slice[*objectState[TReference, TLease]]
 }
 

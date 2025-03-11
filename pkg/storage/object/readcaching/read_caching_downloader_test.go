@@ -16,12 +16,12 @@ import (
 	"go.uber.org/mock/gomock"
 )
 
-func TestReadCachingDownloader(t *testing.T) {
+func TestDownloader(t *testing.T) {
 	ctrl, ctx := gomock.WithContext(context.Background(), t)
 
 	slowDownloader := NewMockDownloaderForTesting(ctrl)
 	fastStore := NewMockStoreForTesting(ctrl)
-	downloader := readcaching.NewReadCachingDownloader(slowDownloader, fastStore)
+	downloader := readcaching.NewDownloader(slowDownloader, fastStore)
 
 	t.Run("FastBackendGetFailure", func(t *testing.T) {
 		// Internal errors returned by the fast storage backend

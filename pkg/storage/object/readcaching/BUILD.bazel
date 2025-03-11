@@ -3,7 +3,7 @@ load("@rules_go//go:def.bzl", "go_library", "go_test")
 
 go_library(
     name = "readcaching",
-    srcs = ["read_caching_downloader.go"],
+    srcs = ["downloader.go"],
     importpath = "github.com/buildbarn/bonanza/pkg/storage/object/readcaching",
     visibility = ["//visibility:public"],
     deps = [

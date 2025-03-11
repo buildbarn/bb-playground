@@ -2,7 +2,7 @@ load("@rules_go//go:def.bzl", "go_library")
 
 go_library(
     name = "leasemarshaling",
-    srcs = ["lease_marshaling_uploader.go"],
+    srcs = ["uploader.go"],
     importpath = "github.com/buildbarn/bonanza/pkg/storage/object/leasemarshaling",
     visibility = ["//visibility:public"],
     deps = [

@@ -10,27 +10,29 @@ import (
 	"google.golang.org/protobuf/types/known/anypb"
 )
 
-type LeaseRenewingNamespace[TReference any] interface {
+// Namespace in which references reside. This is used by the resolver to
+// create references to objects to which the tag points.
+type Namespace[TReference any] interface {
 	WithLocalReference(localReference object.LocalReference) TReference
 }
 
-type leaseRenewingResolver[TNamespace LeaseRenewingNamespace[TReference], TReference any, TLease any] struct {
+type resolver[TNamespace Namespace[TReference], TReference any, TLease any] struct {
 	tagStore       tag.Store[TNamespace, TReference, TLease]
 	objectUploader object.Uploader[TReference, TLease]
 }
 
-// NewLeaseRenewingResolver creates a decorator for tag.Resolver that
-// attempts to reobtain leases for tags that reference objects for which
-// the lease is expired or missing. Upon success, the tag is updated to
-// use the new lease.
-func NewLeaseRenewingResolver[TNamespace LeaseRenewingNamespace[TReference], TReference, TLease any](tagStore tag.Store[TNamespace, TReference, TLease], objectUploader object.Uploader[TReference, TLease]) tag.Resolver[TNamespace] {
-	return &leaseRenewingResolver[TNamespace, TReference, TLease]{
+// NewResolver creates a decorator for tag.Resolver that attempts to
+// reobtain leases for tags that reference objects for which the lease
+// is expired or missing. Upon success, the tag is updated to use the
+// new lease.
+func NewResolver[TNamespace Namespace[TReference], TReference, TLease any](tagStore tag.Store[TNamespace, TReference, TLease], objectUploader object.Uploader[TReference, TLease]) tag.Resolver[TNamespace] {
+	return &resolver[TNamespace, TReference, TLease]{
 		tagStore:       tagStore,
 		objectUploader: objectUploader,
 	}
 }
 
-func (r *leaseRenewingResolver[TNamespace, TReference, TLease]) ResolveTag(ctx context.Context, namespace TNamespace, tag *anypb.Any) (object.LocalReference, bool, error) {
+func (r *resolver[TNamespace, TReference, TLease]) ResolveTag(ctx context.Context, namespace TNamespace, tag *anypb.Any) (object.LocalReference, bool, error) {
 	localReference, complete, err := r.tagStore.ResolveTag(ctx, namespace, tag)
 	if err != nil || complete {
 		return localReference, complete, err

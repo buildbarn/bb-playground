@@ -60,9 +60,9 @@ func main() {
 		}
 
 		// Combine mirrored replicas together.
-		objectDownloader := object_mirrored.NewMirroredDownloader(objectStoreA, objectStoreB)
-		objectUploader := object_leaserenewing.NewLeaseRenewingUploader(
-			object_mirrored.NewMirroredUploader(objectStoreA, objectStoreB),
+		objectDownloader := object_mirrored.NewDownloader(objectStoreA, objectStoreB)
+		objectUploader := object_leaserenewing.NewUploader(
+			object_mirrored.NewUploader(objectStoreA, objectStoreB),
 			semaphore.NewWeighted(configuration.ObjectStoreConcurrency),
 			maximumUnfinalizedParentsLimit,
 		)
@@ -72,10 +72,10 @@ func main() {
 			return nil
 		})
 
-		tagUpdater := tag_mirrored.NewMirroredUpdater(tagStoreA, tagStoreB)
-		tagResolver := tag_leaserenewing.NewLeaseRenewingResolver(
+		tagUpdater := tag_mirrored.NewUpdater(tagStoreA, tagStoreB)
+		tagResolver := tag_leaserenewing.NewResolver(
 			tag.NewStore(
-				tag_mirrored.NewMirroredResolver(tagStoreA, tagStoreB),
+				tag_mirrored.NewResolver(tagStoreA, tagStoreB),
 				tagUpdater,
 			),
 			objectUploader,

@@ -7,11 +7,18 @@ import (
 	"google.golang.org/grpc/status"
 )
 
+// Namespace in which an object is stored.
+//
+// A storage server may partition objects by project or tenant. Each of
+// these partitions are called namespaces. It is not possible for
+// objects to directly refer to objects in another namespace.
 type Namespace struct {
 	InstanceName
 	ReferenceFormat
 }
 
+// NewNamespace creates a Namespace from a Protobuf message that was
+// contained in a gRPC request.
 func NewNamespace(namespaceMessage *object.Namespace) (Namespace, error) {
 	if namespaceMessage == nil {
 		return Namespace{}, status.Error(codes.InvalidArgument, "No message provided")
@@ -26,6 +33,8 @@ func NewNamespace(namespaceMessage *object.Namespace) (Namespace, error) {
 	}, nil
 }
 
+// MustNewNamespace is the same as NewNamespace, except that it requires
+// the call to succeed.
 func MustNewNamespace(namespaceMessage *object.Namespace) Namespace {
 	ns, err := NewNamespace(namespaceMessage)
 	if err != nil {
@@ -34,6 +43,8 @@ func MustNewNamespace(namespaceMessage *object.Namespace) Namespace {
 	return ns
 }
 
+// NewGlobalReference creates a reference that uniquely refers to an
+// object across all namespaces.
 func (ns Namespace) NewGlobalReference(rawReference []byte) (GlobalReference, error) {
 	localReference, err := ns.ReferenceFormat.NewLocalReference(rawReference)
 	if err != nil {
@@ -45,6 +56,8 @@ func (ns Namespace) NewGlobalReference(rawReference []byte) (GlobalReference, er
 	}, nil
 }
 
+// ToProto converts a Namespace to a Protobuf message, so that it may be
+// sent as part of a gRPC request.
 func (ns Namespace) ToProto() *object.Namespace {
 	return &object.Namespace{
 		InstanceName:    ns.InstanceName.value,

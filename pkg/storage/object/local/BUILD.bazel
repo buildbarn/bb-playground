@@ -3,8 +3,8 @@ load("@rules_go//go:def.bzl", "go_library")
 go_library(
     name = "local",
     srcs = [
-        "local_lease.go",
-        "local_store.go",
+        "lease.go",
+        "store.go",
     ],
     importpath = "github.com/buildbarn/bonanza/pkg/storage/object/local",
     visibility = ["//visibility:public"],

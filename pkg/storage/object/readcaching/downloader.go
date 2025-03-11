@@ -10,18 +10,22 @@ import (
 	"google.golang.org/grpc/status"
 )
 
-type ReadCachingReference[T any] interface {
+// Reference is a constraint on reference types accepted by
+// NewDownloader(). This backend is only capable of accepting references
+// that can be flattened (i.e., have their outgoing references be
+// stripped and height reduced to zero).
+type Reference[T any] interface {
 	object.BasicReference
 
 	Flatten() T
 }
 
-type readCachingDownloader[TReference ReadCachingReference[TReference], TLeaseFast any] struct {
+type downloader[TReference Reference[TReference], TLeaseFast any] struct {
 	slow object.Downloader[TReference]
 	fast object.Store[TReference, TLeaseFast]
 }
 
-// NewReadCachingDownloader creates a decorator for object.Downloader that adds
+// NewDownloader creates a decorator for object.Downloader that adds
 // read caching.
 //
 // Read requests first go to a fast backend. If that backend returns
@@ -29,14 +33,14 @@ type readCachingDownloader[TReference ReadCachingReference[TReference], TLeaseFa
 // the fast backend prior to returning.
 //
 // Writes always go to the fast backend.
-func NewReadCachingDownloader[TReference ReadCachingReference[TReference], TLeaseFast any](slow object.Downloader[TReference], fast object.Store[TReference, TLeaseFast]) object.Downloader[TReference] {
-	return &readCachingDownloader[TReference, TLeaseFast]{
+func NewDownloader[TReference Reference[TReference], TLeaseFast any](slow object.Downloader[TReference], fast object.Store[TReference, TLeaseFast]) object.Downloader[TReference] {
+	return &downloader[TReference, TLeaseFast]{
 		slow: slow,
 		fast: fast,
 	}
 }
 
-func (d *readCachingDownloader[TReference, TLeaseFast]) DownloadObject(ctx context.Context, reference TReference) (*object.Contents, error) {
+func (d *downloader[TReference, TLeaseFast]) DownloadObject(ctx context.Context, reference TReference) (*object.Contents, error) {
 	// Attempt to load object from the fast backend.
 	flatReference := reference.Flatten()
 	if flatObjectContents, err := d.fast.DownloadObject(ctx, flatReference); err == nil {

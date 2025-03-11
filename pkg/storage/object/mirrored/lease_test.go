@@ -13,12 +13,12 @@ import (
 	"go.uber.org/mock/gomock"
 )
 
-func TestMirroredLeaseMarshaler(t *testing.T) {
+func TestLeaseMarshaler(t *testing.T) {
 	ctrl := gomock.NewController(t)
 
 	marshalerA := NewMockLeaseMarshalerForTesting(ctrl)
 	marshalerB := NewMockLeaseMarshalerForTesting(ctrl)
-	marshaler := mirrored.NewMirroredLeaseMarshaler(marshalerA, marshalerB)
+	marshaler := mirrored.NewLeaseMarshaler(marshalerA, marshalerB)
 
 	t.Run("Identity", func(t *testing.T) {
 		// Marshal a pair of integer leases. If we unmarshal
@@ -39,7 +39,7 @@ func TestMirroredLeaseMarshaler(t *testing.T) {
 					return append(dst, leaseTemplate[:i+1]...)
 				})
 
-			marshaledLease := marshaler.MarshalLease(mirrored.MirroredLease[any, any]{
+			marshaledLease := marshaler.MarshalLease(mirrored.Lease[any, any]{
 				LeaseA: i,
 				LeaseB: i + 1,
 			}, nil)
@@ -51,7 +51,7 @@ func TestMirroredLeaseMarshaler(t *testing.T) {
 
 			unmarshaledLease, err := marshaler.UnmarshalLease(marshaledLease)
 			require.NoError(t, err)
-			require.Equal(t, mirrored.MirroredLease[any, any]{
+			require.Equal(t, mirrored.Lease[any, any]{
 				LeaseA: i,
 				LeaseB: i + 1,
 			}, unmarshaledLease)

@@ -13,22 +13,22 @@ import (
 	"google.golang.org/protobuf/types/known/anypb"
 )
 
-type mirroredResolver[TNamespace any] struct {
+type resolver[TNamespace any] struct {
 	replicaA tag.Resolver[TNamespace]
 	replicaB tag.Resolver[TNamespace]
 }
 
-// NewMirroredResolver creates a decorator for tag.Resolver that
-// forwards requests to resolve tags to a pair of backends that are
-// configured to mirror each other's contents.
-func NewMirroredResolver[TNamespace any](replicaA, replicaB tag.Resolver[TNamespace]) tag.Resolver[TNamespace] {
-	return &mirroredResolver[TNamespace]{
+// NewResolver creates a decorator for tag.Resolver that forwards
+// requests to resolve tags to a pair of backends that are configured to
+// mirror each other's contents.
+func NewResolver[TNamespace any](replicaA, replicaB tag.Resolver[TNamespace]) tag.Resolver[TNamespace] {
+	return &resolver[TNamespace]{
 		replicaA: replicaA,
 		replicaB: replicaB,
 	}
 }
 
-func (r *mirroredResolver[TNamespace]) ResolveTag(ctx context.Context, namespace TNamespace, tag *anypb.Any) (object.LocalReference, bool, error) {
+func (r *resolver[TNamespace]) ResolveTag(ctx context.Context, namespace TNamespace, tag *anypb.Any) (object.LocalReference, bool, error) {
 	// Send request to both replicas.
 	var referenceA, referenceB object.LocalReference
 	var completeA, completeB bool

@@ -8,31 +8,36 @@ import (
 	"github.com/buildbarn/bonanza/pkg/storage/object"
 )
 
+// LeaseMarshaler is used by the implementations of object.Downloader
+// and object.Uploader to convert leases from their native
+// representation to byte slices, and vice versa.
 type LeaseMarshaler[TLease any] interface {
 	MarshalLease(lease TLease, dst []byte) []byte
 	UnmarshalLease(src []byte) (TLease, error)
 }
 
+// LeaseMarshalerForTesting is an instantiation of LeaseMarshaler that
+// is used to generate mocks as part of tests.
 type LeaseMarshalerForTesting LeaseMarshaler[any]
 
-type leaseMarshalingUploader[TReference any, TLease any] struct {
+type uploader[TReference any, TLease any] struct {
 	base                  object.Uploader[TReference, TLease]
 	marshaler             LeaseMarshaler[TLease]
 	maximumLeaseSizeBytes atomic.Int64
 }
 
-// NewLeaseMarshalingUploader creates a decorator for object.Uploader
-// that converts leases in the format of byte slices from/to the native
-// representation of the storage backend. This is typically needed if a
-// storage backend is exposed via the network.
-func NewLeaseMarshalingUploader[TReference, TLease any](base object.Uploader[TReference, TLease], marshaler LeaseMarshaler[TLease]) object.Uploader[TReference, []byte] {
-	return &leaseMarshalingUploader[TReference, TLease]{
+// NewUploader creates a decorator for object.Uploader that converts
+// leases in the format of byte slices from/to the native representation
+// of the storage backend. This is typically needed if a storage backend
+// is exposed via the network.
+func NewUploader[TReference, TLease any](base object.Uploader[TReference, TLease], marshaler LeaseMarshaler[TLease]) object.Uploader[TReference, []byte] {
+	return &uploader[TReference, TLease]{
 		base:      base,
 		marshaler: marshaler,
 	}
 }
 
-func (u *leaseMarshalingUploader[TReference, TLease]) UploadObject(ctx context.Context, reference TReference, contents *object.Contents, childrenLeases [][]byte, wantContentsIfIncomplete bool) (object.UploadObjectResult[[]byte], error) {
+func (u *uploader[TReference, TLease]) UploadObject(ctx context.Context, reference TReference, contents *object.Contents, childrenLeases [][]byte, wantContentsIfIncomplete bool) (object.UploadObjectResult[[]byte], error) {
 	// Unmarshal the leases of child objects.
 	unmarshaledChildrenLeases := make([]TLease, 0, len(childrenLeases))
 	for i, marshaledLease := range childrenLeases {

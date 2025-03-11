@@ -11,19 +11,23 @@ import (
 	"google.golang.org/grpc/status"
 )
 
-type mirroredUploader[TReference any, TLeaseA, TLeaseB any] struct {
+type uploader[TReference any, TLeaseA, TLeaseB any] struct {
 	replicaA object.Store[TReference, TLeaseA]
 	replicaB object.Store[TReference, TLeaseB]
 }
 
-func NewMirroredUploader[TReference, TLeaseA, TLeaseB any](replicaA object.Store[TReference, TLeaseA], replicaB object.Store[TReference, TLeaseB]) object.Uploader[TReference, MirroredLease[TLeaseA, TLeaseB]] {
-	return &mirroredUploader[TReference, TLeaseA, TLeaseB]{
+// NewUploader creates a decorator for object.Uploader that writes all
+// objects to two replicas. If any inconsistencies between the backends
+// are detected (e.g., the object is only present in one of the
+// backends), they are repaired automatically.
+func NewUploader[TReference, TLeaseA, TLeaseB any](replicaA object.Store[TReference, TLeaseA], replicaB object.Store[TReference, TLeaseB]) object.Uploader[TReference, Lease[TLeaseA, TLeaseB]] {
+	return &uploader[TReference, TLeaseA, TLeaseB]{
 		replicaA: replicaA,
 		replicaB: replicaB,
 	}
 }
 
-func (u *mirroredUploader[TReference, TLeaseA, TLeaseB]) UploadObject(ctx context.Context, reference TReference, contents *object.Contents, childrenLeases []MirroredLease[TLeaseA, TLeaseB], wantContentsIfIncomplete bool) (object.UploadObjectResult[MirroredLease[TLeaseA, TLeaseB]], error) {
+func (u *uploader[TReference, TLeaseA, TLeaseB]) UploadObject(ctx context.Context, reference TReference, contents *object.Contents, childrenLeases []Lease[TLeaseA, TLeaseB], wantContentsIfIncomplete bool) (object.UploadObjectResult[Lease[TLeaseA, TLeaseB]], error) {
 	// Decompose the leases into separate lists for replicas A and B.
 	childrenLeasesA := make([]TLeaseA, 0, len(childrenLeases))
 	childrenLeasesB := make([]TLeaseB, 0, len(childrenLeases))
@@ -77,8 +81,8 @@ func (u *mirroredUploader[TReference, TLeaseA, TLeaseB]) UploadObject(ctx contex
 			case object.UploadObjectComplete[TLeaseB]:
 				// Objects present in both replicas. Combine
 				// both leases.
-				return object.UploadObjectComplete[MirroredLease[TLeaseA, TLeaseB]]{
-					Lease: MirroredLease[TLeaseA, TLeaseB]{
+				return object.UploadObjectComplete[Lease[TLeaseA, TLeaseB]]{
+					Lease: Lease[TLeaseA, TLeaseB]{
 						LeaseA: resultDataA.Lease,
 						LeaseB: resultDataB.Lease,
 					},
@@ -86,7 +90,7 @@ func (u *mirroredUploader[TReference, TLeaseA, TLeaseB]) UploadObject(ctx contex
 			case object.UploadObjectIncomplete[TLeaseB]:
 				// Only the object in replica B is
 				// incomplete. Return results of replica B.
-				return object.UploadObjectIncomplete[MirroredLease[TLeaseA, TLeaseB]]{
+				return object.UploadObjectIncomplete[Lease[TLeaseA, TLeaseB]]{
 					Contents:                     contentsIfIncomplete,
 					WantOutgoingReferencesLeases: resultDataB.WantOutgoingReferencesLeases,
 				}, nil
@@ -100,7 +104,7 @@ func (u *mirroredUploader[TReference, TLeaseA, TLeaseB]) UploadObject(ctx contex
 			case object.UploadObjectComplete[TLeaseB]:
 				// Only the object in replica A is
 				// incomplete. Return results of replica A.
-				return object.UploadObjectIncomplete[MirroredLease[TLeaseA, TLeaseB]]{
+				return object.UploadObjectIncomplete[Lease[TLeaseA, TLeaseB]]{
 					Contents:                     contentsIfIncomplete,
 					WantOutgoingReferencesLeases: resultDataA.WantOutgoingReferencesLeases,
 				}, nil
@@ -123,7 +127,7 @@ func (u *mirroredUploader[TReference, TLeaseA, TLeaseB]) UploadObject(ctx contex
 						j++
 					}
 				}
-				return object.UploadObjectIncomplete[MirroredLease[TLeaseA, TLeaseB]]{
+				return object.UploadObjectIncomplete[Lease[TLeaseA, TLeaseB]]{
 					Contents:                     contentsIfIncomplete,
 					WantOutgoingReferencesLeases: append(append(resultWantLeases, resultDataA.WantOutgoingReferencesLeases[i:]...), resultDataB.WantOutgoingReferencesLeases[j:]...),
 				}, nil
@@ -141,7 +145,7 @@ func (u *mirroredUploader[TReference, TLeaseA, TLeaseB]) UploadObject(ctx contex
 			case object.UploadObjectMissing[TLeaseB]:
 				// The object is missing in both replicas
 				// A and B. Report the object as missing.
-				return object.UploadObjectMissing[MirroredLease[TLeaseA, TLeaseB]]{}, nil
+				return object.UploadObjectMissing[Lease[TLeaseA, TLeaseB]]{}, nil
 			default:
 				panic("unexpected upload object result type")
 			}
@@ -158,7 +162,7 @@ func (u *mirroredUploader[TReference, TLeaseA, TLeaseB]) UploadObject(ctx contex
 				if status.Code(err) != codes.NotFound {
 					return nil, util.StatusWrap(err, "Replica A")
 				}
-				return object.UploadObjectMissing[MirroredLease[TLeaseA, TLeaseB]]{}, nil
+				return object.UploadObjectMissing[Lease[TLeaseA, TLeaseB]]{}, nil
 			}
 		}
 
@@ -183,7 +187,7 @@ func (u *mirroredUploader[TReference, TLeaseA, TLeaseB]) UploadObject(ctx contex
 				if status.Code(err) != codes.NotFound {
 					return nil, util.StatusWrap(err, "Replica B")
 				}
-				return object.UploadObjectMissing[MirroredLease[TLeaseA, TLeaseB]]{}, nil
+				return object.UploadObjectMissing[Lease[TLeaseA, TLeaseB]]{}, nil
 			}
 		}
 

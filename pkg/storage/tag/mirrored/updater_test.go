@@ -18,12 +18,12 @@ import (
 	"go.uber.org/mock/gomock"
 )
 
-func TestMirroredUpdater(t *testing.T) {
+func TestUpdater(t *testing.T) {
 	ctrl, ctx := gomock.WithContext(context.Background(), t)
 
 	replicaA := NewMockUpdaterForTesting(ctrl)
 	replicaB := NewMockUpdaterForTesting(ctrl)
-	updater := tag_mirrored.NewMirroredUpdater(replicaA, replicaB)
+	updater := tag_mirrored.NewUpdater(replicaA, replicaB)
 
 	t.Run("FailureReplicaA", func(t *testing.T) {
 		// If updating the tag only succeeds for one of the
@@ -55,7 +55,7 @@ func TestMirroredUpdater(t *testing.T) {
 				ctx,
 				tag,
 				object.MustNewSHA256V1GlobalReference("hello/world", "8ed6814114c216e75bef25dcba0d6b6c9600f2d49f07e3ae970697effae188d1", 595814, 58, 12, 7883322),
-				object_mirrored.MirroredLease[any, any]{
+				object_mirrored.Lease[any, any]{
 					LeaseA: "Lease A",
 					LeaseB: "Lease B",
 				},
@@ -98,7 +98,7 @@ func TestMirroredUpdater(t *testing.T) {
 				ctx,
 				tag,
 				object.MustNewSHA256V1GlobalReference("hello/world", "abcba052c8c920fd06461136e1ab188d02a2302fde2b25fb8dc4b638203a6b9b", 595814, 58, 12, 7883322),
-				object_mirrored.MirroredLease[any, any]{
+				object_mirrored.Lease[any, any]{
 					LeaseA: "Lease A",
 					LeaseB: "Lease B",
 				},
@@ -131,7 +131,7 @@ func TestMirroredUpdater(t *testing.T) {
 			ctx,
 			tag,
 			object.MustNewSHA256V1GlobalReference("hello/world", "e1d6fa62850d20d505ef2ae9383588d61cc8ec400b9b4a3f9203c9df3ad25729", 595814, 58, 12, 7883322),
-			object_mirrored.MirroredLease[any, any]{
+			object_mirrored.Lease[any, any]{
 				LeaseA: "Lease A",
 				LeaseB: "Lease B",
 			},

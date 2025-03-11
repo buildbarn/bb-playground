@@ -11,22 +11,22 @@ import (
 	"google.golang.org/protobuf/types/known/anypb"
 )
 
-type mirroredUpdater[TReference any, TLeaseA, TLeaseB any] struct {
+type updater[TReference any, TLeaseA, TLeaseB any] struct {
 	replicaA tag.Updater[TReference, TLeaseA]
 	replicaB tag.Updater[TReference, TLeaseB]
 }
 
-// NewMirroredUpdater creates a decorator for tag.Updater that forwards
-// requests to update tags to a pair of backends that are configured to
-// mirror each other's contents.
-func NewMirroredUpdater[TReference, TLeaseA, TLeaseB any](replicaA tag.Updater[TReference, TLeaseA], replicaB tag.Updater[TReference, TLeaseB]) tag.Updater[TReference, mirrored.MirroredLease[TLeaseA, TLeaseB]] {
-	return &mirroredUpdater[TReference, TLeaseA, TLeaseB]{
+// NewUpdater creates a decorator for tag.Updater that forwards requests
+// to update tags to a pair of backends that are configured to mirror
+// each other's contents.
+func NewUpdater[TReference, TLeaseA, TLeaseB any](replicaA tag.Updater[TReference, TLeaseA], replicaB tag.Updater[TReference, TLeaseB]) tag.Updater[TReference, mirrored.Lease[TLeaseA, TLeaseB]] {
+	return &updater[TReference, TLeaseA, TLeaseB]{
 		replicaA: replicaA,
 		replicaB: replicaB,
 	}
 }
 
-func (u *mirroredUpdater[TReference, TLeaseA, TLeaseB]) UpdateTag(ctx context.Context, tag *anypb.Any, reference TReference, lease mirrored.MirroredLease[TLeaseA, TLeaseB], overwrite bool) error {
+func (u *updater[TReference, TLeaseA, TLeaseB]) UpdateTag(ctx context.Context, tag *anypb.Any, reference TReference, lease mirrored.Lease[TLeaseA, TLeaseB], overwrite bool) error {
 	// Forward the request to both replicas in parallel.
 	group, groupCtx := errgroup.WithContext(ctx)
 	group.Go(func() error {

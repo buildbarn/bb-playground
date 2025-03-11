@@ -3,7 +3,7 @@ load("@rules_go//go:def.bzl", "go_library", "go_test")
 
 go_library(
     name = "leasemarshaling",
-    srcs = ["lease_marshaling_updater.go"],
+    srcs = ["updater.go"],
     importpath = "github.com/buildbarn/bonanza/pkg/storage/tag/leasemarshaling",
     visibility = ["//visibility:public"],
     deps = [
@@ -17,9 +17,9 @@ go_library(
 go_test(
     name = "leasemarshaling_test",
     srcs = [
-        "lease_marshaling_updater_test.go",
         "mocks_leasemarshaling_test.go",
         "mocks_tag_test.go",
+        "updater_test.go",
     ],
     embed = [":leasemarshaling"],
     deps = [

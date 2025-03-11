@@ -1,5 +1,7 @@
 package object
 
+// Store for objects, which is accessible for reading (downloading) and
+// writing (uploading).
 type Store[TReference any, TLease any] interface {
 	Downloader[TReference]
 	Uploader[TReference, TLease]
@@ -17,4 +19,6 @@ func NewStore[TReference, TLease any](downloader Downloader[TReference], uploade
 	}
 }
 
+// StoreForTesting is an instantiation of Store for generating mocks to
+// be used by tests.
 type StoreForTesting Store[GlobalReference, any]

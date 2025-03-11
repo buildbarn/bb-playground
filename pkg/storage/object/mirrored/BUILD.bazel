@@ -4,9 +4,9 @@ load("@rules_go//go:def.bzl", "go_library", "go_test")
 go_library(
     name = "mirrored",
     srcs = [
-        "mirrored_downloader.go",
-        "mirrored_lease.go",
-        "mirrored_uploader.go",
+        "downloader.go",
+        "lease.go",
+        "uploader.go",
     ],
     importpath = "github.com/buildbarn/bonanza/pkg/storage/object/mirrored",
     visibility = ["//visibility:public"],
@@ -24,7 +24,7 @@ go_library(
 go_test(
     name = "mirrored_test",
     srcs = [
-        "mirrored_lease_test.go",
+        "lease_test.go",
         "mocks_leasemarshaling_test.go",
     ],
     embed = [":mirrored"],

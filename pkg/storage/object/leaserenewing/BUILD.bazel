@@ -3,7 +3,7 @@ load("@rules_go//go:def.bzl", "go_library", "go_test")
 
 go_library(
     name = "leaserenewing",
-    srcs = ["lease_renewing_uploader.go"],
+    srcs = ["uploader.go"],
     importpath = "github.com/buildbarn/bonanza/pkg/storage/object/leaserenewing",
     visibility = ["//visibility:public"],
     deps = [
@@ -20,8 +20,8 @@ go_library(
 go_test(
     name = "leaserenewing_test",
     srcs = [
-        "lease_renewing_uploader_test.go",
         "mocks_object_test.go",
+        "uploader_test.go",
     ],
     embed = [":leaserenewing"],
     deps = [

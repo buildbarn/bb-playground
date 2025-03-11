@@ -17,12 +17,12 @@ import (
 	"go.uber.org/mock/gomock"
 )
 
-func TestLeaseMarshalingUpdater(t *testing.T) {
+func TestUpdater(t *testing.T) {
 	ctrl, ctx := gomock.WithContext(context.Background(), t)
 
 	baseUpdater := NewMockUpdaterForTesting(ctrl)
 	marshaler := NewMockLeaseMarshalerForTesting(ctrl)
-	updater := leasemarshaling.NewLeaseMarshalingUpdater(baseUpdater, marshaler)
+	updater := leasemarshaling.NewUpdater(baseUpdater, marshaler)
 
 	t.Run("EmptyLease", func(t *testing.T) {
 		tag, err := anypb.New(&emptypb.Empty{})

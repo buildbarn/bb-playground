@@ -38,9 +38,9 @@ func main() {
 			return util.StatusWrap(err, "Failed to apply global configuration options")
 		}
 
-		objectStore := object_local.NewLocalStore()
-		tagStore := tag_local.NewLocalStore()
-		leaseMarshaler := object_local.LocalLeaseMarshaler
+		objectStore := object_local.NewStore()
+		tagStore := tag_local.NewStore()
+		leaseMarshaler := object_local.LeaseMarshaler
 
 		if err := bb_grpc.NewServersFromConfigurationAndServe(
 			configuration.GrpcServers,
@@ -56,7 +56,7 @@ func main() {
 				object_pb.RegisterUploaderServer(
 					s,
 					object.NewUploaderServer(
-						object_leasemarshaling.NewLeaseMarshalingUploader(
+						object_leasemarshaling.NewUploader(
 							object_namespacemapping.NewNamespaceRemovingUploader[object.GlobalReference](
 								objectStore,
 							),
@@ -73,7 +73,7 @@ func main() {
 				tag_pb.RegisterUpdaterServer(
 					s,
 					tag.NewUpdaterServer(
-						tag_leasemarshaling.NewLeaseMarshalingUpdater(
+						tag_leasemarshaling.NewUpdater(
 							tagStore,
 							leaseMarshaler,
 						),

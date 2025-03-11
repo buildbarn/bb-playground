@@ -40,12 +40,17 @@ func init() {
 	}
 }
 
+// LocalReference uniquely identifies an object stored within a single
+// storage namespace.
 type LocalReference struct {
 	rawReference [referenceSizeBytes]byte
 }
 
 var _ BasicReference = LocalReference{}
 
+// MustNewSHA256V1LocalReference creates a local reference that uses
+// reference format SHA256_V1. This function can be used as part of
+// tests.
 func MustNewSHA256V1LocalReference(hash string, sizeBytes uint32, height uint8, degree uint16, maximumTotalParentsSizeBytes uint64) LocalReference {
 	var rawReference [40]byte
 	if n, err := hex.Decode(rawReference[:], []byte(hash)); err != nil {
@@ -70,10 +75,14 @@ func MustNewSHA256V1LocalReference(hash string, sizeBytes uint32, height uint8, 
 	return reference
 }
 
+// GetReferenceFormat returns the reference format that was used to
+// generate the reference.
 func (LocalReference) GetReferenceFormat() ReferenceFormat {
 	return ReferenceFormat{}
 }
 
+// GetRawReference returns the reference in binary form, so that it may
+// be embedded into gRPC request bodies.
 func (r LocalReference) GetRawReference() []byte {
 	return r.rawReference[:]
 }
@@ -89,18 +98,28 @@ func (r LocalReference) String() string {
 	)
 }
 
+// GetHash returns the hash of the contents of the object associated
+// with the reference.
 func (r LocalReference) GetHash() []byte {
 	return r.rawReference[:32]
 }
 
+// GetSizeBytes returns the size of the object associated with the
+// reference. The size comprises both the outgoing references and the
+// data payload.
 func (r LocalReference) GetSizeBytes() int {
 	return int(binary.LittleEndian.Uint32(r.rawReference[32:]) & 0xffffff)
 }
 
+// GetHeight returns the maximum length of all paths to leaves
+// underneath the current object. Objects without any children have
+// height zero.
 func (r LocalReference) GetHeight() int {
 	return int(r.rawReference[35])
 }
 
+// GetDegree returns the number of children the object associated with
+// the reference has.
 func (r LocalReference) GetDegree() int {
 	return int(binary.LittleEndian.Uint16(r.rawReference[36:]))
 }
@@ -109,6 +128,16 @@ func (r LocalReference) getRawMaximumTotalParentsSizeBytes() uint16 {
 	return binary.LittleEndian.Uint16(r.rawReference[38:])
 }
 
+// GetMaximumTotalParentsSizeBytes returns the maximum total size of
+// objects along all paths to leaves underneath the current object,
+// excluding the leaves themselves. Whether the size of the current
+// object is taken into consideration is controlled through the
+// includeSelf parameter.
+//
+// This method can be used to determine the amount of memory that's
+// needed to traverse the full graph. It is used by the DAG uploading
+// and lease renewing code to traverse graphs in parallel, in such a way
+// that memory usage is bounded.
 func (r LocalReference) GetMaximumTotalParentsSizeBytes(includeSelf bool) int {
 	sizeBytes := int(float16.Float16ToUint64(r.getRawMaximumTotalParentsSizeBytes()))
 	if includeSelf && r.GetHeight() > 0 {
@@ -117,15 +146,32 @@ func (r LocalReference) GetMaximumTotalParentsSizeBytes(includeSelf bool) int {
 	return sizeBytes
 }
 
+// Flatten a reference, so that its height and degree are both zero.
+//
+// This is used by the read caching backend, where we want to cache
+// individual objects as opposed to graphs. When writing objects to the
+// local cache, we set the height and degree to zero, so that there is
+// no need to track any leases.
 func (r LocalReference) Flatten() (flatReference LocalReference) {
 	copy(flatReference.rawReference[:35], r.rawReference[:35])
 	return
 }
 
+// GetLocalReference trims all properties of the reference, so that only
+// a LocalReference remains.
+//
+// This method is provided to ensure that all types that are derived
+// from LocalReference are easy to convert back to a LocalReference.
 func (r LocalReference) GetLocalReference() LocalReference {
 	return r
 }
 
+// WithLocalReference returns a new LocalReference that has its value
+// replaced with another.
+//
+// This method is merely provided to satisfy some of the constraints of
+// some generic functions and types that can operate both on local and
+// global references.
 func (r LocalReference) WithLocalReference(localReference LocalReference) LocalReference {
 	return localReference
 }

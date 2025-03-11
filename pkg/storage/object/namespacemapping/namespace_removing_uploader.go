@@ -10,7 +10,7 @@ type namespaceRemovingUploader[TReference object.BasicReference, TLease any] str
 	base object.Uploader[object.LocalReference, TLease]
 }
 
-// NewNamespaceRemovingDownloader creates a decorator for Uploader that
+// NewNamespaceRemovingUploader creates a decorator for Uploader that
 // converts references provided to UploadObject() to LocalReferences.
 // This is useful if the storage backend is oblivious of namespaces
 // (e.g., local disk based storage).

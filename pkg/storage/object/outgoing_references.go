@@ -20,15 +20,21 @@ type OutgoingReferencesList[T any] []T
 
 var _ OutgoingReferences[LocalReference] = OutgoingReferencesList[LocalReference]{}
 
+// GetDegree returns the number of outgoing references in the list.
 func (l OutgoingReferencesList[T]) GetDegree() int {
 	return len(l)
 }
 
+// GetOutgoingReference returns the reference at a given index in the
+// outgoing refrences list. It is the caller's responsibility to ensure
+// the index is within bounds.
 func (l OutgoingReferencesList[T]) GetOutgoingReference(index int) T {
 	return l[index]
 }
 
+// DetachOutgoingReferences does nothing, as it is assumed that an
+// OutgoingReferencesList is already stored in a separate memory
+// allocation, and is not part of a larger object.
 func (l OutgoingReferencesList[T]) DetachOutgoingReferences() OutgoingReferences[T] {
-	// Underlying slice is already detached.
 	return l
 }

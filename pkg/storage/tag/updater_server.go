@@ -16,6 +16,8 @@ type updaterServer struct {
 	updater Updater[object.GlobalReference, []byte]
 }
 
+// NewUpdaterServer creates a gRPC server that is capable of creating or
+// updating existing tags contained in the tag store.
 func NewUpdaterServer(updater Updater[object.GlobalReference, []byte]) tag.UpdaterServer {
 	return &updaterServer{
 		updater: updater,
