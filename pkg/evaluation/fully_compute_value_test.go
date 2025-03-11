@@ -55,7 +55,7 @@ func TestFullyComputeValue(t *testing.T) {
 				), nil
 			}).
 			AnyTimes()
-		valueChildrenStorer := NewMockValueChildrenStorer(ctrl)
+		valueChildrenStorer := NewMockValueChildrenStorerForTesting(ctrl)
 
 		m, err := evaluation.FullyComputeValue(
 			ctx,

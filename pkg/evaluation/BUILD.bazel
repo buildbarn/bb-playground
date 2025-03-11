@@ -46,7 +46,7 @@ gomock(
     out = "mocks_evaluation_test.go",
     interfaces = [
         "ComputerForTesting",
-        "ValueChildrenStorer",
+        "ValueChildrenStorerForTesting",
     ],
     library = "//pkg/evaluation",
     mockgen_model_library = "@org_uber_go_mock//mockgen/model",

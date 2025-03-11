@@ -29,6 +29,7 @@ func TestNewPackageGroupFromVisibility(t *testing.T) {
 					Encoder:          NewMockBinaryEncoder(ctrl),
 					MaximumSizeBytes: 0,
 				},
+				NewMockCreatedObjectCapturerForTesting(ctrl),
 			)
 			require.NoError(t, err)
 			testutil.RequireEqualProto(t, &model_starlark_pb.PackageGroup{
@@ -47,6 +48,7 @@ func TestNewPackageGroupFromVisibility(t *testing.T) {
 					Encoder:          NewMockBinaryEncoder(ctrl),
 					MaximumSizeBytes: 0,
 				},
+				NewMockCreatedObjectCapturerForTesting(ctrl),
 			)
 			require.EqualError(t, err, "//visibility:private may not be combined with other labels")
 		})
@@ -63,6 +65,7 @@ func TestNewPackageGroupFromVisibility(t *testing.T) {
 					Encoder:          NewMockBinaryEncoder(ctrl),
 					MaximumSizeBytes: 0,
 				},
+				NewMockCreatedObjectCapturerForTesting(ctrl),
 			)
 			require.NoError(t, err)
 			testutil.RequireEqualProto(t, &model_starlark_pb.PackageGroup{
@@ -83,12 +86,16 @@ func TestNewPackageGroupFromVisibility(t *testing.T) {
 					Encoder:          NewMockBinaryEncoder(ctrl),
 					MaximumSizeBytes: 0,
 				},
+				NewMockCreatedObjectCapturerForTesting(ctrl),
 			)
 			require.EqualError(t, err, "//visibility:public may not be combined with other labels")
 		})
 	})
 
 	t.Run("Mix", func(t *testing.T) {
+		objectCapturer := NewMockCreatedObjectCapturerForTesting(ctrl)
+		objectCapturer.EXPECT().CaptureCreatedObject(gomock.Any()).AnyTimes()
+
 		packageGroup, err := model_starlark.NewPackageGroupFromVisibility(
 			[]label.ResolvedLabel{
 				// Inclusion of the root package.
@@ -125,6 +132,7 @@ func TestNewPackageGroupFromVisibility(t *testing.T) {
 				Encoder:          NewMockBinaryEncoder(ctrl),
 				MaximumSizeBytes: 1 << 20,
 			},
+			objectCapturer,
 		)
 		require.NoError(t, err)
 		testutil.RequireEqualProto(t, &model_starlark_pb.PackageGroup{

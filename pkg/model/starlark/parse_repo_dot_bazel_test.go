@@ -5,6 +5,7 @@ import (
 
 	"github.com/buildbarn/bb-storage/pkg/testutil"
 	"github.com/buildbarn/bonanza/pkg/label"
+	model_core "github.com/buildbarn/bonanza/pkg/model/core"
 	"github.com/buildbarn/bonanza/pkg/model/core/inlinedtree"
 	model_starlark "github.com/buildbarn/bonanza/pkg/model/starlark"
 	model_starlark_pb "github.com/buildbarn/bonanza/pkg/proto/model/starlark"
@@ -22,7 +23,7 @@ func TestParseModuleDotBazel(t *testing.T) {
 		// If no calls to repo() are made, the resulting
 		// attributes should be identical to the constant
 		// message value we provide.
-		defaultAttrs, err := model_starlark.ParseRepoDotBazel(
+		defaultAttrs, err := model_starlark.ParseRepoDotBazel[object.LocalReference](
 			"",
 			label.MustNewCanonicalLabel("@@foo+//:REPO.bazel"),
 			&inlinedtree.Options{
@@ -30,6 +31,7 @@ func TestParseModuleDotBazel(t *testing.T) {
 				Encoder:          NewMockBinaryEncoder(ctrl),
 				MaximumSizeBytes: 0,
 			},
+			model_core.CreatedObjectCapturer[model_core.CloneableReferenceMetadata](nil),
 		)
 		require.NoError(t, err)
 		testutil.RequireEqualProto(t, &model_starlark.DefaultInheritableAttrs, defaultAttrs.Message)
@@ -39,7 +41,7 @@ func TestParseModuleDotBazel(t *testing.T) {
 		// It should be valid to call repo() without any
 		// arguments. In that case the returned attributes
 		// should also be equal to the default.
-		defaultAttrs, err := model_starlark.ParseRepoDotBazel(
+		defaultAttrs, err := model_starlark.ParseRepoDotBazel[object.LocalReference](
 			"repo()",
 			label.MustNewCanonicalLabel("@@foo+//:REPO.bazel"),
 			&inlinedtree.Options{
@@ -47,6 +49,7 @@ func TestParseModuleDotBazel(t *testing.T) {
 				Encoder:          NewMockBinaryEncoder(ctrl),
 				MaximumSizeBytes: 0,
 			},
+			model_core.CreatedObjectCapturer[model_core.CloneableReferenceMetadata](nil),
 		)
 		require.NoError(t, err)
 		testutil.RequireEqualProto(t, &model_starlark.DefaultInheritableAttrs, defaultAttrs.Message)
@@ -54,7 +57,7 @@ func TestParseModuleDotBazel(t *testing.T) {
 
 	t.Run("RedundantCalls", func(t *testing.T) {
 		// Calling repo() times is not permitted.
-		_, err := model_starlark.ParseRepoDotBazel(
+		_, err := model_starlark.ParseRepoDotBazel[object.LocalReference](
 			"repo()\nrepo()",
 			label.MustNewCanonicalLabel("@@foo+//:REPO.bazel"),
 			&inlinedtree.Options{
@@ -62,6 +65,7 @@ func TestParseModuleDotBazel(t *testing.T) {
 				Encoder:          NewMockBinaryEncoder(ctrl),
 				MaximumSizeBytes: 0,
 			},
+			model_core.CreatedObjectCapturer[model_core.CloneableReferenceMetadata](nil),
 		)
 		require.EqualError(t, err, "repo: function can only be invoked once")
 	})
@@ -70,7 +74,7 @@ func TestParseModuleDotBazel(t *testing.T) {
 		// default_applicable_licenses is an alias of
 		// default_package_metadata. It's not possible to
 		// provide both arguments at once.
-		_, err := model_starlark.ParseRepoDotBazel(
+		_, err := model_starlark.ParseRepoDotBazel[object.LocalReference](
 			`repo(
 				default_applicable_licenses = ["//:license"],
 				default_package_metadata = ["//:metadata"],
@@ -81,6 +85,7 @@ func TestParseModuleDotBazel(t *testing.T) {
 				Encoder:          NewMockBinaryEncoder(ctrl),
 				MaximumSizeBytes: 0,
 			},
+			model_core.CreatedObjectCapturer[model_core.CloneableReferenceMetadata](nil),
 		)
 		require.EqualError(t, err, "repo: default_applicable_licenses and default_package_metadata are mutually exclusive")
 	})
@@ -88,7 +93,10 @@ func TestParseModuleDotBazel(t *testing.T) {
 	t.Run("AllArguments", func(t *testing.T) {
 		// Example invocation where all supported arguments are
 		// provided.
-		defaultAttrs, err := model_starlark.ParseRepoDotBazel(
+		objectCapturer := NewMockCreatedObjectCapturerForTesting(ctrl)
+		objectCapturer.EXPECT().CaptureCreatedObject(gomock.Any()).AnyTimes()
+
+		defaultAttrs, err := model_starlark.ParseRepoDotBazel[object.LocalReference](
 			`repo(
 				default_deprecation = "All code in this repository is deprecated.",
 				default_package_metadata = ["//:metadata"],
@@ -103,6 +111,7 @@ func TestParseModuleDotBazel(t *testing.T) {
 				Encoder:          NewMockBinaryEncoder(ctrl),
 				MaximumSizeBytes: 0,
 			},
+			objectCapturer,
 		)
 		require.NoError(t, err)
 		testutil.RequireEqualProto(t, &model_starlark_pb.InheritableAttrs{

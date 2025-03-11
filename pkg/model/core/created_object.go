@@ -20,13 +20,10 @@ type CreatedObject[TMetadata any] struct {
 // ReferenceMessagePatcher in memory.
 type CreatedObjectTree CreatedObject[CreatedObjectTree]
 
-var _ ReferenceMetadata = CreatedObjectTree{}
+var _ CloneableReferenceMetadata = CreatedObjectTree{}
 
-func (CreatedObjectTree) Discard() {
-	// Provided to satisfy ReferenceMetadata. We intentionally make
-	// this a no-op, as it is explicitly permitted to reuse
-	// instances of CreatedObjectTree.
-}
+func (CreatedObjectTree) Discard()     {}
+func (CreatedObjectTree) IsCloneable() {}
 
 // CreatedObjectCapturer can be used as a factory type for reference
 // metadata. Given the contents of an object and the metadata of all of

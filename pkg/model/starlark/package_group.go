@@ -205,3 +205,5 @@ func NewPackageGroupFromVisibility[TMetadata model_core.ReferenceMetadata](visib
 		treeProto.Patcher,
 	), nil
 }
+
+type CreatedObjectCapturerForTesting = model_core.CreatedObjectCapturer[model_core.CreatedObjectTree]

@@ -337,3 +337,5 @@ func FullyComputeValue[TReference object.BasicReference](ctx context.Context, c 
 	}
 	return requestedValueState.value, nil
 }
+
+type ValueChildrenStorerForTesting ValueChildrenStorer[object.LocalReference]
