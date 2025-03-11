@@ -15,6 +15,7 @@ import (
 	"google.golang.org/grpc/status"
 )
 
+// Contents of an object read from storage, or to be written to storage.
 type Contents struct {
 	referenceFormat ReferenceFormat
 	data            []byte
