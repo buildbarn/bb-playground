@@ -107,6 +107,10 @@ go_deps_dev.module_override(
     path = "github.com/hanwen/go-fuse/v2",
 )
 go_deps_dev.module_override(
+    patches = ["//:patches/org_golang_x_lint/generic.diff"],
+    path = "golang.org/x/lint",
+)
+go_deps_dev.module_override(
     patches = ["@com_github_buildbarn_bb_storage//:patches/org_golang_x_sys/o-search.diff"],
     path = "golang.org/x/sys",
 )
