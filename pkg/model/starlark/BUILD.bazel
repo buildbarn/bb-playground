@@ -69,6 +69,7 @@ go_test(
     embed = [":starlark"],
     deps = [
         "//pkg/label",
+        "//pkg/model/core",
         "//pkg/model/core/inlinedtree",
         "//pkg/proto/model/starlark",
         "//pkg/proto/storage/object",
