@@ -102,10 +102,10 @@ func (ReferenceFormat) NewLocalReference(rawReference []byte) (r LocalReference,
 		return LocalReference{}, status.Errorf(
 			codes.InvalidArgument,
 			"Maximum total parents size is %d bytes, which at height %d lies outside the permitted range of [%d, %d] bytes",
-			float16.Float16ToUint64(parentsSizeBytes),
+			float16.ToUint64(parentsSizeBytes),
 			height,
-			float16.Float16ToUint64(bounds.minimum),
-			float16.Float16ToUint64(bounds.maximum),
+			float16.ToUint64(bounds.minimum),
+			float16.ToUint64(bounds.maximum),
 		)
 	}
 

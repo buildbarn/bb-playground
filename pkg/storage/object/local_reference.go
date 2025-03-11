@@ -28,11 +28,11 @@ func init() {
 	var bounds maximumTotalParentsSizeBytesBoundsEntry
 	for i := 2; i <= math.MaxUint8; i++ {
 		var ok bool
-		bounds.minimum, ok = float16.Uint64ToFloat16RoundUp(float16.Float16ToUint64(bounds.minimum) + referenceSizeBytes)
+		bounds.minimum, ok = float16.FromUint64RoundUp(float16.ToUint64(bounds.minimum) + referenceSizeBytes)
 		if !ok {
 			panic("float16 is too small to express all possible maximum total parents sizes")
 		}
-		bounds.maximum, ok = float16.Uint64ToFloat16RoundUp(float16.Float16ToUint64(bounds.maximum) + maximumObjectSizeBytes)
+		bounds.maximum, ok = float16.FromUint64RoundUp(float16.ToUint64(bounds.maximum) + maximumObjectSizeBytes)
 		if !ok {
 			panic("float16 is too small to express all possible maximum total parents sizes")
 		}
@@ -61,7 +61,7 @@ func MustNewSHA256V1LocalReference(hash string, sizeBytes uint32, height uint8, 
 	binary.LittleEndian.PutUint32(rawReference[32:], sizeBytes)
 	rawReference[35] = byte(height)
 	binary.LittleEndian.PutUint16(rawReference[36:], degree)
-	f16, ok := float16.Uint64ToFloat16RoundUp(maximumTotalParentsSizeBytes)
+	f16, ok := float16.FromUint64RoundUp(maximumTotalParentsSizeBytes)
 	if !ok {
 		panic("maximumTotalParentsSizeBytes is too large")
 	}
@@ -139,7 +139,7 @@ func (r LocalReference) getRawMaximumTotalParentsSizeBytes() uint16 {
 // and lease renewing code to traverse graphs in parallel, in such a way
 // that memory usage is bounded.
 func (r LocalReference) GetMaximumTotalParentsSizeBytes(includeSelf bool) int {
-	sizeBytes := int(float16.Float16ToUint64(r.getRawMaximumTotalParentsSizeBytes()))
+	sizeBytes := int(float16.ToUint64(r.getRawMaximumTotalParentsSizeBytes()))
 	if includeSelf && r.GetHeight() > 0 {
 		sizeBytes += r.GetSizeBytes()
 	}

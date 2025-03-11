@@ -145,7 +145,7 @@ func (c *Contents) validateOutgoingReferences() error {
 		return status.Errorf(codes.InvalidArgument, "Object has height %d, while %d was expected", rcs.height, expectedHeight)
 	}
 
-	actualMaximumTotalParentsSizeBytes, ok := float16.Uint64ToFloat16RoundUp(uint64(rcs.maximumTotalParentsSizeBytes))
+	actualMaximumTotalParentsSizeBytes, ok := float16.FromUint64RoundUp(uint64(rcs.maximumTotalParentsSizeBytes))
 	if !ok {
 		panic("maximum total parents size should be computable without overflow")
 	}
@@ -153,8 +153,8 @@ func (c *Contents) validateOutgoingReferences() error {
 		return status.Errorf(
 			codes.InvalidArgument,
 			"Object has a maximum total parents size of %d bytes, while %d bytes were expected",
-			float16.Float16ToUint64(actualMaximumTotalParentsSizeBytes),
-			float16.Float16ToUint64(expectedMaximumTotalParentsSizeBytes),
+			float16.ToUint64(actualMaximumTotalParentsSizeBytes),
+			float16.ToUint64(expectedMaximumTotalParentsSizeBytes),
 		)
 	}
 	return nil
@@ -211,7 +211,7 @@ func (rcs *referenceStatsComputer) addChildReference(outgoingReference LocalRefe
 func (rcs *referenceStatsComputer) getStats() (stats [5]byte) {
 	stats[0] = byte(rcs.height)
 	binary.LittleEndian.PutUint16(stats[1:], uint16(rcs.degree))
-	f16, ok := float16.Uint64ToFloat16RoundUp(uint64(rcs.maximumTotalParentsSizeBytes))
+	f16, ok := float16.FromUint64RoundUp(uint64(rcs.maximumTotalParentsSizeBytes))
 	if !ok {
 		panic("maximumTotalParentsSizeBytes is too large")
 	}
