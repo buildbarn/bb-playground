@@ -16,6 +16,8 @@ type PatchedMessage[TMessage any, TMetadata ReferenceMetadata] struct {
 	Patcher *ReferenceMessagePatcher[TMetadata]
 }
 
+// NewPatchedMessage creates a PatchedMessage, given an existing Protobuf
+// message and reference message patcher.
 func NewPatchedMessage[TMessage any, TMetadata ReferenceMetadata](
 	message TMessage,
 	patcher *ReferenceMessagePatcher[TMetadata],
@@ -26,6 +28,10 @@ func NewPatchedMessage[TMessage any, TMetadata ReferenceMetadata](
 	}
 }
 
+// NewPatchedMessageFromExisting creates a PatchedMessage, given an
+// existing Protobuf message that may contain one or more references to
+// other objects. For each reference that is found, a callback is
+// invoked to create metadata to associate with the reference.
 func NewPatchedMessageFromExisting[
 	TMessage any,
 	TMetadata ReferenceMetadata,
@@ -68,14 +74,22 @@ func NewSimplePatchedMessage[TMetadata ReferenceMetadata, TMessage any](v TMessa
 	}
 }
 
+// IsSet returns true if the PatchedMessage is assigned to a message
+// and its associated reference message patcher.
 func (m PatchedMessage[T, TMetadata]) IsSet() bool {
 	return m.Patcher != nil
 }
 
+// Clear the instance of PatchedMessage, disassociating it from its
+// message and reference message patcher. The reference message patcher
+// is not discarded, meaning that any resources owned by reference
+// metadata is not released.
 func (m *PatchedMessage[T, TMetadata]) Clear() {
 	*m = PatchedMessage[T, TMetadata]{}
 }
 
+// Discard the reference message patcher, releasing any resources owned
+// by reference metadata.
 func (m *PatchedMessage[T, TMetadata]) Discard() {
 	if m.Patcher != nil {
 		m.Patcher.Discard()

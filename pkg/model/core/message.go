@@ -7,6 +7,8 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
+// Message is a piece of data, typically a Protobuf message, that has
+// zero or more outgoing references associated with it.
 type Message[TMessage any, TReference any] struct {
 	Message            TMessage
 	OutgoingReferences object.OutgoingReferences[TReference]
@@ -41,14 +43,19 @@ func NewNestedMessage[TMessage1, TMessage2, TReference any](parent Message[TMess
 	}
 }
 
+// IsSet returns true if the instance of Message is initialized.
 func (m Message[TMessage, TReference]) IsSet() bool {
 	return m.OutgoingReferences != nil
 }
 
+// Clear the Message, releasing the data and outgoing references that
+// are associated with it.
 func (m *Message[TMessage, TReference]) Clear() {
 	*m = Message[TMessage, TReference]{}
 }
 
+// FlattenReference returns the actual reference that is associated with
+// a given Reference Protobuf message.
 func FlattenReference[TReference any](m Message[*model_core_pb.Reference, TReference]) (TReference, error) {
 	index, err := GetIndexFromReferenceMessage(m.Message, m.OutgoingReferences.GetDegree())
 	if err != nil {

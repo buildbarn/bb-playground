@@ -55,4 +55,6 @@ func NewObjectCreatingNodeMerger[TNode proto.Message, TMetadata model_core.Refer
 	}
 }
 
+// ParentNodeComputerForTesting is an instantiation of
+// ParentNodeComputer for generating mocks to be used by tests.
 type ParentNodeComputerForTesting ParentNodeComputer[*model_filesystem_pb.FileContents, model_core.ReferenceMetadata]

@@ -22,6 +22,10 @@ type Chunker[TNode proto.Message, TMetadata model_core.ReferenceMetadata] interf
 }
 
 type (
+	// ChunkerFactoryForTesting is an instantiation of
+	// ChunkerFactory for generating mocks to be used by tests.
 	ChunkerFactoryForTesting ChunkerFactory[*model_filesystem_pb.FileContents, model_core.ReferenceMetadata]
-	ChunkerForTesting        Chunker[*model_filesystem_pb.FileContents, model_core.ReferenceMetadata]
+	// ChunkerForTesting is an instantiation of Chunker for
+	// generating mocks to be used by tests.
+	ChunkerForTesting Chunker[*model_filesystem_pb.FileContents, model_core.ReferenceMetadata]
 )

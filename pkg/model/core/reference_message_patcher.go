@@ -12,14 +12,36 @@ import (
 	"google.golang.org/protobuf/reflect/protoreflect"
 )
 
+// ReferenceMetadata is freeform metadata that can be associated with
+// any reference managed by a ReferenceMessagePatcher.
+//
+// Simple implementations of ReferenceMessagePatcher may capture the
+// contents of the object referenced, causing the full Merkle tree to
+// reside in memory. Alternatively, implementations may also store
+// information on how the data that is referenced was obtained, so that
+// it may be recomputed if needed.
+//
+// As ReferenceMatadata may contain things like file descriptors, a
+// Discard() method is provided to release such resources in case
+// ReferenceMessagePatcher encounters duplicate references.
 type ReferenceMetadata interface {
 	Discard()
 }
 
+// NoopReferenceMetadata is a trivial implementation of
+// ReferenceMetadata that does not capture anything. This can be used if
+// the goal is to simply compute the root node of the Merkle tree,
+// discarding any children that were created in the process.
 type NoopReferenceMetadata struct{}
 
+// Discard all resources owned by this instance of
+// NoopReferenceMetadata. This method is merely provided to satisfy the
+// ReferenceMetadata interface.
 func (NoopReferenceMetadata) Discard() {}
 
+// ReferenceMetadataCreator is invoked by NewPatchedMessageFromExisting
+// for every reference that is encountered, allowing metadata for the
+// outgoing reference to be created.
 type ReferenceMetadataCreator[T any] func(index int) T
 
 type referenceMessages[TMetadata ReferenceMetadata] struct {
@@ -147,6 +169,8 @@ func (p *ReferenceMessagePatcher[TMetadata]) empty() {
 	p.height = 0
 }
 
+// Discard all resources owned by all metadata managed by this reference
+// message patcher.
 func (p *ReferenceMessagePatcher[TMetadata]) Discard() {
 	for _, messages := range p.messagesByReference {
 		messages.metadata.Discard()
@@ -229,4 +253,6 @@ func MapReferenceMessagePatcherMetadata[TOld, TNew ReferenceMetadata](pOld *Refe
 	return pNew
 }
 
+// ReferenceMetadataCreatorForTesting is an instantiation of
+// ReferenceMetadataCreator for generating mocks to be used by tests.
 type ReferenceMetadataCreatorForTesting ReferenceMetadataCreator[ReferenceMetadata]

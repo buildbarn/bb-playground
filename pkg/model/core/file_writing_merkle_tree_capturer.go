@@ -93,6 +93,8 @@ type FileBackedObjectLocation struct {
 
 var _ ReferenceMetadata = FileBackedObjectLocation{}
 
+// Discard any resources associated with the FileBackedObjectLocation.
+// This is merely provided to satisfy the ReferenceMetadata interface.
 func (FileBackedObjectLocation) Discard() {}
 
 // ExistingFileBackedObjectLocation is similar to

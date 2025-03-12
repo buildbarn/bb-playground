@@ -17,6 +17,11 @@ type CloneableReferenceMetadata interface {
 	IsCloneable()
 }
 
+// CloneableReference is a basic implementation of object.BasicReference
+// that holds on to any metadata that was extracted out of the
+// ReferenceMessagePatcher by PatchedMessageToCloneable(). The metadata
+// is later reinserted into one or more ReferenceMessagePatchers by
+// calling NewPatchedMessageFromCloneable().
 type CloneableReference[TMetadata any] struct {
 	object.LocalReference
 	Metadata TMetadata

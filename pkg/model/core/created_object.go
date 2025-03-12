@@ -22,7 +22,11 @@ type CreatedObjectTree CreatedObject[CreatedObjectTree]
 
 var _ CloneableReferenceMetadata = CreatedObjectTree{}
 
-func (CreatedObjectTree) Discard()     {}
+// Discard any resources owned by the CreatedObjectTree.
+func (CreatedObjectTree) Discard() {}
+
+// IsCloneable indicates that instances of CreatedObjectTree may safely
+// be placed in multiple ReferenceMessagePatchers.
 func (CreatedObjectTree) IsCloneable() {}
 
 // CreatedObjectCapturer can be used as a factory type for reference
