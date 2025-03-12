@@ -1550,18 +1550,20 @@ func (mrc *moduleOrRepositoryContext[TReference, TMetadata]) doExecute(thread *s
 
 	// Execute the command.
 	keyPatcher := inputRootReference.Patcher
-	actionResult := mrc.environment.GetActionResultValue(PatchedActionResultKey{
-		Message: &model_analysis_pb.ActionResult_Key{
-			PlatformPkixPublicKey: mrc.repoPlatform.Message.ExecPkixPublicKey,
-			CommandReference: keyPatcher.AddReference(
-				createdCommand.Contents.GetReference(),
-				dag.NewSimpleObjectContentsWalker(createdCommand.Contents, createdCommand.Metadata),
-			),
-			InputRootReference: inputRootReference.Message.Reference,
-			ExecutionTimeout:   &durationpb.Duration{Seconds: timeout},
-		},
-		Patcher: keyPatcher,
-	})
+	actionResult := mrc.environment.GetActionResultValue(
+		model_core.NewPatchedMessage(
+			&model_analysis_pb.ActionResult_Key{
+				PlatformPkixPublicKey: mrc.repoPlatform.Message.ExecPkixPublicKey,
+				CommandReference: keyPatcher.AddReference(
+					createdCommand.Contents.GetReference(),
+					dag.NewSimpleObjectContentsWalker(createdCommand.Contents, createdCommand.Metadata),
+				),
+				InputRootReference: inputRootReference.Message.Reference,
+				ExecutionTimeout:   &durationpb.Duration{Seconds: timeout},
+			},
+			keyPatcher,
+		),
+	)
 	if !actionResult.IsSet() {
 		return nil, evaluation.ErrMissingDependency
 	}
@@ -1855,19 +1857,21 @@ func (mrc *moduleOrRepositoryContext[TReference, TMetadata]) doRead(thread *star
 
 	// Execute the command.
 	keyPatcher := inputRootReference.Patcher
-	actionResult := mrc.environment.GetActionResultValue(PatchedActionResultKey{
-		Message: &model_analysis_pb.ActionResult_Key{
-			PlatformPkixPublicKey: mrc.repoPlatform.Message.ExecPkixPublicKey,
-			CommandReference: keyPatcher.AddReference(
-				createdCommand.Contents.GetReference(),
-				dag.NewSimpleObjectContentsWalker(createdCommand.Contents, createdCommand.Metadata),
-			),
-			InputRootReference: inputRootReference.Message.Reference,
-			ExecutionTimeout:   &durationpb.Duration{Seconds: 300},
-			ExitCodeMustBeZero: true,
-		},
-		Patcher: keyPatcher,
-	})
+	actionResult := mrc.environment.GetActionResultValue(
+		model_core.NewPatchedMessage(
+			&model_analysis_pb.ActionResult_Key{
+				PlatformPkixPublicKey: mrc.repoPlatform.Message.ExecPkixPublicKey,
+				CommandReference: keyPatcher.AddReference(
+					createdCommand.Contents.GetReference(),
+					dag.NewSimpleObjectContentsWalker(createdCommand.Contents, createdCommand.Metadata),
+				),
+				InputRootReference: inputRootReference.Message.Reference,
+				ExecutionTimeout:   &durationpb.Duration{Seconds: 300},
+				ExitCodeMustBeZero: true,
+			},
+			keyPatcher,
+		),
+	)
 	if !actionResult.IsSet() {
 		return nil, evaluation.ErrMissingDependency
 	}
@@ -2004,21 +2008,23 @@ func (mrc *moduleOrRepositoryContext[TReference, TMetadata]) doWhich(thread *sta
 
 	// Invoke command.
 	keyPatcher := model_core.NewReferenceMessagePatcher[dag.ObjectContentsWalker]()
-	actionResult := mrc.environment.GetActionResultValue(PatchedActionResultKey{
-		Message: &model_analysis_pb.ActionResult_Key{
-			PlatformPkixPublicKey: mrc.repoPlatform.Message.ExecPkixPublicKey,
-			CommandReference: keyPatcher.AddReference(
-				createdCommand.Contents.GetReference(),
-				dag.NewSimpleObjectContentsWalker(createdCommand.Contents, createdCommand.Metadata),
-			),
-			InputRootReference: keyPatcher.AddReference(
-				createdInputRoot.Contents.GetReference(),
-				dag.NewSimpleObjectContentsWalker(createdInputRoot.Contents, createdInputRoot.Metadata),
-			),
-			ExecutionTimeout: &durationpb.Duration{Seconds: 60},
-		},
-		Patcher: keyPatcher,
-	})
+	actionResult := mrc.environment.GetActionResultValue(
+		model_core.NewPatchedMessage(
+			&model_analysis_pb.ActionResult_Key{
+				PlatformPkixPublicKey: mrc.repoPlatform.Message.ExecPkixPublicKey,
+				CommandReference: keyPatcher.AddReference(
+					createdCommand.Contents.GetReference(),
+					dag.NewSimpleObjectContentsWalker(createdCommand.Contents, createdCommand.Metadata),
+				),
+				InputRootReference: keyPatcher.AddReference(
+					createdInputRoot.Contents.GetReference(),
+					dag.NewSimpleObjectContentsWalker(createdInputRoot.Contents, createdInputRoot.Metadata),
+				),
+				ExecutionTimeout: &durationpb.Duration{Seconds: 60},
+			},
+			keyPatcher,
+		),
+	)
 	if !actionResult.IsSet() {
 		return nil, evaluation.ErrMissingDependency
 	}
@@ -2169,18 +2175,20 @@ func (mrc *moduleOrRepositoryContext[TReference, TMetadata]) Exists(p *model_sta
 
 	// Execute the command.
 	keyPatcher := inputRootReference.Patcher
-	actionResult := mrc.environment.GetActionResultValue(PatchedActionResultKey{
-		Message: &model_analysis_pb.ActionResult_Key{
-			PlatformPkixPublicKey: mrc.repoPlatform.Message.ExecPkixPublicKey,
-			CommandReference: keyPatcher.AddReference(
-				createdCommand.Contents.GetReference(),
-				dag.NewSimpleObjectContentsWalker(createdCommand.Contents, createdCommand.Metadata),
-			),
-			InputRootReference: inputRootReference.Message.Reference,
-			ExecutionTimeout:   &durationpb.Duration{Seconds: 300},
-		},
-		Patcher: keyPatcher,
-	})
+	actionResult := mrc.environment.GetActionResultValue(
+		model_core.NewPatchedMessage(
+			&model_analysis_pb.ActionResult_Key{
+				PlatformPkixPublicKey: mrc.repoPlatform.Message.ExecPkixPublicKey,
+				CommandReference: keyPatcher.AddReference(
+					createdCommand.Contents.GetReference(),
+					dag.NewSimpleObjectContentsWalker(createdCommand.Contents, createdCommand.Metadata),
+				),
+				InputRootReference: inputRootReference.Message.Reference,
+				ExecutionTimeout:   &durationpb.Duration{Seconds: 300},
+			},
+			keyPatcher,
+		),
+	)
 	if !actionResult.IsSet() {
 		return false, evaluation.ErrMissingDependency
 	}
@@ -2883,11 +2891,13 @@ func (c *baseComputer[TReference, TMetadata]) createMerkleTreeFromChangeTracking
 	if r := rootDirectory.currentReference; r.IsSet() {
 		// Directory remained completely unmodified. Simply
 		// return the original directory.
-		return model_core.NewPatchedMessageFromExisting(
+		m := model_core.NewPatchedMessageFromExistingCaptured(
+			c.objectCapturer,
 			r,
-			func(index int) dag.ObjectContentsWalker {
-				return dag.ExistingObjectContentsWalker
-			},
+		)
+		return model_core.NewPatchedMessage(
+			m.Message,
+			model_core.MapReferenceMetadataToWalkers(m.Patcher),
 		), nil
 	}
 
@@ -2969,12 +2979,12 @@ func (c *baseComputer[TReference, TMetadata]) returnRepoMerkleTree(ctx context.C
 	if err != nil {
 		return PatchedRepoValue{}, err
 	}
-	return PatchedRepoValue{
-		Message: &model_analysis_pb.Repo_Value{
+	return model_core.NewPatchedMessage(
+		&model_analysis_pb.Repo_Value{
 			RootDirectoryReference: rootDirectoryReference.Message,
 		},
-		Patcher: rootDirectoryReference.Patcher,
-	}, nil
+		rootDirectoryReference.Patcher,
+	), nil
 }
 
 func (c *baseComputer[TReference, TMetadata]) ComputeRepoValue(ctx context.Context, key *model_analysis_pb.Repo_Key, e RepoEnvironment[TReference]) (PatchedRepoValue, error) {
@@ -3006,18 +3016,16 @@ func (c *baseComputer[TReference, TMetadata]) ComputeRepoValue(ctx context.Conte
 				func(i int) int { return strings.Compare(moduleName, modules[i].Name) },
 			); ok {
 				// Found matching module.
-				rootDirectoryReference := model_core.NewPatchedMessageFromExisting(
+				rootDirectoryReference := model_core.NewPatchedMessageFromExistingCaptured(
+					c.objectCapturer,
 					model_core.NewNestedMessage(buildSpecification, modules[i].RootDirectoryReference),
-					func(index int) dag.ObjectContentsWalker {
-						return dag.ExistingObjectContentsWalker
-					},
 				)
-				return PatchedRepoValue{
-					Message: &model_analysis_pb.Repo_Value{
+				return model_core.NewPatchedMessage(
+					&model_analysis_pb.Repo_Value{
 						RootDirectoryReference: rootDirectoryReference.Message,
 					},
-					Patcher: rootDirectoryReference.Patcher,
-				}, nil
+					model_core.MapReferenceMetadataToWalkers(rootDirectoryReference.Patcher),
+				), nil
 			}
 
 			// Check to see if there is a MODULE.bazel override for this module.

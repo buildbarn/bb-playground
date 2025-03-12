@@ -93,14 +93,14 @@ ProcessURLs:
 				Exists: &model_analysis_pb.HttpFileContents_Value_Exists{},
 			}), nil
 		}
-		return PatchedHttpFileContentsValue{
-			Message: &model_analysis_pb.HttpFileContents_Value{
+		return model_core.NewPatchedMessage(
+			&model_analysis_pb.HttpFileContents_Value{
 				Exists: &model_analysis_pb.HttpFileContents_Value_Exists{
 					Contents: fileMerkleTree.Message,
 				},
 			},
-			Patcher: fileMerkleTree.Patcher,
-		}, nil
+			fileMerkleTree.Patcher,
+		), nil
 	}
 
 	// File not found.

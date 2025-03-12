@@ -58,20 +58,18 @@ func (c *baseComputer[TReference, TMetadata]) ComputeResolvedToolchainsValue(ctx
 	}
 	compatibleToolchainsByType := make([][]*model_analysis_pb.RegisteredToolchain, 0, len(key.Message.Toolchains))
 	for _, toolchain := range key.Message.Toolchains {
-		configurationReference := model_core.NewPatchedMessageFromExisting(
+		configurationReference := model_core.NewPatchedMessageFromExistingCaptured(
+			c.objectCapturer,
 			model_core.NewNestedMessage(key, key.Message.ConfigurationReference),
-			func(index int) dag.ObjectContentsWalker {
-				return dag.ExistingObjectContentsWalker
-			},
 		)
 		compatibleToolchainsForTypeValue := e.GetCompatibleToolchainsForTypeValue(
-			model_core.PatchedMessage[*model_analysis_pb.CompatibleToolchainsForType_Key, dag.ObjectContentsWalker]{
-				Message: &model_analysis_pb.CompatibleToolchainsForType_Key{
+			model_core.NewPatchedMessage(
+				&model_analysis_pb.CompatibleToolchainsForType_Key{
 					ToolchainType:          toolchain.ToolchainType,
 					ConfigurationReference: configurationReference.Message,
 				},
-				Patcher: configurationReference.Patcher,
-			},
+				model_core.MapReferenceMetadataToWalkers(configurationReference.Patcher),
+			),
 		)
 		if !compatibleToolchainsForTypeValue.IsSet() {
 			missingDependencies = true

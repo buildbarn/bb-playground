@@ -15,7 +15,6 @@ import (
 	model_analysis_pb "github.com/buildbarn/bonanza/pkg/proto/model/analysis"
 	model_core_pb "github.com/buildbarn/bonanza/pkg/proto/model/core"
 	model_filesystem_pb "github.com/buildbarn/bonanza/pkg/proto/model/filesystem"
-	"github.com/buildbarn/bonanza/pkg/storage/dag"
 	"github.com/buildbarn/bonanza/pkg/storage/object"
 )
 
@@ -219,16 +218,14 @@ func (c *baseComputer[TReference, TMetadata]) ComputeFilePropertiesValue(ctx con
 		return PatchedFilePropertiesValue{}, errors.New("path resolves to a directory")
 	}
 
-	patchedFileProperties := model_core.NewPatchedMessageFromExisting(
+	patchedFileProperties := model_core.NewPatchedMessageFromExistingCaptured(
+		c.objectCapturer,
 		resolver.fileProperties,
-		func(index int) dag.ObjectContentsWalker {
-			return dag.ExistingObjectContentsWalker
-		},
 	)
-	return PatchedFilePropertiesValue{
-		Message: &model_analysis_pb.FileProperties_Value{
+	return model_core.NewPatchedMessage(
+		&model_analysis_pb.FileProperties_Value{
 			Exists: patchedFileProperties.Message,
 		},
-		Patcher: patchedFileProperties.Patcher,
-	}, nil
+		model_core.MapReferenceMetadataToWalkers(patchedFileProperties.Patcher),
+	), nil
 }

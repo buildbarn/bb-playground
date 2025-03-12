@@ -33,7 +33,7 @@ func (fd functionDefinition) getKeyType(functionName string, isPatched bool) str
 
 func (fd functionDefinition) keyToPatchedMessage() string {
 	if fd.KeyContainsReferences {
-		return "model_core.PatchedMessage[proto.Message, dag.ObjectContentsWalker]{Message: key.Message, Patcher: key.Patcher}"
+		return "model_core.NewPatchedMessage[proto.Message](key.Message, key.Patcher)"
 	} else {
 		return "model_core.NewSimplePatchedMessage[dag.ObjectContentsWalker, proto.Message](key)"
 	}
@@ -203,10 +203,7 @@ func main() {
 		if functionDefinition.NativeValueType == nil {
 			fmt.Printf("\tcase *pb.%s_Key:\n", functionName)
 			fmt.Printf("\t\tm, err := c.base.Compute%sValue(ctx, %s, &typedE)\n", functionName, functionDefinition.typedKeyToArgument(functionName))
-			fmt.Printf("\t\treturn model_core.PatchedMessage[proto.Message, dag.ObjectContentsWalker]{\n")
-			fmt.Printf("\t\t\tMessage: m.Message,\n")
-			fmt.Printf("\t\t\tPatcher: m.Patcher,\n")
-			fmt.Printf("\t\t}, err\n")
+			fmt.Printf("\t\treturn model_core.NewPatchedMessage[proto.Message](m.Message, m.Patcher), err\n")
 		}
 	}
 	fmt.Printf("\tdefault:\n")

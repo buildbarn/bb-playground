@@ -14,7 +14,6 @@ import (
 	model_analysis_pb "github.com/buildbarn/bonanza/pkg/proto/model/analysis"
 	model_filesystem_pb "github.com/buildbarn/bonanza/pkg/proto/model/filesystem"
 	pg_starlark "github.com/buildbarn/bonanza/pkg/starlark"
-	"github.com/buildbarn/bonanza/pkg/storage/dag"
 	"github.com/buildbarn/bonanza/pkg/storage/object"
 )
 
@@ -225,18 +224,16 @@ func (c *baseComputer[TReference, TMetadata]) ComputeModuleDotBazelContentsValue
 		if !filePropertiesValue.IsSet() {
 			return PatchedModuleDotBazelContentsValue{}, evaluation.ErrMissingDependency
 		}
-		fileContents := model_core.NewPatchedMessageFromExisting(
+		fileContents := model_core.NewPatchedMessageFromExistingCaptured(
+			c.objectCapturer,
 			model_core.NewNestedMessage(filePropertiesValue, filePropertiesValue.Message.Exists.Contents),
-			func(index int) dag.ObjectContentsWalker {
-				return dag.ExistingObjectContentsWalker
-			},
 		)
-		return PatchedModuleDotBazelContentsValue{
-			Message: &model_analysis_pb.ModuleDotBazelContents_Value{
+		return model_core.NewPatchedMessage(
+			&model_analysis_pb.ModuleDotBazelContents_Value{
 				Contents: fileContents.Message,
 			},
-			Patcher: fileContents.Patcher,
-		}, nil
+			model_core.MapReferenceMetadataToWalkers(fileContents.Patcher),
+		), nil
 	}
 
 	// See if the module instance is one of the resolved modules
@@ -286,18 +283,16 @@ func (c *baseComputer[TReference, TMetadata]) ComputeModuleDotBazelContentsValue
 			if fileContentsValue.Message.Exists == nil {
 				return PatchedModuleDotBazelContentsValue{}, fmt.Errorf("file at URL %#v does not exist", moduleFileURL)
 			}
-			fileContents := model_core.NewPatchedMessageFromExisting(
+			fileContents := model_core.NewPatchedMessageFromExistingCaptured(
+				c.objectCapturer,
 				model_core.NewNestedMessage(fileContentsValue, fileContentsValue.Message.Exists.Contents),
-				func(index int) dag.ObjectContentsWalker {
-					return dag.ExistingObjectContentsWalker
-				},
 			)
-			return PatchedModuleDotBazelContentsValue{
-				Message: &model_analysis_pb.ModuleDotBazelContents_Value{
+			return model_core.NewPatchedMessage(
+				&model_analysis_pb.ModuleDotBazelContents_Value{
 					Contents: fileContents.Message,
 				},
-				Patcher: fileContents.Patcher,
-			}, nil
+				model_core.MapReferenceMetadataToWalkers(fileContents.Patcher),
+			), nil
 		}
 	}
 

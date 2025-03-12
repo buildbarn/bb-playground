@@ -425,8 +425,8 @@ func (c *baseComputer[TReference, TMetadata]) ComputeHttpArchiveContentsValue(ct
 
 	patcher := model_core.NewReferenceMessagePatcher[dag.ObjectContentsWalker]()
 	rootReference := createdRootDirectoryObject.Contents.GetReference()
-	return PatchedHttpArchiveContentsValue{
-		Message: &model_analysis_pb.HttpArchiveContents_Value{
+	return model_core.NewPatchedMessage(
+		&model_analysis_pb.HttpArchiveContents_Value{
 			Exists: createdRootDirectory.ToDirectoryReference(
 				patcher.AddReference(
 					rootReference,
@@ -434,6 +434,6 @@ func (c *baseComputer[TReference, TMetadata]) ComputeHttpArchiveContentsValue(ct
 				),
 			),
 		},
-		Patcher: patcher,
-	}, nil
+		patcher,
+	), nil
 }

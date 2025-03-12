@@ -121,9 +121,9 @@ func CreateChunkDiscardingFileMerkleTree(ctx context.Context, parameters *FileCr
 		return model_core.PatchedMessage[*model_filesystem_pb.FileContents, dag.ObjectContentsWalker]{}, err
 	}
 
-	return model_core.PatchedMessage[*model_filesystem_pb.FileContents, dag.ObjectContentsWalker]{
-		Message: fileContents.Message,
-		Patcher: model_core.MapReferenceMessagePatcherMetadata(
+	return model_core.NewPatchedMessage(
+		fileContents.Message,
+		model_core.MapReferenceMessagePatcherMetadata(
 			fileContents.Patcher,
 			func(reference object.LocalReference, metadata model_core.CreatedObjectTree) dag.ObjectContentsWalker {
 				return NewCapturedFileWalker(
@@ -135,5 +135,5 @@ func CreateChunkDiscardingFileMerkleTree(ctx context.Context, parameters *FileCr
 				)
 			},
 		),
-	}, nil
+	), nil
 }

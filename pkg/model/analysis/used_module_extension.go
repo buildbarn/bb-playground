@@ -10,7 +10,6 @@ import (
 	"github.com/buildbarn/bonanza/pkg/label"
 	model_core "github.com/buildbarn/bonanza/pkg/model/core"
 	model_analysis_pb "github.com/buildbarn/bonanza/pkg/proto/model/analysis"
-	"github.com/buildbarn/bonanza/pkg/storage/dag"
 )
 
 func (c *baseComputer[TReference, TMetadata]) ComputeUsedModuleExtensionValue(ctx context.Context, key *model_analysis_pb.UsedModuleExtension_Key, e UsedModuleExtensionEnvironment[TReference]) (PatchedUsedModuleExtensionValue, error) {
@@ -32,18 +31,16 @@ func (c *baseComputer[TReference, TMetadata]) ComputeUsedModuleExtensionValue(ct
 			return PatchedUsedModuleExtensionValue{}, fmt.Errorf("invalid module extensions Starlark identifier %#v: %w", extension.Identifier, err)
 		}
 		if identifier.ToModuleExtension().String() == key.ModuleExtension {
-			patchedExtension := model_core.NewPatchedMessageFromExisting(
+			patchedExtension := model_core.NewPatchedMessageFromExistingCaptured(
+				c.objectCapturer,
 				model_core.NewNestedMessage(usedModuleExtensions, extension),
-				func(index int) dag.ObjectContentsWalker {
-					return dag.ExistingObjectContentsWalker
-				},
 			)
-			return PatchedUsedModuleExtensionValue{
-				Message: &model_analysis_pb.UsedModuleExtension_Value{
+			return model_core.NewPatchedMessage(
+				&model_analysis_pb.UsedModuleExtension_Value{
 					ModuleExtension: patchedExtension.Message,
 				},
-				Patcher: patchedExtension.Patcher,
-			}, nil
+				model_core.MapReferenceMetadataToWalkers(patchedExtension.Patcher),
+			), nil
 		}
 	}
 	return PatchedUsedModuleExtensionValue{}, errors.New("module extension not found")

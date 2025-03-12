@@ -13,7 +13,6 @@ import (
 	model_analysis_pb "github.com/buildbarn/bonanza/pkg/proto/model/analysis"
 	model_core_pb "github.com/buildbarn/bonanza/pkg/proto/model/core"
 	model_starlark_pb "github.com/buildbarn/bonanza/pkg/proto/model/starlark"
-	"github.com/buildbarn/bonanza/pkg/storage/dag"
 )
 
 func (c *baseComputer[TReference, TMetadata]) lookupTargetDefinitionInTargetList(ctx context.Context, targetList model_core.Message[[]*model_analysis_pb.Package_Value_Target, TReference], targetName label.TargetName) (model_core.Message[*model_starlark_pb.Target_Definition, TReference], error) {
@@ -75,16 +74,14 @@ func (c *baseComputer[TReference, TMetadata]) ComputeTargetValue(ctx context.Con
 		return PatchedTargetValue{}, errors.New("target does not exist")
 	}
 
-	patchedDefinition := model_core.NewPatchedMessageFromExisting(
+	patchedDefinition := model_core.NewPatchedMessageFromExistingCaptured(
+		c.objectCapturer,
 		definition,
-		func(index int) dag.ObjectContentsWalker {
-			return dag.ExistingObjectContentsWalker
-		},
 	)
 	return model_core.NewPatchedMessage(
 		&model_analysis_pb.Target_Value{
 			Definition: patchedDefinition.Message,
 		},
-		patchedDefinition.Patcher,
+		model_core.MapReferenceMetadataToWalkers(patchedDefinition.Patcher),
 	), nil
 }

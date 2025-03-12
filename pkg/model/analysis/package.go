@@ -209,12 +209,12 @@ func (c *baseComputer[TReference, TMetadata]) ComputePackageValue(ctx context.Co
 			return PatchedPackageValue{}, err
 		}
 
-		return PatchedPackageValue{
-			Message: &model_analysis_pb.Package_Value{
+		return model_core.NewPatchedMessage(
+			&model_analysis_pb.Package_Value{
 				Targets: targetsList.Message,
 			},
-			Patcher: model_core.MapReferenceMetadataToWalkers(targetsList.Patcher),
-		}, nil
+			model_core.MapReferenceMetadataToWalkers(targetsList.Patcher),
+		), nil
 	}
 
 	return PatchedPackageValue{}, errors.New("BUILD.bazel does not exist")

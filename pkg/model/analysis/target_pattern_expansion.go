@@ -13,7 +13,6 @@ import (
 	model_analysis_pb "github.com/buildbarn/bonanza/pkg/proto/model/analysis"
 	model_core_pb "github.com/buildbarn/bonanza/pkg/proto/model/core"
 	model_starlark_pb "github.com/buildbarn/bonanza/pkg/proto/model/starlark"
-	"github.com/buildbarn/bonanza/pkg/storage/dag"
 )
 
 type expandCanonicalTargetPatternEnvironment[TReference any] interface {
@@ -82,15 +81,16 @@ func (c *baseComputer[TReference, TMetadata]) ComputeTargetPatternExpansionValue
 		btree.NewObjectCreatingNodeMerger(
 			c.getValueObjectEncoder(),
 			c.getReferenceFormat(),
-			/* parentNodeComputer = */ func(createdObject model_core.CreatedObject[dag.ObjectContentsWalker], childNodes []*model_analysis_pb.TargetPatternExpansion_Value_TargetLabel) (model_core.PatchedMessage[*model_analysis_pb.TargetPatternExpansion_Value_TargetLabel, dag.ObjectContentsWalker], error) {
-				patcher := model_core.NewReferenceMessagePatcher[dag.ObjectContentsWalker]()
+			/* parentNodeComputer = */ func(createdObject model_core.CreatedObject[TMetadata], childNodes []*model_analysis_pb.TargetPatternExpansion_Value_TargetLabel) (model_core.PatchedMessage[*model_analysis_pb.TargetPatternExpansion_Value_TargetLabel, TMetadata], error) {
+				patcher := model_core.NewReferenceMessagePatcher[TMetadata]()
 				return model_core.NewPatchedMessage(
 					&model_analysis_pb.TargetPatternExpansion_Value_TargetLabel{
 						Level: &model_analysis_pb.TargetPatternExpansion_Value_TargetLabel_Parent_{
 							Parent: &model_analysis_pb.TargetPatternExpansion_Value_TargetLabel_Parent{
 								Reference: patcher.AddReference(
 									createdObject.Contents.GetReference(),
-									dag.NewSimpleObjectContentsWalker(createdObject.Contents, createdObject.Metadata)),
+									c.objectCapturer.CaptureCreatedObject(createdObject),
+								),
 							},
 						},
 					},
@@ -128,7 +128,7 @@ func (c *baseComputer[TReference, TMetadata]) ComputeTargetPatternExpansionValue
 			// named "all", "all-targets" or "*". Prefer
 			// matching just that target, as opposed to
 			// performing actual wildcard expansion.
-			if err := treeBuilder.PushChild(model_core.NewSimplePatchedMessage[dag.ObjectContentsWalker](
+			if err := treeBuilder.PushChild(model_core.NewSimplePatchedMessage[TMetadata](
 				&model_analysis_pb.TargetPatternExpansion_Value_TargetLabel{
 					Level: &model_analysis_pb.TargetPatternExpansion_Value_TargetLabel_Leaf{
 						Leaf: initialTarget.String(),
@@ -182,11 +182,9 @@ func (c *baseComputer[TReference, TMetadata]) ComputeTargetPatternExpansionValue
 
 			for _, targetLabel := range childTargetPatternExpansion.Message.TargetLabels {
 				if err := treeBuilder.PushChild(
-					model_core.NewPatchedMessageFromExisting(
+					model_core.NewPatchedMessageFromExistingCaptured(
+						c.objectCapturer,
 						model_core.NewNestedMessage(childTargetPatternExpansion, targetLabel),
-						func(index int) dag.ObjectContentsWalker {
-							return dag.ExistingObjectContentsWalker
-						},
 					),
 				); err != nil {
 					return PatchedTargetPatternExpansionValue{}, err
@@ -206,12 +204,12 @@ func (c *baseComputer[TReference, TMetadata]) ComputeTargetPatternExpansionValue
 		return PatchedTargetPatternExpansionValue{}, err
 	}
 
-	return PatchedTargetPatternExpansionValue{
-		Message: &model_analysis_pb.TargetPatternExpansion_Value{
+	return model_core.NewPatchedMessage(
+		&model_analysis_pb.TargetPatternExpansion_Value{
 			TargetLabels: targetLabelsList.Message,
 		},
-		Patcher: targetLabelsList.Patcher,
-	}, nil
+		model_core.MapReferenceMetadataToWalkers(targetLabelsList.Patcher),
+	), nil
 }
 
 func (c *baseComputer[TReference, TMetadata]) addPackageToTargetPatternExpansion(
@@ -219,7 +217,7 @@ func (c *baseComputer[TReference, TMetadata]) addPackageToTargetPatternExpansion
 	canonicalPackage label.CanonicalPackage,
 	packageValue model_core.Message[*model_analysis_pb.Package_Value, TReference],
 	includeFileTargets bool,
-	treeBuilder btree.Builder[*model_analysis_pb.TargetPatternExpansion_Value_TargetLabel, dag.ObjectContentsWalker],
+	treeBuilder btree.Builder[*model_analysis_pb.TargetPatternExpansion_Value_TargetLabel, TMetadata],
 ) error {
 	var errIter error
 	for entry := range btree.AllLeaves(
@@ -260,7 +258,7 @@ func (c *baseComputer[TReference, TMetadata]) addPackageToTargetPatternExpansion
 			if err != nil {
 				return fmt.Errorf("invalid target name %#v: %w", level.Leaf.Name, err)
 			}
-			if err := treeBuilder.PushChild(model_core.NewSimplePatchedMessage[dag.ObjectContentsWalker](
+			if err := treeBuilder.PushChild(model_core.NewSimplePatchedMessage[TMetadata](
 				&model_analysis_pb.TargetPatternExpansion_Value_TargetLabel{
 					Level: &model_analysis_pb.TargetPatternExpansion_Value_TargetLabel_Leaf{
 						Leaf: canonicalPackage.AppendTargetName(targetName).String(),

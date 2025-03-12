@@ -52,12 +52,12 @@ func (c *baseComputer[TReference, TMetadata]) ComputeModulesWithRemoteOverridesV
 	}
 
 	// Set any overrides coming from a remote location.
-	return PatchedModulesWithRemoteOverridesValue{
-		Message: &model_analysis_pb.ModulesWithRemoteOverrides_Value{
+	return model_core.NewPatchedMessage(
+		&model_analysis_pb.ModulesWithRemoteOverrides_Value{
 			ModuleOverrides: overrideModules,
 		},
-		Patcher: model_core.MapReferenceMetadataToWalkers(handler.patcher),
-	}, nil
+		model_core.MapReferenceMetadataToWalkers(handler.patcher),
+	), nil
 }
 
 // overrideExtractingModuleDotBazelHandler is capable of capturing the paths

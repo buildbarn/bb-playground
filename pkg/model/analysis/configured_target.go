@@ -70,7 +70,7 @@ func (c *baseComputer[TReference, TMetadata]) constraintValuesToConstraints(ctx 
 		constrainValueInfoProvider, err := getProviderFromConfiguredTarget(
 			e,
 			visibleTarget.Message.Label,
-			model_core.NewSimplePatchedMessage[dag.ObjectContentsWalker, *model_core_pb.Reference](nil),
+			model_core.NewSimplePatchedMessage[model_core.WalkableReferenceMetadata, *model_core_pb.Reference](nil),
 			constraintValueInfoProviderIdentifier,
 		)
 		if err != nil {
@@ -380,20 +380,18 @@ func (c *baseComputer[TReference, TMetadata]) ComputeConfiguredTargetValue(ctx c
 		// edge transition is specified, apply it.
 		configurationReference := model_core.NewNestedMessage(key, key.Message.ConfigurationReference)
 		if cfgTransitionIdentifier := ruleDefinition.Message.CfgTransitionIdentifier; cfgTransitionIdentifier != "" {
-			patchedConfigurationReference := model_core.NewPatchedMessageFromExisting(
+			patchedConfigurationReference := model_core.NewPatchedMessageFromExistingCaptured(
+				c.objectCapturer,
 				configurationReference,
-				func(index int) dag.ObjectContentsWalker {
-					return dag.ExistingObjectContentsWalker
-				},
 			)
 			incomingEdgeTransitionValue := e.GetUserDefinedTransitionValue(
-				model_core.PatchedMessage[*model_analysis_pb.UserDefinedTransition_Key, dag.ObjectContentsWalker]{
-					Message: &model_analysis_pb.UserDefinedTransition_Key{
+				model_core.NewPatchedMessage(
+					&model_analysis_pb.UserDefinedTransition_Key{
 						TransitionIdentifier:        cfgTransitionIdentifier,
 						InputConfigurationReference: patchedConfigurationReference.Message,
 					},
-					Patcher: patchedConfigurationReference.Patcher,
-				},
+					model_core.MapReferenceMetadataToWalkers(patchedConfigurationReference.Patcher),
+				),
 			)
 			if !incomingEdgeTransitionValue.IsSet() {
 				return PatchedConfiguredTargetValue{}, evaluation.ErrMissingDependency
@@ -920,13 +918,13 @@ func (rc *ruleContext[TReference, TMetadata]) configureAttr(thread *starlark.Thr
 			// TODO: Should we cache this in the ruleContext?
 			configurationReference := rc.getPatchedConfigurationReference()
 			transitionValue := rc.environment.GetUserDefinedTransitionValue(
-				model_core.PatchedMessage[*model_analysis_pb.UserDefinedTransition_Key, dag.ObjectContentsWalker]{
-					Message: &model_analysis_pb.UserDefinedTransition_Key{
+				model_core.NewPatchedMessage(
+					&model_analysis_pb.UserDefinedTransition_Key{
 						TransitionIdentifier:        tr.UserDefined,
 						InputConfigurationReference: configurationReference.Message,
 					},
-					Patcher: configurationReference.Patcher,
-				},
+					model_core.MapReferenceMetadataToWalkers(configurationReference.Patcher),
+				),
 			)
 			if !transitionValue.IsSet() {
 				return nil, evaluation.ErrMissingDependency
@@ -979,21 +977,19 @@ func (rc *ruleContext[TReference, TMetadata]) configureAttr(thread *starlark.Thr
 				if err != nil {
 					return nil, err
 				}
-				patchedConfigurationReference1 := model_core.NewPatchedMessageFromExisting(
+				patchedConfigurationReference1 := model_core.NewPatchedMessageFromExistingCaptured(
+					rc.computer.objectCapturer,
 					configurationReference,
-					func(index int) dag.ObjectContentsWalker {
-						return dag.ExistingObjectContentsWalker
-					},
 				)
 				resolvedLabelValue := rc.environment.GetVisibleTargetValue(
-					model_core.PatchedMessage[*model_analysis_pb.VisibleTarget_Key, dag.ObjectContentsWalker]{
-						Message: &model_analysis_pb.VisibleTarget_Key{
+					model_core.NewPatchedMessage(
+						&model_analysis_pb.VisibleTarget_Key{
 							FromPackage:            visibilityFromPackage.String(),
 							ToLabel:                canonicalLabel.String(),
 							ConfigurationReference: patchedConfigurationReference1.Message,
 						},
-						Patcher: patchedConfigurationReference1.Patcher,
-					},
+						model_core.MapReferenceMetadataToWalkers(patchedConfigurationReference1.Patcher),
+					),
 				)
 				if !resolvedLabelValue.IsSet() {
 					missingDependencies = true
@@ -1006,20 +1002,18 @@ func (rc *ruleContext[TReference, TMetadata]) configureAttr(thread *starlark.Thr
 					}
 
 					// Obtain the providers of the target.
-					patchedConfigurationReference2 := model_core.NewPatchedMessageFromExisting(
+					patchedConfigurationReference2 := model_core.NewPatchedMessageFromExistingCaptured(
+						rc.computer.objectCapturer,
 						configurationReference,
-						func(index int) dag.ObjectContentsWalker {
-							return dag.ExistingObjectContentsWalker
-						},
 					)
 					configuredTarget := rc.environment.GetConfiguredTargetValue(
-						model_core.PatchedMessage[*model_analysis_pb.ConfiguredTarget_Key, dag.ObjectContentsWalker]{
-							Message: &model_analysis_pb.ConfiguredTarget_Key{
+						model_core.NewPatchedMessage(
+							&model_analysis_pb.ConfiguredTarget_Key{
 								Label:                  resolvedLabelStr,
 								ConfigurationReference: patchedConfigurationReference2.Message,
 							},
-							Patcher: patchedConfigurationReference2.Patcher,
-						},
+							model_core.MapReferenceMetadataToWalkers(patchedConfigurationReference2.Patcher),
+						),
 					)
 					if !configuredTarget.IsSet() {
 						missingDependencies = true
@@ -1239,14 +1233,12 @@ func (rc *ruleContext[TReference, TMetadata]) getAttrValueParts(namedAttr *model
 		nil
 }
 
-func (rc *ruleContext[TReference, TMetadata]) getPatchedConfigurationReference() model_core.PatchedMessage[*model_core_pb.Reference, dag.ObjectContentsWalker] {
+func (rc *ruleContext[TReference, TMetadata]) getPatchedConfigurationReference() model_core.PatchedMessage[*model_core_pb.Reference, TMetadata] {
 	// TODO: This function should likely not exist, as we need to
 	// take transitions into account.
-	return model_core.NewPatchedMessageFromExisting(
+	return model_core.NewPatchedMessageFromExistingCaptured(
+		rc.computer.objectCapturer,
 		rc.configurationReference,
-		func(index int) dag.ObjectContentsWalker {
-			return dag.ExistingObjectContentsWalker
-		},
 	)
 }
 
@@ -1749,7 +1741,7 @@ func (rce *ruleContextExecutable[TReference, TMetadata]) Attr(thread *starlark.T
 						ToLabel:                labelValue.Label,
 						ConfigurationReference: configurationReference.Message,
 					},
-					configurationReference.Patcher,
+					model_core.MapReferenceMetadataToWalkers(configurationReference.Patcher),
 				),
 			)
 			if !visibleTarget.IsSet() {
@@ -1876,7 +1868,7 @@ func (rcf *ruleContextFile[TReference, TMetadata]) Attr(thread *starlark.Thread,
 						ToLabel:                labelValue.Label,
 						ConfigurationReference: configurationReference.Message,
 					},
-					configurationReference.Patcher,
+					model_core.MapReferenceMetadataToWalkers(configurationReference.Patcher),
 				),
 			)
 			if !visibleTarget.IsSet() {
@@ -2030,7 +2022,7 @@ func (rcf *ruleContextFiles[TReference, TMetadata]) Attr(thread *starlark.Thread
 							ToLabel:                labelElement.Label,
 							ConfigurationReference: configurationReference.Message,
 						},
-						configurationReference.Patcher,
+						model_core.MapReferenceMetadataToWalkers(configurationReference.Patcher),
 					),
 				)
 				if !visibleTarget.IsSet() {
@@ -2316,14 +2308,14 @@ func (tc *toolchainContext[TReference, TMetadata]) Get(thread *starlark.Thread, 
 		}
 		configurationReference := rc.getPatchedConfigurationReference()
 		resolvedToolchains := rc.environment.GetResolvedToolchainsValue(
-			model_core.PatchedMessage[*model_analysis_pb.ResolvedToolchains_Key, dag.ObjectContentsWalker]{
-				Message: &model_analysis_pb.ResolvedToolchains_Key{
+			model_core.NewPatchedMessage(
+				&model_analysis_pb.ResolvedToolchains_Key{
 					ExecCompatibleWith:     execCompatibleWith,
 					ConfigurationReference: configurationReference.Message,
 					Toolchains:             execGroupDefinition.Toolchains,
 				},
-				Patcher: configurationReference.Patcher,
-			},
+				model_core.MapReferenceMetadataToWalkers(configurationReference.Patcher),
+			),
 		)
 		if !resolvedToolchains.IsSet() {
 			return nil, true, evaluation.ErrMissingDependency
@@ -2389,15 +2381,15 @@ type getProviderFromConfiguredTargetEnvironment[TReference any] interface {
 
 // getProviderFromConfiguredTarget looks up a single provider that is
 // provided by a configured target
-func getProviderFromConfiguredTarget[TReference any](e getProviderFromConfiguredTargetEnvironment[TReference], targetLabel string, configurationReference model_core.PatchedMessage[*model_core_pb.Reference, dag.ObjectContentsWalker], providerIdentifier label.CanonicalStarlarkIdentifier) (model_core.Message[*model_starlark_pb.Struct_Fields, TReference], error) {
+func getProviderFromConfiguredTarget[TReference any, TMetadata model_core.WalkableReferenceMetadata](e getProviderFromConfiguredTargetEnvironment[TReference], targetLabel string, configurationReference model_core.PatchedMessage[*model_core_pb.Reference, TMetadata], providerIdentifier label.CanonicalStarlarkIdentifier) (model_core.Message[*model_starlark_pb.Struct_Fields, TReference], error) {
 	configuredTargetValue := e.GetConfiguredTargetValue(
-		model_core.PatchedMessage[*model_analysis_pb.ConfiguredTarget_Key, dag.ObjectContentsWalker]{
-			Message: &model_analysis_pb.ConfiguredTarget_Key{
+		model_core.NewPatchedMessage(
+			&model_analysis_pb.ConfiguredTarget_Key{
 				Label:                  targetLabel,
 				ConfigurationReference: configurationReference.Message,
 			},
-			Patcher: configurationReference.Patcher,
-		},
+			model_core.MapReferenceMetadataToWalkers(configurationReference.Patcher),
+		),
 	)
 	if !configuredTargetValue.IsSet() {
 		return model_core.Message[*model_starlark_pb.Struct_Fields, TReference]{}, evaluation.ErrMissingDependency

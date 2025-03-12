@@ -367,29 +367,25 @@ func (c *baseComputer[TReference, TMetadata]) ComputeBuildResultValue(ctx contex
 
 		var iterErr error
 		for canonicalTargetLabel := range c.expandCanonicalTargetPattern(ctx, e, canonicalTargetPattern, &iterErr) {
-			visibleTargetPatcher := model_core.NewReferenceMessagePatcher[dag.ObjectContentsWalker]()
 			visibleTargetValue := e.GetVisibleTargetValue(
-				model_core.PatchedMessage[*model_analysis_pb.VisibleTarget_Key, dag.ObjectContentsWalker]{
-					Message: &model_analysis_pb.VisibleTarget_Key{
+				model_core.NewSimplePatchedMessage[dag.ObjectContentsWalker](
+					&model_analysis_pb.VisibleTarget_Key{
 						FromPackage: canonicalTargetLabel.GetCanonicalPackage().String(),
 						ToLabel:     canonicalTargetLabel.String(),
 					},
-					Patcher: visibleTargetPatcher,
-				},
+				),
 			)
 			if !visibleTargetValue.IsSet() {
 				missingDependencies = true
 				continue
 			}
 
-			targetCompletionPatcher := model_core.NewReferenceMessagePatcher[dag.ObjectContentsWalker]()
 			targetCompletionValue := e.GetTargetCompletionValue(
-				model_core.PatchedMessage[*model_analysis_pb.TargetCompletion_Key, dag.ObjectContentsWalker]{
-					Message: &model_analysis_pb.TargetCompletion_Key{
+				model_core.NewSimplePatchedMessage[dag.ObjectContentsWalker](
+					&model_analysis_pb.TargetCompletion_Key{
 						Label: visibleTargetValue.Message.Label,
 					},
-					Patcher: targetCompletionPatcher,
-				},
+				),
 			)
 			if !targetCompletionValue.IsSet() {
 				missingDependencies = true
@@ -414,18 +410,16 @@ func (c *baseComputer[TReference, TMetadata]) ComputeBuildSpecificationValue(ctx
 		return PatchedBuildSpecificationValue{}, err
 	}
 
-	patchedBuildSpecification := model_core.NewPatchedMessageFromExisting(
+	patchedBuildSpecification := model_core.NewPatchedMessageFromExistingCaptured(
+		c.objectCapturer,
 		buildSpecification,
-		func(index int) dag.ObjectContentsWalker {
-			return dag.ExistingObjectContentsWalker
-		},
 	)
-	return PatchedBuildSpecificationValue{
-		Message: &model_analysis_pb.BuildSpecification_Value{
+	return model_core.NewPatchedMessage(
+		&model_analysis_pb.BuildSpecification_Value{
 			BuildSpecification: patchedBuildSpecification.Message,
 		},
-		Patcher: patchedBuildSpecification.Patcher,
-	}, nil
+		model_core.MapReferenceMetadataToWalkers(patchedBuildSpecification.Patcher),
+	), nil
 }
 
 func (c *baseComputer[TReference, TMetadata]) ComputeBuiltinsModuleNamesValue(ctx context.Context, key *model_analysis_pb.BuiltinsModuleNames_Key, e BuiltinsModuleNamesEnvironment[TReference]) (PatchedBuiltinsModuleNamesValue, error) {
@@ -503,20 +497,18 @@ func (c *baseComputer[TReference, TMetadata]) ComputeRepoDefaultAttrsValue(ctx c
 }
 
 func (c *baseComputer[TReference, TMetadata]) ComputeTargetCompletionValue(ctx context.Context, key model_core.Message[*model_analysis_pb.TargetCompletion_Key, TReference], e TargetCompletionEnvironment[TReference]) (PatchedTargetCompletionValue, error) {
-	configurationReference := model_core.NewPatchedMessageFromExisting(
+	configurationReference := model_core.NewPatchedMessageFromExistingCaptured(
+		c.objectCapturer,
 		model_core.NewNestedMessage(key, key.Message.ConfigurationReference),
-		func(index int) dag.ObjectContentsWalker {
-			return dag.ExistingObjectContentsWalker
-		},
 	)
 	configuredTarget := e.GetConfiguredTargetValue(
-		model_core.PatchedMessage[*model_analysis_pb.ConfiguredTarget_Key, dag.ObjectContentsWalker]{
-			Message: &model_analysis_pb.ConfiguredTarget_Key{
+		model_core.NewPatchedMessage(
+			&model_analysis_pb.ConfiguredTarget_Key{
 				Label:                  key.Message.Label,
 				ConfigurationReference: configurationReference.Message,
 			},
-			Patcher: configurationReference.Patcher,
-		},
+			model_core.MapReferenceMetadataToWalkers(configurationReference.Patcher),
+		),
 	)
 	if !configuredTarget.IsSet() {
 		return PatchedTargetCompletionValue{}, evaluation.ErrMissingDependency

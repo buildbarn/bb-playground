@@ -766,13 +766,13 @@ func (f *prepopulatedCapturableFile) CreateFileMerkleTree(ctx context.Context) (
 			return model_core.PatchedMessage[*model_filesystem_pb.FileContents, dag.ObjectContentsWalker]{}, nil
 		}
 		patcher := model_core.NewReferenceMessagePatcher[dag.ObjectContentsWalker]()
-		return model_core.PatchedMessage[*model_filesystem_pb.FileContents, dag.ObjectContentsWalker]{
-			Message: &model_filesystem_pb.FileContents{
+		return model_core.NewPatchedMessage(
+			&model_filesystem_pb.FileContents{
 				TotalSizeBytes: getFileContents.FileContents.EndBytes,
 				Reference:      patcher.AddReference(getFileContents.FileContents.Reference, dag.ExistingObjectContentsWalker),
 			},
-			Patcher: patcher,
-		}, nil
+			patcher,
+		), nil
 	}
 
 	// Mutable files created during execution.

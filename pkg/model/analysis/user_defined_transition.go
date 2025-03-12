@@ -565,16 +565,16 @@ func (c *baseComputer[TReference, TMetadata]) ComputeUserDefinedTransitionValue(
 		})
 		patcher.Merge(outputConfigurationReference.Patcher)
 	}
-	return model_core.PatchedMessage[*model_analysis_pb.UserDefinedTransition_Value, dag.ObjectContentsWalker]{
-		Message: &model_analysis_pb.UserDefinedTransition_Value{
+	return model_core.NewPatchedMessage(
+		&model_analysis_pb.UserDefinedTransition_Value{
 			Result: &model_analysis_pb.UserDefinedTransition_Value_Success_{
 				Success: &model_analysis_pb.UserDefinedTransition_Value_Success{
 					Entries: entries,
 				},
 			},
 		},
-		Patcher: model_core.MapReferenceMetadataToWalkers(patcher),
-	}, nil
+		model_core.MapReferenceMetadataToWalkers(patcher),
+	), nil
 }
 
 type stubbedTransitionAttr struct{}

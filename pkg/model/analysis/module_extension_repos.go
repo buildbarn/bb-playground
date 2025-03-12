@@ -380,10 +380,10 @@ func (c *baseComputer[TReference, TMetadata]) ComputeModuleExtensionReposValue(c
 		return PatchedModuleExtensionReposValue{}, err
 	}
 
-	return PatchedModuleExtensionReposValue{
-		Message: &model_analysis_pb.ModuleExtensionRepos_Value{
+	return model_core.NewPatchedMessage(
+		&model_analysis_pb.ModuleExtensionRepos_Value{
 			Repos: reposList.Message,
 		},
-		Patcher: model_core.MapReferenceMetadataToWalkers(reposList.Patcher),
-	}, nil
+		model_core.MapReferenceMetadataToWalkers(reposList.Patcher),
+	), nil
 }

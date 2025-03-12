@@ -91,7 +91,7 @@ func (c *baseComputer[TReference, TMetadata]) ComputeCompatibleToolchainsForType
 	platformInfoProvider, err := getProviderFromConfiguredTarget(
 		e,
 		platformLabel,
-		model_core.NewSimplePatchedMessage[dag.ObjectContentsWalker, *model_core_pb.Reference](nil),
+		model_core.NewSimplePatchedMessage[model_core.WalkableReferenceMetadata, *model_core_pb.Reference](nil),
 		platformInfoProviderIdentifier,
 	)
 	if err != nil {

@@ -13,7 +13,6 @@ import (
 	model_filesystem "github.com/buildbarn/bonanza/pkg/model/filesystem"
 	model_starlark "github.com/buildbarn/bonanza/pkg/model/starlark"
 	model_analysis_pb "github.com/buildbarn/bonanza/pkg/proto/model/analysis"
-	"github.com/buildbarn/bonanza/pkg/storage/dag"
 
 	"go.starlark.net/starlark"
 	"go.starlark.net/syntax"
@@ -89,12 +88,12 @@ func (c *baseComputer[TReference, TMetadata]) ComputeCompiledBzlFileValue(ctx co
 	if err != nil {
 		return PatchedCompiledBzlFileValue{}, err
 	}
-	return PatchedCompiledBzlFileValue{
-		Message: &model_analysis_pb.CompiledBzlFile_Value{
+	return model_core.NewPatchedMessage(
+		&model_analysis_pb.CompiledBzlFile_Value{
 			CompiledProgram: compiledProgram.Message,
 		},
-		Patcher: model_core.MapReferenceMetadataToWalkers(compiledProgram.Patcher),
-	}, nil
+		model_core.MapReferenceMetadataToWalkers(compiledProgram.Patcher),
+	), nil
 }
 
 func (c *baseComputer[TReference, TMetadata]) ComputeCompiledBzlFileDecodedGlobalsValue(ctx context.Context, key *model_analysis_pb.CompiledBzlFileDecodedGlobals_Key, e CompiledBzlFileDecodedGlobalsEnvironment[TReference]) (starlark.StringDict, error) {
@@ -183,18 +182,16 @@ func (c *baseComputer[TReference, TMetadata]) ComputeCompiledBzlFileGlobalValue(
 		return PatchedCompiledBzlFileGlobalValue{}, err
 	}
 
-	patchedGlobal := model_core.NewPatchedMessageFromExisting(
+	patchedGlobal := model_core.NewPatchedMessageFromExistingCaptured(
+		c.objectCapturer,
 		global,
-		func(index int) dag.ObjectContentsWalker {
-			return dag.ExistingObjectContentsWalker
-		},
 	)
-	return PatchedCompiledBzlFileGlobalValue{
-		Message: &model_analysis_pb.CompiledBzlFileGlobal_Value{
+	return model_core.NewPatchedMessage(
+		&model_analysis_pb.CompiledBzlFileGlobal_Value{
 			Global: patchedGlobal.Message,
 		},
-		Patcher: patchedGlobal.Patcher,
-	}, nil
+		model_core.MapReferenceMetadataToWalkers(patchedGlobal.Patcher),
+	), nil
 }
 
 var exportsBzlTargetName = label.MustNewTargetName("exports.bzl")

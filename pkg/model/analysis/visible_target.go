@@ -192,23 +192,21 @@ func (c *baseComputer[TReference, TMetadata]) ComputeVisibleTargetValue(ctx cont
 		}
 
 		// The actual target may also be an alias.
-		patchedConfigurationReference := model_core.NewPatchedMessageFromExisting(
+		patchedConfigurationReference := model_core.NewPatchedMessageFromExistingCaptured(
+			c.objectCapturer,
 			configurationReference,
-			func(index int) dag.ObjectContentsWalker {
-				return dag.ExistingObjectContentsWalker
-			},
 		)
 		actualVisibleTargetValue := e.GetVisibleTargetValue(
-			model_core.PatchedMessage[*model_analysis_pb.VisibleTarget_Key, dag.ObjectContentsWalker]{
-				Message: &model_analysis_pb.VisibleTarget_Key{
+			model_core.NewPatchedMessage(
+				&model_analysis_pb.VisibleTarget_Key{
 					FromPackage:            toLabel.GetCanonicalPackage().String(),
 					ToLabel:                actualCanonicalLabel.String(),
 					PermitAliasNoMatch:     key.Message.PermitAliasNoMatch,
 					StopAtLabelSetting:     key.Message.StopAtLabelSetting,
 					ConfigurationReference: patchedConfigurationReference.Message,
 				},
-				Patcher: patchedConfigurationReference.Patcher,
-			},
+				model_core.MapReferenceMetadataToWalkers(patchedConfigurationReference.Patcher),
+			),
 		)
 		if !actualVisibleTargetValue.IsSet() {
 			return PatchedVisibleTargetValue{}, evaluation.ErrMissingDependency
@@ -289,22 +287,20 @@ func (c *baseComputer[TReference, TMetadata]) ComputeVisibleTargetValue(ctx cont
 			}
 		}
 
-		patchedConfigurationReference := model_core.NewPatchedMessageFromExisting(
+		patchedConfigurationReference := model_core.NewPatchedMessageFromExistingCaptured(
+			c.objectCapturer,
 			configurationReference,
-			func(index int) dag.ObjectContentsWalker {
-				return dag.ExistingObjectContentsWalker
-			},
 		)
 		actualVisibleTargetValue := e.GetVisibleTargetValue(
-			model_core.PatchedMessage[*model_analysis_pb.VisibleTarget_Key, dag.ObjectContentsWalker]{
-				Message: &model_analysis_pb.VisibleTarget_Key{
+			model_core.NewPatchedMessage(
+				&model_analysis_pb.VisibleTarget_Key{
 					FromPackage:            nextFromPackage,
 					ToLabel:                nextToLabel,
 					PermitAliasNoMatch:     key.Message.PermitAliasNoMatch,
 					ConfigurationReference: patchedConfigurationReference.Message,
 				},
-				Patcher: patchedConfigurationReference.Patcher,
-			},
+				model_core.MapReferenceMetadataToWalkers(patchedConfigurationReference.Patcher),
+			),
 		)
 		if !actualVisibleTargetValue.IsSet() {
 			return PatchedVisibleTargetValue{}, evaluation.ErrMissingDependency

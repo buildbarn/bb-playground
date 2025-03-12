@@ -12,7 +12,6 @@ import (
 	"github.com/buildbarn/bonanza/pkg/model/core/btree"
 	model_analysis_pb "github.com/buildbarn/bonanza/pkg/proto/model/analysis"
 	model_core_pb "github.com/buildbarn/bonanza/pkg/proto/model/core"
-	"github.com/buildbarn/bonanza/pkg/storage/dag"
 )
 
 func (c *baseComputer[TReference, TMetadata]) ComputeModuleExtensionRepoValue(ctx context.Context, key *model_analysis_pb.ModuleExtensionRepo_Key, e ModuleExtensionRepoEnvironment[TReference]) (PatchedModuleExtensionRepoValue, error) {
@@ -62,16 +61,14 @@ func (c *baseComputer[TReference, TMetadata]) ComputeModuleExtensionRepoValue(ct
 	if definition == nil {
 		return PatchedModuleExtensionRepoValue{}, errors.New("repo does not have a definition")
 	}
-	patchedDefinition := model_core.NewPatchedMessageFromExisting(
+	patchedDefinition := model_core.NewPatchedMessageFromExistingCaptured(
+		c.objectCapturer,
 		model_core.NewNestedMessage(repo, definition),
-		func(index int) dag.ObjectContentsWalker {
-			return dag.ExistingObjectContentsWalker
-		},
 	)
 	return model_core.NewPatchedMessage(
 		&model_analysis_pb.ModuleExtensionRepo_Value{
 			Definition: patchedDefinition.Message,
 		},
-		patchedDefinition.Patcher,
+		model_core.MapReferenceMetadataToWalkers(patchedDefinition.Patcher),
 	), nil
 }

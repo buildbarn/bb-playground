@@ -46,10 +46,7 @@ func NewPatchedMessageFromExisting[
 ) PatchedMessage[TMessagePtr, TMetadata] {
 	patcher := NewReferenceMessagePatcher[TMetadata]()
 	if existing.Message == nil || existing.OutgoingReferences.GetDegree() == 0 {
-		return PatchedMessage[TMessagePtr, TMetadata]{
-			Message: existing.Message,
-			Patcher: patcher,
-		}
+		return NewPatchedMessage(existing.Message, patcher)
 	}
 
 	clonedMessage := proto.Clone(existing.Message)
@@ -59,19 +56,13 @@ func NewPatchedMessageFromExisting[
 		createMetadata:     createMetadata,
 	}
 	a.addReferenceMessagesRecursively(clonedMessage.ProtoReflect())
-	return PatchedMessage[TMessagePtr, TMetadata]{
-		Message: clonedMessage.(TMessagePtr),
-		Patcher: patcher,
-	}
+	return NewPatchedMessage(clonedMessage.(TMessagePtr), patcher)
 }
 
 // NewSimplePatchedMessage is a helper function for creating instances
 // of PatchedMessage for messages that don't contain any references.
 func NewSimplePatchedMessage[TMetadata ReferenceMetadata, TMessage any](v TMessage) PatchedMessage[TMessage, TMetadata] {
-	return PatchedMessage[TMessage, TMetadata]{
-		Message: v,
-		Patcher: NewReferenceMessagePatcher[TMetadata](),
-	}
+	return NewPatchedMessage(v, NewReferenceMessagePatcher[TMetadata]())
 }
 
 // IsSet returns true if the PatchedMessage is assigned to a message
