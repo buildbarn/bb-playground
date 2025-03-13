@@ -194,6 +194,9 @@ func resolveApparent[TCanonical any, TApparent canonicalizable[TCanonical], TRef
 		if !v.IsSet() {
 			return bad, evaluation.ErrMissingDependency
 		}
+		if v.Message.ToCanonicalRepo == "" {
+			return bad, fmt.Errorf("unknown apparent repo @%s referenced by repo @@%s", toApparentRepo.String(), fromRepo.String())
+		}
 		toCanonicalRepo, err := label.NewCanonicalRepo(v.Message.ToCanonicalRepo)
 		if err != nil {
 			return bad, fmt.Errorf("invalid canonical repo name %#v: %w", v.Message.ToCanonicalRepo, err)
