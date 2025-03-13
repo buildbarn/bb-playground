@@ -1113,7 +1113,7 @@ func GetBuiltins[TReference object.BasicReference, TMetadata model_core.Cloneabl
 						b.Name(), args, kwargs,
 						"include", unpack.Bind(thread, &include, unpack.List(unpack.String)),
 						"exclude?", unpack.Bind(thread, &exclude, unpack.List(unpack.String)),
-						"exclude_sirectories?", unpack.Bind(thread, &excludeDirectories, unpack.Int[int]()),
+						"exclude_directories?", unpack.Bind(thread, &excludeDirectories, unpack.Int[int]()),
 						"allow_empty?", unpack.Bind(thread, &allowEmpty, unpack.Bool),
 					); err != nil {
 						return nil, err
