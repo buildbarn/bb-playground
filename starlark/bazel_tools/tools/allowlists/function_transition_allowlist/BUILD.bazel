@@ -1,0 +1,4 @@
+filegroup(
+    name = "function_transition_allowlist",
+    visibility = ["//visibility:public"],
+)
