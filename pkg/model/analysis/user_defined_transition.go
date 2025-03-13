@@ -564,6 +564,111 @@ func (c *baseComputer[TReference, TMetadata]) performUserDefinedTransition(ctx c
 	), nil
 }
 
+type performUserDefinedTransitionCachedEnvironment[TReference any, TMetadata model_core.ReferenceMetadata] interface {
+	performUserDefinedTransitionEnvironment[TReference, TMetadata]
+
+	GetUserDefinedTransitionValue(model_core.PatchedMessage[*model_analysis_pb.UserDefinedTransition_Key, dag.ObjectContentsWalker]) model_core.Message[*model_analysis_pb.UserDefinedTransition_Value, TReference]
+}
+
+func (c *baseComputer[TReference, TMetadata]) performUserDefinedTransitionCached(
+	ctx context.Context,
+	e performUserDefinedTransitionCachedEnvironment[TReference, TMetadata],
+	transitionIdentifierStr string,
+	configurationReference model_core.Message[*model_core_pb.Reference, TReference],
+	attrParameter starlark.Value,
+) (performUserDefinedTransitionResult[TMetadata], error) {
+	// First attempt to call into the UserDefinedTransition
+	// function. This function is capable of computing transitions
+	// that don't depend on the "attr" parameter.
+	patchedConfigurationReference := model_core.NewPatchedMessageFromExistingCaptured(e, configurationReference)
+	transitionValue := e.GetUserDefinedTransitionValue(
+		model_core.NewPatchedMessage(
+			&model_analysis_pb.UserDefinedTransition_Key{
+				TransitionIdentifier:        transitionIdentifierStr,
+				InputConfigurationReference: patchedConfigurationReference.Message,
+			},
+			model_core.MapReferenceMetadataToWalkers(patchedConfigurationReference.Patcher),
+		),
+	)
+	if !transitionValue.IsSet() {
+		return performUserDefinedTransitionResult[TMetadata]{}, evaluation.ErrMissingDependency
+	}
+
+	switch result := transitionValue.Message.Result.(type) {
+	case *model_analysis_pb.UserDefinedTransition_Value_TransitionDependsOnAttrs:
+		// It turns out this user defined transition accesses
+		// the "attr" parameter. Compute it manually.
+		return c.performUserDefinedTransition(
+			ctx,
+			e,
+			transitionIdentifierStr,
+			configurationReference,
+			attrParameter,
+		)
+	case *model_analysis_pb.UserDefinedTransition_Value_Success_:
+		return model_core.NewPatchedMessageFromExistingCaptured(e, model_core.NewNestedMessage(transitionValue, result.Success)), nil
+	default:
+		return performUserDefinedTransitionResult[TMetadata]{}, errors.New("unexpected user defined transition result type")
+	}
+}
+
+func (c *baseComputer[TReference, TMetadata]) performTransition(
+	ctx context.Context,
+	e performUserDefinedTransitionCachedEnvironment[TReference, TMetadata],
+	transitionReference *model_starlark_pb.Transition_Reference,
+	configurationReference model_core.Message[*model_core_pb.Reference, TReference],
+	attrParameter starlark.Value,
+) (performUserDefinedTransitionResult[TMetadata], bool, error) {
+	// See if any transitions need to be applied.
+	switch tr := transitionReference.GetKind().(type) {
+	case *model_starlark_pb.Transition_Reference_ExecGroup:
+		// TODO: Perform an actual exec transition!
+		patchedConfigurationReference := model_core.NewPatchedMessageFromExistingCaptured(e, configurationReference)
+		return model_core.NewPatchedMessage(
+			&model_analysis_pb.UserDefinedTransition_Value_Success{
+				Entries: []*model_analysis_pb.UserDefinedTransition_Value_Success_Entry{{
+					OutputConfigurationReference: patchedConfigurationReference.Message,
+				}},
+			},
+			patchedConfigurationReference.Patcher,
+		), false, nil
+	case *model_starlark_pb.Transition_Reference_None:
+		// Use the empty configuration.
+		return model_core.NewSimplePatchedMessage[TMetadata](
+			&model_analysis_pb.UserDefinedTransition_Value_Success{
+				Entries: []*model_analysis_pb.UserDefinedTransition_Value_Success_Entry{{}},
+			},
+		), false, nil
+	case *model_starlark_pb.Transition_Reference_Target:
+		// Don't transition. Use the current target.
+		patchedConfigurationReference := model_core.NewPatchedMessageFromExistingCaptured(e, configurationReference)
+		return model_core.NewPatchedMessage(
+			&model_analysis_pb.UserDefinedTransition_Value_Success{
+				Entries: []*model_analysis_pb.UserDefinedTransition_Value_Success_Entry{{
+					OutputConfigurationReference: patchedConfigurationReference.Message,
+				}},
+			},
+			patchedConfigurationReference.Patcher,
+		), false, nil
+	case *model_starlark_pb.Transition_Reference_Unconfigured:
+		// Leave targets unconfigured.
+		return model_core.NewSimplePatchedMessage[TMetadata](
+			&model_analysis_pb.UserDefinedTransition_Value_Success{},
+		), false, nil
+	case *model_starlark_pb.Transition_Reference_UserDefined:
+		configurationReferences, err := c.performUserDefinedTransitionCached(
+			ctx,
+			e,
+			tr.UserDefined,
+			configurationReference,
+			attrParameter,
+		)
+		return configurationReferences, true, err
+	default:
+		return performUserDefinedTransitionResult[TMetadata]{}, false, errors.New("unknown transition type")
+	}
+}
+
 func (c *baseComputer[TReference, TMetadata]) ComputeUserDefinedTransitionValue(ctx context.Context, key model_core.Message[*model_analysis_pb.UserDefinedTransition_Key, TReference], e UserDefinedTransitionEnvironment[TReference, TMetadata]) (PatchedUserDefinedTransitionValue, error) {
 	entries, err := c.performUserDefinedTransition(
 		ctx,

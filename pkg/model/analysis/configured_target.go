@@ -342,68 +342,27 @@ func (c *baseComputer[TReference, TMetadata]) configureAttrValueParts(
 	case *model_starlark_pb.Attr_LabelList:
 		cfg = attrType.LabelList.ListValueOptions.GetCfg()
 	}
+
 	var configurationReferences []model_core.Message[*model_core_pb.Reference, TReference]
 	mayHaveMultipleConfigurations := false
 	if cfg != nil {
-		switch tr := cfg.Kind.(type) {
-		case *model_starlark_pb.Transition_Reference_ExecGroup:
-			// TODO: Actually transition to the exec platform!
-			configurationReferences = []model_core.Message[*model_core_pb.Reference, TReference]{
-				configurationReference,
-			}
-		case *model_starlark_pb.Transition_Reference_None:
-			// Use the empty configuration.
-			configurationReferences = []model_core.Message[*model_core_pb.Reference, TReference]{
-				model_core.NewSimpleMessage[TReference, *model_core_pb.Reference](nil),
-			}
-		case *model_starlark_pb.Transition_Reference_Target:
-			// Don't transition. Use the current target.
-			configurationReferences = []model_core.Message[*model_core_pb.Reference, TReference]{
-				configurationReference,
-			}
-		case *model_starlark_pb.Transition_Reference_Unconfigured:
-			// Leave targets unconfigured.
-		case *model_starlark_pb.Transition_Reference_UserDefined:
-			// TODO: Should we cache this in the ruleContext?
-			patchedConfigurationReference := model_core.NewPatchedMessageFromExistingCaptured(e, configurationReference)
-			transitionValue := e.GetUserDefinedTransitionValue(
-				model_core.NewPatchedMessage(
-					&model_analysis_pb.UserDefinedTransition_Key{
-						TransitionIdentifier:        tr.UserDefined,
-						InputConfigurationReference: patchedConfigurationReference.Message,
-					},
-					model_core.MapReferenceMetadataToWalkers(patchedConfigurationReference.Patcher),
-				),
-			)
-			if !transitionValue.IsSet() {
-				return nil, evaluation.ErrMissingDependency
-			}
-			switch result := transitionValue.Message.Result.(type) {
-			case *model_analysis_pb.UserDefinedTransition_Value_TransitionDependsOnAttrs:
-				newConfigurations, err := c.performUserDefinedTransition(
-					ctx,
-					e,
-					tr.UserDefined,
-					configurationReference,
-					model_starlark.NewStructFromDict[TReference, TMetadata](nil, map[string]any{
-						// TODO!
-					}),
-				)
-				if err != nil {
-					return nil, err
-				}
-				return nil, fmt.Errorf("TODO: support outgoing edge transition that depends on attrs %s", newConfigurations)
-			case *model_analysis_pb.UserDefinedTransition_Value_Success_:
-				configurationReferences = make([]model_core.Message[*model_core_pb.Reference, TReference], 0, len(result.Success.Entries))
-				for _, entry := range result.Success.Entries {
-					configurationReferences = append(configurationReferences, model_core.NewNestedMessage(transitionValue, entry.OutputConfigurationReference))
-				}
-				mayHaveMultipleConfigurations = true
-			default:
-				return nil, fmt.Errorf("transition %#v uses an unknown result type", tr.UserDefined)
-			}
-		default:
-			return nil, fmt.Errorf("attr %#v uses an unknown transition type", namedAttr.Name)
+		var patchedResult model_core.PatchedMessage[*model_analysis_pb.UserDefinedTransition_Value_Success, TMetadata]
+		var err error
+		patchedResult, mayHaveMultipleConfigurations, err = c.performTransition(
+			ctx,
+			e,
+			cfg,
+			configurationReference,
+			model_starlark.NewStructFromDict[TReference, TMetadata](nil, map[string]any{
+				// TODO!
+			}),
+		)
+		if err != nil {
+			return nil, err
+		}
+		result := model_core.PeekPatchedMessage(e, patchedResult)
+		for _, entry := range result.Message.Entries {
+			configurationReferences = append(configurationReferences, model_core.NewNestedMessage(result, entry.OutputConfigurationReference))
 		}
 	}
 
@@ -730,50 +689,23 @@ func (c *baseComputer[TReference, TMetadata]) ComputeConfiguredTargetValue(ctx c
 		// If provided, apply a user defined incoming edge transition.
 		configurationReference := model_core.NewNestedMessage(key, key.Message.ConfigurationReference)
 		if cfgTransitionIdentifier := ruleDefinition.Message.CfgTransitionIdentifier; cfgTransitionIdentifier != "" {
-			patchedConfigurationReference := model_core.NewPatchedMessageFromExistingCaptured(e, configurationReference)
-			incomingEdgeTransitionValue := e.GetUserDefinedTransitionValue(
-				model_core.NewPatchedMessage(
-					&model_analysis_pb.UserDefinedTransition_Key{
-						TransitionIdentifier:        cfgTransitionIdentifier,
-						InputConfigurationReference: patchedConfigurationReference.Message,
-					},
-					model_core.MapReferenceMetadataToWalkers(patchedConfigurationReference.Patcher),
-				),
+			patchedConfigurationReferences, err := c.performUserDefinedTransitionCached(
+				ctx,
+				e,
+				cfgTransitionIdentifier,
+				configurationReference,
+				model_starlark.NewStructFromDict[TReference, TMetadata](nil, attrValues),
 			)
-			if !incomingEdgeTransitionValue.IsSet() {
-				return PatchedConfiguredTargetValue{}, evaluation.ErrMissingDependency
+			if err != nil {
+				return PatchedConfiguredTargetValue{}, err
 			}
 
-			var configurationReferences model_core.Message[*model_analysis_pb.UserDefinedTransition_Value_Success, TReference]
-			switch result := incomingEdgeTransitionValue.Message.Result.(type) {
-			case *model_analysis_pb.UserDefinedTransition_Value_TransitionDependsOnAttrs:
-				// User defined incoming edge transition
-				// depends on attrs provided to this
-				// target, meaning we can't evaluate the
-				// user defined transition once and
-				// reuse the results. Rerun it with the
-				// attrs computed thus far.
-				patchedConfigurationReferences, err := c.performUserDefinedTransition(
-					ctx,
-					e,
-					cfgTransitionIdentifier,
-					configurationReference,
-					model_starlark.NewStructFromDict[TReference, TMetadata](nil, attrValues),
-				)
-				if err != nil {
-					return PatchedConfiguredTargetValue{}, err
-				}
-				configurationReferences = model_core.PeekPatchedMessage(e, patchedConfigurationReferences)
-			case *model_analysis_pb.UserDefinedTransition_Value_Success_:
-				configurationReferences = model_core.NewNestedMessage(incomingEdgeTransitionValue, result.Success)
-			default:
-				return PatchedConfiguredTargetValue{}, fmt.Errorf("incoming edge transition %#v used by rule %#v is not a 1:1 transition", cfgTransitionIdentifier, ruleIdentifier.String())
-			}
-
-			entries := configurationReferences.Message.Entries
+			entries := patchedConfigurationReferences.Message.Entries
 			if l := len(entries); l != 1 {
 				return PatchedConfiguredTargetValue{}, fmt.Errorf("incoming edge transition %#v used by rule %#v is a 1:%d transition, while a 1:1 transition was expected", cfgTransitionIdentifier, ruleIdentifier.String(), l)
 			}
+
+			configurationReferences := model_core.PeekPatchedMessage(e, patchedConfigurationReferences)
 			configurationReference = model_core.NewNestedMessage(configurationReferences, entries[0].OutputConfigurationReference)
 		}
 
