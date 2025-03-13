@@ -970,24 +970,11 @@ func GetBuiltins[TReference object.BasicReference, TMetadata model_core.Cloneabl
 						return nil, err
 					}
 
-					patcher := model_core.NewReferenceMessagePatcher[TMetadata]()
-					var visibilityPackageGroup *model_starlark_pb.PackageGroup
-					if len(visibility) == 0 {
-						// Unlike rule targets, exports_files()
-						// defaults to public visibility.
-						visibilityPackageGroup = &model_starlark_pb.PackageGroup{
-							Tree: &model_starlark_pb.PackageGroup_Subpackages{
-								IncludeSubpackages: true,
-							},
-						}
-					} else {
-						m, err := targetRegistrar.getVisibilityPackageGroup(visibility)
-						if err != nil {
-							return nil, err
-						}
-						patcher.Merge(m.Patcher)
-						visibilityPackageGroup = m.Message
+					visibilityPackageGroup, err := targetRegistrar.getVisibilityPackageGroup(visibility)
+					if err != nil {
+						return nil, err
 					}
+					patcher := visibilityPackageGroup.Patcher
 
 					valueEncodingOptions := thread.Local(ValueEncodingOptionsKey).(*ValueEncodingOptions[TReference, TMetadata])
 					actualGroups, _, err := actual.EncodeGroups(
@@ -1018,7 +1005,7 @@ func GetBuiltins[TReference object.BasicReference, TMetadata model_core.Cloneabl
 								Kind: &model_starlark_pb.Target_Definition_Alias{
 									Alias: &model_starlark_pb.Alias{
 										Actual:     actualGroups.Message[0],
-										Visibility: visibilityPackageGroup,
+										Visibility: visibilityPackageGroup.Message,
 									},
 								},
 							},
@@ -1072,10 +1059,23 @@ func GetBuiltins[TReference object.BasicReference, TMetadata model_core.Cloneabl
 					}
 
 					for _, src := range srcs {
-						// TODO: Only create the package group once.
-						visibilityPackageGroup, err := targetRegistrar.getVisibilityPackageGroup(visibility)
-						if err != nil {
-							return nil, err
+						var visibilityPackageGroup model_core.PatchedMessage[*model_starlark_pb.PackageGroup, TMetadata]
+						if len(visibility) == 0 {
+							// Unlike rule targets, exports_files()
+							// defaults to public visibility.
+							visibilityPackageGroup = model_core.NewSimplePatchedMessage[TMetadata](
+								&model_starlark_pb.PackageGroup{
+									Tree: &model_starlark_pb.PackageGroup_Subpackages{
+										IncludeSubpackages: true,
+									},
+								},
+							)
+						} else {
+							var err error
+							visibilityPackageGroup, err = targetRegistrar.getVisibilityPackageGroup(visibility)
+							if err != nil {
+								return nil, err
+							}
 						}
 
 						if err := targetRegistrar.registerExplicitTarget(
