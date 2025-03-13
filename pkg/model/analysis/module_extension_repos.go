@@ -72,7 +72,7 @@ func (t bazelModuleTag) AttrNames() []string {
 	return attrNames
 }
 
-func (c *baseComputer[TReference, TMetadata]) ComputeModuleExtensionReposValue(ctx context.Context, key *model_analysis_pb.ModuleExtensionRepos_Key, e ModuleExtensionReposEnvironment[TReference]) (PatchedModuleExtensionReposValue, error) {
+func (c *baseComputer[TReference, TMetadata]) ComputeModuleExtensionReposValue(ctx context.Context, key *model_analysis_pb.ModuleExtensionRepos_Key, e ModuleExtensionReposEnvironment[TReference, TMetadata]) (PatchedModuleExtensionReposValue, error) {
 	allBuiltinsModulesNames := e.GetBuiltinsModuleNamesValue(&model_analysis_pb.BuiltinsModuleNames_Key{})
 	repoPlatform := e.GetRegisteredRepoPlatformValue(&model_analysis_pb.RegisteredRepoPlatform_Key{})
 	if !allBuiltinsModulesNames.IsSet() || !repoPlatform.IsSet() {
@@ -254,7 +254,7 @@ func (c *baseComputer[TReference, TMetadata]) ComputeModuleExtensionReposValue(c
 	// Call into the implementation function to obtain a set of
 	// repos declared by this module extension.
 	thread.SetLocal(model_starlark.CanonicalPackageKey, moduleExtensionName.GetModuleInstance().GetBareCanonicalRepo().GetRootPackage())
-	thread.SetLocal(model_starlark.ValueEncodingOptionsKey, c.getValueEncodingOptions(moduleExtensionIdentifier.GetCanonicalLabel()))
+	thread.SetLocal(model_starlark.ValueEncodingOptionsKey, c.getValueEncodingOptions(e, moduleExtensionIdentifier.GetCanonicalLabel()))
 
 	repoRegistrar := model_starlark.NewRepoRegistrar[TMetadata]()
 	thread.SetLocal(model_starlark.RepoRegistrarKey, repoRegistrar)
@@ -348,7 +348,7 @@ func (c *baseComputer[TReference, TMetadata]) ComputeModuleExtensionReposValue(c
 							Parent: &model_analysis_pb.ModuleExtensionRepos_Value_Repo_Parent{
 								Reference: patcher.AddReference(
 									createdObject.Contents.GetReference(),
-									c.objectCapturer.CaptureCreatedObject(createdObject),
+									e.CaptureCreatedObject(createdObject),
 								),
 								FirstName: firstName,
 							},

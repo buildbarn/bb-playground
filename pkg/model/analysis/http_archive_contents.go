@@ -241,7 +241,7 @@ func (af *capturableArchiveFile[TFile]) CreateFileMerkleTree(ctx context.Context
 
 func (af *capturableArchiveFile[TFile]) Discard() {}
 
-func (c *baseComputer[TReference, TMetadata]) ComputeHttpArchiveContentsValue(ctx context.Context, key *model_analysis_pb.HttpArchiveContents_Key, e HttpArchiveContentsEnvironment[TReference]) (PatchedHttpArchiveContentsValue, error) {
+func (c *baseComputer[TReference, TMetadata]) ComputeHttpArchiveContentsValue(ctx context.Context, key *model_analysis_pb.HttpArchiveContents_Key, e HttpArchiveContentsEnvironment[TReference, TMetadata]) (PatchedHttpArchiveContentsValue, error) {
 	fileReader, gotFileReader := e.GetFileReaderValue(&model_analysis_pb.FileReader_Key{})
 	directoryCreationParameters, gotDirectoryCreationParameters := e.GetDirectoryCreationParametersObjectValue(&model_analysis_pb.DirectoryCreationParametersObject_Key{})
 	fileCreationParameters, gotFileCreationParameters := e.GetFileCreationParametersObjectValue(&model_analysis_pb.FileCreationParametersObject_Key{})

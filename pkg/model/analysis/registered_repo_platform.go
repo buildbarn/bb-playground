@@ -47,7 +47,7 @@ func (c *baseComputer[TReference, TMetadata]) decodeStringDict(ctx context.Conte
 	return o, nil
 }
 
-func (c *baseComputer[TReference, TMetadata]) ComputeRegisteredRepoPlatformValue(ctx context.Context, key *model_analysis_pb.RegisteredRepoPlatform_Key, e RegisteredRepoPlatformEnvironment[TReference]) (PatchedRegisteredRepoPlatformValue, error) {
+func (c *baseComputer[TReference, TMetadata]) ComputeRegisteredRepoPlatformValue(ctx context.Context, key *model_analysis_pb.RegisteredRepoPlatform_Key, e RegisteredRepoPlatformEnvironment[TReference, TMetadata]) (PatchedRegisteredRepoPlatformValue, error) {
 	// Obtain the label of the repo platform that was provided by
 	// the client through the --repo_platform command line flag.
 	buildSpecificationValue := e.GetBuildSpecificationValue(&model_analysis_pb.BuildSpecification_Key{})

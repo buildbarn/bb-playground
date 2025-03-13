@@ -102,47 +102,46 @@ func (r *rule[TReference, TMetadata]) CallInternal(thread *starlark.Thread, args
 		maps.Keys(attrs),
 		func(a, b pg_label.StarlarkIdentifier) int { return strings.Compare(a.String(), b.String()) },
 	) {
-		nameStr := name.String()
-		switch nameStr {
-		case "applicable_licenses", "deprecation",
-			"exec_compatible_with", "features", "name",
-			"package_metadata", "tags", "target_compatible_with",
-			"testonly", "visibility":
-			return nil, fmt.Errorf("rule uses attribute with reserved name %#v", nameStr)
-		case "build_setting_default":
-			if buildSetting != nil {
-				return nil, fmt.Errorf("rule uses attribute with name \"build_setting_default\", which is reserved for build settings", nameStr)
+		if name.IsPublic() {
+			nameStr := name.String()
+			switch nameStr {
+			case "applicable_licenses", "deprecation",
+				"exec_compatible_with", "features", "name",
+				"package_metadata", "tags", "target_compatible_with",
+				"testonly", "visibility":
+				return nil, fmt.Errorf("rule uses attribute with reserved name %#v", nameStr)
+			case "build_setting_default":
+				if buildSetting != nil {
+					return nil, fmt.Errorf("rule uses attribute with name \"build_setting_default\", which is reserved for build settings", nameStr)
+				}
+			case "args", "flaky", "local", "shard_count", "size", "timeout":
+				if test {
+					return nil, fmt.Errorf("rule uses attribute with name %#v, which is reserved for tests", nameStr)
+				}
 			}
-		case "args", "flaky", "local", "shard_count", "size", "timeout":
-			if test {
-				return nil, fmt.Errorf("rule uses attribute with name %#v, which is reserved for tests", nameStr)
-			}
-		}
 
-		attr := attrs[name]
-		filenameTemplate, isOutput := attr.attrType.IsOutput()
-		isPublic := name.IsPublic()
-		if isOutput && filenameTemplate != "" {
-			// Predeclared output declared using
-			// rule(outputs = ...). These are not taken as
-			// explicit arguments.
-		} else if isPublic {
-			if attr.defaultValue == nil {
-				// Attribute is mandatory.
-				mandatoryUnpackers = append(mandatoryUnpackers, nameStr, &values[len(attrNames)])
+			attr := attrs[name]
+			filenameTemplate, isOutput := attr.attrType.IsOutput()
+			if isOutput && filenameTemplate != "" {
+				// Predeclared output declared using
+				// rule(outputs = ...). These are not taken as
+				// explicit arguments.
 			} else {
-				// Attribute is optional.
-				optionalUnpackers = append(optionalUnpackers, nameStr+"?", &values[len(attrNames)])
+				if attr.defaultValue == nil {
+					// Attribute is mandatory.
+					mandatoryUnpackers = append(mandatoryUnpackers, nameStr, &values[len(attrNames)])
+				} else {
+					// Attribute is optional.
+					optionalUnpackers = append(optionalUnpackers, nameStr+"?", &values[len(attrNames)])
+				}
 			}
-		} else if false {
-			// TODO: We should also add all label types
-			// here, regardless of whether they are public.
-			// This is needed to ensure VisitLabels() is
-			// called properly.
-		}
 
-		if isPublic || isOutput {
 			attrNames = append(attrNames, name)
+		} else {
+			// TODO: We should also add all private label
+			// types here, regardless of whether they are
+			// public. This is needed to ensure
+			// VisitLabels() is called properly.
 		}
 	}
 
@@ -260,7 +259,7 @@ func (r *rule[TReference, TMetadata]) CallInternal(thread *starlark.Thread, args
 		}
 	}
 
-	var attrValues []*model_starlark_pb.RuleTarget_AttrValue
+	publicAttrValues := make([]*model_starlark_pb.RuleTarget_PublicAttrValue, 0, len(attrNames))
 	patcher := model_core.NewReferenceMessagePatcher[TMetadata]()
 	valueEncodingOptions := thread.Local(ValueEncodingOptionsKey).(*ValueEncodingOptions[TReference, TMetadata])
 	for i, attrName := range attrNames {
@@ -297,9 +296,8 @@ func (r *rule[TReference, TMetadata]) CallInternal(thread *starlark.Thread, args
 		if err != nil {
 			return nil, err
 		}
-		attrValues = append(attrValues,
-			&model_starlark_pb.RuleTarget_AttrValue{
-				Name:       attrName.String(),
+		publicAttrValues = append(publicAttrValues,
+			&model_starlark_pb.RuleTarget_PublicAttrValue{
 				ValueParts: encodedGroups.Message,
 			},
 		)
@@ -307,10 +305,9 @@ func (r *rule[TReference, TMetadata]) CallInternal(thread *starlark.Thread, args
 
 		// TODO: Visit the default value in case no explicit
 		// value is set.
-		//
-		// TODO: If attr.attrType.IsOutput(), register labels as
-		// explicit targets.
+		// TODO: Also visit default values of private attributes.
 		if _, isOutput := attr.attrType.IsOutput(); isOutput {
+			// Register all labels as predeclared output targets.
 			if err := selectValue.VisitLabels(thread, map[starlark.Value]struct{}{}, func(l pg_label.ResolvedLabel) error {
 				if canonicalLabel, err := l.AsCanonical(); err == nil {
 					if canonicalLabel.GetCanonicalPackage() == currentPackage {
@@ -337,6 +334,7 @@ func (r *rule[TReference, TMetadata]) CallInternal(thread *starlark.Thread, args
 				return nil, err
 			}
 		} else {
+			// Register all labels as implicit source file targets.
 			if err := selectValue.VisitLabels(thread, map[starlark.Value]struct{}{}, func(l pg_label.ResolvedLabel) error {
 				if canonicalLabel, err := l.AsCanonical(); err == nil {
 					if canonicalLabel.GetCanonicalPackage() == currentPackage {
@@ -404,7 +402,7 @@ func (r *rule[TReference, TMetadata]) CallInternal(thread *starlark.Thread, args
 				Kind: &model_starlark_pb.Target_Definition_RuleTarget{
 					RuleTarget: &model_starlark_pb.RuleTarget{
 						RuleIdentifier:       r.Identifier.String(),
-						AttrValues:           attrValues,
+						PublicAttrValues:     publicAttrValues,
 						ExecCompatibleWith:   execCompatibleWith,
 						Tags:                 slices.Compact(tags),
 						TargetCompatibleWith: targetCompatibleWithGroups.Message,

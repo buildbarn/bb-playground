@@ -10,7 +10,7 @@ import (
 	model_analysis_pb "github.com/buildbarn/bonanza/pkg/proto/model/analysis"
 )
 
-func (c *baseComputer[TReference, TMetadata]) ComputeFileReaderValue(ctx context.Context, key *model_analysis_pb.FileReader_Key, e FileReaderEnvironment[TReference]) (*model_filesystem.FileReader[TReference], error) {
+func (c *baseComputer[TReference, TMetadata]) ComputeFileReaderValue(ctx context.Context, key *model_analysis_pb.FileReader_Key, e FileReaderEnvironment[TReference, TMetadata]) (*model_filesystem.FileReader[TReference], error) {
 	fileAccessParametersValue := e.GetFileAccessParametersValue(&model_analysis_pb.FileAccessParameters_Key{})
 	if !fileAccessParametersValue.IsSet() {
 		return nil, evaluation.ErrMissingDependency

@@ -9,6 +9,7 @@ go_library(
         "file_writing_merkle_tree_capturer.go",
         "get_index_from_reference_message.go",
         "message.go",
+        "object_capturer.go",
         "patched_message.go",
         "reference_message_patcher.go",
         "walkable_reference_metadata.go",

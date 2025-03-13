@@ -11,7 +11,7 @@ import (
 	"github.com/buildbarn/bonanza/pkg/storage/dag"
 )
 
-func (c *baseComputer[TReference, TMetadata]) ComputeModuleFinalBuildListValue(ctx context.Context, key *model_analysis_pb.ModuleFinalBuildList_Key, e ModuleFinalBuildListEnvironment[TReference]) (PatchedModuleFinalBuildListValue, error) {
+func (c *baseComputer[TReference, TMetadata]) ComputeModuleFinalBuildListValue(ctx context.Context, key *model_analysis_pb.ModuleFinalBuildList_Key, e ModuleFinalBuildListEnvironment[TReference, TMetadata]) (PatchedModuleFinalBuildListValue, error) {
 	roughBuildListValue := e.GetModuleRoughBuildListValue(&model_analysis_pb.ModuleRoughBuildList_Key{})
 	if !roughBuildListValue.IsSet() {
 		return PatchedModuleFinalBuildListValue{}, evaluation.ErrMissingDependency

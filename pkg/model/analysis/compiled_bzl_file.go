@@ -18,7 +18,7 @@ import (
 	"go.starlark.net/syntax"
 )
 
-func (c *baseComputer[TReference, TMetadata]) ComputeCompiledBzlFileValue(ctx context.Context, key *model_analysis_pb.CompiledBzlFile_Key, e CompiledBzlFileEnvironment[TReference]) (PatchedCompiledBzlFileValue, error) {
+func (c *baseComputer[TReference, TMetadata]) ComputeCompiledBzlFileValue(ctx context.Context, key *model_analysis_pb.CompiledBzlFile_Key, e CompiledBzlFileEnvironment[TReference, TMetadata]) (PatchedCompiledBzlFileValue, error) {
 	canonicalLabel, err := label.NewCanonicalLabel(key.Label)
 	if err != nil {
 		return PatchedCompiledBzlFileValue{}, fmt.Errorf("invalid label: %w", err)
@@ -84,7 +84,7 @@ func (c *baseComputer[TReference, TMetadata]) ComputeCompiledBzlFileValue(ctx co
 	model_starlark.NameAndExtractGlobals(globals, canonicalLabel)
 
 	// TODO! Use proper encoding options!
-	compiledProgram, err := model_starlark.EncodeCompiledProgram(program, globals, c.getValueEncodingOptions(canonicalLabel))
+	compiledProgram, err := model_starlark.EncodeCompiledProgram(program, globals, c.getValueEncodingOptions(e, canonicalLabel))
 	if err != nil {
 		return PatchedCompiledBzlFileValue{}, err
 	}
@@ -96,7 +96,7 @@ func (c *baseComputer[TReference, TMetadata]) ComputeCompiledBzlFileValue(ctx co
 	), nil
 }
 
-func (c *baseComputer[TReference, TMetadata]) ComputeCompiledBzlFileDecodedGlobalsValue(ctx context.Context, key *model_analysis_pb.CompiledBzlFileDecodedGlobals_Key, e CompiledBzlFileDecodedGlobalsEnvironment[TReference]) (starlark.StringDict, error) {
+func (c *baseComputer[TReference, TMetadata]) ComputeCompiledBzlFileDecodedGlobalsValue(ctx context.Context, key *model_analysis_pb.CompiledBzlFileDecodedGlobals_Key, e CompiledBzlFileDecodedGlobalsEnvironment[TReference, TMetadata]) (starlark.StringDict, error) {
 	currentFilename, err := label.NewCanonicalLabel(key.Label)
 	if err != nil {
 		return nil, fmt.Errorf("invalid label: %w", err)
@@ -117,7 +117,7 @@ func (c *baseComputer[TReference, TMetadata]) ComputeCompiledBzlFileDecodedGloba
 	)
 }
 
-func (c *baseComputer[TReference, TMetadata]) ComputeCompiledBzlFileFunctionFactoryValue(ctx context.Context, key *model_analysis_pb.CompiledBzlFileFunctionFactory_Key, e CompiledBzlFileFunctionFactoryEnvironment[TReference]) (*starlark.FunctionFactory, error) {
+func (c *baseComputer[TReference, TMetadata]) ComputeCompiledBzlFileFunctionFactoryValue(ctx context.Context, key *model_analysis_pb.CompiledBzlFileFunctionFactory_Key, e CompiledBzlFileFunctionFactoryEnvironment[TReference, TMetadata]) (*starlark.FunctionFactory, error) {
 	canonicalLabel, err := label.NewCanonicalLabel(key.Label)
 	if err != nil {
 		return nil, err
@@ -153,7 +153,7 @@ func (c *baseComputer[TReference, TMetadata]) ComputeCompiledBzlFileFunctionFact
 	return functionFactory, nil
 }
 
-func (c *baseComputer[TReference, TMetadata]) ComputeCompiledBzlFileGlobalValue(ctx context.Context, key *model_analysis_pb.CompiledBzlFileGlobal_Key, e CompiledBzlFileGlobalEnvironment[TReference]) (PatchedCompiledBzlFileGlobalValue, error) {
+func (c *baseComputer[TReference, TMetadata]) ComputeCompiledBzlFileGlobalValue(ctx context.Context, key *model_analysis_pb.CompiledBzlFileGlobal_Key, e CompiledBzlFileGlobalEnvironment[TReference, TMetadata]) (PatchedCompiledBzlFileGlobalValue, error) {
 	identifier, err := label.NewCanonicalStarlarkIdentifier(key.Identifier)
 	if err != nil {
 		return PatchedCompiledBzlFileGlobalValue{}, fmt.Errorf("invalid identifier: %w", err)
@@ -182,10 +182,7 @@ func (c *baseComputer[TReference, TMetadata]) ComputeCompiledBzlFileGlobalValue(
 		return PatchedCompiledBzlFileGlobalValue{}, err
 	}
 
-	patchedGlobal := model_core.NewPatchedMessageFromExistingCaptured(
-		c.objectCapturer,
-		global,
-	)
+	patchedGlobal := model_core.NewPatchedMessageFromExistingCaptured(e, global)
 	return model_core.NewPatchedMessage(
 		&model_analysis_pb.CompiledBzlFileGlobal_Value{
 			Global: patchedGlobal.Message,

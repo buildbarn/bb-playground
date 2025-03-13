@@ -28,7 +28,7 @@ type moduleExtensionUser struct {
 }
 
 type usedModuleExtensionOptions[TReference object.BasicReference, TMetadata BaseComputerReferenceMetadata] struct {
-	environment UsedModuleExtensionsEnvironment[TReference]
+	environment UsedModuleExtensionsEnvironment[TReference, TMetadata]
 	patcher     *model_core.ReferenceMessagePatcher[TMetadata]
 }
 
@@ -161,7 +161,7 @@ func (usedModuleExtensionExtractingModuleDotBazelHandler[TReference, TMetadata])
 	}, nil
 }
 
-func (c *baseComputer[TReference, TMetadata]) ComputeUsedModuleExtensionsValue(ctx context.Context, key *model_analysis_pb.UsedModuleExtensions_Key, e UsedModuleExtensionsEnvironment[TReference]) (PatchedUsedModuleExtensionsValue, error) {
+func (c *baseComputer[TReference, TMetadata]) ComputeUsedModuleExtensionsValue(ctx context.Context, key *model_analysis_pb.UsedModuleExtensions_Key, e UsedModuleExtensionsEnvironment[TReference, TMetadata]) (PatchedUsedModuleExtensionsValue, error) {
 	options := usedModuleExtensionOptions[TReference, TMetadata]{
 		environment: e,
 		patcher:     model_core.NewReferenceMessagePatcher[TMetadata](),
@@ -176,6 +176,7 @@ func (c *baseComputer[TReference, TMetadata]) ComputeUsedModuleExtensionsValue(c
 			ignoreDevDependencies: ignoreDevDependencies,
 			usedModuleExtensions:  usedModuleExtensions,
 			valueEncodingOptions: c.getValueEncodingOptions(
+				e,
 				moduleInstance.GetBareCanonicalRepo().
 					GetRootPackage().
 					AppendTargetName(moduleDotBazelTargetName),

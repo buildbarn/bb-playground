@@ -22,11 +22,11 @@ import (
 // contained in a repo. All repos are placed in a fictive root
 // directory, which allows symbolic links with targets of shape
 // "../${repo}/${file}" to resolve properly.
-type reposFilePropertiesResolver[TReference object.BasicReference] struct {
+type reposFilePropertiesResolver[TReference object.BasicReference, TMetadata any] struct {
 	context         context.Context
 	directoryReader model_parser.ParsedObjectReader[TReference, model_core.Message[*model_filesystem_pb.Directory, TReference]]
 	leavesReader    model_parser.ParsedObjectReader[TReference, model_core.Message[*model_filesystem_pb.Leaves, TReference]]
-	environment     FilePropertiesEnvironment[TReference]
+	environment     FilePropertiesEnvironment[TReference, TMetadata]
 
 	currentDirectoryReference model_core.Message[*model_core_pb.Reference, TReference]
 	stack                     []model_core.Message[*model_filesystem_pb.Directory, TReference]
@@ -34,13 +34,13 @@ type reposFilePropertiesResolver[TReference object.BasicReference] struct {
 	gotTerminal               bool
 }
 
-var _ path.ComponentWalker = (*reposFilePropertiesResolver[object.LocalReference])(nil)
+var _ path.ComponentWalker = (*reposFilePropertiesResolver[object.LocalReference, model_core.ReferenceMetadata])(nil)
 
-func (r *reposFilePropertiesResolver[TReference]) getCurrentLeaves() (model_core.Message[*model_filesystem_pb.Leaves, TReference], error) {
+func (r *reposFilePropertiesResolver[TReference, TMetadata]) getCurrentLeaves() (model_core.Message[*model_filesystem_pb.Leaves, TReference], error) {
 	return model_filesystem.DirectoryGetLeaves(r.context, r.leavesReader, r.stack[len(r.stack)-1])
 }
 
-func (r *reposFilePropertiesResolver[TReference]) dereferenceCurrentDirectory() error {
+func (r *reposFilePropertiesResolver[TReference, TMetadata]) dereferenceCurrentDirectory() error {
 	if r.currentDirectoryReference.IsSet() {
 		d, err := model_parser.Dereference(r.context, r.directoryReader, r.currentDirectoryReference)
 		if err != nil {
@@ -52,7 +52,7 @@ func (r *reposFilePropertiesResolver[TReference]) dereferenceCurrentDirectory() 
 	return nil
 }
 
-func (r *reposFilePropertiesResolver[TReference]) OnDirectory(name path.Component) (path.GotDirectoryOrSymlink, error) {
+func (r *reposFilePropertiesResolver[TReference, TMetadata]) OnDirectory(name path.Component) (path.GotDirectoryOrSymlink, error) {
 	if err := r.dereferenceCurrentDirectory(); err != nil {
 		return nil, err
 	}
@@ -121,7 +121,7 @@ func (r *reposFilePropertiesResolver[TReference]) OnDirectory(name path.Componen
 	return nil, errors.New("path does not exist")
 }
 
-func (r *reposFilePropertiesResolver[TReference]) OnTerminal(name path.Component) (*path.GotSymlink, error) {
+func (r *reposFilePropertiesResolver[TReference, TMetadata]) OnTerminal(name path.Component) (*path.GotSymlink, error) {
 	if err := r.dereferenceCurrentDirectory(); err != nil {
 		return nil, err
 	}
@@ -173,7 +173,7 @@ func (r *reposFilePropertiesResolver[TReference]) OnTerminal(name path.Component
 	return nil, nil
 }
 
-func (r *reposFilePropertiesResolver[TReference]) OnUp() (path.ComponentWalker, error) {
+func (r *reposFilePropertiesResolver[TReference, TMetadata]) OnUp() (path.ComponentWalker, error) {
 	if r.currentDirectoryReference.IsSet() {
 		r.currentDirectoryReference.Clear()
 	} else if len(r.stack) == 0 {
@@ -184,13 +184,13 @@ func (r *reposFilePropertiesResolver[TReference]) OnUp() (path.ComponentWalker, 
 	return r, nil
 }
 
-func (c *baseComputer[TReference, TMetadata]) ComputeFilePropertiesValue(ctx context.Context, key *model_analysis_pb.FileProperties_Key, e FilePropertiesEnvironment[TReference]) (PatchedFilePropertiesValue, error) {
+func (c *baseComputer[TReference, TMetadata]) ComputeFilePropertiesValue(ctx context.Context, key *model_analysis_pb.FileProperties_Key, e FilePropertiesEnvironment[TReference, TMetadata]) (PatchedFilePropertiesValue, error) {
 	directoryReaders, gotDirectoryReaders := e.GetDirectoryReadersValue(&model_analysis_pb.DirectoryReaders_Key{})
 	if !gotDirectoryReaders {
 		return PatchedFilePropertiesValue{}, evaluation.ErrMissingDependency
 	}
 
-	resolver := reposFilePropertiesResolver[TReference]{
+	resolver := reposFilePropertiesResolver[TReference, TMetadata]{
 		context:         ctx,
 		directoryReader: directoryReaders.Directory,
 		leavesReader:    directoryReaders.Leaves,
@@ -218,10 +218,7 @@ func (c *baseComputer[TReference, TMetadata]) ComputeFilePropertiesValue(ctx con
 		return PatchedFilePropertiesValue{}, errors.New("path resolves to a directory")
 	}
 
-	patchedFileProperties := model_core.NewPatchedMessageFromExistingCaptured(
-		c.objectCapturer,
-		resolver.fileProperties,
-	)
+	patchedFileProperties := model_core.NewPatchedMessageFromExistingCaptured(e, resolver.fileProperties)
 	return model_core.NewPatchedMessage(
 		&model_analysis_pb.FileProperties_Value{
 			Exists: patchedFileProperties.Message,

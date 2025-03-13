@@ -276,7 +276,267 @@ func getSingleFileConfiguredTargetValue(file *model_starlark_pb.File) PatchedCon
 	)
 }
 
-func (c *baseComputer[TReference, TMetadata]) ComputeConfiguredTargetValue(ctx context.Context, key model_core.Message[*model_analysis_pb.ConfiguredTarget_Key, TReference], e ConfiguredTargetEnvironment[TReference]) (PatchedConfiguredTargetValue, error) {
+func getAttrValueParts[TReference object.BasicReference](
+	e getValueFromSelectGroupEnvironment[TReference],
+	namedAttr model_core.Message[*model_starlark_pb.NamedAttr, TReference],
+	publicAttrValue model_core.Message[*model_starlark_pb.RuleTarget_PublicAttrValue, TReference],
+) (valueParts model_core.Message[[]*model_starlark_pb.Value, TReference], usedDefaultValue bool, err error) {
+	if !strings.HasPrefix(namedAttr.Message.Name, "_") {
+		// Attr is public. Extract the value from the rule target.
+		selectGroups := publicAttrValue.Message.ValueParts
+		if len(selectGroups) == 0 {
+			return model_core.Message[[]*model_starlark_pb.Value, TReference]{}, false, fmt.Errorf("attr %#v has no select groups", namedAttr.Message.Name)
+		}
+
+		valueParts := make([]*model_starlark_pb.Value, 0, len(selectGroups))
+		missingDependencies := false
+		for _, selectGroup := range selectGroups {
+			valuePart, err := getValueFromSelectGroup(e, selectGroup, false)
+			if err == nil {
+				valueParts = append(valueParts, valuePart)
+			} else if errors.Is(err, evaluation.ErrMissingDependency) {
+				missingDependencies = true
+			} else {
+				return model_core.Message[[]*model_starlark_pb.Value, TReference]{}, false, err
+			}
+		}
+		if missingDependencies {
+			return model_core.Message[[]*model_starlark_pb.Value, TReference]{}, false, evaluation.ErrMissingDependency
+		}
+
+		// Use the value from the rule target if it's not None.
+		if len(valueParts) > 1 {
+			return model_core.NewNestedMessage(publicAttrValue, valueParts), false, nil
+		}
+		if _, ok := valueParts[0].Kind.(*model_starlark_pb.Value_None); !ok {
+			return model_core.NewNestedMessage(publicAttrValue, valueParts), false, nil
+		}
+	}
+
+	// No value provided. Use the default value from the rule definition.
+	defaultValue := namedAttr.Message.Attr.GetDefault()
+	if defaultValue == nil {
+		return model_core.Message[[]*model_starlark_pb.Value, TReference]{}, false, fmt.Errorf("missing value for mandatory attr %#v", namedAttr.Message.Name)
+	}
+	return model_core.NewNestedMessage(namedAttr, []*model_starlark_pb.Value{defaultValue}), true, nil
+}
+
+func (c *baseComputer[TReference, TMetadata]) configureAttrValueParts(
+	ctx context.Context,
+	e ConfiguredTargetEnvironment[TReference, TMetadata],
+	thread *starlark.Thread,
+	namedAttr *model_starlark_pb.NamedAttr,
+	valueParts model_core.Message[[]*model_starlark_pb.Value, TReference],
+	configurationReference model_core.Message[*model_core_pb.Reference, TReference],
+	visibilityFromPackage label.CanonicalPackage,
+) (starlark.Value, error) {
+	// See if any transitions need to be applied.
+	var cfg *model_starlark_pb.Transition_Reference
+	isScalar := false
+	switch attrType := namedAttr.Attr.GetType().(type) {
+	case *model_starlark_pb.Attr_Label:
+		cfg = attrType.Label.ValueOptions.GetCfg()
+		isScalar = true
+	case *model_starlark_pb.Attr_LabelKeyedStringDict:
+		cfg = attrType.LabelKeyedStringDict.DictKeyOptions.GetCfg()
+	case *model_starlark_pb.Attr_LabelList:
+		cfg = attrType.LabelList.ListValueOptions.GetCfg()
+	}
+	var configurationReferences []model_core.Message[*model_core_pb.Reference, TReference]
+	mayHaveMultipleConfigurations := false
+	if cfg != nil {
+		switch tr := cfg.Kind.(type) {
+		case *model_starlark_pb.Transition_Reference_ExecGroup:
+			// TODO: Actually transition to the exec platform!
+			configurationReferences = []model_core.Message[*model_core_pb.Reference, TReference]{
+				configurationReference,
+			}
+		case *model_starlark_pb.Transition_Reference_None:
+			// Use the empty configuration.
+			configurationReferences = []model_core.Message[*model_core_pb.Reference, TReference]{
+				model_core.NewSimpleMessage[TReference, *model_core_pb.Reference](nil),
+			}
+		case *model_starlark_pb.Transition_Reference_Target:
+			// Don't transition. Use the current target.
+			configurationReferences = []model_core.Message[*model_core_pb.Reference, TReference]{
+				configurationReference,
+			}
+		case *model_starlark_pb.Transition_Reference_Unconfigured:
+			// Leave targets unconfigured.
+		case *model_starlark_pb.Transition_Reference_UserDefined:
+			// TODO: Should we cache this in the ruleContext?
+			patchedConfigurationReference := model_core.NewPatchedMessageFromExistingCaptured(e, configurationReference)
+			transitionValue := e.GetUserDefinedTransitionValue(
+				model_core.NewPatchedMessage(
+					&model_analysis_pb.UserDefinedTransition_Key{
+						TransitionIdentifier:        tr.UserDefined,
+						InputConfigurationReference: patchedConfigurationReference.Message,
+					},
+					model_core.MapReferenceMetadataToWalkers(patchedConfigurationReference.Patcher),
+				),
+			)
+			if !transitionValue.IsSet() {
+				return nil, evaluation.ErrMissingDependency
+			}
+			switch result := transitionValue.Message.Result.(type) {
+			case *model_analysis_pb.UserDefinedTransition_Value_TransitionDependsOnAttrs:
+				newConfigurations, err := c.performUserDefinedTransition(
+					ctx,
+					e,
+					tr.UserDefined,
+					configurationReference,
+					model_starlark.NewStructFromDict[TReference, TMetadata](nil, map[string]any{
+						// TODO!
+					}),
+				)
+				if err != nil {
+					return nil, err
+				}
+				return nil, fmt.Errorf("TODO: support outgoing edge transition that depends on attrs %s", newConfigurations)
+			case *model_analysis_pb.UserDefinedTransition_Value_Success_:
+				configurationReferences = make([]model_core.Message[*model_core_pb.Reference, TReference], 0, len(result.Success.Entries))
+				for _, entry := range result.Success.Entries {
+					configurationReferences = append(configurationReferences, model_core.NewNestedMessage(transitionValue, entry.OutputConfigurationReference))
+				}
+				mayHaveMultipleConfigurations = true
+			default:
+				return nil, fmt.Errorf("transition %#v uses an unknown result type", tr.UserDefined)
+			}
+		default:
+			return nil, fmt.Errorf("attr %#v uses an unknown transition type", namedAttr.Name)
+		}
+	}
+
+	var attr starlark.Value
+	var concatenationOperator syntax.Token
+	if len(configurationReferences) == 0 {
+		for _, valuePart := range valueParts.Message {
+			decodedPart, err := model_starlark.DecodeValue[TReference, TMetadata](
+				model_core.NewNestedMessage(valueParts, valuePart),
+				/* currentIdentifier = */ nil,
+				c.getValueDecodingOptions(ctx, func(resolvedLabel label.ResolvedLabel) (starlark.Value, error) {
+					// We should leave the target
+					// unconfigured. Provide a
+					// target reference that does
+					// not contain any providers.
+					return model_starlark.NewTargetReference[TReference, TMetadata](
+						resolvedLabel,
+						model_core.NewSimpleMessage[TReference]([]*model_starlark_pb.Struct(nil)),
+					), nil
+				}),
+			)
+			if err != nil {
+				return nil, err
+			}
+			if err := concatenateAttrValueParts(thread, &concatenationOperator, &attr, decodedPart); err != nil {
+				return nil, err
+			}
+		}
+	} else {
+		missingDependencies := false
+		for _, configurationReference := range configurationReferences {
+			valueDecodingOptions := c.getValueDecodingOptions(ctx, func(resolvedLabel label.ResolvedLabel) (starlark.Value, error) {
+				// Resolve the label.
+				canonicalLabel, err := resolvedLabel.AsCanonical()
+				if err != nil {
+					return nil, err
+				}
+				patchedConfigurationReference1 := model_core.NewPatchedMessageFromExistingCaptured(e, configurationReference)
+				resolvedLabelValue := e.GetVisibleTargetValue(
+					model_core.NewPatchedMessage(
+						&model_analysis_pb.VisibleTarget_Key{
+							FromPackage:            visibilityFromPackage.String(),
+							ToLabel:                canonicalLabel.String(),
+							ConfigurationReference: patchedConfigurationReference1.Message,
+						},
+						model_core.MapReferenceMetadataToWalkers(patchedConfigurationReference1.Patcher),
+					),
+				)
+				if !resolvedLabelValue.IsSet() {
+					missingDependencies = true
+					return starlark.None, nil
+				}
+				if resolvedLabelStr := resolvedLabelValue.Message.Label; resolvedLabelStr != "" {
+					canonicalLabel, err := label.NewCanonicalLabel(resolvedLabelStr)
+					if err != nil {
+						return nil, fmt.Errorf("invalid label %#v: %w", resolvedLabelStr, err)
+					}
+
+					// Obtain the providers of the target.
+					patchedConfigurationReference2 := model_core.NewPatchedMessageFromExistingCaptured(e, configurationReference)
+					configuredTarget := e.GetConfiguredTargetValue(
+						model_core.NewPatchedMessage(
+							&model_analysis_pb.ConfiguredTarget_Key{
+								Label:                  resolvedLabelStr,
+								ConfigurationReference: patchedConfigurationReference2.Message,
+							},
+							model_core.MapReferenceMetadataToWalkers(patchedConfigurationReference2.Patcher),
+						),
+					)
+					if !configuredTarget.IsSet() {
+						missingDependencies = true
+						return starlark.None, nil
+					}
+
+					return model_starlark.NewTargetReference[TReference, TMetadata](
+						canonicalLabel.AsResolved(),
+						model_core.NewNestedMessage(configuredTarget, configuredTarget.Message.ProviderInstances),
+					), nil
+				} else {
+					return starlark.None, nil
+				}
+			})
+			for _, valuePart := range valueParts.Message {
+				decodedPart, err := model_starlark.DecodeValue[TReference, TMetadata](
+					model_core.NewNestedMessage(valueParts, valuePart),
+					/* currentIdentifier = */ nil,
+					valueDecodingOptions,
+				)
+				if err != nil {
+					return nil, err
+				}
+				if isScalar && mayHaveMultipleConfigurations {
+					decodedPart = starlark.NewList([]starlark.Value{decodedPart})
+				}
+				if err := concatenateAttrValueParts(thread, &concatenationOperator, &attr, decodedPart); err != nil {
+					return nil, err
+				}
+			}
+		}
+		if missingDependencies {
+			return nil, evaluation.ErrMissingDependency
+		}
+	}
+
+	// Combine the values of the parts into a single value.
+	if attr == nil {
+		return nil, errors.New("attr value does not have any parts")
+	}
+	attr.Freeze()
+	return attr, nil
+}
+
+func concatenateAttrValueParts(thread *starlark.Thread, concatenationOperator *syntax.Token, left *starlark.Value, right starlark.Value) error {
+	if *concatenationOperator == 0 {
+		// Initial round.
+		*left = right
+		if _, ok := right.(*starlark.Dict); ok {
+			*concatenationOperator = syntax.PIPE
+		} else {
+			*concatenationOperator = syntax.PLUS
+		}
+		return nil
+	}
+
+	v, err := starlark.Binary(thread, *concatenationOperator, *left, right)
+	if err != nil {
+		return err
+	}
+	*left = v
+	return nil
+}
+
+func (c *baseComputer[TReference, TMetadata]) ComputeConfiguredTargetValue(ctx context.Context, key model_core.Message[*model_analysis_pb.ConfiguredTarget_Key, TReference], e ConfiguredTargetEnvironment[TReference, TMetadata]) (PatchedConfiguredTargetValue, error) {
 	targetLabel, err := label.NewCanonicalLabel(key.Message.Label)
 	if err != nil {
 		return PatchedConfiguredTargetValue{}, fmt.Errorf("invalid target label: %w", err)
@@ -376,14 +636,101 @@ func (c *baseComputer[TReference, TMetadata]) ComputeConfiguredTargetValue(ctx c
 		}
 		ruleDefinition := model_core.NewNestedMessage(ruleValue, d.Definition)
 
-		// Determine the configuration to use. If an incoming
-		// edge transition is specified, apply it.
+		thread := c.newStarlarkThread(ctx, e, allBuiltinsModulesNames.Message.BuiltinsModuleNames)
+
+		// Obtain all attr values that don't depend on any
+		// configuration, as these need to be provided to any
+		// incoming edge transitions.
+		attrValues := make(map[string]any, len(ruleDefinition.Message.Attrs))
+		ruleTargetPublicAttrValues := ruleTarget.PublicAttrValues
+	GetConfigurationFreeAttrValues:
+		for _, namedAttr := range ruleDefinition.Message.Attrs {
+			var publicAttrValue *model_starlark_pb.RuleTarget_PublicAttrValue
+			if !strings.HasPrefix(namedAttr.Name, "_") {
+				if len(ruleTargetPublicAttrValues) == 0 {
+					return PatchedConfiguredTargetValue{}, errors.New("rule target has fewer public attr values than the rule definition has public attrs")
+				}
+				publicAttrValue = ruleTargetPublicAttrValues[0]
+				ruleTargetPublicAttrValues = ruleTargetPublicAttrValues[1:]
+			}
+
+			// Skip types that have values that contain
+			// labels, as those depend on a configuration.
+			switch namedAttr.Attr.GetType().(type) {
+			case *model_starlark_pb.Attr_Label, *model_starlark_pb.Attr_LabelList, *model_starlark_pb.Attr_LabelKeyedStringDict,
+				*model_starlark_pb.Attr_Output, *model_starlark_pb.Attr_OutputList:
+				continue GetConfigurationFreeAttrValues
+			}
+
+			var valueParts []model_core.Message[*model_starlark_pb.Value, TReference]
+			if !strings.HasPrefix(namedAttr.Name, "_") {
+				// Attr is public. Extract the value
+				// from the rule target.
+				selectGroups := publicAttrValue.ValueParts
+				if len(selectGroups) == 0 {
+					return PatchedConfiguredTargetValue{}, fmt.Errorf("attr %#v has no select groups", namedAttr.Name)
+				}
+				for _, selectGroup := range selectGroups {
+					if len(selectGroup.Conditions) > 0 {
+						// Conditions are present, meaning the value
+						// depends on a configuration.
+						continue GetConfigurationFreeAttrValues
+					}
+					noMatch, ok := selectGroup.NoMatch.(*model_starlark_pb.Select_Group_NoMatchValue)
+					if !ok {
+						// No default value provided.
+						continue GetConfigurationFreeAttrValues
+					}
+					valueParts = append(valueParts, model_core.NewNestedMessage(targetValue, noMatch.NoMatchValue))
+				}
+
+				// If the value is None, fall back to the
+				// default value from the rule definition.
+				if len(valueParts) == 1 {
+					if _, ok := valueParts[0].Message.Kind.(*model_starlark_pb.Value_None); ok {
+						valueParts = valueParts[:0]
+					}
+				}
+			}
+
+			// No value provided. Use the default value from the
+			// rule definition.
+			if len(valueParts) == 0 {
+				defaultValue := namedAttr.Attr.GetDefault()
+				if defaultValue == nil {
+					return PatchedConfiguredTargetValue{}, fmt.Errorf("missing value for mandatory attr %#v", namedAttr.Name)
+				}
+				valueParts = append(valueParts, model_core.NewNestedMessage(ruleDefinition, defaultValue))
+			}
+
+			var attrValue starlark.Value
+			var concatenationOperator syntax.Token
+			for _, valuePart := range valueParts {
+				decodedPart, err := model_starlark.DecodeValue[TReference, TMetadata](
+					valuePart,
+					/* currentIdentifier = */ nil,
+					c.getValueDecodingOptions(ctx, func(resolvedLabel label.ResolvedLabel) (starlark.Value, error) {
+						return nil, fmt.Errorf("value of attr %#v contains labels, which is not expected for this type", namedAttr.Name)
+					}),
+				)
+				if err != nil {
+					return PatchedConfiguredTargetValue{}, err
+				}
+				if err := concatenateAttrValueParts(thread, &concatenationOperator, &attrValue, decodedPart); err != nil {
+					return PatchedConfiguredTargetValue{}, err
+				}
+			}
+			attrValue.Freeze()
+			attrValues[namedAttr.Name] = attrValue
+		}
+		if l := len(ruleTargetPublicAttrValues); l != 0 {
+			return PatchedConfiguredTargetValue{}, fmt.Errorf("rule target has %d more public attr values than the rule definition has public attrs", l)
+		}
+
+		// If provided, apply a user defined incoming edge transition.
 		configurationReference := model_core.NewNestedMessage(key, key.Message.ConfigurationReference)
 		if cfgTransitionIdentifier := ruleDefinition.Message.CfgTransitionIdentifier; cfgTransitionIdentifier != "" {
-			patchedConfigurationReference := model_core.NewPatchedMessageFromExistingCaptured(
-				c.objectCapturer,
-				configurationReference,
-			)
+			patchedConfigurationReference := model_core.NewPatchedMessageFromExistingCaptured(e, configurationReference)
 			incomingEdgeTransitionValue := e.GetUserDefinedTransitionValue(
 				model_core.NewPatchedMessage(
 					&model_analysis_pb.UserDefinedTransition_Key{
@@ -396,20 +743,201 @@ func (c *baseComputer[TReference, TMetadata]) ComputeConfiguredTargetValue(ctx c
 			if !incomingEdgeTransitionValue.IsSet() {
 				return PatchedConfiguredTargetValue{}, evaluation.ErrMissingDependency
 			}
+
+			var configurationReferences model_core.Message[*model_analysis_pb.UserDefinedTransition_Value_Success, TReference]
 			switch result := incomingEdgeTransitionValue.Message.Result.(type) {
 			case *model_analysis_pb.UserDefinedTransition_Value_TransitionDependsOnAttrs:
-				return PatchedConfiguredTargetValue{}, fmt.Errorf("TODO: support incoming edge transitions that depends on attrs")
-			case *model_analysis_pb.UserDefinedTransition_Value_Success_:
-				if l := len(result.Success.Entries); l != 1 {
-					return PatchedConfiguredTargetValue{}, fmt.Errorf("incoming edge transition %#v used by rule %#v is a 1:%d transition, while a 1:1 transition was expected", cfgTransitionIdentifier, ruleIdentifier.String(), l)
+				// User defined incoming edge transition
+				// depends on attrs provided to this
+				// target, meaning we can't evaluate the
+				// user defined transition once and
+				// reuse the results. Rerun it with the
+				// attrs computed thus far.
+				patchedConfigurationReferences, err := c.performUserDefinedTransition(
+					ctx,
+					e,
+					cfgTransitionIdentifier,
+					configurationReference,
+					model_starlark.NewStructFromDict[TReference, TMetadata](nil, attrValues),
+				)
+				if err != nil {
+					return PatchedConfiguredTargetValue{}, err
 				}
-				configurationReference = model_core.NewNestedMessage(incomingEdgeTransitionValue, result.Success.Entries[0].OutputConfigurationReference)
+				configurationReferences = model_core.PeekPatchedMessage(e, patchedConfigurationReferences)
+			case *model_analysis_pb.UserDefinedTransition_Value_Success_:
+				configurationReferences = model_core.NewNestedMessage(incomingEdgeTransitionValue, result.Success)
 			default:
 				return PatchedConfiguredTargetValue{}, fmt.Errorf("incoming edge transition %#v used by rule %#v is not a 1:1 transition", cfgTransitionIdentifier, ruleIdentifier.String())
 			}
+
+			entries := configurationReferences.Message.Entries
+			if l := len(entries); l != 1 {
+				return PatchedConfiguredTargetValue{}, fmt.Errorf("incoming edge transition %#v used by rule %#v is a 1:%d transition, while a 1:1 transition was expected", cfgTransitionIdentifier, ruleIdentifier.String(), l)
+			}
+			configurationReference = model_core.NewNestedMessage(configurationReferences, entries[0].OutputConfigurationReference)
 		}
 
-		thread := c.newStarlarkThread(ctx, e, allBuiltinsModulesNames.Message.BuiltinsModuleNames)
+		// Compute non-label attrs that depend on a
+		// configuration, due to them using select().
+		missingDependencies := false
+		outputsValues := map[string]any{}
+		ruleTargetPublicAttrValues = ruleTarget.PublicAttrValues
+	GetNonLabelAttrValues:
+		for _, namedAttr := range ruleDefinition.Message.Attrs {
+			var publicAttrValue *model_starlark_pb.RuleTarget_PublicAttrValue
+			if !strings.HasPrefix(namedAttr.Name, "_") {
+				publicAttrValue = ruleTargetPublicAttrValues[0]
+				ruleTargetPublicAttrValues = ruleTargetPublicAttrValues[1:]
+			}
+			if _, ok := attrValues[namedAttr.Name]; ok {
+				// Attr was already computed previously.
+				continue
+			}
+
+			switch namedAttr.Attr.GetType().(type) {
+			case *model_starlark_pb.Attr_Label, *model_starlark_pb.Attr_LabelList, *model_starlark_pb.Attr_LabelKeyedStringDict:
+				continue GetNonLabelAttrValues
+			}
+
+			valueParts, _, err := getAttrValueParts(
+				e,
+				model_core.NewNestedMessage(ruleDefinition, namedAttr),
+				model_core.NewNestedMessage(targetValue, publicAttrValue),
+			)
+			if err != nil {
+				if errors.Is(err, evaluation.ErrMissingDependency) {
+					missingDependencies = true
+					continue GetNonLabelAttrValues
+				}
+				return PatchedConfiguredTargetValue{}, err
+			}
+
+			var attrValue starlark.Value
+			var concatenationOperator syntax.Token
+			var attrOutputs []starlark.Value
+			for _, valuePart := range valueParts.Message {
+				decodedPart, err := model_starlark.DecodeValue[TReference, TMetadata](
+					model_core.NewNestedMessage(valueParts, valuePart),
+					/* currentIdentifier = */ nil,
+					c.getValueDecodingOptions(ctx, func(resolvedLabel label.ResolvedLabel) (starlark.Value, error) {
+						switch namedAttr.Attr.GetType().(type) {
+						case *model_starlark_pb.Attr_Output, *model_starlark_pb.Attr_OutputList:
+							canonicalLabel, err := resolvedLabel.AsCanonical()
+							if err != nil {
+								return nil, err
+							}
+							canonicalPackage := canonicalLabel.GetCanonicalPackage()
+							if canonicalPackage != targetLabel.GetCanonicalPackage() {
+								return nil, fmt.Errorf("output attr %#v contains to label %#v, which refers to a different package", namedAttr.Name, canonicalLabel.String())
+							}
+							attrOutputs = append(attrOutputs, model_starlark.NewFile[TReference, TMetadata](&model_starlark_pb.File{
+								Owner: &model_starlark_pb.File_Owner{
+									// TODO: Fill in a proper hash.
+									Cfg:        []byte{0xbe, 0x8a, 0x60, 0x1c, 0xe3, 0x03, 0x44, 0xf0},
+									TargetName: targetLabel.GetTargetName().String(),
+								},
+								Package:             canonicalPackage.String(),
+								PackageRelativePath: canonicalLabel.GetTargetName().String(),
+								Type:                model_starlark_pb.File_FILE,
+							}))
+							return model_starlark.NewLabel[TReference, TMetadata](resolvedLabel), nil
+						default:
+							return nil, fmt.Errorf("value of attr %#v contains labels, which is not expected for this type", namedAttr.Name)
+						}
+					}),
+				)
+				if err != nil {
+					return PatchedConfiguredTargetValue{}, err
+				}
+				if err := concatenateAttrValueParts(thread, &concatenationOperator, &attrValue, decodedPart); err != nil {
+					return PatchedConfiguredTargetValue{}, err
+				}
+			}
+			attrValue.Freeze()
+			attrValues[namedAttr.Name] = attrValue
+
+			switch namedAttr.Attr.GetType().(type) {
+			case *model_starlark_pb.Attr_Output:
+				if len(attrOutputs) == 0 {
+					outputsValues[namedAttr.Name] = starlark.None
+				} else if len(attrOutputs) == 1 {
+					outputsValues[namedAttr.Name] = attrOutputs[0]
+				} else {
+					return PatchedConfiguredTargetValue{}, fmt.Errorf("value of attr %#v contains multiple labels, which is not expected for attrs of type output", namedAttr.Name)
+				}
+			case *model_starlark_pb.Attr_OutputList:
+				if len(attrOutputs) == 0 {
+					outputsValues[namedAttr.Name] = starlark.None
+				} else {
+					outputsValues[namedAttr.Name] = starlark.NewList(attrOutputs)
+				}
+			}
+		}
+		if missingDependencies {
+			return PatchedConfiguredTargetValue{}, evaluation.ErrMissingDependency
+		}
+
+		// Last but not least, get the values of label attr.
+		executableValues := map[string]any{}
+		fileValues := map[string]any{}
+		filesValues := map[string]any{}
+		ruleTargetPublicAttrValues = ruleTarget.PublicAttrValues
+	GetLabelAttrValues:
+		for _, namedAttr := range ruleDefinition.Message.Attrs {
+			var publicAttrValue *model_starlark_pb.RuleTarget_PublicAttrValue
+			if !strings.HasPrefix(namedAttr.Name, "_") {
+				publicAttrValue = ruleTargetPublicAttrValues[0]
+				ruleTargetPublicAttrValues = ruleTargetPublicAttrValues[1:]
+			}
+			if _, ok := attrValues[namedAttr.Name]; ok {
+				// Attr was already computed previously.
+				continue
+			}
+
+			valueParts, usedDefaultValue, err := getAttrValueParts(
+				e,
+				model_core.NewNestedMessage(ruleDefinition, namedAttr),
+				model_core.NewNestedMessage(targetValue, publicAttrValue),
+			)
+			if err != nil {
+				if errors.Is(err, evaluation.ErrMissingDependency) {
+					missingDependencies = true
+					continue GetLabelAttrValues
+				}
+				return PatchedConfiguredTargetValue{}, err
+			}
+
+			var visibilityFromPackage label.CanonicalPackage
+			if usedDefaultValue {
+				visibilityFromPackage = ruleIdentifier.GetCanonicalLabel().GetCanonicalPackage()
+			} else {
+				visibilityFromPackage = targetLabel.GetCanonicalPackage()
+			}
+
+			attrValue, err := c.configureAttrValueParts(
+				ctx,
+				e,
+				thread,
+				namedAttr,
+				valueParts,
+				configurationReference,
+				visibilityFromPackage,
+			)
+			if err != nil {
+				if errors.Is(err, evaluation.ErrMissingDependency) {
+					missingDependencies = true
+					continue GetLabelAttrValues
+				}
+				return PatchedConfiguredTargetValue{}, err
+			}
+			attrValues[namedAttr.Name] = attrValue
+
+			// TODO: Set executable file files!
+		}
+		if missingDependencies {
+			return PatchedConfiguredTargetValue{}, evaluation.ErrMissingDependency
+		}
+
 		rc := &ruleContext[TReference, TMetadata]{
 			computer:               c,
 			context:                ctx,
@@ -419,11 +947,11 @@ func (c *baseComputer[TReference, TMetadata]) ComputeConfiguredTargetValue(ctx c
 			configurationReference: configurationReference,
 			ruleDefinition:         ruleDefinition,
 			ruleTarget:             model_core.NewNestedMessage(targetValue, ruleTarget),
-			attrs:                  make([]starlark.Value, len(ruleDefinition.Message.Attrs)),
-			executables:            make([]starlark.Value, len(ruleDefinition.Message.Attrs)),
-			singleFiles:            make([]starlark.Value, len(ruleDefinition.Message.Attrs)),
-			multipleFiles:          make([]starlark.Value, len(ruleDefinition.Message.Attrs)),
-			outputs:                make([]starlark.Value, len(ruleDefinition.Message.Attrs)),
+			attr:                   model_starlark.NewStructFromDict[TReference, TMetadata](nil, attrValues),
+			executable:             model_starlark.NewStructFromDict[TReference, TMetadata](nil, executableValues),
+			file:                   model_starlark.NewStructFromDict[TReference, TMetadata](nil, fileValues),
+			files:                  model_starlark.NewStructFromDict[TReference, TMetadata](nil, filesValues),
+			outputs:                model_starlark.NewStructFromDict[TReference, TMetadata](nil, outputsValues),
 			execGroups:             make([]*ruleContextExecGroupState, len(ruleDefinition.Message.ExecGroups)),
 			fragments:              map[string]*model_starlark.Struct[TReference, TMetadata]{},
 		}
@@ -474,10 +1002,13 @@ func (c *baseComputer[TReference, TMetadata]) ComputeConfiguredTargetValue(ctx c
 					return nil, fmt.Errorf("missing value for mandatory attr %#v", namedAttr.Name)
 				}
 				// TODO: Is this using the correct configuration?
-				value, err := rc.configureAttr(
+				value, err := rc.computer.configureAttrValueParts(
+					rc.context,
+					rc.environment,
 					thread,
 					namedAttr,
 					model_core.NewNestedMessage(rc.ruleDefinition, []*model_starlark_pb.Value{defaultValue}),
+					rc.configurationReference,
 					rc.ruleIdentifier.GetCanonicalLabel().GetCanonicalPackage(),
 				)
 				if err != nil {
@@ -629,7 +1160,7 @@ func (c *baseComputer[TReference, TMetadata]) ComputeConfiguredTargetValue(ctx c
 			},
 		) {
 			v, _, err := providerInstancesByIdentifier[providerIdentifier].
-				Encode(map[starlark.Value]struct{}{}, c.getValueEncodingOptions(targetLabel))
+				Encode(map[starlark.Value]struct{}{}, c.getValueEncodingOptions(e, targetLabel))
 			if err != nil {
 				return PatchedConfiguredTargetValue{}, err
 			}
@@ -658,18 +1189,18 @@ func (c *baseComputer[TReference, TMetadata]) ComputeConfiguredTargetValue(ctx c
 type ruleContext[TReference object.BasicReference, TMetadata BaseComputerReferenceMetadata] struct {
 	computer               *baseComputer[TReference, TMetadata]
 	context                context.Context
-	environment            ConfiguredTargetEnvironment[TReference]
+	environment            ConfiguredTargetEnvironment[TReference, TMetadata]
 	ruleIdentifier         label.CanonicalStarlarkIdentifier
 	targetLabel            label.CanonicalLabel
 	configurationReference model_core.Message[*model_core_pb.Reference, TReference]
 	ruleDefinition         model_core.Message[*model_starlark_pb.Rule_Definition, TReference]
 	ruleTarget             model_core.Message[*model_starlark_pb.RuleTarget, TReference]
-	attrs                  []starlark.Value
+	attr                   starlark.Value
 	buildSettingValue      starlark.Value
-	executables            []starlark.Value
-	singleFiles            []starlark.Value
-	multipleFiles          []starlark.Value
-	outputs                []starlark.Value
+	executable             starlark.Value
+	file                   starlark.Value
+	files                  starlark.Value
+	outputs                starlark.Value
 	execGroups             []*ruleContextExecGroupState
 	tags                   *starlark.List
 	fragments              map[string]*model_starlark.Struct[TReference, TMetadata]
@@ -703,9 +1234,7 @@ func (rc *ruleContext[TReference, TMetadata]) Attr(thread *starlark.Thread, name
 			ruleContext: rc,
 		}, nil
 	case "attr":
-		return &ruleContextAttr[TReference, TMetadata]{
-			ruleContext: rc,
-		}, nil
+		return rc.attr, nil
 	case "build_setting_value":
 		if rc.buildSettingValue == nil {
 			buildSettingDefault := rc.ruleTarget.Message.BuildSettingDefault
@@ -798,22 +1327,16 @@ func (rc *ruleContext[TReference, TMetadata]) Attr(thread *starlark.Thread, name
 			ruleContext: rc,
 		}, nil
 	case "executable":
-		return &ruleContextExecutable[TReference, TMetadata]{
-			ruleContext: rc,
-		}, nil
+		return rc.executable, nil
 	case "expand_location":
 		return starlark.NewBuiltin("ctx.expand_location", rc.doExpandLocation), nil
 	case "features":
 		// TODO: Do we want to support ctx.features in a meaningful way?
 		return starlark.NewList(nil), nil
 	case "file":
-		return &ruleContextFile[TReference, TMetadata]{
-			ruleContext: rc,
-		}, nil
+		return rc.file, nil
 	case "files":
-		return &ruleContextFiles[TReference, TMetadata]{
-			ruleContext: rc,
-		}, nil
+		return rc.files, nil
 	case "fragments":
 		return &ruleContextFragments[TReference, TMetadata]{
 			ruleContext: rc,
@@ -832,9 +1355,7 @@ func (rc *ruleContext[TReference, TMetadata]) Attr(thread *starlark.Thread, name
 	case "label":
 		return model_starlark.NewLabel[TReference, TMetadata](rc.targetLabel.AsResolved()), nil
 	case "outputs":
-		return &ruleContextOutputs[TReference, TMetadata]{
-			ruleContext: rc,
-		}, nil
+		return rc.outputs, nil
 	case "runfiles":
 		return starlark.NewBuiltin("ctx.runfiles", rc.doRunfiles), nil
 	case "target_platform_has_constraint":
@@ -878,195 +1399,6 @@ func (rc *ruleContext[TReference, TMetadata]) Attr(thread *starlark.Thread, name
 	default:
 		return nil, nil
 	}
-}
-
-func (rc *ruleContext[TReference, TMetadata]) configureAttr(thread *starlark.Thread, namedAttr *model_starlark_pb.NamedAttr, valueParts model_core.Message[[]*model_starlark_pb.Value, TReference], visibilityFromPackage label.CanonicalPackage) (starlark.Value, error) {
-	// See if any transitions need to be applied.
-	var cfg *model_starlark_pb.Transition_Reference
-	isScalar := false
-	switch attrType := namedAttr.Attr.GetType().(type) {
-	case *model_starlark_pb.Attr_Label:
-		cfg = attrType.Label.ValueOptions.GetCfg()
-		isScalar = true
-	case *model_starlark_pb.Attr_LabelKeyedStringDict:
-		cfg = attrType.LabelKeyedStringDict.DictKeyOptions.GetCfg()
-	case *model_starlark_pb.Attr_LabelList:
-		cfg = attrType.LabelList.ListValueOptions.GetCfg()
-	}
-	var configurationReferences []model_core.Message[*model_core_pb.Reference, TReference]
-	mayHaveMultipleConfigurations := false
-	if cfg != nil {
-		switch tr := cfg.Kind.(type) {
-		case *model_starlark_pb.Transition_Reference_ExecGroup:
-			// TODO: Actually transition to the exec platform!
-			configurationReferences = []model_core.Message[*model_core_pb.Reference, TReference]{
-				rc.configurationReference,
-			}
-		case *model_starlark_pb.Transition_Reference_None:
-			// Use the empty configuration.
-			configurationReferences = []model_core.Message[*model_core_pb.Reference, TReference]{
-				model_core.NewSimpleMessage[TReference, *model_core_pb.Reference](nil),
-			}
-		case *model_starlark_pb.Transition_Reference_Target:
-			// Don't transition. Use the current target.
-			configurationReferences = []model_core.Message[*model_core_pb.Reference, TReference]{
-				rc.configurationReference,
-			}
-		case *model_starlark_pb.Transition_Reference_Unconfigured:
-			// Leave targets unconfigured.
-		case *model_starlark_pb.Transition_Reference_UserDefined:
-			// TODO: Should we cache this in the ruleContext?
-			configurationReference := rc.getPatchedConfigurationReference()
-			transitionValue := rc.environment.GetUserDefinedTransitionValue(
-				model_core.NewPatchedMessage(
-					&model_analysis_pb.UserDefinedTransition_Key{
-						TransitionIdentifier:        tr.UserDefined,
-						InputConfigurationReference: configurationReference.Message,
-					},
-					model_core.MapReferenceMetadataToWalkers(configurationReference.Patcher),
-				),
-			)
-			if !transitionValue.IsSet() {
-				return nil, evaluation.ErrMissingDependency
-			}
-			switch result := transitionValue.Message.Result.(type) {
-			case *model_analysis_pb.UserDefinedTransition_Value_TransitionDependsOnAttrs:
-				return nil, fmt.Errorf("TODO: support transitions that depends on attrs")
-			case *model_analysis_pb.UserDefinedTransition_Value_Success_:
-				configurationReferences = make([]model_core.Message[*model_core_pb.Reference, TReference], 0, len(result.Success.Entries))
-				for _, entry := range result.Success.Entries {
-					configurationReferences = append(configurationReferences, model_core.NewNestedMessage(transitionValue, entry.OutputConfigurationReference))
-				}
-				mayHaveMultipleConfigurations = true
-			default:
-				return nil, fmt.Errorf("transition %#v uses an unknown result type", tr.UserDefined)
-			}
-		default:
-			return nil, fmt.Errorf("attr %#v uses an unknown transition type", namedAttr.Name)
-		}
-	}
-
-	decodedParts := make([]starlark.Value, 0, len(valueParts.Message))
-	if len(configurationReferences) == 0 {
-		for _, valuePart := range valueParts.Message {
-			decodedPart, err := model_starlark.DecodeValue[TReference, TMetadata](
-				model_core.NewNestedMessage(valueParts, valuePart),
-				/* currentIdentifier = */ nil,
-				rc.computer.getValueDecodingOptions(rc.context, func(resolvedLabel label.ResolvedLabel) (starlark.Value, error) {
-					// We should leave the target
-					// unconfigured. Provide a
-					// target reference that does
-					// not contain any providers.
-					return model_starlark.NewTargetReference[TReference, TMetadata](
-						resolvedLabel,
-						model_core.NewSimpleMessage[TReference]([]*model_starlark_pb.Struct(nil)),
-					), nil
-				}),
-			)
-			if err != nil {
-				return nil, err
-			}
-			decodedParts = append(decodedParts, decodedPart)
-		}
-	} else {
-		missingDependencies := false
-		for _, configurationReference := range configurationReferences {
-			valueDecodingOptions := rc.computer.getValueDecodingOptions(rc.context, func(resolvedLabel label.ResolvedLabel) (starlark.Value, error) {
-				// Resolve the label.
-				canonicalLabel, err := resolvedLabel.AsCanonical()
-				if err != nil {
-					return nil, err
-				}
-				patchedConfigurationReference1 := model_core.NewPatchedMessageFromExistingCaptured(
-					rc.computer.objectCapturer,
-					configurationReference,
-				)
-				resolvedLabelValue := rc.environment.GetVisibleTargetValue(
-					model_core.NewPatchedMessage(
-						&model_analysis_pb.VisibleTarget_Key{
-							FromPackage:            visibilityFromPackage.String(),
-							ToLabel:                canonicalLabel.String(),
-							ConfigurationReference: patchedConfigurationReference1.Message,
-						},
-						model_core.MapReferenceMetadataToWalkers(patchedConfigurationReference1.Patcher),
-					),
-				)
-				if !resolvedLabelValue.IsSet() {
-					missingDependencies = true
-					return starlark.None, nil
-				}
-				if resolvedLabelStr := resolvedLabelValue.Message.Label; resolvedLabelStr != "" {
-					canonicalLabel, err := label.NewCanonicalLabel(resolvedLabelStr)
-					if err != nil {
-						return nil, fmt.Errorf("invalid label %#v: %w", resolvedLabelStr, err)
-					}
-
-					// Obtain the providers of the target.
-					patchedConfigurationReference2 := model_core.NewPatchedMessageFromExistingCaptured(
-						rc.computer.objectCapturer,
-						configurationReference,
-					)
-					configuredTarget := rc.environment.GetConfiguredTargetValue(
-						model_core.NewPatchedMessage(
-							&model_analysis_pb.ConfiguredTarget_Key{
-								Label:                  resolvedLabelStr,
-								ConfigurationReference: patchedConfigurationReference2.Message,
-							},
-							model_core.MapReferenceMetadataToWalkers(patchedConfigurationReference2.Patcher),
-						),
-					)
-					if !configuredTarget.IsSet() {
-						missingDependencies = true
-						return starlark.None, nil
-					}
-
-					return model_starlark.NewTargetReference[TReference, TMetadata](
-						canonicalLabel.AsResolved(),
-						model_core.NewNestedMessage(configuredTarget, configuredTarget.Message.ProviderInstances),
-					), nil
-				} else {
-					return starlark.None, nil
-				}
-			})
-			for _, valuePart := range valueParts.Message {
-				decodedPart, err := model_starlark.DecodeValue[TReference, TMetadata](
-					model_core.NewNestedMessage(valueParts, valuePart),
-					/* currentIdentifier = */ nil,
-					valueDecodingOptions,
-				)
-				if err != nil {
-					return nil, err
-				}
-				if isScalar && mayHaveMultipleConfigurations {
-					decodedPart = starlark.NewList([]starlark.Value{decodedPart})
-				}
-				decodedParts = append(decodedParts, decodedPart)
-			}
-		}
-		if missingDependencies {
-			return nil, evaluation.ErrMissingDependency
-		}
-	}
-
-	// Combine the values of the parts into a single value.
-	if len(decodedParts) == 0 {
-		return nil, errors.New("attr value does not have any parts")
-	}
-	attr := decodedParts[0]
-	concatenationOperator := syntax.PLUS
-	if _, ok := attr.(*starlark.Dict); ok {
-		concatenationOperator = syntax.PIPE
-	}
-	for _, decodedPart := range decodedParts[1:] {
-		var err error
-		attr, err = starlark.Binary(thread, concatenationOperator, attr, decodedPart)
-		if err != nil {
-			return nil, err
-		}
-	}
-
-	attr.Freeze()
-	return attr, nil
 }
 
 var ruleContextAttrNames = []string{
@@ -1176,70 +1508,6 @@ func (ruleContext[TReference, TMetadata]) doTargetPlatformHasConstraint(thread *
 	}
 
 	return nil, errors.New("TODO: Implement target platform has constraint")
-}
-
-func (rc *ruleContext[TReference, TMetadata]) getAttrValueParts(namedAttr *model_starlark_pb.NamedAttr) (valueParts model_core.Message[[]*model_starlark_pb.Value, TReference], visibilityFromPackage label.CanonicalPackage, err error) {
-	attr := namedAttr.Attr
-	var badCanonicalPackage label.CanonicalPackage
-	if attr == nil {
-		return model_core.Message[[]*model_starlark_pb.Value, TReference]{}, badCanonicalPackage, fmt.Errorf("attr %#v misses a definition", namedAttr.Name)
-	}
-
-	if !strings.HasPrefix(namedAttr.Name, "_") {
-		// Attr is public. Extract the value from the rule target.
-		ruleTargetAttrValues := rc.ruleTarget.Message.AttrValues
-		ruleTargetAttrValueIndex, ok := sort.Find(
-			len(ruleTargetAttrValues),
-			func(i int) int { return strings.Compare(namedAttr.Name, ruleTargetAttrValues[i].Name) },
-		)
-		if !ok {
-			return model_core.Message[[]*model_starlark_pb.Value, TReference]{}, badCanonicalPackage, fmt.Errorf("missing value for attr %#v", namedAttr.Name)
-		}
-
-		selectGroups := ruleTargetAttrValues[ruleTargetAttrValueIndex].ValueParts
-		if len(selectGroups) == 0 {
-			return model_core.Message[[]*model_starlark_pb.Value, TReference]{}, badCanonicalPackage, fmt.Errorf("attr %#v has no select groups", namedAttr.Name)
-		}
-		valueParts := make([]*model_starlark_pb.Value, 0, len(selectGroups))
-		for _, selectGroup := range selectGroups {
-			valuePart, err := getValueFromSelectGroup(rc.environment, selectGroup, false)
-			if err != nil {
-				return model_core.Message[[]*model_starlark_pb.Value, TReference]{}, badCanonicalPackage, err
-			}
-			valueParts = append(valueParts, valuePart)
-		}
-
-		// If the value is None, fall back to the default value
-		// from the rule definition.
-		gotProperValue := true
-		if len(valueParts) == 1 {
-			if _, ok := valueParts[0].Kind.(*model_starlark_pb.Value_None); ok {
-				gotProperValue = false
-			}
-		}
-		if gotProperValue {
-			return model_core.NewNestedMessage(rc.ruleTarget, valueParts),
-				rc.targetLabel.GetCanonicalPackage(),
-				nil
-		}
-	}
-
-	// No value provided. Use the default value from the rule definition.
-	if attr.Default == nil {
-		return model_core.Message[[]*model_starlark_pb.Value, TReference]{}, badCanonicalPackage, fmt.Errorf("missing value for mandatory attr %#v", namedAttr.Name)
-	}
-	return model_core.NewNestedMessage(rc.ruleDefinition, []*model_starlark_pb.Value{attr.Default}),
-		rc.ruleIdentifier.GetCanonicalLabel().GetCanonicalPackage(),
-		nil
-}
-
-func (rc *ruleContext[TReference, TMetadata]) getPatchedConfigurationReference() model_core.PatchedMessage[*model_core_pb.Reference, TMetadata] {
-	// TODO: This function should likely not exist, as we need to
-	// take transitions into account.
-	return model_core.NewPatchedMessageFromExistingCaptured(
-		rc.computer.objectCapturer,
-		rc.configurationReference,
-	)
 }
 
 type ruleContextActions[TReference object.BasicReference, TMetadata BaseComputerReferenceMetadata] struct {
@@ -1550,88 +1818,6 @@ func (rca *ruleContextActions[TReference, TMetadata]) doWrite(thread *starlark.T
 	return starlark.None, nil
 }
 
-type ruleContextAttr[TReference object.BasicReference, TMetadata BaseComputerReferenceMetadata] struct {
-	ruleContext *ruleContext[TReference, TMetadata]
-}
-
-var _ starlark.HasAttrs = (*ruleContextAttr[object.GlobalReference, BaseComputerReferenceMetadata])(nil)
-
-func (ruleContextAttr[TReference, TMetadata]) String() string {
-	return "<ctx.attr>"
-}
-
-func (ruleContextAttr[TReference, TMetadata]) Type() string {
-	return "ctx.attr"
-}
-
-func (ruleContextAttr[TReference, TMetadata]) Freeze() {
-}
-
-func (ruleContextAttr[TReference, TMetadata]) Truth() starlark.Bool {
-	return starlark.True
-}
-
-func (ruleContextAttr[TReference, TMetadata]) Hash(thread *starlark.Thread) (uint32, error) {
-	return 0, errors.New("ctx.attr cannot be hashed")
-}
-
-func (rca *ruleContextAttr[TReference, TMetadata]) Attr(thread *starlark.Thread, name string) (starlark.Value, error) {
-	rc := rca.ruleContext
-	switch name {
-	case "tags":
-		if rc.tags == nil {
-			tags := rc.ruleTarget.Message.Tags
-			tagValues := make([]starlark.Value, 0, len(tags))
-			for _, tag := range tags {
-				tagValues = append(tagValues, starlark.String(tag))
-			}
-			rc.tags = starlark.NewList(tagValues)
-			rc.tags.Freeze()
-		}
-		return rc.tags, nil
-	case "testonly":
-		return starlark.Bool(rc.ruleTarget.Message.InheritableAttrs.GetTestonly()), nil
-	default:
-		// Starlark rule attr.
-		ruleDefinitionAttrs := rc.ruleDefinition.Message.Attrs
-		ruleDefinitionAttrIndex, ok := sort.Find(
-			len(ruleDefinitionAttrs),
-			func(i int) int { return strings.Compare(name, ruleDefinitionAttrs[i].Name) },
-		)
-		if !ok {
-			return nil, starlark.NoSuchAttrError(fmt.Sprintf("rule does not have an attr named %#v", name))
-		}
-		attr := rc.attrs[ruleDefinitionAttrIndex]
-		if attr == nil {
-			// Decode the values of the parts of the attribute.
-			namedAttr := ruleDefinitionAttrs[ruleDefinitionAttrIndex]
-			valueParts, visibilityFromPackage, err := rc.getAttrValueParts(namedAttr)
-			if err != nil {
-				return nil, err
-			}
-			attr, err = rc.configureAttr(thread, namedAttr, valueParts, visibilityFromPackage)
-			if err != nil {
-				return nil, err
-			}
-			rc.attrs[ruleDefinitionAttrIndex] = attr
-		}
-		return attr, nil
-	}
-}
-
-func (rca *ruleContextAttr[TReference, TMetadata]) AttrNames() []string {
-	attrs := rca.ruleContext.ruleDefinition.Message.Attrs
-	attrNames := append(
-		make([]string, 0, len(attrs)+1),
-		"tags",
-		"testonly",
-	)
-	for _, attr := range attrs {
-		attrNames = append(attrNames, attr.Name)
-	}
-	return attrNames
-}
-
 type ruleContextExecGroups[TReference object.BasicReference, TMetadata BaseComputerReferenceMetadata] struct {
 	ruleContext *ruleContext[TReference, TMetadata]
 }
@@ -1676,418 +1862,6 @@ func (rca *ruleContextExecGroups[TReference, TMetadata]) Get(thread *starlark.Th
 	return nil, true, fmt.Errorf("TODO: use exec group with index %d", execGroupIndex)
 }
 
-type ruleContextExecutable[TReference object.BasicReference, TMetadata BaseComputerReferenceMetadata] struct {
-	ruleContext *ruleContext[TReference, TMetadata]
-}
-
-var _ starlark.HasAttrs = (*ruleContextExecutable[object.GlobalReference, BaseComputerReferenceMetadata])(nil)
-
-func (ruleContextExecutable[TReference, TMetadata]) String() string {
-	return "<ctx.executable>"
-}
-
-func (ruleContextExecutable[TReference, TMetadata]) Type() string {
-	return "ctx.executable"
-}
-
-func (ruleContextExecutable[TReference, TMetadata]) Freeze() {
-}
-
-func (ruleContextExecutable[TReference, TMetadata]) Truth() starlark.Bool {
-	return starlark.True
-}
-
-func (ruleContextExecutable[TReference, TMetadata]) Hash(thread *starlark.Thread) (uint32, error) {
-	return 0, errors.New("ctx.executable cannot be hashed")
-}
-
-func (rce *ruleContextExecutable[TReference, TMetadata]) Attr(thread *starlark.Thread, name string) (starlark.Value, error) {
-	rc := rce.ruleContext
-	ruleDefinitionAttrs := rc.ruleDefinition.Message.Attrs
-	ruleDefinitionAttrIndex, ok := sort.Find(
-		len(ruleDefinitionAttrs),
-		func(i int) int { return strings.Compare(name, ruleDefinitionAttrs[i].Name) },
-	)
-	if !ok {
-		return nil, starlark.NoSuchAttrError(fmt.Sprintf("rule does not have an attr named %#v", name))
-	}
-
-	executable := rc.executables[ruleDefinitionAttrIndex]
-	if executable == nil {
-		labelType, ok := ruleDefinitionAttrs[ruleDefinitionAttrIndex].Attr.GetType().(*model_starlark_pb.Attr_Label)
-		if !ok {
-			return nil, fmt.Errorf("attr %#v is not of type of label", name)
-		}
-		if !labelType.Label.Executable {
-			return nil, fmt.Errorf("attr %#v does not have executable set", name)
-		}
-
-		// Decode the values of the parts of the attribute.
-		valueParts, visibilityFromPackage, err := rc.getAttrValueParts(ruleDefinitionAttrs[ruleDefinitionAttrIndex])
-		if err != nil {
-			return nil, err
-		}
-		if len(valueParts.Message) != 1 {
-			return nil, errors.New("labels cannot consist of multiple value parts")
-		}
-		switch labelValue := valueParts.Message[0].GetKind().(type) {
-		case *model_starlark_pb.Value_Label:
-			// Extract the executable from the label's DefaultInfo.
-			configurationReference := rc.getPatchedConfigurationReference()
-			visibleTarget := rc.environment.GetVisibleTargetValue(
-				model_core.NewPatchedMessage(
-					&model_analysis_pb.VisibleTarget_Key{
-						FromPackage:            visibilityFromPackage.String(),
-						ToLabel:                labelValue.Label,
-						ConfigurationReference: configurationReference.Message,
-					},
-					model_core.MapReferenceMetadataToWalkers(configurationReference.Patcher),
-				),
-			)
-			if !visibleTarget.IsSet() {
-				return nil, evaluation.ErrMissingDependency
-			}
-			defaultInfo, err := getProviderFromConfiguredTarget(
-				rc.environment,
-				visibleTarget.Message.Label,
-				rc.getPatchedConfigurationReference(),
-				defaultInfoProviderIdentifier,
-			)
-			if err != nil {
-				return nil, fmt.Errorf("attr %#v with label %#v: %w", name, visibleTarget.Message.Label, err)
-			}
-			listReader := rc.computer.valueReaders.List
-			filesToRun, err := model_starlark.GetStructFieldValue(rc.context, listReader, defaultInfo, "files_to_run")
-			if err != nil {
-				return nil, fmt.Errorf("failed to obtain field \"files_to_run\" of DefaultInfo provider of target with label %#v: %w", visibleTarget.Message.Label, err)
-			}
-			filesToRunStruct, ok := filesToRun.Message.Kind.(*model_starlark_pb.Value_Struct)
-			if !ok {
-				return nil, fmt.Errorf("field \"files_to_run\" of DefaultInfo provider of target with label %#v is not a struct", visibleTarget.Message.Label)
-			}
-			encodedExecutable, err := model_starlark.GetStructFieldValue(
-				rc.context,
-				listReader,
-				model_core.NewNestedMessage(filesToRun, filesToRunStruct.Struct.Fields),
-				"executable",
-			)
-			if err != nil {
-				return nil, fmt.Errorf("failed to obtain field \"files_to_run.executable\" of DefaultInfo provider of target with label %#v: %w", visibleTarget.Message.Label, err)
-			}
-
-			executable, err = model_starlark.DecodeValue[TReference, TMetadata](
-				encodedExecutable,
-				/* currentIdentifier = */ nil,
-				rc.computer.getValueDecodingOptions(rc.context, func(resolvedLabel label.ResolvedLabel) (starlark.Value, error) {
-					return model_starlark.NewLabel[TReference, TMetadata](resolvedLabel), nil
-				}),
-			)
-			if err != nil {
-				return nil, fmt.Errorf("failed to decode executable of target with label %#v: %w", visibleTarget.Message.Label, err)
-			}
-		case *model_starlark_pb.Value_None:
-			executable = starlark.None
-		default:
-			return nil, fmt.Errorf("value of attr %#v is not of type label", name)
-
-		}
-
-		// Cache attr value for subsequent lookups.
-		executable.Freeze()
-		rc.executables[ruleDefinitionAttrIndex] = executable
-	}
-	return executable, nil
-}
-
-func (ruleContextExecutable[TReference, TMetadata]) AttrNames() []string {
-	panic("TODO")
-}
-
-type ruleContextFile[TReference object.BasicReference, TMetadata BaseComputerReferenceMetadata] struct {
-	ruleContext *ruleContext[TReference, TMetadata]
-}
-
-var _ starlark.HasAttrs = (*ruleContextFile[object.GlobalReference, BaseComputerReferenceMetadata])(nil)
-
-func (ruleContextFile[TReference, TMetadata]) String() string {
-	return "<ctx.file>"
-}
-
-func (ruleContextFile[TReference, TMetadata]) Type() string {
-	return "ctx.file"
-}
-
-func (ruleContextFile[TReference, TMetadata]) Freeze() {
-}
-
-func (ruleContextFile[TReference, TMetadata]) Truth() starlark.Bool {
-	return starlark.True
-}
-
-func (ruleContextFile[TReference, TMetadata]) Hash(thread *starlark.Thread) (uint32, error) {
-	return 0, errors.New("ctx.file cannot be hashed")
-}
-
-func (rcf *ruleContextFile[TReference, TMetadata]) Attr(thread *starlark.Thread, name string) (starlark.Value, error) {
-	rc := rcf.ruleContext
-	ruleDefinitionAttrs := rc.ruleDefinition.Message.Attrs
-	ruleDefinitionAttrIndex, ok := sort.Find(
-		len(ruleDefinitionAttrs),
-		func(i int) int { return strings.Compare(name, ruleDefinitionAttrs[i].Name) },
-	)
-	if !ok {
-		return nil, starlark.NoSuchAttrError(fmt.Sprintf("rule does not have an attr named %#v", name))
-	}
-
-	file := rc.singleFiles[ruleDefinitionAttrIndex]
-	if file == nil {
-		labelType, ok := ruleDefinitionAttrs[ruleDefinitionAttrIndex].Attr.GetType().(*model_starlark_pb.Attr_Label)
-		if !ok {
-			return nil, fmt.Errorf("attr %#v is not of type of label", name)
-		}
-		if !labelType.Label.AllowSingleFile {
-			return nil, fmt.Errorf("attr %#v does not have allow_single_file set", name)
-		}
-
-		// Decode the values of the parts of the attribute.
-		valueParts, visibilityFromPackage, err := rc.getAttrValueParts(ruleDefinitionAttrs[ruleDefinitionAttrIndex])
-		if err != nil {
-			return nil, err
-		}
-		if len(valueParts.Message) != 1 {
-			return nil, errors.New("labels cannot consist of multiple value parts")
-		}
-		switch labelValue := valueParts.Message[0].GetKind().(type) {
-		case *model_starlark_pb.Value_Label:
-			// Extract the file from the label's DefaultInfo.
-			configurationReference := rc.getPatchedConfigurationReference()
-			visibleTarget := rc.environment.GetVisibleTargetValue(
-				model_core.NewPatchedMessage(
-					&model_analysis_pb.VisibleTarget_Key{
-						FromPackage:            visibilityFromPackage.String(),
-						ToLabel:                labelValue.Label,
-						ConfigurationReference: configurationReference.Message,
-					},
-					model_core.MapReferenceMetadataToWalkers(configurationReference.Patcher),
-				),
-			)
-			if !visibleTarget.IsSet() {
-				return nil, evaluation.ErrMissingDependency
-			}
-			defaultInfo, err := getProviderFromConfiguredTarget(
-				rc.environment,
-				visibleTarget.Message.Label,
-				rc.getPatchedConfigurationReference(),
-				defaultInfoProviderIdentifier,
-			)
-			if err != nil {
-				return nil, fmt.Errorf("attr %#v with label %#v: %w", name, visibleTarget.Message.Label, err)
-			}
-			files, err := model_starlark.GetStructFieldValue(rc.context, rc.computer.valueReaders.List, defaultInfo, "files")
-			if err != nil {
-				return nil, fmt.Errorf("failed to obtain field \"files\" of DefaultInfo provider of target with label %#v: %w", visibleTarget.Message.Label, err)
-			}
-			valueDepset, ok := files.Message.Kind.(*model_starlark_pb.Value_Depset)
-			if !ok {
-				return nil, fmt.Errorf("field \"files\" of DefaultInfo provider of target with label %#v is not a depset", visibleTarget.Message.Label)
-			}
-			filesDepset := valueDepset.Depset
-			if len(filesDepset.Elements) != 1 {
-				return nil, fmt.Errorf("target with label %#v does not yield exactly one file", visibleTarget.Message.Label)
-			}
-			element, ok := filesDepset.Elements[0].Level.(*model_starlark_pb.List_Element_Leaf)
-			if !ok {
-				return nil, fmt.Errorf("target with label %#v does not yield exactly one file", visibleTarget.Message.Label)
-			}
-
-			file, err = model_starlark.DecodeValue[TReference, TMetadata](
-				model_core.NewNestedMessage(files, element.Leaf),
-				/* currentIdentifier = */ nil,
-				rc.computer.getValueDecodingOptions(rc.context, func(resolvedLabel label.ResolvedLabel) (starlark.Value, error) {
-					return model_starlark.NewLabel[TReference, TMetadata](resolvedLabel), nil
-				}),
-			)
-			if err != nil {
-				return nil, fmt.Errorf("failed to decode file of target with label %#v: %w", visibleTarget.Message.Label, err)
-			}
-		case *model_starlark_pb.Value_None:
-			file = starlark.None
-		default:
-			return nil, fmt.Errorf("value of attr %#v is not of type label", name)
-
-		}
-
-		// Cache attr value for subsequent lookups.
-		file.Freeze()
-		rc.singleFiles[ruleDefinitionAttrIndex] = file
-	}
-	return file, nil
-}
-
-func (rcf *ruleContextFile[TReference, TMetadata]) AttrNames() []string {
-	var attrNames []string
-	for _, namedAttr := range rcf.ruleContext.ruleDefinition.Message.Attrs {
-		if labelType, ok := namedAttr.Attr.GetType().(*model_starlark_pb.Attr_Label); ok && labelType.Label.AllowSingleFile {
-			attrNames = append(attrNames, namedAttr.Name)
-		}
-	}
-	return attrNames
-}
-
-type ruleContextFiles[TReference object.BasicReference, TMetadata BaseComputerReferenceMetadata] struct {
-	ruleContext *ruleContext[TReference, TMetadata]
-}
-
-var _ starlark.HasAttrs = (*ruleContextFiles[object.GlobalReference, BaseComputerReferenceMetadata])(nil)
-
-func (ruleContextFiles[TReference, TMetadata]) String() string {
-	return "<ctx.files>"
-}
-
-func (ruleContextFiles[TReference, TMetadata]) Type() string {
-	return "ctx.files"
-}
-
-func (ruleContextFiles[TReference, TMetadata]) Freeze() {
-}
-
-func (ruleContextFiles[TReference, TMetadata]) Truth() starlark.Bool {
-	return starlark.True
-}
-
-func (ruleContextFiles[TReference, TMetadata]) Hash(thread *starlark.Thread) (uint32, error) {
-	return 0, errors.New("ctx.files cannot be hashed")
-}
-
-func (rcf *ruleContextFiles[TReference, TMetadata]) Attr(thread *starlark.Thread, name string) (starlark.Value, error) {
-	rc := rcf.ruleContext
-	ruleDefinitionAttrs := rc.ruleDefinition.Message.Attrs
-	ruleDefinitionAttrIndex, ok := sort.Find(
-		len(ruleDefinitionAttrs),
-		func(i int) int { return strings.Compare(name, ruleDefinitionAttrs[i].Name) },
-	)
-	if !ok {
-		return nil, starlark.NoSuchAttrError(fmt.Sprintf("rule does not have an attr named %#v", name))
-	}
-
-	files := rc.multipleFiles[ruleDefinitionAttrIndex]
-	if files == nil {
-		namedAttr := ruleDefinitionAttrs[ruleDefinitionAttrIndex]
-		switch namedAttr.Attr.GetType().(type) {
-		case *model_starlark_pb.Attr_Label, *model_starlark_pb.Attr_LabelList:
-		default:
-			return nil, fmt.Errorf("attr %#v is not of type label or label_list", name)
-		}
-
-		// Walk over all labels contained in the value.
-		valueParts, visibilityFromPackage, err := rc.getAttrValueParts(namedAttr)
-		if err != nil {
-			return nil, err
-		}
-		labeListParentsSeen := map[object.LocalReference]struct{}{}
-		listReader := rc.computer.valueReaders.List
-		missingDependencies := false
-		var filesDepsetElements []any
-		for _, valuePart := range valueParts.Message {
-			var labelList model_core.Message[[]*model_starlark_pb.List_Element, TReference]
-			if listValue, ok := valuePart.Kind.(*model_starlark_pb.Value_List); ok {
-				labelList = model_core.NewNestedMessage(valueParts, listValue.List.Elements)
-			} else {
-				labelList = model_core.NewNestedMessage(valueParts, []*model_starlark_pb.List_Element{{
-					Level: &model_starlark_pb.List_Element_Leaf{
-						Leaf: valuePart,
-					},
-				}})
-			}
-
-			var errIter error
-			for encodedElement := range model_starlark.AllListLeafElementsSkippingDuplicateParents(
-				rc.context,
-				listReader,
-				labelList,
-				labeListParentsSeen,
-				&errIter,
-			) {
-				// For each label contained in the value,
-				// obtain the DefaultInfo.
-				labelElement, ok := encodedElement.Message.Kind.(*model_starlark_pb.Value_Label)
-				if !ok {
-					return nil, fmt.Errorf("attr %#v contains non-label values", name)
-				}
-				configurationReference := rc.getPatchedConfigurationReference()
-				visibleTarget := rc.environment.GetVisibleTargetValue(
-					model_core.NewPatchedMessage(
-						&model_analysis_pb.VisibleTarget_Key{
-							FromPackage:            visibilityFromPackage.String(),
-							ToLabel:                labelElement.Label,
-							ConfigurationReference: configurationReference.Message,
-						},
-						model_core.MapReferenceMetadataToWalkers(configurationReference.Patcher),
-					),
-				)
-				if !visibleTarget.IsSet() {
-					missingDependencies = true
-					continue
-				}
-				defaultInfo, err := getProviderFromConfiguredTarget(
-					rc.environment,
-					visibleTarget.Message.Label,
-					rc.getPatchedConfigurationReference(),
-					defaultInfoProviderIdentifier,
-				)
-				if err != nil {
-					return nil, fmt.Errorf("attr %#v with label %#v: %w", name, visibleTarget.Message.Label, err)
-				}
-
-				// Obtain the "files" depset contained within
-				// the DefaultInfo provider.
-				files, err := model_starlark.GetStructFieldValue(rc.context, listReader, defaultInfo, "files")
-				if err != nil {
-					return nil, fmt.Errorf("failed to obtain field \"files\" of DefaultInfo provider of target with label %#v: %w", visibleTarget.Message.Label, err)
-				}
-				valueDepset, ok := files.Message.Kind.(*model_starlark_pb.Value_Depset)
-				if !ok {
-					return nil, fmt.Errorf("field \"files\" of DefaultInfo provider of target with label %#v is not a depset", visibleTarget.Message.Label)
-				}
-				for _, element := range valueDepset.Depset.Elements {
-					filesDepsetElements = append(filesDepsetElements, model_core.NewNestedMessage(files, element))
-				}
-			}
-			if errIter != nil {
-				return nil, fmt.Errorf("failed to iterate value of attr %#v: %w", name, errIter)
-			}
-		}
-		if missingDependencies {
-			return nil, evaluation.ErrMissingDependency
-		}
-
-		// Place all of the gathered file elements in a single
-		// depset and convert it back to a list.
-		filesDepset := model_starlark.NewDepsetFromList[TReference, TMetadata](filesDepsetElements, model_starlark_pb.Depset_DEFAULT)
-		files, err = filesDepset.ToList(thread)
-		if err != nil {
-			return nil, err
-		}
-
-		// Cache attr value for subsequent lookups.
-		files.Freeze()
-		rc.multipleFiles[ruleDefinitionAttrIndex] = files
-	}
-	return files, nil
-}
-
-func (rcf *ruleContextFiles[TReference, TMetadata]) AttrNames() []string {
-	var attrNames []string
-	for _, namedAttr := range rcf.ruleContext.ruleDefinition.Message.Attrs {
-		switch namedAttr.Attr.GetType().(type) {
-		case *model_starlark_pb.Attr_Label, *model_starlark_pb.Attr_LabelList:
-			attrNames = append(attrNames, namedAttr.Name)
-		default:
-		}
-	}
-	return attrNames
-}
-
 type ruleContextFragments[TReference object.BasicReference, TMetadata BaseComputerReferenceMetadata] struct {
 	ruleContext *ruleContext[TReference, TMetadata]
 }
@@ -2124,7 +1898,10 @@ func (rcf *ruleContextFragments[TReference, TMetadata]) Attr(thread *starlark.Th
 		encodedFragmentInfo, err := getProviderFromConfiguredTarget(
 			rc.environment,
 			fragmentsPackage.AppendTargetName(targetName).String(),
-			rc.getPatchedConfigurationReference(),
+			model_core.NewPatchedMessageFromExistingCaptured(
+				rc.environment,
+				rc.configurationReference,
+			),
 			fragmentInfoProviderIdentifier,
 		)
 		if err != nil {
@@ -2151,98 +1928,6 @@ func (rcf *ruleContextFragments[TReference, TMetadata]) Attr(thread *starlark.Th
 
 func (ruleContextFragments[TReference, TMetadata]) AttrNames() []string {
 	// TODO: implement.
-	return nil
-}
-
-type ruleContextOutputs[TReference object.BasicReference, TMetadata BaseComputerReferenceMetadata] struct {
-	ruleContext *ruleContext[TReference, TMetadata]
-}
-
-var _ starlark.HasAttrs = (*ruleContextOutputs[object.GlobalReference, BaseComputerReferenceMetadata])(nil)
-
-func (ruleContextOutputs[TReference, TMetadata]) String() string {
-	return "<ctx.outputs>"
-}
-
-func (ruleContextOutputs[TReference, TMetadata]) Type() string {
-	return "ctx.outputs"
-}
-
-func (ruleContextOutputs[TReference, TMetadata]) Freeze() {
-}
-
-func (ruleContextOutputs[TReference, TMetadata]) Truth() starlark.Bool {
-	return starlark.True
-}
-
-func (ruleContextOutputs[TReference, TMetadata]) Hash(thread *starlark.Thread) (uint32, error) {
-	return 0, errors.New("ctx.outputs cannot be hashed")
-}
-
-func (rco *ruleContextOutputs[TReference, TMetadata]) Attr(thread *starlark.Thread, name string) (starlark.Value, error) {
-	rc := rco.ruleContext
-	ruleDefinitionAttrs := rc.ruleDefinition.Message.Attrs
-	ruleDefinitionAttrIndex, ok := sort.Find(
-		len(ruleDefinitionAttrs),
-		func(i int) int { return strings.Compare(name, ruleDefinitionAttrs[i].Name) },
-	)
-	if !ok {
-		return nil, starlark.NoSuchAttrError(fmt.Sprintf("rule does not have an attr named %#v", name))
-	}
-
-	outputs := rc.outputs[ruleDefinitionAttrIndex]
-	if outputs == nil {
-		namedAttr := ruleDefinitionAttrs[ruleDefinitionAttrIndex]
-		switch namedAttr.Attr.GetType().(type) {
-		case *model_starlark_pb.Attr_Output, *model_starlark_pb.Attr_OutputList:
-		default:
-			return nil, fmt.Errorf("attr %#v is not of type output or output_list", name)
-		}
-
-		valueParts, _, err := rc.getAttrValueParts(ruleDefinitionAttrs[ruleDefinitionAttrIndex])
-		if err != nil {
-			return nil, err
-		}
-		if len(valueParts.Message) != 1 {
-			return nil, errors.New("values of output attrs cannot consist of multiple parts, as they are not configurable")
-		}
-
-		outputs, err = model_starlark.DecodeValue[TReference, TMetadata](
-			model_core.NewNestedMessage(valueParts, valueParts.Message[0]),
-			/* currentIdentifier = */ nil,
-			rc.computer.getValueDecodingOptions(rc.context, func(resolvedLabel label.ResolvedLabel) (starlark.Value, error) {
-				canonicalLabel, err := resolvedLabel.AsCanonical()
-				if err != nil {
-					return nil, err
-				}
-				canonicalPackage := canonicalLabel.GetCanonicalPackage()
-				if canonicalPackage != rc.targetLabel.GetCanonicalPackage() {
-					return nil, fmt.Errorf("output attr %#v contains to label %#v, which refers to a different package", name, canonicalLabel.String())
-				}
-				return model_starlark.NewFile[TReference, TMetadata](&model_starlark_pb.File{
-					Owner: &model_starlark_pb.File_Owner{
-						// TODO: Fill in a proper hash.
-						Cfg:        []byte{0xbe, 0x8a, 0x60, 0x1c, 0xe3, 0x03, 0x44, 0xf0},
-						TargetName: rc.targetLabel.GetTargetName().String(),
-					},
-					Package:             canonicalPackage.String(),
-					PackageRelativePath: canonicalLabel.GetTargetName().String(),
-					Type:                model_starlark_pb.File_FILE,
-				}), nil
-			}),
-		)
-		if err != nil {
-			return nil, err
-		}
-
-		// Cache attr value for subsequent lookups.
-		outputs.Freeze()
-		rc.outputs[ruleDefinitionAttrIndex] = outputs
-	}
-	return outputs, nil
-}
-
-func (ruleContextOutputs[TReference, TMetadata]) AttrNames() []string {
 	return nil
 }
 
@@ -2306,7 +1991,10 @@ func (tc *toolchainContext[TReference, TMetadata]) Get(thread *starlark.Thread, 
 		if err != nil {
 			return nil, true, evaluation.ErrMissingDependency
 		}
-		configurationReference := rc.getPatchedConfigurationReference()
+		configurationReference := model_core.NewPatchedMessageFromExistingCaptured(
+			rc.environment,
+			rc.configurationReference,
+		)
 		resolvedToolchains := rc.environment.GetResolvedToolchainsValue(
 			model_core.NewPatchedMessage(
 				&model_analysis_pb.ResolvedToolchains_Key{
@@ -2343,7 +2031,10 @@ func (tc *toolchainContext[TReference, TMetadata]) Get(thread *starlark.Thread, 
 			encodedToolchainInfo, err := getProviderFromConfiguredTarget(
 				rc.environment,
 				toolchainIdentifier,
-				rc.getPatchedConfigurationReference(),
+				model_core.NewPatchedMessageFromExistingCaptured(
+					rc.environment,
+					rc.configurationReference,
+				),
 				toolchainInfoProviderIdentifier,
 			)
 			if err != nil {

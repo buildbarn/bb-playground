@@ -47,7 +47,7 @@ func constraintsAreCompatible(actual, expected []*model_analysis_pb.Constraint) 
 	return true
 }
 
-func (c *baseComputer[TReference, TMetadata]) ComputeResolvedToolchainsValue(ctx context.Context, key model_core.Message[*model_analysis_pb.ResolvedToolchains_Key, TReference], e ResolvedToolchainsEnvironment[TReference]) (PatchedResolvedToolchainsValue, error) {
+func (c *baseComputer[TReference, TMetadata]) ComputeResolvedToolchainsValue(ctx context.Context, key model_core.Message[*model_analysis_pb.ResolvedToolchains_Key, TReference], e ResolvedToolchainsEnvironment[TReference, TMetadata]) (PatchedResolvedToolchainsValue, error) {
 	// Obtain all compatible execution platforms and toolchains.
 	missingDependencies := false
 	compatibleExecutionPlatforms := e.GetCompatibleExecutionPlatformsValue(&model_analysis_pb.CompatibleExecutionPlatforms_Key{
@@ -58,10 +58,7 @@ func (c *baseComputer[TReference, TMetadata]) ComputeResolvedToolchainsValue(ctx
 	}
 	compatibleToolchainsByType := make([][]*model_analysis_pb.RegisteredToolchain, 0, len(key.Message.Toolchains))
 	for _, toolchain := range key.Message.Toolchains {
-		configurationReference := model_core.NewPatchedMessageFromExistingCaptured(
-			c.objectCapturer,
-			model_core.NewNestedMessage(key, key.Message.ConfigurationReference),
-		)
+		configurationReference := model_core.NewPatchedMessageFromExistingCaptured(e, model_core.NewNestedMessage(key, key.Message.ConfigurationReference))
 		compatibleToolchainsForTypeValue := e.GetCompatibleToolchainsForTypeValue(
 			model_core.NewPatchedMessage(
 				&model_analysis_pb.CompatibleToolchainsForType_Key{

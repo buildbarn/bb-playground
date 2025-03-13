@@ -10,7 +10,7 @@ import (
 	"github.com/buildbarn/bonanza/pkg/storage/dag"
 )
 
-func (c *baseComputer[TReference, TMetadata]) ComputeCompatibleExecutionPlatformsValue(ctx context.Context, key *model_analysis_pb.CompatibleExecutionPlatforms_Key, e CompatibleExecutionPlatformsEnvironment[TReference]) (PatchedCompatibleExecutionPlatformsValue, error) {
+func (c *baseComputer[TReference, TMetadata]) ComputeCompatibleExecutionPlatformsValue(ctx context.Context, key *model_analysis_pb.CompatibleExecutionPlatforms_Key, e CompatibleExecutionPlatformsEnvironment[TReference, TMetadata]) (PatchedCompatibleExecutionPlatformsValue, error) {
 	registeredExecutionPlatforms := e.GetRegisteredExecutionPlatformsValue(&model_analysis_pb.RegisteredExecutionPlatforms_Key{})
 	if !registeredExecutionPlatforms.IsSet() {
 		return PatchedCompatibleExecutionPlatformsValue{}, evaluation.ErrMissingDependency

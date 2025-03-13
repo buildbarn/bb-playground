@@ -14,7 +14,7 @@ import (
 	model_core_pb "github.com/buildbarn/bonanza/pkg/proto/model/core"
 )
 
-func (c *baseComputer[TReference, TMetadata]) ComputeModuleExtensionRepoValue(ctx context.Context, key *model_analysis_pb.ModuleExtensionRepo_Key, e ModuleExtensionRepoEnvironment[TReference]) (PatchedModuleExtensionRepoValue, error) {
+func (c *baseComputer[TReference, TMetadata]) ComputeModuleExtensionRepoValue(ctx context.Context, key *model_analysis_pb.ModuleExtensionRepo_Key, e ModuleExtensionRepoEnvironment[TReference, TMetadata]) (PatchedModuleExtensionRepoValue, error) {
 	canonicalRepo, err := label.NewCanonicalRepo(key.CanonicalRepo)
 	if err != nil {
 		return PatchedModuleExtensionRepoValue{}, fmt.Errorf("invalid repo: %w", err)
@@ -61,10 +61,7 @@ func (c *baseComputer[TReference, TMetadata]) ComputeModuleExtensionRepoValue(ct
 	if definition == nil {
 		return PatchedModuleExtensionRepoValue{}, errors.New("repo does not have a definition")
 	}
-	patchedDefinition := model_core.NewPatchedMessageFromExistingCaptured(
-		c.objectCapturer,
-		model_core.NewNestedMessage(repo, definition),
-	)
+	patchedDefinition := model_core.NewPatchedMessageFromExistingCaptured(e, model_core.NewNestedMessage(repo, definition))
 	return model_core.NewPatchedMessage(
 		&model_analysis_pb.ModuleExtensionRepo_Value{
 			Definition: patchedDefinition.Message,

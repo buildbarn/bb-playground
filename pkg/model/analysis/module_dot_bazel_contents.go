@@ -192,7 +192,7 @@ func (c *baseComputer[TReference, TMetadata]) visitModuleDotBazelFilesBreadthFir
 	return finalErr
 }
 
-func (c *baseComputer[TReference, TMetadata]) ComputeModuleDotBazelContentsValue(ctx context.Context, key *model_analysis_pb.ModuleDotBazelContents_Key, e ModuleDotBazelContentsEnvironment[TReference]) (PatchedModuleDotBazelContentsValue, error) {
+func (c *baseComputer[TReference, TMetadata]) ComputeModuleDotBazelContentsValue(ctx context.Context, key *model_analysis_pb.ModuleDotBazelContents_Key, e ModuleDotBazelContentsEnvironment[TReference, TMetadata]) (PatchedModuleDotBazelContentsValue, error) {
 	moduleInstance, err := label.NewModuleInstance(key.ModuleInstance)
 	if err != nil {
 		return PatchedModuleDotBazelContentsValue{}, fmt.Errorf("invalid module instance: %w", err)
@@ -224,10 +224,7 @@ func (c *baseComputer[TReference, TMetadata]) ComputeModuleDotBazelContentsValue
 		if !filePropertiesValue.IsSet() {
 			return PatchedModuleDotBazelContentsValue{}, evaluation.ErrMissingDependency
 		}
-		fileContents := model_core.NewPatchedMessageFromExistingCaptured(
-			c.objectCapturer,
-			model_core.NewNestedMessage(filePropertiesValue, filePropertiesValue.Message.Exists.Contents),
-		)
+		fileContents := model_core.NewPatchedMessageFromExistingCaptured(e, model_core.NewNestedMessage(filePropertiesValue, filePropertiesValue.Message.Exists.Contents))
 		return model_core.NewPatchedMessage(
 			&model_analysis_pb.ModuleDotBazelContents_Value{
 				Contents: fileContents.Message,
@@ -283,10 +280,7 @@ func (c *baseComputer[TReference, TMetadata]) ComputeModuleDotBazelContentsValue
 			if fileContentsValue.Message.Exists == nil {
 				return PatchedModuleDotBazelContentsValue{}, fmt.Errorf("file at URL %#v does not exist", moduleFileURL)
 			}
-			fileContents := model_core.NewPatchedMessageFromExistingCaptured(
-				c.objectCapturer,
-				model_core.NewNestedMessage(fileContentsValue, fileContentsValue.Message.Exists.Contents),
-			)
+			fileContents := model_core.NewPatchedMessageFromExistingCaptured(e, model_core.NewNestedMessage(fileContentsValue, fileContentsValue.Message.Exists.Contents))
 			return model_core.NewPatchedMessage(
 				&model_analysis_pb.ModuleDotBazelContents_Value{
 					Contents: fileContents.Message,

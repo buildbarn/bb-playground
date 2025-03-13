@@ -658,10 +658,7 @@ message Rule {
 }
 
 message RuleTarget {
-  message AttrValue {
-    // The name of the attribute whose value is provided.
-    string name = 1;
-
+  message PublicAttrValue {
     // The value of the attribute, in the form of a sequence of select()
     // expressions whose values need to be summed/concatenated.
     repeated Select.Group value_parts = 2;
@@ -670,8 +667,10 @@ message RuleTarget {
   // Identifier of the rule used by this target.
   string rule_identifier = 1;
 
-  // Rule specific attributes whose values were provided explicitly.
-  repeated AttrValue attr_values = 2;
+  // Values of public attributes that were provided as arguments. The
+  // length of this list MUST match the number of public attributes of
+  // the rule.
+  repeated PublicAttrValue public_attr_values = 2;
 
   // A list of constraint_values that must be present in the execution
   // platform for this target. This is in addition to any constraints

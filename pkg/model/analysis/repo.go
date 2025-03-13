@@ -614,7 +614,7 @@ func inferArchiveFormatFromURL(url string) (model_analysis_pb.HttpArchiveContent
 func (c *baseComputer[TReference, TMetadata]) fetchModuleFromRegistry(
 	ctx context.Context,
 	module *model_analysis_pb.BuildListModule,
-	e RepoEnvironment[TReference],
+	e RepoEnvironment[TReference, TMetadata],
 	singleVersionOverridePatchLabels []string,
 	singleVersionOverridePatchCommands []string,
 	singleVersionOverridePatchStrip int,
@@ -773,7 +773,9 @@ type patchToApply[TReference any] struct {
 	fileContentsEntry model_filesystem.FileContentsEntry[TReference]
 }
 
-type applyPatchesEnvironment[TReference object.BasicReference] interface {
+type applyPatchesEnvironment[TReference object.BasicReference, TMetadata any] interface {
+	model_core.ExistingObjectCapturer[TReference, TMetadata]
+
 	GetDirectoryCreationParametersObjectValue(key *model_analysis_pb.DirectoryCreationParametersObject_Key) (*model_filesystem.DirectoryCreationParameters, bool)
 	GetDirectoryReadersValue(key *model_analysis_pb.DirectoryReaders_Key) (*DirectoryReaders[TReference], bool)
 	GetFileCreationParametersObjectValue(key *model_analysis_pb.FileCreationParametersObject_Key) (*model_filesystem.FileCreationParameters, bool)
@@ -782,7 +784,7 @@ type applyPatchesEnvironment[TReference object.BasicReference] interface {
 
 func (c *baseComputer[TReference, TMetadata]) applyPatches(
 	ctx context.Context,
-	e applyPatchesEnvironment[TReference],
+	e applyPatchesEnvironment[TReference, TMetadata],
 	rootRef model_core.Message[*model_filesystem_pb.DirectoryReference, TReference],
 	stripPrefix string,
 	patches []patchToApply[TReference],
@@ -844,6 +846,7 @@ func (c *baseComputer[TReference, TMetadata]) applyPatches(
 
 	return c.returnRepoMerkleTree(
 		ctx,
+		e,
 		rootDirectory,
 		directoryCreationParameters,
 		directoryReaders,
@@ -979,7 +982,9 @@ func newRepositoryOS[TReference object.BasicReference, TMetadata BaseComputerRef
 	return s
 }
 
-type moduleOrRepositoryContextEnvironment[TReference object.BasicReference] interface {
+type moduleOrRepositoryContextEnvironment[TReference object.BasicReference, TMetadata any] interface {
+	model_core.ExistingObjectCapturer[TReference, TMetadata]
+
 	GetActionResultValue(model_core.PatchedMessage[*model_analysis_pb.ActionResult_Key, dag.ObjectContentsWalker]) model_core.Message[*model_analysis_pb.ActionResult_Value, TReference]
 	GetCommandEncoderObjectValue(*model_analysis_pb.CommandEncoderObject_Key) (model_encoding.BinaryEncoder, bool)
 	GetDirectoryCreationParametersObjectValue(*model_analysis_pb.DirectoryCreationParametersObject_Key) (*model_filesystem.DirectoryCreationParameters, bool)
@@ -999,7 +1004,7 @@ type moduleOrRepositoryContextEnvironment[TReference object.BasicReference] inte
 type moduleOrRepositoryContext[TReference object.BasicReference, TMetadata BaseComputerReferenceMetadata] struct {
 	computer               *baseComputer[TReference, TMetadata]
 	context                context.Context
-	environment            moduleOrRepositoryContextEnvironment[TReference]
+	environment            moduleOrRepositoryContextEnvironment[TReference, TMetadata]
 	subdirectoryComponents []path.Component
 
 	commandEncoder                     model_encoding.BinaryEncoder
@@ -1020,7 +1025,7 @@ type moduleOrRepositoryContext[TReference object.BasicReference, TMetadata BaseC
 	patchedFilesWriter *model_filesystem.SectionWriter
 }
 
-func (c *baseComputer[TReference, TMetadata]) newModuleOrRepositoryContext(ctx context.Context, e moduleOrRepositoryContextEnvironment[TReference], subdirectoryComponents []path.Component) (*moduleOrRepositoryContext[TReference, TMetadata], error) {
+func (c *baseComputer[TReference, TMetadata]) newModuleOrRepositoryContext(ctx context.Context, e moduleOrRepositoryContextEnvironment[TReference, TMetadata], subdirectoryComponents []path.Component) (*moduleOrRepositoryContext[TReference, TMetadata], error) {
 	return &moduleOrRepositoryContext[TReference, TMetadata]{
 		computer:               c,
 		context:                ctx,
@@ -1543,7 +1548,7 @@ func (mrc *moduleOrRepositoryContext[TReference, TMetadata]) doExecute(thread *s
 		return nil, fmt.Errorf("failed to create command: %w", err)
 	}
 
-	inputRootReference, err := mrc.computer.createMerkleTreeFromChangeTrackingDirectory(mrc.context, mrc.inputRootDirectory, mrc.directoryCreationParameters, mrc.directoryReaders, mrc.fileCreationParameters, mrc.patchedFiles)
+	inputRootReference, err := mrc.computer.createMerkleTreeFromChangeTrackingDirectory(mrc.context, mrc.environment, mrc.inputRootDirectory, mrc.directoryCreationParameters, mrc.directoryReaders, mrc.fileCreationParameters, mrc.patchedFiles)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create Merkle tree of root directory: %w", err)
 	}
@@ -1850,7 +1855,7 @@ func (mrc *moduleOrRepositoryContext[TReference, TMetadata]) doRead(thread *star
 		return nil, fmt.Errorf("failed to create command: %w", err)
 	}
 
-	inputRootReference, err := mrc.computer.createMerkleTreeFromChangeTrackingDirectory(mrc.context, mrc.inputRootDirectory, mrc.directoryCreationParameters, mrc.directoryReaders, mrc.fileCreationParameters, mrc.patchedFiles)
+	inputRootReference, err := mrc.computer.createMerkleTreeFromChangeTrackingDirectory(mrc.context, mrc.environment, mrc.inputRootDirectory, mrc.directoryCreationParameters, mrc.directoryReaders, mrc.fileCreationParameters, mrc.patchedFiles)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create Merkle tree of root directory: %w", err)
 	}
@@ -2168,7 +2173,7 @@ func (mrc *moduleOrRepositoryContext[TReference, TMetadata]) Exists(p *model_sta
 		return false, fmt.Errorf("failed to create command: %w", err)
 	}
 
-	inputRootReference, err := mrc.computer.createMerkleTreeFromChangeTrackingDirectory(mrc.context, mrc.inputRootDirectory, mrc.directoryCreationParameters, mrc.directoryReaders, mrc.fileCreationParameters, mrc.patchedFiles)
+	inputRootReference, err := mrc.computer.createMerkleTreeFromChangeTrackingDirectory(mrc.context, mrc.environment, mrc.inputRootDirectory, mrc.directoryCreationParameters, mrc.directoryReaders, mrc.fileCreationParameters, mrc.patchedFiles)
 	if err != nil {
 		return false, fmt.Errorf("failed to create Merkle tree of root directory: %w", err)
 	}
@@ -2449,7 +2454,7 @@ func (mrc *moduleOrRepositoryContext[TReference, TMetadata]) relativizeSymlinksR
 	return nil
 }
 
-func (c *baseComputer[TReference, TMetadata]) fetchModuleExtensionRepo(ctx context.Context, canonicalRepo label.CanonicalRepo, apparentRepo label.ApparentRepo, e RepoEnvironment[TReference]) (PatchedRepoValue, error) {
+func (c *baseComputer[TReference, TMetadata]) fetchModuleExtensionRepo(ctx context.Context, canonicalRepo label.CanonicalRepo, apparentRepo label.ApparentRepo, e RepoEnvironment[TReference, TMetadata]) (PatchedRepoValue, error) {
 	// Obtain the definition of the declared repo.
 	repoValue := e.GetModuleExtensionRepoValue(&model_analysis_pb.ModuleExtensionRepo_Key{
 		CanonicalRepo: canonicalRepo.String(),
@@ -2470,7 +2475,7 @@ func (c *baseComputer[TReference, TMetadata]) fetchModuleExtensionRepo(ctx conte
 	)
 }
 
-func (c *baseComputer[TReference, TMetadata]) fetchRepo(ctx context.Context, canonicalRepo label.CanonicalRepo, apparentRepo label.ApparentRepo, repo model_core.Message[*model_starlark_pb.Repo_Definition, TReference], e RepoEnvironment[TReference]) (PatchedRepoValue, error) {
+func (c *baseComputer[TReference, TMetadata]) fetchRepo(ctx context.Context, canonicalRepo label.CanonicalRepo, apparentRepo label.ApparentRepo, repo model_core.Message[*model_starlark_pb.Repo_Definition, TReference], e RepoEnvironment[TReference, TMetadata]) (PatchedRepoValue, error) {
 	// Obtain the definition of the repository rule used by the repo.
 	rootModuleValue := e.GetRootModuleValue(&model_analysis_pb.RootModule_Key{})
 	allBuiltinsModulesNames := e.GetBuiltinsModuleNamesValue(&model_analysis_pb.BuiltinsModuleNames_Key{})
@@ -2879,6 +2884,7 @@ func (c *baseComputer[TReference, TMetadata]) fetchRepo(ctx context.Context, can
 	}
 	return c.returnRepoMerkleTree(
 		ctx,
+		e,
 		repoDirectory,
 		repositoryContext.directoryCreationParameters,
 		repositoryContext.directoryReaders,
@@ -2887,14 +2893,11 @@ func (c *baseComputer[TReference, TMetadata]) fetchRepo(ctx context.Context, can
 	)
 }
 
-func (c *baseComputer[TReference, TMetadata]) createMerkleTreeFromChangeTrackingDirectory(ctx context.Context, rootDirectory *changeTrackingDirectory[TReference], directoryCreationParameters *model_filesystem.DirectoryCreationParameters, directoryReaders *DirectoryReaders[TReference], fileCreationParameters *model_filesystem.FileCreationParameters, patchedFiles io.ReaderAt) (model_core.PatchedMessage[*model_filesystem_pb.DirectoryReference, dag.ObjectContentsWalker], error) {
+func (c *baseComputer[TReference, TMetadata]) createMerkleTreeFromChangeTrackingDirectory(ctx context.Context, e model_core.ExistingObjectCapturer[TReference, TMetadata], rootDirectory *changeTrackingDirectory[TReference], directoryCreationParameters *model_filesystem.DirectoryCreationParameters, directoryReaders *DirectoryReaders[TReference], fileCreationParameters *model_filesystem.FileCreationParameters, patchedFiles io.ReaderAt) (model_core.PatchedMessage[*model_filesystem_pb.DirectoryReference, dag.ObjectContentsWalker], error) {
 	if r := rootDirectory.currentReference; r.IsSet() {
 		// Directory remained completely unmodified. Simply
 		// return the original directory.
-		m := model_core.NewPatchedMessageFromExistingCaptured(
-			c.objectCapturer,
-			r,
-		)
+		m := model_core.NewPatchedMessageFromExistingCaptured(e, r)
 		return model_core.NewPatchedMessage(
 			m.Message,
 			model_core.MapReferenceMetadataToWalkers(m.Patcher),
@@ -2974,8 +2977,8 @@ func (c *baseComputer[TReference, TMetadata]) createMerkleTreeFromChangeTracking
 	), nil
 }
 
-func (c *baseComputer[TReference, TMetadata]) returnRepoMerkleTree(ctx context.Context, rootDirectory *changeTrackingDirectory[TReference], directoryCreationParameters *model_filesystem.DirectoryCreationParameters, directoryReaders *DirectoryReaders[TReference], fileCreationParameters *model_filesystem.FileCreationParameters, patchedFiles io.ReaderAt) (PatchedRepoValue, error) {
-	rootDirectoryReference, err := c.createMerkleTreeFromChangeTrackingDirectory(ctx, rootDirectory, directoryCreationParameters, directoryReaders, fileCreationParameters, patchedFiles)
+func (c *baseComputer[TReference, TMetadata]) returnRepoMerkleTree(ctx context.Context, e model_core.ExistingObjectCapturer[TReference, TMetadata], rootDirectory *changeTrackingDirectory[TReference], directoryCreationParameters *model_filesystem.DirectoryCreationParameters, directoryReaders *DirectoryReaders[TReference], fileCreationParameters *model_filesystem.FileCreationParameters, patchedFiles io.ReaderAt) (PatchedRepoValue, error) {
+	rootDirectoryReference, err := c.createMerkleTreeFromChangeTrackingDirectory(ctx, e, rootDirectory, directoryCreationParameters, directoryReaders, fileCreationParameters, patchedFiles)
 	if err != nil {
 		return PatchedRepoValue{}, err
 	}
@@ -2987,7 +2990,7 @@ func (c *baseComputer[TReference, TMetadata]) returnRepoMerkleTree(ctx context.C
 	), nil
 }
 
-func (c *baseComputer[TReference, TMetadata]) ComputeRepoValue(ctx context.Context, key *model_analysis_pb.Repo_Key, e RepoEnvironment[TReference]) (PatchedRepoValue, error) {
+func (c *baseComputer[TReference, TMetadata]) ComputeRepoValue(ctx context.Context, key *model_analysis_pb.Repo_Key, e RepoEnvironment[TReference, TMetadata]) (PatchedRepoValue, error) {
 	canonicalRepo, err := label.NewCanonicalRepo(key.CanonicalRepo)
 	if err != nil {
 		return PatchedRepoValue{}, fmt.Errorf("invalid canonical repo: %w", err)
@@ -3016,10 +3019,7 @@ func (c *baseComputer[TReference, TMetadata]) ComputeRepoValue(ctx context.Conte
 				func(i int) int { return strings.Compare(moduleName, modules[i].Name) },
 			); ok {
 				// Found matching module.
-				rootDirectoryReference := model_core.NewPatchedMessageFromExistingCaptured(
-					c.objectCapturer,
-					model_core.NewNestedMessage(buildSpecification, modules[i].RootDirectoryReference),
-				)
+				rootDirectoryReference := model_core.NewPatchedMessageFromExistingCaptured(e, model_core.NewNestedMessage(buildSpecification, modules[i].RootDirectoryReference))
 				return model_core.NewPatchedMessage(
 					&model_analysis_pb.Repo_Value{
 						RootDirectoryReference: rootDirectoryReference.Message,

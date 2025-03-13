@@ -29,7 +29,7 @@ const toolchainRuleIdentifier = "@@builtins_core+//:exports.bzl%toolchain"
 type registeredToolchainExtractingModuleDotBazelHandler[TReference object.BasicReference, TMetadata BaseComputerReferenceMetadata] struct {
 	context                    context.Context
 	computer                   *baseComputer[TReference, TMetadata]
-	environment                RegisteredToolchainsEnvironment[TReference]
+	environment                RegisteredToolchainsEnvironment[TReference, TMetadata]
 	moduleInstance             label.ModuleInstance
 	ignoreDevDependencies      bool
 	registeredToolchainsByType map[string][]*model_analysis_pb.RegisteredToolchain
@@ -261,7 +261,7 @@ func (registeredToolchainExtractingModuleDotBazelHandler[TReference, TMetadata])
 	}, nil
 }
 
-func (c *baseComputer[TReference, TMetadata]) ComputeRegisteredToolchainsValue(ctx context.Context, key *model_analysis_pb.RegisteredToolchains_Key, e RegisteredToolchainsEnvironment[TReference]) (PatchedRegisteredToolchainsValue, error) {
+func (c *baseComputer[TReference, TMetadata]) ComputeRegisteredToolchainsValue(ctx context.Context, key *model_analysis_pb.RegisteredToolchains_Key, e RegisteredToolchainsEnvironment[TReference, TMetadata]) (PatchedRegisteredToolchainsValue, error) {
 	registeredToolchainsByType := map[string][]*model_analysis_pb.RegisteredToolchain{}
 	if err := c.visitModuleDotBazelFilesBreadthFirst(ctx, e, func(moduleInstance label.ModuleInstance, ignoreDevDependencies bool) pg_starlark.ChildModuleDotBazelHandler {
 		return &registeredToolchainExtractingModuleDotBazelHandler[TReference, TMetadata]{

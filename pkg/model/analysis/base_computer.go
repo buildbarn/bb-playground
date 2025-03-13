@@ -38,7 +38,6 @@ type BaseComputerReferenceMetadata interface {
 type baseComputer[TReference object.BasicReference, TMetadata BaseComputerReferenceMetadata] struct {
 	parsedObjectPoolIngester    *model_parser.ParsedObjectPoolIngester[TReference]
 	buildSpecificationReference TReference
-	objectCapturer              model_core.CreatedOrExistingObjectCapturer[TReference, TMetadata]
 	httpClient                  *http.Client
 	filePool                    re_filesystem.FilePool
 	cacheDirectory              filesystem.Directory
@@ -64,7 +63,6 @@ func NewBaseComputer[TReference object.BasicReference, TMetadata BaseComputerRef
 	parsedObjectPoolIngester *model_parser.ParsedObjectPoolIngester[TReference],
 	buildSpecificationReference TReference,
 	buildSpecificationEncoder model_encoding.BinaryEncoder,
-	objectCapturer model_core.CreatedOrExistingObjectCapturer[TReference, TMetadata],
 	httpClient *http.Client,
 	filePool re_filesystem.FilePool,
 	cacheDirectory filesystem.Directory,
@@ -72,11 +70,10 @@ func NewBaseComputer[TReference object.BasicReference, TMetadata BaseComputerRef
 	executionInstanceName object.InstanceName,
 	bzlFileBuiltins starlark.StringDict,
 	buildFileBuiltins starlark.StringDict,
-) Computer[TReference] {
+) Computer[TReference, TMetadata] {
 	return &baseComputer[TReference, TMetadata]{
 		parsedObjectPoolIngester:    parsedObjectPoolIngester,
 		buildSpecificationReference: buildSpecificationReference,
-		objectCapturer:              objectCapturer,
 		httpClient:                  httpClient,
 		filePool:                    filePool,
 		cacheDirectory:              cacheDirectory,
@@ -142,12 +139,12 @@ func (c *baseComputer[TReference, TMetadata]) getValueObjectEncoder() model_enco
 	return model_encoding.NewChainedBinaryEncoder(nil)
 }
 
-func (c *baseComputer[TReference, TMetadata]) getValueEncodingOptions(currentFilename label.CanonicalLabel) *model_starlark.ValueEncodingOptions[TReference, TMetadata] {
+func (c *baseComputer[TReference, TMetadata]) getValueEncodingOptions(objectCapturer model_core.ObjectCapturer[TReference, TMetadata], currentFilename label.CanonicalLabel) *model_starlark.ValueEncodingOptions[TReference, TMetadata] {
 	return &model_starlark.ValueEncodingOptions[TReference, TMetadata]{
 		CurrentFilename:        currentFilename,
 		ObjectEncoder:          c.getValueObjectEncoder(),
 		ObjectReferenceFormat:  c.getReferenceFormat(),
-		ObjectCapturer:         c.objectCapturer,
+		ObjectCapturer:         objectCapturer,
 		ObjectMinimumSizeBytes: 32 * 1024,
 		ObjectMaximumSizeBytes: 128 * 1024,
 	}
@@ -340,7 +337,7 @@ func (c *baseComputer[TReference, TMetadata]) newStarlarkThread(ctx context.Cont
 	return thread
 }
 
-func (c *baseComputer[TReference, TMetadata]) ComputeBuildResultValue(ctx context.Context, key *model_analysis_pb.BuildResult_Key, e BuildResultEnvironment[TReference]) (PatchedBuildResultValue, error) {
+func (c *baseComputer[TReference, TMetadata]) ComputeBuildResultValue(ctx context.Context, key *model_analysis_pb.BuildResult_Key, e BuildResultEnvironment[TReference, TMetadata]) (PatchedBuildResultValue, error) {
 	buildSpecification := e.GetBuildSpecificationValue(&model_analysis_pb.BuildSpecification_Key{})
 	if !buildSpecification.IsSet() {
 		return PatchedBuildResultValue{}, evaluation.ErrMissingDependency
@@ -404,16 +401,13 @@ func (c *baseComputer[TReference, TMetadata]) ComputeBuildResultValue(ctx contex
 	return model_core.NewSimplePatchedMessage[dag.ObjectContentsWalker](&model_analysis_pb.BuildResult_Value{}), nil
 }
 
-func (c *baseComputer[TReference, TMetadata]) ComputeBuildSpecificationValue(ctx context.Context, key *model_analysis_pb.BuildSpecification_Key, e BuildSpecificationEnvironment[TReference]) (PatchedBuildSpecificationValue, error) {
+func (c *baseComputer[TReference, TMetadata]) ComputeBuildSpecificationValue(ctx context.Context, key *model_analysis_pb.BuildSpecification_Key, e BuildSpecificationEnvironment[TReference, TMetadata]) (PatchedBuildSpecificationValue, error) {
 	buildSpecification, err := c.buildSpecificationReader.ReadParsedObject(ctx, c.buildSpecificationReference)
 	if err != nil {
 		return PatchedBuildSpecificationValue{}, err
 	}
 
-	patchedBuildSpecification := model_core.NewPatchedMessageFromExistingCaptured(
-		c.objectCapturer,
-		buildSpecification,
-	)
+	patchedBuildSpecification := model_core.NewPatchedMessageFromExistingCaptured(e, buildSpecification)
 	return model_core.NewPatchedMessage(
 		&model_analysis_pb.BuildSpecification_Value{
 			BuildSpecification: patchedBuildSpecification.Message,
@@ -422,7 +416,7 @@ func (c *baseComputer[TReference, TMetadata]) ComputeBuildSpecificationValue(ctx
 	), nil
 }
 
-func (c *baseComputer[TReference, TMetadata]) ComputeBuiltinsModuleNamesValue(ctx context.Context, key *model_analysis_pb.BuiltinsModuleNames_Key, e BuiltinsModuleNamesEnvironment[TReference]) (PatchedBuiltinsModuleNamesValue, error) {
+func (c *baseComputer[TReference, TMetadata]) ComputeBuiltinsModuleNamesValue(ctx context.Context, key *model_analysis_pb.BuiltinsModuleNames_Key, e BuiltinsModuleNamesEnvironment[TReference, TMetadata]) (PatchedBuiltinsModuleNamesValue, error) {
 	buildSpecification := e.GetBuildSpecificationValue(&model_analysis_pb.BuildSpecification_Key{})
 	if !buildSpecification.IsSet() {
 		return PatchedBuiltinsModuleNamesValue{}, evaluation.ErrMissingDependency
@@ -432,7 +426,7 @@ func (c *baseComputer[TReference, TMetadata]) ComputeBuiltinsModuleNamesValue(ct
 	}), nil
 }
 
-func (c *baseComputer[TReference, TMetadata]) ComputeDirectoryAccessParametersValue(ctx context.Context, key *model_analysis_pb.DirectoryAccessParameters_Key, e DirectoryAccessParametersEnvironment[TReference]) (PatchedDirectoryAccessParametersValue, error) {
+func (c *baseComputer[TReference, TMetadata]) ComputeDirectoryAccessParametersValue(ctx context.Context, key *model_analysis_pb.DirectoryAccessParameters_Key, e DirectoryAccessParametersEnvironment[TReference, TMetadata]) (PatchedDirectoryAccessParametersValue, error) {
 	buildSpecification := e.GetBuildSpecificationValue(&model_analysis_pb.BuildSpecification_Key{})
 	if !buildSpecification.IsSet() {
 		return PatchedDirectoryAccessParametersValue{}, evaluation.ErrMissingDependency
@@ -442,7 +436,7 @@ func (c *baseComputer[TReference, TMetadata]) ComputeDirectoryAccessParametersVa
 	}), nil
 }
 
-func (c *baseComputer[TReference, TMetadata]) ComputeRepoDefaultAttrsValue(ctx context.Context, key *model_analysis_pb.RepoDefaultAttrs_Key, e RepoDefaultAttrsEnvironment[TReference]) (PatchedRepoDefaultAttrsValue, error) {
+func (c *baseComputer[TReference, TMetadata]) ComputeRepoDefaultAttrsValue(ctx context.Context, key *model_analysis_pb.RepoDefaultAttrs_Key, e RepoDefaultAttrsEnvironment[TReference, TMetadata]) (PatchedRepoDefaultAttrsValue, error) {
 	canonicalRepo, err := label.NewCanonicalRepo(key.CanonicalRepo)
 	if err != nil {
 		return PatchedRepoDefaultAttrsValue{}, fmt.Errorf("invalid canonical repo: %w", err)
@@ -482,7 +476,7 @@ func (c *baseComputer[TReference, TMetadata]) ComputeRepoDefaultAttrsValue(ctx c
 		string(repoFileData),
 		canonicalRepo.GetRootPackage().AppendTargetName(repoFileName),
 		c.getInlinedTreeOptions(),
-		c.objectCapturer,
+		e,
 	)
 	if err != nil {
 		return PatchedRepoDefaultAttrsValue{}, fmt.Errorf("failed to parse %#v: %w", repoFileLabel.String(), err)
@@ -496,11 +490,8 @@ func (c *baseComputer[TReference, TMetadata]) ComputeRepoDefaultAttrsValue(ctx c
 	), nil
 }
 
-func (c *baseComputer[TReference, TMetadata]) ComputeTargetCompletionValue(ctx context.Context, key model_core.Message[*model_analysis_pb.TargetCompletion_Key, TReference], e TargetCompletionEnvironment[TReference]) (PatchedTargetCompletionValue, error) {
-	configurationReference := model_core.NewPatchedMessageFromExistingCaptured(
-		c.objectCapturer,
-		model_core.NewNestedMessage(key, key.Message.ConfigurationReference),
-	)
+func (c *baseComputer[TReference, TMetadata]) ComputeTargetCompletionValue(ctx context.Context, key model_core.Message[*model_analysis_pb.TargetCompletion_Key, TReference], e TargetCompletionEnvironment[TReference, TMetadata]) (PatchedTargetCompletionValue, error) {
+	configurationReference := model_core.NewPatchedMessageFromExistingCaptured(e, model_core.NewNestedMessage(key, key.Message.ConfigurationReference))
 	configuredTarget := e.GetConfiguredTargetValue(
 		model_core.NewPatchedMessage(
 			&model_analysis_pb.ConfiguredTarget_Key{

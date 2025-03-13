@@ -22,7 +22,7 @@ import (
 	"github.com/buildbarn/bonanza/pkg/storage/object"
 )
 
-func (c *baseComputer[TReference, TMetadata]) ComputeModulesWithRemoteOverridesValue(ctx context.Context, key *model_analysis_pb.ModulesWithRemoteOverrides_Key, e ModulesWithRemoteOverridesEnvironment[TReference]) (PatchedModulesWithRemoteOverridesValue, error) {
+func (c *baseComputer[TReference, TMetadata]) ComputeModulesWithRemoteOverridesValue(ctx context.Context, key *model_analysis_pb.ModulesWithRemoteOverrides_Key, e ModulesWithRemoteOverridesEnvironment[TReference, TMetadata]) (PatchedModulesWithRemoteOverridesValue, error) {
 	rootModuleValue := e.GetRootModuleValue(&model_analysis_pb.RootModule_Key{})
 	if !rootModuleValue.IsSet() {
 		return PatchedModulesWithRemoteOverridesValue{}, evaluation.ErrMissingDependency
@@ -39,6 +39,7 @@ func (c *baseComputer[TReference, TMetadata]) ComputeModulesWithRemoteOverridesV
 	handler := &overrideExtractingModuleDotBazelHandler[TReference, TMetadata]{
 		overrideModules: &overrideModules,
 		valueEncodingOptions: c.getValueEncodingOptions(
+			e,
 			rootModuleName.ToModuleInstance(nil).
 				GetBareCanonicalRepo().
 				GetRootPackage().

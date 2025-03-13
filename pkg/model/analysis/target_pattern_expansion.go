@@ -74,7 +74,7 @@ func (c *baseComputer[TReference, TMetadata]) expandCanonicalTargetPattern(
 	}
 }
 
-func (c *baseComputer[TReference, TMetadata]) ComputeTargetPatternExpansionValue(ctx context.Context, key *model_analysis_pb.TargetPatternExpansion_Key, e TargetPatternExpansionEnvironment[TReference]) (PatchedTargetPatternExpansionValue, error) {
+func (c *baseComputer[TReference, TMetadata]) ComputeTargetPatternExpansionValue(ctx context.Context, key *model_analysis_pb.TargetPatternExpansion_Key, e TargetPatternExpansionEnvironment[TReference, TMetadata]) (PatchedTargetPatternExpansionValue, error) {
 	treeBuilder := btree.NewSplitProllyBuilder(
 		/* minimumSizeBytes = */ 32*1024,
 		/* maximumSizeBytes = */ 128*1024,
@@ -89,7 +89,7 @@ func (c *baseComputer[TReference, TMetadata]) ComputeTargetPatternExpansionValue
 							Parent: &model_analysis_pb.TargetPatternExpansion_Value_TargetLabel_Parent{
 								Reference: patcher.AddReference(
 									createdObject.Contents.GetReference(),
-									c.objectCapturer.CaptureCreatedObject(createdObject),
+									e.CaptureCreatedObject(createdObject),
 								),
 							},
 						},
@@ -182,10 +182,7 @@ func (c *baseComputer[TReference, TMetadata]) ComputeTargetPatternExpansionValue
 
 			for _, targetLabel := range childTargetPatternExpansion.Message.TargetLabels {
 				if err := treeBuilder.PushChild(
-					model_core.NewPatchedMessageFromExistingCaptured(
-						c.objectCapturer,
-						model_core.NewNestedMessage(childTargetPatternExpansion, targetLabel),
-					),
+					model_core.NewPatchedMessageFromExistingCaptured(e, model_core.NewNestedMessage(childTargetPatternExpansion, targetLabel)),
 				); err != nil {
 					return PatchedTargetPatternExpansionValue{}, err
 				}

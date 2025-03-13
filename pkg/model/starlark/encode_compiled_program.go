@@ -34,7 +34,7 @@ type ValueEncodingOptions[TReference any, TMetadata model_core.CloneableReferenc
 	// Options to use when storing Starlark values in separate objects.
 	ObjectEncoder          model_encoding.BinaryEncoder
 	ObjectReferenceFormat  object.ReferenceFormat
-	ObjectCapturer         model_core.CreatedOrExistingObjectCapturer[TReference, TMetadata]
+	ObjectCapturer         model_core.ObjectCapturer[TReference, TMetadata]
 	ObjectMinimumSizeBytes int
 	ObjectMaximumSizeBytes int
 }

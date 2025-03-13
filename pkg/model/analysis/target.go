@@ -50,7 +50,7 @@ func (c *baseComputer[TReference, TMetadata]) lookupTargetDefinitionInTargetList
 	return model_core.NewNestedMessage(targetList, definition), nil
 }
 
-func (c *baseComputer[TReference, TMetadata]) ComputeTargetValue(ctx context.Context, key *model_analysis_pb.Target_Key, e TargetEnvironment[TReference]) (PatchedTargetValue, error) {
+func (c *baseComputer[TReference, TMetadata]) ComputeTargetValue(ctx context.Context, key *model_analysis_pb.Target_Key, e TargetEnvironment[TReference, TMetadata]) (PatchedTargetValue, error) {
 	targetLabel, err := label.NewCanonicalLabel(key.Label)
 	if err != nil {
 		return PatchedTargetValue{}, fmt.Errorf("invalid target label: %w", err)
@@ -74,10 +74,7 @@ func (c *baseComputer[TReference, TMetadata]) ComputeTargetValue(ctx context.Con
 		return PatchedTargetValue{}, errors.New("target does not exist")
 	}
 
-	patchedDefinition := model_core.NewPatchedMessageFromExistingCaptured(
-		c.objectCapturer,
-		definition,
-	)
+	patchedDefinition := model_core.NewPatchedMessageFromExistingCaptured(e, definition)
 	return model_core.NewPatchedMessage(
 		&model_analysis_pb.Target_Value{
 			Definition: patchedDefinition.Message,

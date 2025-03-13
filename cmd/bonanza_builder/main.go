@@ -223,6 +223,10 @@ func (builderObjectCapturer) CaptureExistingObject(builderReference) builderRefe
 	return builderReferenceMetadata{}
 }
 
+func (builderObjectCapturer) PeekCapturedObject(reference object.LocalReference, metadata builderReferenceMetadata) builderReference {
+	panic("TODO")
+}
+
 type builderExecutor struct {
 	objectDownloader              object.Downloader[object.GlobalReference]
 	parsedObjectPool              *model_parser.ParsedObjectPool
@@ -265,7 +269,7 @@ func (e *builderExecutor) Execute(ctx context.Context, action *model_build_pb.Ac
 	}
 	value, err := evaluation.FullyComputeValue(
 		ctx,
-		model_analysis.NewTypedComputer[builderReference](model_analysis.NewBaseComputer[builderReference](
+		model_analysis.NewTypedComputer(model_analysis.NewBaseComputer[builderReference, builderReferenceMetadata](
 			model_parser.NewParsedObjectPoolIngester[builderReference](
 				e.parsedObjectPool,
 				&referenceWrappingParsedObjectReader{
@@ -276,7 +280,6 @@ func (e *builderExecutor) Execute(ctx context.Context, action *model_build_pb.Ac
 			),
 			builderReference{buildSpecificationReference},
 			buildSpecificationEncoder,
-			builderObjectCapturer{},
 			e.httpClient,
 			e.filePool,
 			e.cacheDirectory,
@@ -286,6 +289,7 @@ func (e *builderExecutor) Execute(ctx context.Context, action *model_build_pb.Ac
 			e.buildFileBuiltins,
 		)),
 		model_core.NewMessage[proto.Message, builderReference](&model_analysis_pb.BuildResult_Key{}, object.OutgoingReferencesList[builderReference]{}),
+		builderObjectCapturer{},
 		func(localReferences []object.LocalReference, objectContentsWalkers []dag.ObjectContentsWalker) ([]builderReference, error) {
 			storedReferences := make(object.OutgoingReferencesList[builderReference], 0, len(localReferences))
 			for i, localReference := range localReferences {

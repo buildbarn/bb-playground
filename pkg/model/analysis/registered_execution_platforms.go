@@ -26,7 +26,7 @@ var platformInfoProviderIdentifier = label.MustNewCanonicalStarlarkIdentifier("@
 type registeredExecutionPlatformExtractingModuleDotBazelHandler[TReference object.BasicReference, TMetadata BaseComputerReferenceMetadata] struct {
 	computer              *baseComputer[TReference, TMetadata]
 	context               context.Context
-	environment           RegisteredExecutionPlatformsEnvironment[TReference]
+	environment           RegisteredExecutionPlatformsEnvironment[TReference, TMetadata]
 	moduleInstance        label.ModuleInstance
 	ignoreDevDependencies bool
 	executionPlatforms    *[]*model_analysis_pb.ExecutionPlatform
@@ -166,7 +166,7 @@ func (registeredExecutionPlatformExtractingModuleDotBazelHandler[TReference, TMe
 	}, nil
 }
 
-func (c *baseComputer[TReference, TMetadata]) ComputeRegisteredExecutionPlatformsValue(ctx context.Context, key *model_analysis_pb.RegisteredExecutionPlatforms_Key, e RegisteredExecutionPlatformsEnvironment[TReference]) (PatchedRegisteredExecutionPlatformsValue, error) {
+func (c *baseComputer[TReference, TMetadata]) ComputeRegisteredExecutionPlatformsValue(ctx context.Context, key *model_analysis_pb.RegisteredExecutionPlatforms_Key, e RegisteredExecutionPlatformsEnvironment[TReference, TMetadata]) (PatchedRegisteredExecutionPlatformsValue, error) {
 	var executionPlatforms []*model_analysis_pb.ExecutionPlatform
 	if err := c.visitModuleDotBazelFilesBreadthFirst(ctx, e, func(moduleInstance label.ModuleInstance, ignoreDevDependencies bool) pg_starlark.ChildModuleDotBazelHandler {
 		return &registeredExecutionPlatformExtractingModuleDotBazelHandler[TReference, TMetadata]{

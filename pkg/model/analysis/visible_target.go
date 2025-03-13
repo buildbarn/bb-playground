@@ -135,7 +135,7 @@ func checkRuleTargetVisibility[TReference any](fromPackage label.CanonicalPackag
 	)
 }
 
-func (c *baseComputer[TReference, TMetadata]) ComputeVisibleTargetValue(ctx context.Context, key model_core.Message[*model_analysis_pb.VisibleTarget_Key, TReference], e VisibleTargetEnvironment[TReference]) (PatchedVisibleTargetValue, error) {
+func (c *baseComputer[TReference, TMetadata]) ComputeVisibleTargetValue(ctx context.Context, key model_core.Message[*model_analysis_pb.VisibleTarget_Key, TReference], e VisibleTargetEnvironment[TReference, TMetadata]) (PatchedVisibleTargetValue, error) {
 	fromPackage, err := label.NewCanonicalPackage(key.Message.FromPackage)
 	if err != nil {
 		return PatchedVisibleTargetValue{}, fmt.Errorf("invalid from package: %w", err)
@@ -192,10 +192,7 @@ func (c *baseComputer[TReference, TMetadata]) ComputeVisibleTargetValue(ctx cont
 		}
 
 		// The actual target may also be an alias.
-		patchedConfigurationReference := model_core.NewPatchedMessageFromExistingCaptured(
-			c.objectCapturer,
-			configurationReference,
-		)
+		patchedConfigurationReference := model_core.NewPatchedMessageFromExistingCaptured(e, configurationReference)
 		actualVisibleTargetValue := e.GetVisibleTargetValue(
 			model_core.NewPatchedMessage(
 				&model_analysis_pb.VisibleTarget_Key{
@@ -287,10 +284,7 @@ func (c *baseComputer[TReference, TMetadata]) ComputeVisibleTargetValue(ctx cont
 			}
 		}
 
-		patchedConfigurationReference := model_core.NewPatchedMessageFromExistingCaptured(
-			c.objectCapturer,
-			configurationReference,
-		)
+		patchedConfigurationReference := model_core.NewPatchedMessageFromExistingCaptured(e, configurationReference)
 		actualVisibleTargetValue := e.GetVisibleTargetValue(
 			model_core.NewPatchedMessage(
 				&model_analysis_pb.VisibleTarget_Key{

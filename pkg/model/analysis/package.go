@@ -25,7 +25,7 @@ var buildDotBazelTargetNames = []label.TargetName{
 	label.MustNewTargetName("BUILD"),
 }
 
-func (c *baseComputer[TReference, TMetadata]) ComputePackageValue(ctx context.Context, key *model_analysis_pb.Package_Key, e PackageEnvironment[TReference]) (PatchedPackageValue, error) {
+func (c *baseComputer[TReference, TMetadata]) ComputePackageValue(ctx context.Context, key *model_analysis_pb.Package_Key, e PackageEnvironment[TReference, TMetadata]) (PatchedPackageValue, error) {
 	canonicalPackage, err := label.NewCanonicalPackage(key.Label)
 	if err != nil {
 		return PatchedPackageValue{}, fmt.Errorf("invalid package label: %w", err)
@@ -90,7 +90,7 @@ func (c *baseComputer[TReference, TMetadata]) ComputePackageValue(ctx context.Co
 		}
 
 		thread.SetLocal(model_starlark.CanonicalPackageKey, canonicalPackage)
-		thread.SetLocal(model_starlark.ValueEncodingOptionsKey, c.getValueEncodingOptions(buildFileLabel))
+		thread.SetLocal(model_starlark.ValueEncodingOptionsKey, c.getValueEncodingOptions(e, buildFileLabel))
 		thread.SetLocal(model_starlark.GlobExpanderKey, func(include, exclude []string, includeDirectories bool) ([]label.TargetName, error) {
 			return []label.TargetName{
 				label.MustNewTargetName("TODO implement globbing"),
@@ -98,13 +98,10 @@ func (c *baseComputer[TReference, TMetadata]) ComputePackageValue(ctx context.Co
 		})
 
 		repoDefaultAttrs := model_core.PatchedMessageToCloneable(
-			model_core.NewPatchedMessageFromExistingCaptured(
-				c.objectCapturer,
-				model_core.NewNestedMessage(repoDefaultAttrsValue, repoDefaultAttrsValue.Message.InheritableAttrs),
-			),
+			model_core.NewPatchedMessageFromExistingCaptured(e, model_core.NewNestedMessage(repoDefaultAttrsValue, repoDefaultAttrsValue.Message.InheritableAttrs)),
 		)
 
-		targetRegistrar := model_starlark.NewTargetRegistrar[TMetadata](c.getInlinedTreeOptions(), c.objectCapturer, repoDefaultAttrs)
+		targetRegistrar := model_starlark.NewTargetRegistrar[TMetadata](c.getInlinedTreeOptions(), e, repoDefaultAttrs)
 		thread.SetLocal(model_starlark.TargetRegistrarKey, targetRegistrar)
 
 		thread.SetLocal(model_starlark.GlobalResolverKey, func(identifier label.CanonicalStarlarkIdentifier) (model_core.Message[*model_starlark_pb.Value, TReference], error) {
@@ -157,7 +154,7 @@ func (c *baseComputer[TReference, TMetadata]) ComputePackageValue(ctx context.Co
 								Parent: &model_analysis_pb.Package_Value_Target_Parent{
 									Reference: patcher.AddReference(
 										createdObject.Contents.GetReference(),
-										c.objectCapturer.CaptureCreatedObject(createdObject),
+										e.CaptureCreatedObject(createdObject),
 									),
 									FirstName: firstName,
 								},
