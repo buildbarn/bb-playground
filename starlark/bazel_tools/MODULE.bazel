@@ -4,6 +4,7 @@ bazel_dep(name = "bazel_skylib")
 bazel_dep(name = "platforms")
 bazel_dep(name = "protobuf")
 bazel_dep(name = "rules_cc")
+bazel_dep(name = "rules_shell")
 
 xcode_configure = use_extension("//tools/osx:xcode_configure.bzl", "xcode_configure_extension")
 use_repo(xcode_configure, "local_config_xcode")
