@@ -1040,10 +1040,14 @@ func (c *baseComputer[TReference, TMetadata]) ComputeConfiguredTargetValue(ctx c
 					}
 					files.Freeze()
 					if allowSingleFile {
-						if l := files.Len(); l != 1 {
+						switch l := files.Len(); l {
+						case 0:
+							fileValues[namedAttr.Name] = starlark.None
+						case 1:
+							fileValues[namedAttr.Name] = files.Index(0)
+						default:
 							return PatchedConfiguredTargetValue{}, fmt.Errorf("attr %#v has allow_single_file=True, but its value expands to %d targets", namedAttr.Name, l)
 						}
-						fileValues[namedAttr.Name] = files.Index(0)
 					} else {
 						filesValues[namedAttr.Name] = files
 					}
