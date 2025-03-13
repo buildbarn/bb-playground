@@ -367,7 +367,6 @@ func (c *baseComputer[TReference, TMetadata]) configureAttrValueParts(
 	}
 
 	var attr starlark.Value
-	var concatenationOperator syntax.Token
 	if len(configurationReferences) == 0 {
 		for _, valuePart := range valueParts.Message {
 			decodedPart, err := model_starlark.DecodeValue[TReference, TMetadata](
@@ -387,7 +386,7 @@ func (c *baseComputer[TReference, TMetadata]) configureAttrValueParts(
 			if err != nil {
 				return nil, err
 			}
-			if err := concatenateAttrValueParts(thread, &concatenationOperator, &attr, decodedPart); err != nil {
+			if err := concatenateAttrValueParts(thread, &attr, decodedPart); err != nil {
 				return nil, err
 			}
 		}
@@ -457,7 +456,7 @@ func (c *baseComputer[TReference, TMetadata]) configureAttrValueParts(
 				if isScalar && mayHaveMultipleConfigurations {
 					decodedPart = starlark.NewList([]starlark.Value{decodedPart})
 				}
-				if err := concatenateAttrValueParts(thread, &concatenationOperator, &attr, decodedPart); err != nil {
+				if err := concatenateAttrValueParts(thread, &attr, decodedPart); err != nil {
 					return nil, err
 				}
 			}
@@ -467,7 +466,6 @@ func (c *baseComputer[TReference, TMetadata]) configureAttrValueParts(
 		}
 	}
 
-	// Combine the values of the parts into a single value.
 	if attr == nil {
 		return nil, errors.New("attr value does not have any parts")
 	}
@@ -475,19 +473,18 @@ func (c *baseComputer[TReference, TMetadata]) configureAttrValueParts(
 	return attr, nil
 }
 
-func concatenateAttrValueParts(thread *starlark.Thread, concatenationOperator *syntax.Token, left *starlark.Value, right starlark.Value) error {
-	if *concatenationOperator == 0 {
+func concatenateAttrValueParts(thread *starlark.Thread, left *starlark.Value, right starlark.Value) error {
+	if *left == nil {
 		// Initial round.
 		*left = right
-		if _, ok := right.(*starlark.Dict); ok {
-			*concatenationOperator = syntax.PIPE
-		} else {
-			*concatenationOperator = syntax.PLUS
-		}
 		return nil
 	}
 
-	v, err := starlark.Binary(thread, *concatenationOperator, *left, right)
+	concatenationOperator := syntax.PLUS
+	if _, ok := (*left).(*starlark.Dict); ok {
+		concatenationOperator = syntax.PIPE
+	}
+	v, err := starlark.Binary(thread, concatenationOperator, *left, right)
 	if err != nil {
 		return err
 	}
@@ -663,7 +660,6 @@ func (c *baseComputer[TReference, TMetadata]) ComputeConfiguredTargetValue(ctx c
 			}
 
 			var attrValue starlark.Value
-			var concatenationOperator syntax.Token
 			for _, valuePart := range valueParts {
 				decodedPart, err := model_starlark.DecodeValue[TReference, TMetadata](
 					valuePart,
@@ -675,7 +671,7 @@ func (c *baseComputer[TReference, TMetadata]) ComputeConfiguredTargetValue(ctx c
 				if err != nil {
 					return PatchedConfiguredTargetValue{}, err
 				}
-				if err := concatenateAttrValueParts(thread, &concatenationOperator, &attrValue, decodedPart); err != nil {
+				if err := concatenateAttrValueParts(thread, &attrValue, decodedPart); err != nil {
 					return PatchedConfiguredTargetValue{}, err
 				}
 			}
@@ -745,7 +741,6 @@ func (c *baseComputer[TReference, TMetadata]) ComputeConfiguredTargetValue(ctx c
 			}
 
 			var attrValue starlark.Value
-			var concatenationOperator syntax.Token
 			var attrOutputs []starlark.Value
 			for _, valuePart := range valueParts.Message {
 				decodedPart, err := model_starlark.DecodeValue[TReference, TMetadata](
@@ -781,7 +776,7 @@ func (c *baseComputer[TReference, TMetadata]) ComputeConfiguredTargetValue(ctx c
 				if err != nil {
 					return PatchedConfiguredTargetValue{}, err
 				}
-				if err := concatenateAttrValueParts(thread, &concatenationOperator, &attrValue, decodedPart); err != nil {
+				if err := concatenateAttrValueParts(thread, &attrValue, decodedPart); err != nil {
 					return PatchedConfiguredTargetValue{}, err
 				}
 			}
@@ -813,7 +808,9 @@ func (c *baseComputer[TReference, TMetadata]) ComputeConfiguredTargetValue(ctx c
 		executableValues := map[string]any{}
 		fileValues := map[string]any{}
 		filesValues := map[string]any{}
+		splitAttrValues := map[string]any{}
 		ruleTargetPublicAttrValues = ruleTarget.PublicAttrValues
+		nonLabelAttrValues := model_starlark.NewStructFromDict[TReference, TMetadata](nil, attrValues)
 	GetLabelAttrValues:
 		for _, namedAttr := range ruleDefinition.Message.Attrs {
 			var publicAttrValue *model_starlark_pb.RuleTarget_PublicAttrValue
@@ -839,6 +836,12 @@ func (c *baseComputer[TReference, TMetadata]) ComputeConfiguredTargetValue(ctx c
 				return PatchedConfiguredTargetValue{}, err
 			}
 
+			// Whether an explicit value or a default attr
+			// value is used determines how visibility is
+			// computed. For explicit values, visibility is
+			// computed relative to the package declaring
+			// the target. For default values, the package
+			// declaring the rule is used.
 			var visibilityFromPackage label.CanonicalPackage
 			if usedDefaultValue {
 				visibilityFromPackage = ruleIdentifier.GetCanonicalLabel().GetCanonicalPackage()
@@ -846,15 +849,29 @@ func (c *baseComputer[TReference, TMetadata]) ComputeConfiguredTargetValue(ctx c
 				visibilityFromPackage = targetLabel.GetCanonicalPackage()
 			}
 
-			attrValue, err := c.configureAttrValueParts(
-				ctx,
-				e,
-				thread,
-				namedAttr,
-				valueParts,
-				configurationReference,
-				visibilityFromPackage,
-			)
+			isScalar := false
+			var labelOptions *model_starlark_pb.Attr_LabelOptions
+			allowSingleFile := false
+			switch attrType := namedAttr.Attr.GetType().(type) {
+			case *model_starlark_pb.Attr_Label:
+				labelOptions = attrType.Label.ValueOptions
+				isScalar = true
+				allowSingleFile = attrType.Label.AllowSingleFile
+			case *model_starlark_pb.Attr_LabelKeyedStringDict:
+				labelOptions = attrType.LabelKeyedStringDict.DictKeyOptions
+			case *model_starlark_pb.Attr_LabelList:
+				labelOptions = attrType.LabelList.ListValueOptions
+			default:
+				panic("only label attr types should be processed at this point")
+			}
+			if labelOptions == nil {
+				return PatchedConfiguredTargetValue{}, fmt.Errorf("attr %#v does not have label options", namedAttr.Name)
+			}
+
+			// Perform outgoing edge transition. User
+			// defined transitions get access to all
+			// non-label attr values.
+			patchedTransition, mayHaveMultipleConfigurations, err := c.performTransition(ctx, e, labelOptions.Cfg, configurationReference, nonLabelAttrValues)
 			if err != nil {
 				if errors.Is(err, evaluation.ErrMissingDependency) {
 					missingDependencies = true
@@ -862,9 +879,176 @@ func (c *baseComputer[TReference, TMetadata]) ComputeConfiguredTargetValue(ctx c
 				}
 				return PatchedConfiguredTargetValue{}, err
 			}
-			attrValues[namedAttr.Name] = attrValue
+			transition := model_core.PeekPatchedMessage(e, patchedTransition)
 
-			// TODO: Set executable file files!
+			var attrValue starlark.Value
+			var splitAttrValue *starlark.Dict
+			if mayHaveMultipleConfigurations {
+				splitAttrValue = starlark.NewDict(len(transition.Message.Entries))
+			}
+
+			allowFiles := labelOptions.AllowFiles
+			var filesDepsetElements []any
+
+			if len(transition.Message.Entries) == 0 {
+				// We should leave targets unconfigured.
+				// Provide a target reference that does
+				// not contain any providers.
+				for _, valuePart := range valueParts.Message {
+					decodedPart, err := model_starlark.DecodeValue[TReference, TMetadata](
+						model_core.NewNestedMessage(valueParts, valuePart),
+						/* currentIdentifier = */ nil,
+						c.getValueDecodingOptions(ctx, func(resolvedLabel label.ResolvedLabel) (starlark.Value, error) {
+							return model_starlark.NewTargetReference[TReference, TMetadata](
+								resolvedLabel,
+								model_core.NewSimpleMessage[TReference]([]*model_starlark_pb.Struct(nil)),
+							), nil
+						}),
+					)
+					if err != nil {
+						return PatchedConfiguredTargetValue{}, err
+					}
+					if err := concatenateAttrValueParts(thread, &attrValue, decodedPart); err != nil {
+						return PatchedConfiguredTargetValue{}, err
+					}
+				}
+			} else {
+				for _, transitionEntry := range transition.Message.Entries {
+					var splitAttrEntry starlark.Value
+					valueDecodingOptions := c.getValueDecodingOptions(ctx, func(resolvedLabel label.ResolvedLabel) (starlark.Value, error) {
+						// Resolve the label.
+						canonicalLabel, err := resolvedLabel.AsCanonical()
+						if err != nil {
+							return nil, err
+						}
+						patchedConfigurationReference1 := model_core.NewPatchedMessageFromExistingCaptured(e, model_core.NewNestedMessage(transition, transitionEntry.OutputConfigurationReference))
+						resolvedLabelValue := e.GetVisibleTargetValue(
+							model_core.NewPatchedMessage(
+								&model_analysis_pb.VisibleTarget_Key{
+									FromPackage:            visibilityFromPackage.String(),
+									ToLabel:                canonicalLabel.String(),
+									ConfigurationReference: patchedConfigurationReference1.Message,
+								},
+								model_core.MapReferenceMetadataToWalkers(patchedConfigurationReference1.Patcher),
+							),
+						)
+						if !resolvedLabelValue.IsSet() {
+							missingDependencies = true
+							return starlark.None, nil
+						}
+						if resolvedLabelStr := resolvedLabelValue.Message.Label; resolvedLabelStr != "" {
+							canonicalLabel, err := label.NewCanonicalLabel(resolvedLabelStr)
+							if err != nil {
+								return nil, fmt.Errorf("invalid label %#v: %w", resolvedLabelStr, err)
+							}
+
+							// Obtain the providers of the target.
+							patchedConfigurationReference2 := model_core.NewPatchedMessageFromExistingCaptured(e, model_core.NewNestedMessage(transition, transitionEntry.OutputConfigurationReference))
+							configuredTarget := e.GetConfiguredTargetValue(
+								model_core.NewPatchedMessage(
+									&model_analysis_pb.ConfiguredTarget_Key{
+										Label:                  resolvedLabelStr,
+										ConfigurationReference: patchedConfigurationReference2.Message,
+									},
+									model_core.MapReferenceMetadataToWalkers(patchedConfigurationReference2.Patcher),
+								),
+							)
+							if !configuredTarget.IsSet() {
+								missingDependencies = true
+								return starlark.None, nil
+							}
+							providerInstances := model_core.NewNestedMessage(configuredTarget, configuredTarget.Message.ProviderInstances)
+
+							if len(allowFiles) > 0 {
+								defaultInfoProviderIdentifierStr := defaultInfoProviderIdentifier.String()
+								defaultInfoIndex, ok := sort.Find(
+									len(providerInstances.Message),
+									func(i int) int {
+										return strings.Compare(defaultInfoProviderIdentifierStr, providerInstances.Message[i].ProviderInstanceProperties.GetProviderIdentifier())
+									},
+								)
+								if !ok {
+									return nil, fmt.Errorf("target with label %#v did not yield provider %#v", resolvedLabelStr, defaultInfoProviderIdentifierStr)
+								}
+								files, err := model_starlark.GetStructFieldValue(
+									ctx,
+									c.valueReaders.List,
+									model_core.NewNestedMessage(providerInstances, providerInstances.Message[defaultInfoIndex].Fields),
+									"files",
+								)
+								if err != nil {
+									return nil, fmt.Errorf("failed to obtain field \"files\" of DefaultInfo provider of target with label %#v: %w", resolvedLabelStr, err)
+								}
+								valueDepset, ok := files.Message.Kind.(*model_starlark_pb.Value_Depset)
+								if !ok {
+									return nil, fmt.Errorf("field \"files\" of DefaultInfo provider of target with label %#v is not a depset", resolvedLabelStr)
+								}
+								for _, element := range valueDepset.Depset.Elements {
+									// TODO: Validate extensions.
+									filesDepsetElements = append(filesDepsetElements, model_core.NewNestedMessage(files, element))
+								}
+							}
+
+							return model_starlark.NewTargetReference[TReference, TMetadata](canonicalLabel.AsResolved(), providerInstances), nil
+						} else {
+							return starlark.None, nil
+						}
+					})
+					for _, valuePart := range valueParts.Message {
+						decodedPart, err := model_starlark.DecodeValue[TReference, TMetadata](
+							model_core.NewNestedMessage(valueParts, valuePart),
+							/* currentIdentifier = */ nil,
+							valueDecodingOptions,
+						)
+						if err != nil {
+							return PatchedConfiguredTargetValue{}, err
+						}
+						if isScalar && mayHaveMultipleConfigurations {
+							decodedPart = starlark.NewList([]starlark.Value{decodedPart})
+						}
+						if err := concatenateAttrValueParts(thread, &attrValue, decodedPart); err != nil {
+							return PatchedConfiguredTargetValue{}, err
+						}
+						if mayHaveMultipleConfigurations {
+							if err := concatenateAttrValueParts(thread, &splitAttrEntry, decodedPart); err != nil {
+								return PatchedConfiguredTargetValue{}, err
+							}
+						}
+					}
+
+					if mayHaveMultipleConfigurations {
+						if err := splitAttrValue.SetKey(thread, starlark.String(transitionEntry.Key), splitAttrEntry); err != nil {
+							return PatchedConfiguredTargetValue{}, err
+						}
+					}
+				}
+			}
+			if !missingDependencies {
+				attrValue.Freeze()
+				attrValues[namedAttr.Name] = attrValue
+
+				if mayHaveMultipleConfigurations {
+					splitAttrValue.Freeze()
+					splitAttrValues[namedAttr.Name] = splitAttrValue
+				}
+
+				if len(allowFiles) > 0 {
+					filesDepset := model_starlark.NewDepsetFromList[TReference, TMetadata](filesDepsetElements, model_starlark_pb.Depset_DEFAULT)
+					files, err := filesDepset.ToList(thread)
+					if err != nil {
+						return PatchedConfiguredTargetValue{}, err
+					}
+					files.Freeze()
+					if allowSingleFile {
+						if l := files.Len(); l != 1 {
+							return PatchedConfiguredTargetValue{}, fmt.Errorf("attr %#v has allow_single_file=True, but its value expands to %d targets", namedAttr.Name, l)
+						}
+						fileValues[namedAttr.Name] = files.Index(0)
+					} else {
+						filesValues[namedAttr.Name] = files
+					}
+				}
+			}
 		}
 		if missingDependencies {
 			return PatchedConfiguredTargetValue{}, evaluation.ErrMissingDependency
@@ -880,6 +1064,7 @@ func (c *baseComputer[TReference, TMetadata]) ComputeConfiguredTargetValue(ctx c
 			ruleDefinition:         ruleDefinition,
 			ruleTarget:             model_core.NewNestedMessage(targetValue, ruleTarget),
 			attr:                   model_starlark.NewStructFromDict[TReference, TMetadata](nil, attrValues),
+			splitAttr:              model_starlark.NewStructFromDict[TReference, TMetadata](nil, splitAttrValues),
 			executable:             model_starlark.NewStructFromDict[TReference, TMetadata](nil, executableValues),
 			file:                   model_starlark.NewStructFromDict[TReference, TMetadata](nil, fileValues),
 			files:                  model_starlark.NewStructFromDict[TReference, TMetadata](nil, filesValues),
@@ -1128,6 +1313,7 @@ type ruleContext[TReference object.BasicReference, TMetadata BaseComputerReferen
 	ruleDefinition         model_core.Message[*model_starlark_pb.Rule_Definition, TReference]
 	ruleTarget             model_core.Message[*model_starlark_pb.RuleTarget, TReference]
 	attr                   starlark.Value
+	splitAttr              starlark.Value
 	buildSettingValue      starlark.Value
 	executable             starlark.Value
 	file                   starlark.Value
@@ -1290,6 +1476,8 @@ func (rc *ruleContext[TReference, TMetadata]) Attr(thread *starlark.Thread, name
 		return rc.outputs, nil
 	case "runfiles":
 		return starlark.NewBuiltin("ctx.runfiles", rc.doRunfiles), nil
+	case "split_attr":
+		return rc.splitAttr, nil
 	case "target_platform_has_constraint":
 		return starlark.NewBuiltin("ctx.target_platform_has_constraint", rc.doTargetPlatformHasConstraint), nil
 	case "toolchains":
@@ -1346,6 +1534,7 @@ var ruleContextAttrNames = []string{
 	"info_file",
 	"label",
 	"runfiles",
+	"split_attr",
 	"toolchains",
 	"var",
 	"version_file",
