@@ -37,6 +37,12 @@ string_list_flag(
 )
 
 label_flag(
+    name = "coverage_output_generator",
+    build_setting_default = "//tools/test:lcov_merger",
+    visibility = ["//visibility:public"],
+)
+
+label_flag(
     name = "cs_fdo_profile",
     build_setting_default = None,
     visibility = ["//visibility:public"],
