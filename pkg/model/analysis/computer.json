@@ -186,6 +186,12 @@
             "type": "*model_filesystem.FileReader[TReference]"
          }
       },
+      "FilesInPackage": { },
+      "Glob": {
+         "dependsOn": [
+            "FilesInPackage"
+         ]
+      },
       "HttpArchiveContents": {
          "dependsOn": [
             "DirectoryCreationParametersObject",
@@ -308,6 +314,7 @@
             "CompiledBzlFileFunctionFactory",
             "FileProperties",
             "FileReader",
+            "Glob",
             "RepoDefaultAttrs",
             "RootModule"
          ]

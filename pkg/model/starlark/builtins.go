@@ -64,7 +64,7 @@ const (
 	GlobExpanderKey     = "glob_expander"
 )
 
-type GlobExpander = func(include, exclude []string, includeDirectories bool) ([]pg_label.TargetName, error)
+type GlobExpander = func(include, exclude []string, includeDirectories bool) ([]string, error)
 
 // sortAndDeduplicateSuffixes sorts the strings in a given list,
 // lexicographically comparing characters in reverse order. Any entries
@@ -1131,7 +1131,7 @@ func GetBuiltins[TReference object.BasicReference, TMetadata model_core.Cloneabl
 
 					labels := make([]starlark.Value, 0, len(targetNames))
 					for _, targetName := range targetNames {
-						labels = append(labels, starlark.String(targetName.String()))
+						labels = append(labels, starlark.String(targetName))
 					}
 					return starlark.NewList(labels), nil
 				},

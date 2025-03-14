@@ -8,6 +8,7 @@ import (
 	"slices"
 
 	"github.com/buildbarn/bonanza/pkg/evaluation"
+	"github.com/buildbarn/bonanza/pkg/glob"
 	"github.com/buildbarn/bonanza/pkg/label"
 	model_core "github.com/buildbarn/bonanza/pkg/model/core"
 	"github.com/buildbarn/bonanza/pkg/model/core/btree"
@@ -91,10 +92,20 @@ func (c *baseComputer[TReference, TMetadata]) ComputePackageValue(ctx context.Co
 
 		thread.SetLocal(model_starlark.CanonicalPackageKey, canonicalPackage)
 		thread.SetLocal(model_starlark.ValueEncodingOptionsKey, c.getValueEncodingOptions(e, buildFileLabel))
-		thread.SetLocal(model_starlark.GlobExpanderKey, func(include, exclude []string, includeDirectories bool) ([]label.TargetName, error) {
-			return []label.TargetName{
-				label.MustNewTargetName("TODO implement globbing"),
-			}, nil
+		thread.SetLocal(model_starlark.GlobExpanderKey, func(includePatterns, excludePatterns []string, includeDirectories bool) ([]string, error) {
+			pattern, err := glob.Compile(includePatterns, excludePatterns)
+			if err != nil {
+				return nil, err
+			}
+			globValue := e.GetGlobValue(&model_analysis_pb.Glob_Key{
+				Package:            canonicalPackage.String(),
+				Pattern:            pattern,
+				IncludeDirectories: includeDirectories,
+			})
+			if !globValue.IsSet() {
+				return nil, evaluation.ErrMissingDependency
+			}
+			return globValue.Message.MatchedPaths, nil
 		})
 
 		repoDefaultAttrs := model_core.PatchedMessageToCloneable(

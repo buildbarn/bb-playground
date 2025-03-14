@@ -308,6 +308,70 @@ message FileReader {
   message Key {}
 }
 
+message FilesInPackage {
+  message Key {
+    // The package for which the list of files it contains is requested.
+    string package = 1;
+  }
+
+  message Value {
+    // Directory of the package, with the following features removed:
+    //
+    // - Child directories that belong to nested packages.
+    // - File properties, so that only the names of files remain.
+    bonanza.model.filesystem.Directory directory = 1;
+  }
+}
+
+message Glob {
+  message Key {
+    // The package in which the call to glob() is made.
+    string package = 1;
+
+    // A nondeterministic finite automaton (NFA) that describes the
+    // paths to match. The NFA is encoded as a sequence of states, where
+    // each state has the following format:
+    //
+    // - A variable length integer, which can be interpreted as follows:
+    //
+    //   - Bit 0: If set, the current state is an end state, indicating
+    //     that the parsed path matches the pattern.
+    //
+    //   - Bit 1: If set, the current state is an end state, indicating
+    //     that the parsed path does not match the pattern. This has a
+    //     higher precedence than bit 0.
+    //
+    //   - Bit 2: If set, the current state has an outgoing edge for
+    //     wildcard pattern "*".
+    //
+    //   - Bit 3: If set, the current state has an outgoing edge for
+    //     wildcard pattern "**/".
+    //
+    //   - Bits 4 and above: The number of outgoing edges the current
+    //     state has for regular (non-wildcard) characters.
+    //
+    // - A sequence of UTF-8 encoded characters, corresponding to the
+    //   characters assigned to the outgoing edges of the current state.
+    //
+    // States are stored in the order in which they are referenced by
+    // their parent (i.e., "*" followed by "**/"* followed by regular
+    // characters, breadth first). Unnecessarily repetitive states for
+    // wildcard patterns (e.g., "a/**/**/b") are not permitted.
+    bytes pattern = 2;
+
+    // Whether or not to include paths in the results that correspond to
+    // directories.
+    bool include_directories = 3;
+  }
+
+  message Value {
+    // Set of relative paths below the package's directory that are
+    // matched by one or more of the include patterns and none of the
+    // exclude patterns.
+    repeated string matched_paths = 1;
+  }
+}
+
 message HttpArchiveContents {
   message Key {
     enum Format {

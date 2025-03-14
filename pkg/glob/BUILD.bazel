@@ -1,0 +1,18 @@
+load("@rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "glob",
+    srcs = ["compile.go"],
+    importpath = "github.com/buildbarn/bonanza/pkg/glob",
+    visibility = ["//visibility:public"],
+    deps = ["//pkg/encoding/varint"],
+)
+
+go_test(
+    name = "glob_test",
+    srcs = ["compile_test.go"],
+    deps = [
+        ":glob",
+        "@com_github_stretchr_testify//require",
+    ],
+)
