@@ -150,7 +150,7 @@ func TestCompile(t *testing.T) {
 			}, nfa)
 		})
 
-		t.Run("Branch", func(t *testing.T) {
+		t.Run("Branch 1", func(t *testing.T) {
 			nfa, err := glob.Compile(
 				[]string{"goodbye"},
 				[]string{"good work"},
@@ -170,6 +170,31 @@ func TestCompile(t *testing.T) {
 				0x81, // End of "goodbye".
 				0x90, 'k',
 				0x82, // End of "good work".
+			}, nfa)
+		})
+
+		t.Run("Branch 2", func(t *testing.T) {
+			// Swapping the strings around should not affect
+			// the order in which states are returned.
+			nfa, err := glob.Compile(
+				[]string{"good work"},
+				[]string{"goodbye"},
+			)
+			require.NoError(t, err)
+			require.Equal(t, []byte{
+				0x90, 'g',
+				0x90, 'o',
+				0x90, 'o',
+				0x90, 'd',
+				0xa0, ' ', 'b',
+				0x90, 'w',
+				0x90, 'y',
+				0x90, 'o',
+				0x90, 'e',
+				0x90, 'r',
+				0x82, // End of "goodbye".
+				0x90, 'k',
+				0x81, // End of "good work".
 			}, nfa)
 		})
 	})
