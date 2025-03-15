@@ -334,29 +334,34 @@ message Glob {
     //
     // - A variable length integer, which can be interpreted as follows:
     //
-    //   - Bit 0: If set, the current state is an end state, indicating
-    //     that the parsed path matches the pattern.
+    //   - Bits 0 and 1: If set to zero, the current state is not an end
+    //     state. If set to one, the current state is an end state and
+    //     the parsed string is a match. If set to two, the current
+    //     state is an end state and the parsed string is not a match.
+    //     When parsing completes while in multiple states, the highest
+    //     value takes precedence.
     //
-    //   - Bit 1: If set, the current state is an end state, indicating
-    //     that the parsed path does not match the pattern. This has a
-    //     higher precedence than bit 0.
+    //     States for wildcard "**/" cannot be an end state.
     //
     //   - Bit 2: If set, the current state has an outgoing edge for
-    //     wildcard pattern "*".
+    //     wildcard "*". This bit cannot be set if the current state
+    //     already corresponds to wildcard "*".
     //
     //   - Bit 3: If set, the current state has an outgoing edge for
-    //     wildcard pattern "**/".
+    //     wildcard "**/". This bit can only be set as part of the
+    //     initial state, or if the current state corresponds to regular
+    //     character "/".
     //
     //   - Bits 4 and above: The number of outgoing edges the current
     //     state has for regular (non-wildcard) characters.
     //
     // - A sequence of UTF-8 encoded characters, corresponding to the
     //   characters assigned to the outgoing edges of the current state.
+    //   These characters must be provided in sorted order.
     //
     // States are stored in the order in which they are referenced by
-    // their parent (i.e., "*" followed by "**/"* followed by regular
-    // characters, breadth first). Unnecessarily repetitive states for
-    // wildcard patterns (e.g., "a/**/**/b") are not permitted.
+    // their parent (i.e., "*" followed by "**/" followed by regular
+    // characters), breadth first.
     bytes pattern = 2;
 
     // Whether or not to include paths in the results that correspond to
